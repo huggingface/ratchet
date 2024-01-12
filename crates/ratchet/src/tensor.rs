@@ -1,4 +1,4 @@
-use crate::{BinaryOp, LazyOp};
+use crate::{BinaryOp, CompiledOp, LazyOp};
 use std::sync::Arc;
 
 /// Unique identifier for tensors.
@@ -18,6 +18,12 @@ impl TensorId {
 #[derive(Clone, Debug)]
 pub struct Tensor {
     inner: Arc<Inner>,
+}
+
+impl PartialEq for Tensor {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.id == other.inner.id
+    }
 }
 
 impl std::ops::Deref for Tensor {
@@ -65,14 +71,13 @@ impl Tensor {
         }
     }
 
-    fn execution_order(&self) -> Vec<TensorId> {
+    fn execution_order(&self) -> Vec<Tensor> {
         let mut stack = vec![self.clone()];
         let mut visited = vec![];
         while let Some(tensor) = stack.pop() {
-            if visited.contains(&tensor.inner.id) {
+            if visited.contains(&tensor) {
                 continue;
             }
-            visited.push(tensor.inner.id);
             match &tensor.inner.op {
                 LazyOp::Empty => {}
                 LazyOp::Binary(a, b, _) => {
@@ -81,13 +86,31 @@ impl Tensor {
                 }
                 _ => unimplemented!(),
             }
+            visited.push(tensor);
         }
         visited.reverse();
         visited
     }
 
+    pub fn compile(&self) {
+        //Convert from Tensor into CompiledOp
+        //Bind groups
+        //Compute Pipeline
+        //Write metadata into shared uniform buffer
+        //Determine dispatch parameters
+        //Dispatch
+    }
+
     pub fn resolve(&self) {
         println!("Order: {:?}", self.execution_order());
+        //Compile linearized graph into list of kernels
+        for t in self.execution_order() {
+            println!("Compiling {:?}", t);
+            t.op.compile();
+        }
+        //Execute kernels
+
+        //Return result
     }
 }
 
@@ -98,11 +121,8 @@ mod tests {
     #[test]
     fn test_cfg() {
         let a = Tensor::empty();
-        println!("A: {:?}", a);
         let b = Tensor::empty();
-        println!("B: {:?}", b);
         let c = a.add(&b);
-        println!("C: {:?}", c);
         c.resolve();
     }
 }
