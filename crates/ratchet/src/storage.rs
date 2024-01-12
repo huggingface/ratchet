@@ -1,5 +1,5 @@
 use crate::{
-    gpu::{BufferDescriptor, Device},
+    gpu::{BufferDescriptor, WgpuDevice},
     gpu::{DeviceError, GPUBuffer},
     DataType,
 };
@@ -8,9 +8,13 @@ use wgpu::{Buffer, BufferUsages};
 
 use crate::DType;
 
-/// Tensor is generic over Storage, which can be on the CPU or GPU
-pub trait Storage: Debug + Clone + 'static {
-    fn to_device(self, device: &Device) -> Result<GPUStorage, DeviceError>;
+pub enum Storage {
+    CPU(CPUStorage),
+    GPU(GPUStorage),
+}
+
+pub trait Storable: Debug + Clone + 'static {
+    fn to_device(self, device: &WgpuDevice) -> Result<GPUStorage, DeviceError>;
     fn to_cpu(self) -> CPUStorage;
     fn n_bytes(&self) -> usize;
     fn dump(&self, dt: DType, full: bool) -> String;
@@ -51,9 +55,8 @@ impl Drop for CPUStorage {
     }
 }
 
-impl Storage for CPUStorage {
-    //When sending data from CPU -> GPU, the buffer can be pool allocated or not
-    fn to_device(self, device: &Device) -> Result<GPUStorage, DeviceError> {
+impl Storable for CPUStorage {
+    fn to_device(self, device: &WgpuDevice) -> Result<GPUStorage, DeviceError> {
         let mut min_bytes = [0; 16];
         let bytes = if self.as_bytes().len() < 16 {
             min_bytes[..self.as_bytes().len()].copy_from_slice(self.as_bytes());
@@ -167,8 +170,8 @@ impl GPUStorage {
     }
 }
 
-impl Storage for GPUStorage {
-    fn to_device(self, _: &Device) -> Result<GPUStorage, DeviceError> {
+impl Storable for GPUStorage {
+    fn to_device(self, _: &WgpuDevice) -> Result<GPUStorage, DeviceError> {
         Ok(self)
     }
 

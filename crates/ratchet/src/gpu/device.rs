@@ -23,14 +23,14 @@ pub enum DeviceError {
 /// Currently, WebGPU doesn't support multiple devices. Ordinal should always
 /// be 0.
 #[derive(Clone)]
-pub struct Device {
+pub struct WgpuDevice {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     ordinal: u32,
     buffer_pool: Arc<RwLock<BufferPool>>,
 }
 
-impl std::ops::Deref for Device {
+impl std::ops::Deref for WgpuDevice {
     type Target = wgpu::Device;
 
     fn deref(&self) -> &Self::Target {
@@ -39,7 +39,7 @@ impl std::ops::Deref for Device {
 }
 
 //Device creation impls
-impl Device {
+impl WgpuDevice {
     pub async fn new() -> Result<Self, DeviceError> {
         #[cfg(target_arch = "wasm32")]
         let adapter = Self::select_adapter().await;
@@ -130,7 +130,7 @@ impl Device {
     }
 }
 
-impl Device {
+impl WgpuDevice {
     pub fn create_buffer_init(
         &self,
         desc: &BufferDescriptor,
