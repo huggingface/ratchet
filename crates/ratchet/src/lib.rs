@@ -1,4 +1,5 @@
 #![feature(trait_alias)]
+mod compiled_op;
 mod device;
 mod dtype;
 mod gpu;
@@ -10,6 +11,7 @@ mod symshape;
 mod tensor;
 mod view;
 
+pub use compiled_op::*;
 pub use device::*;
 pub use dtype::*;
 pub use op::*;
@@ -22,6 +24,7 @@ pub use view::*;
 
 use smallvec::SmallVec;
 pub type RVec<T> = SmallVec<[T; 4]>;
+pub type DRVec<T> = SmallVec<[T; 8]>; //Double RVec
 
 //https://github.com/sonos/tract/blob/main/data/src/macros.rs#L2
 #[macro_export]
