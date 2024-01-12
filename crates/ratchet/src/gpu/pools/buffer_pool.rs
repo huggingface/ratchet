@@ -1,6 +1,6 @@
 // Adapted from https://github.com/rerun-io/rerun MIT licensed
 use super::{DynamicResource, DynamicResourcePool, DynamicResourcesDesc, PoolError};
-use crate::gpu::Device;
+use crate::gpu::WgpuDevice;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, derive_new::new)]
 pub struct BufferDescriptor {
@@ -41,7 +41,7 @@ impl BufferPool {
         }
     }
 
-    pub fn allocate(&mut self, desc: &BufferDescriptor, device: &Device) -> GPUBuffer {
+    pub fn allocate(&mut self, desc: &BufferDescriptor, device: &WgpuDevice) -> GPUBuffer {
         self.pool.allocate(desc, |desc| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,

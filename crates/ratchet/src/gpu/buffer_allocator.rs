@@ -1,7 +1,7 @@
 use crate::gpu::{BufferDescriptor, BufferPool, GPUBuffer, GpuBufferHandle};
 use std::cell::{Ref, RefCell, RefMut};
 
-use super::Device;
+use super::WgpuDevice;
 
 pub struct BufferAllocator {
     pool: RefCell<BufferPool>,
@@ -22,7 +22,7 @@ impl BufferAllocator {
         self.pool.borrow().get(handle).unwrap()
     }
 
-    pub fn create_buffer(&self, desc: &BufferDescriptor, device: &Device) -> GPUBuffer {
+    pub fn create_buffer(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> GPUBuffer {
         self.pool.borrow_mut().allocate(desc, device)
     }
 
@@ -38,7 +38,7 @@ impl BufferAllocator {
         &self,
         desc: &BufferDescriptor,
         contents: &[u8],
-        device: &Device,
+        device: &WgpuDevice,
     ) -> GPUBuffer {
         let buf = self.pool.borrow_mut().allocate(desc, device);
         device.queue().write_buffer(&buf.inner, 0, contents);
