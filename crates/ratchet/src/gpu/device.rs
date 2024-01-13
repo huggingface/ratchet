@@ -1,19 +1,12 @@
+use crate::gpu::*;
 use std::sync::{Arc, RwLock};
 use wgpu::{Adapter, DeviceType, Limits};
+
+use crate::DeviceError;
 
 use super::{BufferDescriptor, BufferPool, GPUBuffer, PoolError};
 
 pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
-
-#[derive(Debug, thiserror::Error)]
-pub enum DeviceError {
-    #[error("Failed to acquire device with error: {0:?}")]
-    DeviceAcquisitionFailed(#[from] wgpu::RequestDeviceError),
-    #[error("Failed to get adapter.")]
-    AdapterRequestFailed,
-    #[error("Failed to create buffer with error: {0:?}")]
-    BufferCreationFailed(#[from] PoolError),
-}
 
 /// # Device
 ///
@@ -28,6 +21,8 @@ pub struct WgpuDevice {
     queue: Arc<wgpu::Queue>,
     ordinal: u32,
     buffer_pool: Arc<RwLock<BufferPool>>,
+    bind_group_pool: Arc<RwLock<BindGroupPool>>,
+    bind_group_layout_pool: Arc<RwLock<BindGroupLayoutPool>>,
 }
 
 impl std::ops::Deref for WgpuDevice {
@@ -35,6 +30,12 @@ impl std::ops::Deref for WgpuDevice {
 
     fn deref(&self) -> &Self::Target {
         &self.device
+    }
+}
+
+impl std::fmt::Debug for WgpuDevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "wgpu:{}", self.ordinal)
     }
 }
 
@@ -79,6 +80,8 @@ impl WgpuDevice {
             queue: Arc::new(queue),
             ordinal: 0, //TODO: Support multiple devices
             buffer_pool: Arc::new(RwLock::new(BufferPool::new())),
+            bind_group_pool: Arc::new(RwLock::new(BindGroupPool::new())),
+            bind_group_layout_pool: Arc::new(RwLock::new(BindGroupLayoutPool::new())),
         })
     }
 
@@ -127,6 +130,18 @@ impl WgpuDevice {
 
         log::info!("Using adapter {:?}", adapter.get_info());
         Ok(adapter)
+    }
+
+    pub(crate) fn buffer_pool(&self) -> &Arc<RwLock<BufferPool>> {
+        &self.buffer_pool
+    }
+
+    pub(crate) fn bind_group_pool(&self) -> &Arc<RwLock<BindGroupPool>> {
+        &self.bind_group_pool
+    }
+
+    pub(crate) fn bind_group_layout_pool(&self) -> &Arc<RwLock<BindGroupLayoutPool>> {
+        &self.bind_group_layout_pool
     }
 }
 

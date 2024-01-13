@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Device, RVec};
+use crate::{gpu::WgpuDevice, RVec};
 use std::sync::Arc;
 
 slotmap::new_key_type! { pub struct GpuBindGroupHandle; }
@@ -82,57 +82,59 @@ pub struct BindGroupPool {
     //
     // On the flipside if someone requests the exact same bind group again as before,
     // they'll get a new one which is unnecessary. But this is *very* unlikely to ever happen.
-    pool: DynamicResourcePool<GpuBindGroupHandle, BindGroupDescriptor, wgpu::BindGroup>,
+    inner: DynamicResourcePool<GpuBindGroupHandle, BindGroupDescriptor, wgpu::BindGroup>,
 }
 
 impl BindGroupPool {
     pub fn new() -> Self {
         Self {
-            pool: DynamicResourcePool::default(),
+            inner: DynamicResourcePool::default(),
         }
     }
 
     /// Returns a reference-counted, currently unused bind-group.
     /// Once ownership to the handle is given up, the bind group may be reclaimed in future passs.
     /// The handle also keeps alive any dependent resources.
-    pub fn alloc(&self, desc: &BindGroupDescriptor, device: &Device) -> GpuBindGroup {
+    pub fn alloc(&self, desc: &BindGroupDescriptor, device: &WgpuDevice) -> GpuBindGroup {
         // Retrieve strong handles to buffers and textures.
         // This way, an owner of a bind group handle keeps buffers & textures alive!.
-        let owned_buffers: RVec<GPUBuffer> = desc
-            .entries
-            .iter()
-            .map(|e| device.buffer_pool().get(e.handle))
-            .collect();
+        let owned_buffers: RVec<GPUBuffer> = {
+            let buf_pool = device.buffer_pool().try_write().unwrap();
+            desc.entries
+                .iter()
+                .map(|e| buf_pool.get(e.handle).unwrap())
+                .collect()
+        };
 
-        let resource = self.pool.allocate(desc, |desc| {
+        let resource = self.inner.allocate(desc, |desc| {
             let mut buffer_index = 0;
 
-            self.handle
-                .device()
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: None,
-                    entries: &desc
-                        .entries
-                        .iter()
-                        .enumerate()
-                        .map(|(index, entry)| wgpu::BindGroupEntry {
-                            binding: index as _,
-                            resource: {
-                                let res = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                                    buffer: &owned_buffers[buffer_index],
-                                    offset: entry.offset,
-                                    size: entry.size,
-                                });
-                                buffer_index += 1;
-                                res
-                            },
-                        })
-                        .collect::<Vec<_>>(),
-                    layout: device
-                        .bind_group_layout_pool()
-                        .get_resource(desc.layout)
-                        .unwrap(),
+            let entries = desc
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| wgpu::BindGroupEntry {
+                    binding: index as _,
+                    resource: {
+                        let res = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &owned_buffers[buffer_index],
+                            offset: entry.offset,
+                            size: entry.size,
+                        });
+                        buffer_index += 1;
+                        res
+                    },
                 })
+                .collect::<Vec<_>>();
+
+            let bind_group_layout_pool = device.bind_group_layout_pool().try_read().unwrap();
+            let bind_group_descriptor = wgpu::BindGroupDescriptor {
+                label: None,
+                entries: &entries,
+                layout: bind_group_layout_pool.get_resource(desc.layout).unwrap(),
+            };
+
+            device.create_bind_group(&bind_group_descriptor)
         });
 
         GpuBindGroup {
@@ -142,10 +144,10 @@ impl BindGroupPool {
     }
 
     pub fn begin_pass(&mut self, pass_index: u64) {
-        self.pool.begin_pass(pass_index, |_res| {});
+        self.inner.begin_pass(pass_index, |_res| {});
     }
 
     pub fn num_resources(&self) -> usize {
-        self.pool.num_resources()
+        self.inner.num_resources()
     }
 }

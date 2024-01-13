@@ -1,7 +1,31 @@
-use crate::gpu::WgpuDevice;
+use crate::gpu::{PoolError, WgpuDevice};
 
-#[derive(Clone)]
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceError {
+    #[error("Failed to acquire device with error: {0:?}")]
+    DeviceAcquisitionFailed(#[from] wgpu::RequestDeviceError),
+    #[error("Failed to get adapter.")]
+    AdapterRequestFailed,
+    #[error("Failed to create storage with error: {0:?}")]
+    StorageCreationFailed(#[from] PoolError), //shouldn't be PoolError
+    #[error("Device mismatch, requested device: {0:?}, actual device: {1:?}")]
+    DeviceMismatch(String, String),
+}
+
+#[derive(Clone, Debug)]
 pub enum Device {
     CPU,
     GPU(WgpuDevice),
+}
+
+impl Device {
+    pub fn get_gpu(&self) -> Result<WgpuDevice, DeviceError> {
+        match self {
+            Device::CPU => Err(DeviceError::DeviceMismatch(
+                "CPU".to_string(),
+                "GPU".to_string(),
+            )),
+            Device::GPU(gpu) => Ok(gpu.clone()),
+        }
+    }
 }

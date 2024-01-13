@@ -1,4 +1,4 @@
-use crate::{rvec, Device, RVec};
+use crate::{gpu::WgpuDevice, rvec, Device, RVec};
 
 use super::static_resource_pool::{PoolError, StaticResourcePool};
 
@@ -43,12 +43,21 @@ pub struct BindGroupLayoutDescriptor {
 }
 
 impl BindGroupLayoutDescriptor {
+    //Used for unary, binary, ternary (NOT INPLACE)
+    fn entries(ro_length: usize) -> RVec<wgpu::BindGroupLayoutEntry> {
+        let mut read_only: RVec<wgpu::BindGroupLayoutEntry> = (0..ro_length)
+            .map(|idx| wgpu::BindGroupLayoutEntry::compute_storage_buffer(idx as u32, true))
+            .collect();
+        read_only.push(wgpu::BindGroupLayoutEntry::compute_storage_buffer(
+            ro_length as u32,
+            false,
+        ));
+        read_only
+    }
+
     pub fn unary() -> Self {
         Self {
-            entries: rvec![
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(0, true),
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(1, false)
-            ],
+            entries: Self::entries(1),
         }
     }
 
@@ -60,11 +69,7 @@ impl BindGroupLayoutDescriptor {
 
     pub fn binary() -> Self {
         Self {
-            entries: rvec![
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(0, true),
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(1, true),
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(2, false)
-            ],
+            entries: Self::entries(2),
         }
     }
 
@@ -79,12 +84,7 @@ impl BindGroupLayoutDescriptor {
 
     pub fn ternary() -> Self {
         Self {
-            entries: rvec![
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(0, true),
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(1, true),
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(2, true),
-                wgpu::BindGroupLayoutEntry::compute_storage_buffer(3, false)
-            ],
+            entries: Self::entries(3),
         }
     }
 
@@ -109,14 +109,14 @@ impl BindGroupLayoutDescriptor {
 }
 
 pub struct BindGroupLayoutPool {
-    pool:
+    inner:
         StaticResourcePool<BindGroupLayoutHandle, BindGroupLayoutDescriptor, wgpu::BindGroupLayout>,
 }
 
 impl BindGroupLayoutPool {
     pub fn new() -> Self {
         Self {
-            pool: StaticResourcePool::default(),
+            inner: StaticResourcePool::default(),
         }
     }
 }
@@ -125,9 +125,9 @@ impl BindGroupLayoutPool {
     pub fn get_or_create(
         &mut self,
         descriptor: &BindGroupLayoutDescriptor,
-        device: &Device,
+        device: &WgpuDevice,
     ) -> BindGroupLayoutHandle {
-        self.pool.get_or_create(descriptor, |desc| {
+        self.inner.get_or_create(descriptor, |desc| {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
                 entries: &desc.entries,
@@ -139,10 +139,10 @@ impl BindGroupLayoutPool {
         &self,
         handle: BindGroupLayoutHandle,
     ) -> Result<&wgpu::BindGroupLayout, PoolError> {
-        self.pool.get_resource(handle)
+        self.inner.get_resource(handle)
     }
 
     pub fn num_resources(&self) -> usize {
-        self.pool.num_resources()
+        self.inner.num_resources()
     }
 }
