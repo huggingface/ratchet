@@ -1,7 +1,7 @@
 use crate::{
+    gpu::GPUBuffer,
     gpu::{BufferDescriptor, WgpuDevice},
-    gpu::{DeviceError, GPUBuffer},
-    DataType,
+    DataType, DeviceError,
 };
 use std::{alloc::Layout, fmt::Debug, ops::RangeBounds};
 use wgpu::{Buffer, BufferUsages};
