@@ -11,7 +11,7 @@ pub enum DType {
     U32,
 }
 
-pub trait DataType:
+pub trait TensorDType:
     Clone
     + std::fmt::Debug
     + std::fmt::Display
@@ -29,7 +29,7 @@ pub trait DataType:
 
 macro_rules! map_type {
     ($t:ty, $v:ident) => {
-        impl DataType for $t {
+        impl TensorDType for $t {
             fn dt() -> DType {
                 DType::$v
             }
@@ -43,7 +43,7 @@ macro_rules! map_type {
 
 macro_rules! map_half_type {
     ($t:ty, $v:ident) => {
-        impl DataType for $t {
+        impl TensorDType for $t {
             fn dt() -> DType {
                 DType::$v
             }

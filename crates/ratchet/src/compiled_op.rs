@@ -1,10 +1,11 @@
+use std::sync::Arc;
+
 use crate::gpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayoutHandle, GPUBuffer, GpuBindGroup,
     GpuWorkload, WgpuDevice, UNIFORM_ALIGN,
 };
 use crate::{drvec, rvec, DRVec, RVec, Tensor};
 use derive_new::new;
-use std::sync::Arc;
 use wgpu::DynamicOffset;
 
 #[derive(Debug, new)]

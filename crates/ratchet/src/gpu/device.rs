@@ -1,5 +1,5 @@
 use crate::gpu::*;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use wgpu::{Adapter, DeviceType, Limits};
 
 use crate::DeviceError;
@@ -154,7 +154,7 @@ impl WgpuDevice {
     }
 
     pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<GPUBuffer, PoolError> {
-        Ok(self.buffer_pool.get(handle)?)
+        self.buffer_pool.get(handle)
     }
 
     pub fn allocate_bind_group(

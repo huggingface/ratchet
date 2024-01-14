@@ -16,6 +16,7 @@ pub enum LazyOp {
     Empty,
     Binary(Binary),
     Unary(Tensor, UnaryOp),
+    Const,
 }
 
 impl LazyOp {
