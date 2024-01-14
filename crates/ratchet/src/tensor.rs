@@ -1,4 +1,5 @@
-use crate::{BinaryOp, CompiledOp, LazyOp};
+use crate::{ops::*, Device, DeviceError, Operation};
+use crate::{BinaryOp, LazyOp};
 use std::sync::Arc;
 
 /// Unique identifier for tensors.
@@ -38,6 +39,7 @@ impl std::ops::Deref for Tensor {
 pub struct Inner {
     id: TensorId,
     op: LazyOp,
+    device: Device,
 }
 
 impl AsRef<Inner> for Inner {
@@ -51,15 +53,18 @@ impl std::default::Default for Inner {
         Inner {
             id: TensorId::new(),
             op: LazyOp::Empty,
+            device: Device::default(),
         }
     }
 }
 
 impl Tensor {
     pub fn add(&self, other: &Tensor) -> Tensor {
+        self.check_device(other).unwrap();
         Tensor {
             inner: Arc::new(Inner {
-                op: LazyOp::Binary(self.clone(), other.clone(), BinaryOp::Add),
+                op: LazyOp::Binary(Binary::new(self.clone(), other.clone(), BinaryOp::Add)),
+                device: self.device.clone(),
                 ..Default::default()
             }),
         }
@@ -80,9 +85,10 @@ impl Tensor {
             }
             match &tensor.inner.op {
                 LazyOp::Empty => {}
-                LazyOp::Binary(a, b, _) => {
-                    stack.push(a.clone());
-                    stack.push(b.clone());
+                LazyOp::Binary(b) => {
+                    let sources = b.srcs();
+                    stack.push(sources[0].clone());
+                    stack.push(sources[1].clone());
                 }
                 _ => unimplemented!(),
             }
@@ -92,25 +98,26 @@ impl Tensor {
         visited
     }
 
-    pub fn compile(&self) {
-        //Convert from Tensor into CompiledOp
-        //Bind groups
-        //Compute Pipeline
-        //Write metadata into shared uniform buffer
-        //Determine dispatch parameters
-        //Dispatch
-    }
-
     pub fn resolve(&self) {
         println!("Order: {:?}", self.execution_order());
-        //Compile linearized graph into list of kernels
+        let mut compiled_ops = vec![];
         for t in self.execution_order() {
-            println!("Compiling {:?}", t);
-            t.op.compile();
+            compiled_ops.push(t.op.compile()); //Compile on Op or tensor?
         }
         //Execute kernels
 
         //Return result
+    }
+
+    pub fn check_device(&self, o: &Self) -> Result<(), DeviceError> {
+        if self.device == o.device {
+            Ok(())
+        } else {
+            Err(DeviceError::DeviceMismatch(
+                self.device.label(),
+                o.device.label(),
+            ))
+        }
     }
 }
 

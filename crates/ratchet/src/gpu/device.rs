@@ -20,9 +20,9 @@ pub struct WgpuDevice {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     ordinal: u32,
-    buffer_pool: Arc<RwLock<BufferPool>>,
-    bind_group_pool: Arc<RwLock<BindGroupPool>>,
-    bind_group_layout_pool: Arc<RwLock<BindGroupLayoutPool>>,
+    buffer_pool: Arc<BufferPool>,
+    bind_group_pool: Arc<BindGroupPool>,
+    bind_group_layout_pool: Arc<BindGroupLayoutPool>,
 }
 
 impl std::ops::Deref for WgpuDevice {
@@ -36,6 +36,12 @@ impl std::ops::Deref for WgpuDevice {
 impl std::fmt::Debug for WgpuDevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "wgpu:{}", self.ordinal)
+    }
+}
+
+impl PartialEq for WgpuDevice {
+    fn eq(&self, other: &Self) -> bool {
+        self.ordinal == other.ordinal && self.device.global_id() == other.device.global_id()
     }
 }
 
@@ -75,13 +81,15 @@ impl WgpuDevice {
             device_request
         }?;
 
+        let device = Arc::new(device);
+
         Ok(Self {
-            device: Arc::new(device),
             queue: Arc::new(queue),
             ordinal: 0, //TODO: Support multiple devices
-            buffer_pool: Arc::new(RwLock::new(BufferPool::new())),
-            bind_group_pool: Arc::new(RwLock::new(BindGroupPool::new())),
-            bind_group_layout_pool: Arc::new(RwLock::new(BindGroupLayoutPool::new())),
+            buffer_pool: Arc::new(BufferPool::new()),
+            bind_group_pool: Arc::new(BindGroupPool::new()),
+            bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
+            device,
         })
     }
 
@@ -131,18 +139,6 @@ impl WgpuDevice {
         log::info!("Using adapter {:?}", adapter.get_info());
         Ok(adapter)
     }
-
-    pub(crate) fn buffer_pool(&self) -> &Arc<RwLock<BufferPool>> {
-        &self.buffer_pool
-    }
-
-    pub(crate) fn bind_group_pool(&self) -> &Arc<RwLock<BindGroupPool>> {
-        &self.bind_group_pool
-    }
-
-    pub(crate) fn bind_group_layout_pool(&self) -> &Arc<RwLock<BindGroupLayoutPool>> {
-        &self.bind_group_layout_pool
-    }
 }
 
 impl WgpuDevice {
@@ -152,12 +148,33 @@ impl WgpuDevice {
         queue: &wgpu::Queue,
         contents: &[u8],
     ) -> Result<GPUBuffer, DeviceError> {
-        let mut pool = self
-            .buffer_pool
-            .try_write()
-            .map_err(|_| PoolError::ResourceNotAvailable)?;
-        let buf = pool.allocate(desc, self);
+        let buf = self.buffer_pool.allocate(desc, self);
         queue.write_buffer(&buf.inner, 0, contents);
         Ok(buf)
+    }
+
+    pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<GPUBuffer, PoolError> {
+        Ok(self.buffer_pool.get(handle)?)
+    }
+
+    pub fn allocate_bind_group(
+        &self,
+        desc: &BindGroupDescriptor,
+    ) -> Result<GpuBindGroup, PoolError> {
+        Ok(self.bind_group_pool.allocate(desc, self))
+    }
+
+    pub fn allocate_bind_group_layout(
+        &self,
+        desc: &BindGroupLayoutDescriptor,
+    ) -> Result<BindGroupLayoutHandle, PoolError> {
+        Ok(self.bind_group_layout_pool.allocate(desc, self))
+    }
+
+    pub fn get_bind_group_layout(
+        &self,
+        handle: BindGroupLayoutHandle,
+    ) -> Result<&wgpu::BindGroupLayout, PoolError> {
+        Ok(self.bind_group_layout_pool.get(handle)?)
     }
 }

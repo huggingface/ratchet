@@ -1,5 +1,5 @@
 use super::*;
-use crate::{gpu::WgpuDevice, RVec};
+use crate::{gpu::WgpuDevice, Device, RVec};
 use std::sync::Arc;
 
 slotmap::new_key_type! { pub struct GpuBindGroupHandle; }
@@ -95,14 +95,13 @@ impl BindGroupPool {
     /// Returns a reference-counted, currently unused bind-group.
     /// Once ownership to the handle is given up, the bind group may be reclaimed in future passs.
     /// The handle also keeps alive any dependent resources.
-    pub fn alloc(&self, desc: &BindGroupDescriptor, device: &WgpuDevice) -> GpuBindGroup {
+    pub fn allocate(&self, desc: &BindGroupDescriptor, device: &WgpuDevice) -> GpuBindGroup {
         // Retrieve strong handles to buffers and textures.
         // This way, an owner of a bind group handle keeps buffers & textures alive!.
         let owned_buffers: RVec<GPUBuffer> = {
-            let buf_pool = device.buffer_pool().try_write().unwrap();
             desc.entries
                 .iter()
-                .map(|e| buf_pool.get(e.handle).unwrap())
+                .map(|e| device.get_buffer(e.handle).unwrap())
                 .collect()
         };
 
@@ -127,11 +126,10 @@ impl BindGroupPool {
                 })
                 .collect::<Vec<_>>();
 
-            let bind_group_layout_pool = device.bind_group_layout_pool().try_read().unwrap();
             let bind_group_descriptor = wgpu::BindGroupDescriptor {
                 label: None,
                 entries: &entries,
-                layout: bind_group_layout_pool.get_resource(desc.layout).unwrap(),
+                layout: device.get_bind_group_layout(desc.layout).unwrap(),
             };
 
             device.create_bind_group(&bind_group_descriptor)

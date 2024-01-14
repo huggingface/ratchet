@@ -12,13 +12,21 @@ pub enum DeviceError {
     DeviceMismatch(String, String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Device {
+    #[default]
     CPU,
     GPU(WgpuDevice),
 }
 
 impl Device {
+    pub fn label(&self) -> String {
+        match self {
+            Device::CPU => "CPU".to_string(),
+            Device::GPU(gpu) => format!("GPU:{}", gpu.ordinal()),
+        }
+    }
+
     pub fn get_gpu(&self) -> Result<WgpuDevice, DeviceError> {
         match self {
             Device::CPU => Err(DeviceError::DeviceMismatch(
