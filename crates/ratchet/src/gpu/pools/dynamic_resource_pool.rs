@@ -42,7 +42,7 @@ where
 struct DynamicResourcePoolProtectedState<Handle: Key, Desc: Debug, Res> {
     /// All resources, including both resources that are in use and those that are marked as dead via [`Self::last_pass_deallocated`]
     ///
-    /// We store any ref counted handle we give out in [`DynamicResourcePool::alloc`] here in order to keep it alive.
+    /// We store any ref counted handle we give out in [`DynamicResourcePool::allocate`] here in order to keep it alive.
     /// Every [`DynamicResourcePool::begin_pass`] we check if the pool is now the only owner of the handle
     /// and if so mark it as deallocated.
     all_resources: SlotMap<Handle, Arc<DynamicResource<Handle, Desc, Res>>>,
@@ -141,7 +141,7 @@ where
             })
     }
 
-    pub fn begin_pass<D>(&mut self, pass_index: u64, mut resource_destructor: D)
+    pub fn begin_pass<D>(&mut self, pass_index: u64, mut destructor: D)
     where
         D: ResourceDestructor<Res>,
     {
@@ -164,7 +164,7 @@ where
                 };
                 update_stats(&desc);
                 log::debug!("Dropping resource {:?}", desc);
-                resource_destructor(&removed_resource);
+                destructor(&removed_resource);
             }
         }
 
@@ -186,7 +186,7 @@ where
                 } else {
                     update_stats(&resource.descriptor);
                     log::debug!("Dropping resource {:?}", resource.descriptor);
-                    resource_destructor(&resource.inner);
+                    destructor(&resource.inner);
                     false
                 }
             } else {

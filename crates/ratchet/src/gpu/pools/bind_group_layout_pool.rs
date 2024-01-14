@@ -1,6 +1,9 @@
 use crate::{gpu::WgpuDevice, rvec, Device, RVec};
 
-use super::static_resource_pool::{PoolError, StaticResourcePool};
+use super::{
+    static_resource_pool::{PoolError, StaticResourcePool},
+    StaticResourcePoolReadLockAccessor,
+};
 
 pub trait BindGroupLayoutEntryExt {
     fn compute_storage_buffer(binding: u32, read_only: bool) -> Self;
@@ -135,8 +138,13 @@ impl BindGroupLayoutPool {
         })
     }
 
-    pub fn get(&self, handle: BindGroupLayoutHandle) -> Result<&wgpu::BindGroupLayout, PoolError> {
-        self.inner.get_resource(handle)
+    /// Locks the resource pool for resolving handles.
+    ///
+    /// While it is locked, no new resources can be added.
+    pub fn resources(
+        &self,
+    ) -> StaticResourcePoolReadLockAccessor<'_, BindGroupLayoutHandle, wgpu::BindGroupLayout> {
+        self.inner.resources()
     }
 
     pub fn num_resources(&self) -> usize {
