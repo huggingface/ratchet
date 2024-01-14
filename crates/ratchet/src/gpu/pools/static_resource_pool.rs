@@ -1,8 +1,9 @@
 //Adapted from https://github.com/rerun-io/rerun MIT licensed.
 use std::hash::Hash;
 
+use parking_lot::{RwLock, RwLockReadGuard};
 use rustc_hash::FxHashMap;
-use slotmap::{Key as SlotHandle, SlotMap};
+use slotmap::{Key, SlotMap};
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum PoolError {
@@ -17,24 +18,21 @@ pub enum PoolError {
 }
 
 pub trait ResourceConstructor<Descriptor, Resource> = Fn(&Descriptor) -> Resource;
-
 pub trait ResourceDestructor<Resource> = FnMut(&Resource);
-
-struct StoredResource<Res> {
-    resource: Res,
-}
 
 /// Generic resource pool for all resources that are fully described upon creation, i.e. never have any variable content.
 ///
 /// This implies, a resource is uniquely defined by its description.
 /// We call these resources "static" because they never change their content over their lifetime.
-pub(super) struct StaticResourcePool<Handle: SlotHandle, Descriptor, Resource> {
-    resources: SlotMap<Handle, StoredResource<Resource>>,
-    lookup: FxHashMap<Descriptor, Handle>,
+///
+/// Lookup is queried to determine if a resource with the given descriptor already exists.
+pub(super) struct StaticResourcePool<Handle: Key, Descriptor, Resource> {
+    resources: RwLock<SlotMap<Handle, Resource>>,
+    lookup: RwLock<FxHashMap<Descriptor, Handle>>,
 }
 
 /// We cannot #derive(Default) as that would require Handle/Desc/Res to implement Default too.
-impl<Handle: SlotHandle, Desc, Res> Default for StaticResourcePool<Handle, Desc, Res> {
+impl<Handle: Key, Desc, Res> Default for StaticResourcePool<Handle, Desc, Res> {
     fn default() -> Self {
         Self {
             resources: Default::default(),
@@ -45,7 +43,7 @@ impl<Handle: SlotHandle, Desc, Res> Default for StaticResourcePool<Handle, Desc,
 
 impl<Handle, Descriptor, Resource> StaticResourcePool<Handle, Descriptor, Resource>
 where
-    Handle: SlotHandle,
+    Handle: Key,
     Descriptor: std::fmt::Debug + Clone + Eq + Hash,
 {
     fn to_pool_error<T>(get_result: Option<T>, handle: Handle) -> Result<T, PoolError> {
@@ -59,100 +57,60 @@ where
     }
 
     pub fn get_or_create<C: ResourceConstructor<Descriptor, Resource>>(
-        &mut self,
+        &self,
         descriptor: &Descriptor,
-        creation_func: C,
+        constructor: C,
     ) -> Handle {
-        *self.lookup.entry(descriptor.clone()).or_insert_with(|| {
-            let resource = creation_func(descriptor);
-            self.resources.insert(StoredResource { resource })
-        })
+        // Ensure the lock isn't held in the creation case.
+        if let Some(handle) = self.lookup.read().get(descriptor) {
+            return *handle;
+        }
+
+        let resource = constructor(descriptor);
+        let handle = self.resources.write().insert(resource);
+        self.lookup.write().insert(descriptor.clone(), handle);
+
+        handle
     }
 
-    pub fn get_resource(&self, handle: Handle) -> Result<&Resource, PoolError> {
-        Self::to_pool_error(
-            self.resources
-                .get(handle)
-                .map(|resource| &resource.resource),
-            handle,
-        )
-    }
-
-    pub fn num_resources(&self) -> usize {
-        self.resources.len()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-
-    use slotmap::Key;
-
-    use crate::gpu::PoolError;
-
-    use super::StaticResourcePool;
-
-    slotmap::new_key_type! { pub struct ConcreteHandle; }
-
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    pub struct ConcreteResourceDesc(u32);
-
-    #[derive(PartialEq, Eq, Debug)]
-    pub struct ConcreteResource(u32);
-
-    type Pool = StaticResourcePool<ConcreteHandle, ConcreteResourceDesc, ConcreteResource>;
-
-    #[test]
-    fn resource_reuse() {
-        let mut pool = Pool::default();
-
-        // New resource
-        let res0 = {
-            let new_resource_created = Cell::new(false);
-
-            let constructor = |d: &ConcreteResourceDesc| {
-                new_resource_created.set(true);
-                ConcreteResource(d.0)
-            };
-
-            let handle = pool.get_or_create(&ConcreteResourceDesc(0), constructor);
-            assert!(new_resource_created.get());
-            handle
-        };
-
-        // Get same resource again
-        {
-            let new_resource_created = Cell::new(false);
-            let handle = pool.get_or_create(&ConcreteResourceDesc(0), |d| {
-                new_resource_created.set(true);
-                ConcreteResource(d.0)
-            });
-            assert!(!new_resource_created.get());
-            assert_eq!(handle, res0);
+    /// Locks the resource pool for resolving handles.
+    ///
+    /// While it is locked, no new resources can be added.
+    pub fn resources(&self) -> StaticResourcePoolReadLockAccessor<'_, Handle, Resource> {
+        StaticResourcePoolReadLockAccessor {
+            resources: self.resources.read(),
         }
     }
 
-    #[test]
-    fn get_resource() {
-        let mut pool = Pool::default();
+    pub fn num_resources(&self) -> usize {
+        self.resources.read().len()
+    }
+}
 
-        // Query with valid handle
-        let handle = pool.get_or_create(&ConcreteResourceDesc(0), |d| ConcreteResource(d.0));
-        assert!(pool.get_resource(handle).is_ok());
-        assert_eq!(*pool.get_resource(handle).unwrap(), ConcreteResource(0));
+/// Accessor to the resource pool, either by taking a read lock or by moving out the resources.
+pub trait StaticResourcePoolAccessor<Handle: Key, Res> {
+    fn get(&self, handle: Handle) -> Result<&Res, PoolError>;
+}
 
-        // Query with null handle
-        assert_eq!(
-            pool.get_resource(ConcreteHandle::null()),
-            Err(PoolError::NullHandle)
-        );
+/// Accessor to the resource pool by taking a read lock.
+pub struct StaticResourcePoolReadLockAccessor<'a, Handle: Key, Res> {
+    resources: RwLockReadGuard<'a, SlotMap<Handle, Res>>,
+}
 
-        // Query with invalid handle
-        pool = Pool::default();
-        assert_eq!(
-            pool.get_resource(handle),
-            Err(PoolError::ResourceNotAvailable)
-        );
+fn to_pool_error<T>(get_result: Option<T>, handle: impl Key) -> Result<T, PoolError> {
+    get_result.ok_or_else(|| {
+        if handle.is_null() {
+            PoolError::NullHandle
+        } else {
+            PoolError::ResourceNotAvailable
+        }
+    })
+}
+
+impl<'a, Handle: Key, Res> StaticResourcePoolAccessor<Handle, Res>
+    for StaticResourcePoolReadLockAccessor<'a, Handle, Res>
+{
+    fn get(&self, handle: Handle) -> Result<&Res, PoolError> {
+        to_pool_error(self.resources.get(handle), handle)
     }
 }

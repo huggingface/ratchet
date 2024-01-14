@@ -171,10 +171,9 @@ impl WgpuDevice {
         Ok(self.bind_group_layout_pool.allocate(desc, self))
     }
 
-    pub fn get_bind_group_layout(
+    pub fn get_bind_group_layout_resources(
         &self,
-        handle: BindGroupLayoutHandle,
-    ) -> Result<&wgpu::BindGroupLayout, PoolError> {
-        Ok(self.bind_group_layout_pool.get(handle)?)
+    ) -> StaticResourcePoolReadLockAccessor<'_, BindGroupLayoutHandle, wgpu::BindGroupLayout> {
+        self.bind_group_layout_pool.resources()
     }
 }
