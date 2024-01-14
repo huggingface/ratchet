@@ -1,9 +1,11 @@
 #![feature(trait_alias)]
+#![allow(non_snake_case)]
 mod compiled_op;
 mod device;
 mod dtype;
 mod gpu;
 mod op;
+mod ops;
 mod shape;
 mod storage;
 mod strides;
@@ -15,6 +17,7 @@ pub use compiled_op::*;
 pub use device::*;
 pub use dtype::*;
 pub use op::*;
+pub use ops::*;
 pub use shape::*;
 pub use storage::*;
 pub use strides::*;
@@ -42,6 +45,25 @@ macro_rules! rvec {
             vec
         } else {
             $crate::RVec::from_vec(vec![$($x,)*])
+        }
+    });
+}
+
+#[macro_export]
+macro_rules! drvec {
+    (@one $x:expr) => (1usize);
+    ($elem:expr; $n:expr) => ({
+        $crate::DRVec::from_elem($elem, $n)
+    });
+    ($($x:expr),*$(,)*) => ({
+        let count = 0usize $(+ rvec![@one $x])*;
+        #[allow(unused_mut)]
+        let mut vec = $crate::DRVec::new();
+        if count <= vec.inline_size() {
+            $(vec.push($x);)*
+            vec
+        } else {
+            $crate::DRVec::from_vec(vec![$($x,)*])
         }
     });
 }

@@ -122,8 +122,8 @@ impl BindGroupLayoutPool {
 }
 
 impl BindGroupLayoutPool {
-    pub fn get_or_create(
-        &mut self,
+    pub fn allocate(
+        &self,
         descriptor: &BindGroupLayoutDescriptor,
         device: &WgpuDevice,
     ) -> BindGroupLayoutHandle {
@@ -135,10 +135,7 @@ impl BindGroupLayoutPool {
         })
     }
 
-    pub fn get_resource(
-        &self,
-        handle: BindGroupLayoutHandle,
-    ) -> Result<&wgpu::BindGroupLayout, PoolError> {
+    pub fn get(&self, handle: BindGroupLayoutHandle) -> Result<&wgpu::BindGroupLayout, PoolError> {
         self.inner.get_resource(handle)
     }
 

@@ -47,7 +47,7 @@ impl BufferPool {
         }
     }
 
-    pub fn allocate(&mut self, desc: &BufferDescriptor, device: &WgpuDevice) -> GPUBuffer {
+    pub fn allocate(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> GPUBuffer {
         self.inner.allocate(desc, |desc| {
             let (size, usage, mapped_at_creation) = desc.fields();
             device.create_buffer(&wgpu::BufferDescriptor {
