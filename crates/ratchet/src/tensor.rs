@@ -1,5 +1,8 @@
-use crate::{ops::*, Device, DeviceError, Operation};
+use crate::{
+    ops::*, Device, DeviceError, Operation, RawStorage, Shape, Storage, Strides, TensorDType,
+};
 use crate::{BinaryOp, LazyOp};
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Unique identifier for tensors.
@@ -15,7 +18,10 @@ impl TensorId {
     }
 }
 
-// For now, a Tensor is simply used to construct the CFG.
+/// A multi-dimensional array of data.
+///
+/// A tensor is a lazy representation of an operation. It, and the nodes required to compute it's
+/// value, will not be computed until `resolve` is called.
 #[derive(Clone, Debug)]
 pub struct Tensor {
     inner: Arc<Inner>,
@@ -39,7 +45,7 @@ impl std::ops::Deref for Tensor {
 pub struct Inner {
     id: TensorId,
     op: LazyOp,
-    device: Device,
+    storage: Arc<RwLock<Storage>>,
 }
 
 impl AsRef<Inner> for Inner {
@@ -48,32 +54,40 @@ impl AsRef<Inner> for Inner {
     }
 }
 
-impl std::default::Default for Inner {
-    fn default() -> Self {
-        Inner {
+impl Inner {
+    fn new(op: LazyOp, storage: Storage) -> Self {
+        Self {
             id: TensorId::new(),
-            op: LazyOp::Empty,
-            device: Device::default(),
+            op,
+            storage: Arc::new(RwLock::new(storage)),
         }
     }
 }
 
 impl Tensor {
     pub fn add(&self, other: &Tensor) -> Tensor {
-        self.check_device(other).unwrap();
+        //Enforce valid shape, dtype, device
+        //Determine output shape
+        //Binary::shape_inference(self.shape(), other.shape());
+        let inner = Inner::new(LazyOp::Binary(Binary::new(
+            self.clone(),
+            other.clone(),
+            BinaryOp::Add,
+        )));
         Tensor {
-            inner: Arc::new(Inner {
-                op: LazyOp::Binary(Binary::new(self.clone(), other.clone(), BinaryOp::Add)),
-                device: self.device.clone(),
-                ..Default::default()
-            }),
+            inner: Arc::new(inner),
         }
     }
 
-    pub fn empty() -> Tensor {
-        Tensor {
-            inner: Arc::new(Inner::default()),
-        }
+    /// Creates a data from a vector.
+    ///
+    /// If a non-CPU device is specified, the data will be copied to the device.
+    pub fn from_vec<T: TensorDType>(data: Vec<T>, shape: Shape, device: Device) -> Tensor {
+        let mut inner = Inner::new(LazyOp::Const, device.clone());
+        let dt = T::dt();
+        let strides = Strides::from(&shape);
+
+        todo!()
     }
 
     fn execution_order(&self) -> Vec<Tensor> {
@@ -107,17 +121,6 @@ impl Tensor {
         //Execute kernels
 
         //Return result
-    }
-
-    pub fn check_device(&self, o: &Self) -> Result<(), DeviceError> {
-        if self.device == o.device {
-            Ok(())
-        } else {
-            Err(DeviceError::DeviceMismatch(
-                self.device.label(),
-                o.device.label(),
-            ))
-        }
     }
 }
 

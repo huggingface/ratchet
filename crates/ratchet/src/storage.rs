@@ -1,29 +1,47 @@
 use crate::{
     gpu::GPUBuffer,
     gpu::{BufferDescriptor, WgpuDevice},
-    DataType, DeviceError,
+    Device, DeviceError, Shape, Strides, TensorDType,
 };
+use derive_new::new;
 use std::{alloc::Layout, fmt::Debug, ops::RangeBounds};
 use wgpu::{Buffer, BufferUsages};
 
 use crate::DType;
 
-pub enum Storage {
-    CPU(CPUStorage),
-    GPU(GPUStorage),
+/// Storage is a wrapper around a raw buffer.
+///
+/// Storage provides the interpretation of the raw buffer.
+/// DType, Shape & Strides can all be thought of as a lens through which the raw buffer is viewed.
+#[derive(new, Debug)]
+pub struct Storage {
+    device: Device,
+    dtype: DType,
+    shape: Shape,
+    strides: Strides,
+    raw: Option<RawStorage>,
+}
+
+impl Storage {}
+
+#[derive(Debug)]
+pub enum RawStorage {
+    CPU(RawCPUBuffer),
+    GPU(RawGPUBuffer),
 }
 
 pub trait Storable: Debug + Clone + 'static {
-    fn to_device(self, device: &WgpuDevice) -> Result<GPUStorage, DeviceError>;
-    fn to_cpu(self) -> CPUStorage;
+    // To be expanded to other devices
+    fn to_device(self, device: &WgpuDevice) -> Result<RawGPUBuffer, DeviceError>;
+    fn to_cpu(self) -> RawCPUBuffer;
     fn n_bytes(&self) -> usize;
     fn dump(&self, dt: DType, full: bool) -> String;
 }
 
 #[derive(derive_new::new, Debug, PartialEq, Eq)]
-pub struct CPUStorage(*mut u8, Layout);
+pub struct RawCPUBuffer(*mut u8, Layout);
 
-impl CPUStorage {
+impl RawCPUBuffer {
     pub fn inner(&self) -> (*mut u8, Layout) {
         (self.0, self.1)
     }
@@ -37,7 +55,7 @@ impl CPUStorage {
     }
 }
 
-impl Clone for CPUStorage {
+impl Clone for RawCPUBuffer {
     fn clone(&self) -> Self {
         let (ptr, layout) = self.inner();
         let alloc = unsafe { std::alloc::alloc(layout) };
@@ -47,7 +65,7 @@ impl Clone for CPUStorage {
     }
 }
 
-impl Drop for CPUStorage {
+impl Drop for RawCPUBuffer {
     fn drop(&mut self) {
         if !self.0.is_null() && self.1.size() > 0 {
             unsafe { std::alloc::dealloc(self.0, self.1) }
@@ -55,8 +73,8 @@ impl Drop for CPUStorage {
     }
 }
 
-impl Storable for CPUStorage {
-    fn to_device(self, device: &WgpuDevice) -> Result<GPUStorage, DeviceError> {
+impl Storable for RawCPUBuffer {
+    fn to_device(self, device: &WgpuDevice) -> Result<RawGPUBuffer, DeviceError> {
         let mut min_bytes = [0; 16];
         let bytes = if self.as_bytes().len() < 16 {
             min_bytes[..self.as_bytes().len()].copy_from_slice(self.as_bytes());
@@ -76,10 +94,10 @@ impl Storable for CPUStorage {
         )?;
         device.queue().submit(None);
         device.poll(wgpu::Maintain::Wait);
-        Ok(GPUStorage(buffer))
+        Ok(RawGPUBuffer(buffer))
     }
 
-    fn to_cpu(self) -> CPUStorage {
+    fn to_cpu(self) -> RawCPUBuffer {
         self
     }
 
@@ -90,7 +108,7 @@ impl Storable for CPUStorage {
     fn dump(&self, dtype: DType, full: bool) -> String {
         let bytes = unsafe { std::slice::from_raw_parts(self.0, self.1.size()) };
 
-        fn dump_inner<T: DataType>(data: &[T], full: bool) -> String {
+        fn dump_inner<T: TensorDType>(data: &[T], full: bool) -> String {
             let length = if data.len() < 64 { data.len() } else { 64 };
             if full {
                 format!("{:?}", data)
@@ -108,15 +126,15 @@ impl Storable for CPUStorage {
 }
 
 #[derive(Clone)]
-pub struct GPUStorage(GPUBuffer);
+pub struct RawGPUBuffer(GPUBuffer);
 
-impl From<GPUBuffer> for GPUStorage {
+impl From<GPUBuffer> for RawGPUBuffer {
     fn from(b: GPUBuffer) -> Self {
         Self(b)
     }
 }
 
-impl std::fmt::Debug for GPUStorage {
+impl std::fmt::Debug for RawGPUBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GPUStorage")
             .field("buffer", &self.0.global_id())
@@ -126,13 +144,13 @@ impl std::fmt::Debug for GPUStorage {
     }
 }
 
-impl PartialEq for GPUStorage {
+impl PartialEq for RawGPUBuffer {
     fn eq(&self, other: &Self) -> bool {
         self.0.global_id() == other.0.global_id()
     }
 }
 
-impl GPUStorage {
+impl RawGPUBuffer {
     pub fn new(buffer: GPUBuffer) -> Self {
         Self(buffer)
     }
@@ -170,12 +188,12 @@ impl GPUStorage {
     }
 }
 
-impl Storable for GPUStorage {
-    fn to_device(self, _: &WgpuDevice) -> Result<GPUStorage, DeviceError> {
+impl Storable for RawGPUBuffer {
+    fn to_device(self, _: &WgpuDevice) -> Result<RawGPUBuffer, DeviceError> {
         Ok(self)
     }
 
-    fn to_cpu(self) -> CPUStorage {
+    fn to_cpu(self) -> RawCPUBuffer {
         todo!()
     }
 
