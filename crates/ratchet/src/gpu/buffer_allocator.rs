@@ -58,7 +58,6 @@ impl BufferAllocator {
             uniform.len() + UNIFORM_ALIGN - uniform.len() % UNIFORM_ALIGN,
             0u8,
         );
-
         let desc = BufferDescriptor::new(
             uniform.len() as _,
             BufferUsages::UNIFORM | BufferUsages::COPY_DST,
@@ -68,7 +67,7 @@ impl BufferAllocator {
         let resource = self.pool.borrow_mut().get_or_create(&desc, device);
         device
             .queue()
-            .write_buffer(&resource.inner, 0, bytemuck::cast_slice(&uniform));
+            .write_buffer(&resource.inner, 0, uniform.as_slice());
         resource
     }
 

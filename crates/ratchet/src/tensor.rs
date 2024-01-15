@@ -330,8 +330,8 @@ mod tests {
     fn test_cfg() {
         let device = Device::request_device(DeviceRequest::GPU);
         println!("{:#?}", device);
-        let a = Tensor::from_vec(vec![1, 2, 3, 4], shape![2, 2], device.clone());
-        let b = Tensor::from_vec(vec![55], shape![1, 1], device);
+        let a = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
+        let b = Tensor::from_vec(vec![55.], shape![1], device);
         let c = a.add(&b);
         c.resolve();
         println!("\nA: {:#?}", a);
