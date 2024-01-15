@@ -20,7 +20,7 @@ pub trait DynamicResourcesDesc {
     fn allow_reuse(&self) -> bool;
 }
 
-#[derive(derive_new::new)]
+#[derive(derive_new::new, Debug)]
 pub struct DynamicResource<Handle, Desc: Debug, Res> {
     pub inner: Res,
     pub descriptor: Desc,

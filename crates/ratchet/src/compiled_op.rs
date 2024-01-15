@@ -30,10 +30,12 @@ impl CompiledOp {
         let mut bind_group_entries: DRVec<BindGroupEntry> = drvec![];
 
         for tensor in srcs.iter().chain(dsts.iter()) {
+            let buf = tensor.storage().try_read().unwrap();
+            let buffer_handle = buf.try_buffer_handle().unwrap();
             bind_group_entries.push(BindGroupEntry {
+                handle: buffer_handle.handle,
                 offset: 0,
-                size: todo!(),
-                handle: todo!(),
+                size: Some(buffer_handle.size().try_into().unwrap()),
             });
             binding_counter += 1;
         }

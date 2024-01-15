@@ -2,12 +2,13 @@ use std::fmt::Debug;
 
 use encase::internal::WriteInto;
 use encase::ShaderType;
+use wgpu::DynamicOffset;
 
 use crate::gpu::{
     BindGroupLayoutHandle, ComputePipelineHandle, CpuUniform, WgpuDevice, WorkgroupCount,
     UNIFORM_ALIGN,
 };
-use crate::{Binary, CompiledOp, RVec, Tensor};
+use crate::{Binary, RVec, Tensor};
 
 #[derive(Debug)]
 pub enum UnaryOp {
@@ -26,13 +27,19 @@ impl LazyOp {
     pub fn compile(
         &self,
         device: &WgpuDevice,
-        uniform: &CpuUniform,
-    ) -> (ComputePipelineHandle, WorkgroupCount) {
+        uniform: &mut CpuUniform,
+    ) -> Option<(ComputePipelineHandle, WorkgroupCount, DynamicOffset)> {
         match self {
-            LazyOp::Empty => todo!(),
-            LazyOp::Binary(b) => b.compile(device, uniform).unwrap(),
-            LazyOp::Unary(_, _) => todo!(),
-            LazyOp::Const => todo!(),
+            LazyOp::Binary(b) => Some(b.compile(device, uniform).unwrap()),
+            LazyOp::Const => None,
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn srcs(&self) -> RVec<&Tensor> {
+        match self {
+            LazyOp::Binary(b) => b.srcs(),
+            _ => unimplemented!(),
         }
     }
 
@@ -42,6 +49,13 @@ impl LazyOp {
             LazyOp::Binary(_) => true,
             LazyOp::Unary(_, _) => true,
             LazyOp::Const => false,
+        }
+    }
+
+    pub fn storage_layout(&self, device: &WgpuDevice) -> BindGroupLayoutHandle {
+        match self {
+            LazyOp::Binary(b) => b.storage_layout(device),
+            _ => unimplemented!(),
         }
     }
 }
@@ -77,8 +91,8 @@ pub trait Operation: Debug + 'static {
     fn compile(
         &self,
         device: &WgpuDevice,
-        uniform: &CpuUniform,
-    ) -> Result<(ComputePipelineHandle, WorkgroupCount), OperationError>;
+        uniform: &mut CpuUniform,
+    ) -> Result<(ComputePipelineHandle, WorkgroupCount, DynamicOffset), OperationError>;
 
     fn storage_layout(&self, device: &WgpuDevice) -> BindGroupLayoutHandle;
 }
