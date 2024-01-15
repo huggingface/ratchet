@@ -242,7 +242,6 @@ impl Tensor {
                 ))
             }
         }
-        println!("Compiled ops: {:#?}", compiled_ops);
         //Execute kernels
 
         //Return result
