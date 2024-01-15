@@ -2,8 +2,12 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, BindGroupLayoutHandle, CpuUniform, GpuWorkload, WgpuDevice},
-    rvec, CompiledOp, Device, OpMetadata, Operation, OperationError, RVec, Tensor,
+    gpu::{
+        BindGroupLayoutDescriptor, BindGroupLayoutHandle, ComputePipelineDescriptor,
+        ComputePipelineHandle, CpuUniform, KernelElement, PipelineLayoutDescriptor, WgpuDevice,
+        WorkgroupCount,
+    },
+    rvec, wgc, CompiledOp, OpMetadata, Operation, OperationError, RVec, Tensor,
 };
 
 #[derive(Debug)]
@@ -52,17 +56,27 @@ impl Operation for Binary {
             .unwrap()
     }
 
-    fn compile(&self, device: &Device, uniform: &CpuUniform) -> Result<CompiledOp, OperationError> {
-        let (lhs, rhs) = (self.lhs, self.rhs);
-        let workload = GpuWorkload::div_ceil(lhs.shape()[0], 64);
-        let pipeline = device.
-        //TODO: fetch pipeline
+    fn compile(
+        &self,
+        device: &WgpuDevice,
+        uniform: &CpuUniform,
+    ) -> Result<(ComputePipelineHandle, WorkgroupCount), OperationError> {
+        let (lhs, rhs) = (&self.lhs, &self.rhs);
+        let wgcx = WorkgroupCount::div_ceil(lhs.shape()[0], 64);
 
-        //CompiledOp {
-        //    workload: GpuWorkload::new(device, self),
-        //    pipeline: Arc::new(device.create_compute_pipeline(&pipeline_descriptor)),
-        //    storage_groups: Self::create_storage_bind_groups(
-        //    offset: DynamicOffset
-        //}
+        let storage_layout = self.storage_layout(device);
+        let pipeline_layout = device
+            .get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
+                entries: rvec![storage_layout],
+            })
+            .unwrap();
+        let pipeline = device
+            .get_or_create_compute_pipeline(&ComputePipelineDescriptor {
+                pipeline_layout,
+                kernel_key: "add",
+                elem: KernelElement::Scalar,
+            })
+            .unwrap();
+        Ok((pipeline, wgc![wgcx as _, 1, 1]))
     }
 }

@@ -1,6 +1,6 @@
+use crate::gpu::CpuUniform;
 use crate::{
-    ops::*, DType, Device, DeviceError, Enforcer, Operation, RawStorage, Shape, Storage, Strides,
-    TensorDType,
+    ops::*, rvec, CompiledOp, DType, Device, Operation, Shape, Storage, Strides, TensorDType,
 };
 use crate::{BinaryOp, LazyOp};
 use parking_lot::RwLock;
@@ -23,6 +23,8 @@ impl TensorId {
 ///
 /// A tensor is a lazy representation of an operation. It, and the nodes required to compute it's
 /// value, will not be computed until `resolve` is called.
+///
+/// After resolving, the Tensor is a logical view of a Storage object.
 #[derive(Clone)]
 pub struct Tensor {
     inner: Arc<Inner>,
@@ -33,9 +35,6 @@ impl std::fmt::Debug for Tensor {
         f.debug_struct("Tensor")
             .field("id", &self.inner.id)
             .field("op", &self.inner.op)
-            .field("shape", &self.inner.shape)
-            .field("strides", &self.inner.strides)
-            .field("dt", &self.inner.dt)
             .field("storage", &self.inner.storage)
             .finish()
     }
@@ -55,13 +54,19 @@ impl std::ops::Deref for Tensor {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Metadata {
+    shape: Shape,
+    dt: DType,
+    strides: Strides,
+}
+
 #[derive(Debug)]
 pub struct Inner {
     id: TensorId,
     op: LazyOp,
-    shape: Shape,
-    strides: Strides,
-    dt: DType,
+    meta: Metadata,
+    device: Device,
     storage: Arc<RwLock<Storage>>,
 }
 
@@ -72,13 +77,12 @@ impl AsRef<Inner> for Inner {
 }
 
 impl Inner {
-    fn new(op: LazyOp, dt: DType, shape: Shape, strides: Strides, storage: Storage) -> Self {
+    fn new(op: LazyOp, meta: Metadata, storage: Storage, device: Device) -> Self {
         Self {
             id: TensorId::new(),
-            dt,
-            shape,
-            strides,
+            meta,
             op,
+            device,
             storage: Arc::new(RwLock::new(storage)),
         }
     }
@@ -86,15 +90,19 @@ impl Inner {
 
 impl Tensor {
     pub fn rank(&self) -> usize {
-        self.shape.len()
+        self.meta.shape.len()
     }
 
     pub fn dt(&self) -> DType {
-        self.dt
+        self.meta.dt
     }
 
     pub fn shape(&self) -> &Shape {
-        &self.shape
+        &self.meta.shape
+    }
+
+    pub fn device(&self) -> &Device {
+        &self.device
     }
 
     pub fn add(&self, other: &Tensor) -> Tensor {
@@ -104,15 +112,8 @@ impl Tensor {
         //Binary::shape_inference(self.shape(), other.shape());
         let op = LazyOp::Binary(Binary::new(self.clone(), other.clone(), BinaryOp::Add));
         //TODO: real shapes & strides
-        let device = self.storage.try_read().unwrap().device().clone();
-        let storage = Storage::new(device, None);
-        let inner = Inner::new(
-            op,
-            self.dt,
-            self.shape.clone(),
-            self.strides.clone(),
-            storage,
-        );
+        let storage = Storage::new(None);
+        let inner = Inner::new(op, self.meta.clone(), storage, self.device.clone());
         Tensor {
             inner: Arc::new(inner),
         }
@@ -125,7 +126,12 @@ impl Tensor {
         let strides = Strides::from(&shape);
         //TODO: allow creating straight on the GPU
         let storage = Storage::from_slice(&data, &shape);
-        let inner = Inner::new(LazyOp::Const, T::dt(), shape, strides, storage);
+        let meta = Metadata {
+            shape,
+            dt: T::dt(),
+            strides,
+        };
+        let inner = Inner::new(LazyOp::Const, meta, storage, device);
         Tensor {
             inner: Arc::new(inner),
         }
@@ -156,8 +162,18 @@ impl Tensor {
     pub fn resolve(&self) {
         println!("Order: {:#?}", self.execution_order());
         let mut compiled_ops = vec![];
+        let uniform = CpuUniform::new();
+        let device = self.device().get_gpu().unwrap();
         for t in self.execution_order() {
-            compiled_ops.push(t.op.compile()); //Compile on Op or tensor?
+            let (pipeline_handle, wgc) = t.op.compile(&device, &uniform);
+            let storage_bind_groups = CompiledOp::create_storage_bind_groups();
+
+            compiled_ops.push(CompiledOp::new(
+                wgc,
+                pipeline_handle,
+                rvec![storage_layout],
+                0,
+            ))
         }
         //Execute kernels
 

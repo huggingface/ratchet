@@ -12,12 +12,12 @@ use super::{
 slotmap::new_key_type! { pub struct PipelineLayoutHandle; }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct PipelineLayoutDescriptor {
+pub(crate) struct PipelineLayoutDescriptor {
     pub entries: RVec<BindGroupLayoutHandle>,
 }
 
 #[derive(Default)]
-pub struct PipelineLayoutPool {
+pub(crate) struct PipelineLayoutPool {
     inner: StaticResourcePool<PipelineLayoutHandle, PipelineLayoutDescriptor, wgpu::PipelineLayout>,
 }
 

@@ -6,7 +6,7 @@ Ratchet is a web-first ML framework, designed to run cross-platform & in the bro
 
 > Through specialization, comes efficiency.
 
-Ratchet is designed for 1 thing only: Inference on WebGPU.
+Ratchet is designed for 1 thing only: **Inference on WebGPU**.
 
 This leads us to a few design decisions:
 1. Ratchet is **lazy**, no computation is done until the entire computation graph is built and executed. This aligns closely with CUDAGraphs & Command buffers.
@@ -15,6 +15,13 @@ This leads us to a few design decisions:
     - If no tensors contain a symbolic dimension, the graph is static. This means the graph is compiled into a single command buffer, and is repeatedly called with different input data (brrr).
     
     By exposing symbolic dimensions to the user, they can code their models with the CG in mind.
+3. Memory planning is crucial. Creation and first bind of a buffer is *expensive* in WebGPU. Therefore, Ratchet uses a greedy algorithm to pool buffers for intermediate results of the CFG.
 
-Why do this? Take for example Whisper from OpenAI. This is an encoder-decoder model, where the encoder is completely static (i.e everything is known at compile time), and the decoder is very dynamic (KV caching, seq_len increments every step). By allowing both paradigms, we can maximise performance._full
+Why do this? 
+
+Take for example Whisper from OpenAI. This is an encoder-decoder model, where the encoder is completely static (i.e everything is known at compile time), and the decoder is very dynamic (KV caching, seq_len increments every step). By allowing both paradigms, we can maximise performance.
+
+
+
+
 
