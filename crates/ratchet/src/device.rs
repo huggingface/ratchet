@@ -51,13 +51,14 @@ impl Device {
         }
     }
 
+    //TODO: whack name
     pub fn is_gpu(&self) -> Result<&WgpuDevice, DeviceError> {
         match self {
             Device::CPU => Err(DeviceError::DeviceMismatch(
                 "CPU".to_string(),
                 "GPU".to_string(),
             )),
-            Device::GPU(gpu) => Ok(&gpu),
+            Device::GPU(gpu) => Ok(gpu),
         }
     }
 }

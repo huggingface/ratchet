@@ -20,6 +20,7 @@ pub struct CompiledOp {
 impl CompiledOp {
     const MAX_BINDINGS_PER_GROUP: usize = 4;
 
+    //TODO: dsts -> dst
     pub fn create_storage_bind_groups(
         srcs: &[&Tensor],
         dsts: &[&Tensor],

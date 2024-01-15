@@ -82,8 +82,8 @@ impl Enforcer {
             return Err(InvariantError::ShapeMismatch {
                 left,
                 right,
-                a: a.shape()[left].clone(),
-                b: b.shape()[right].clone(),
+                a: a.shape()[left],
+                b: b.shape()[right],
             });
         }
         Ok(())
@@ -99,8 +99,8 @@ impl Enforcer {
                 return Err(InvariantError::ShapeMismatch {
                     left: index,
                     right: index,
-                    a: shape[index].clone(),
-                    b: tensor.shape()[index].clone(),
+                    a: shape[index],
+                    b: tensor.shape()[index],
                 });
             }
         }

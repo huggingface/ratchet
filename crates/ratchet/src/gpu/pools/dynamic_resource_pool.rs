@@ -43,12 +43,10 @@ struct DynamicResourcePoolProtectedState<Handle: Key, Desc: Debug, Res> {
     /// All resources, including both resources that are in use and those that are marked as dead via [`Self::last_pass_deallocated`]
     ///
     /// We store any ref counted handle we give out in [`DynamicResourcePool::allocate`] here in order to keep it alive.
-    /// Every [`DynamicResourcePool::begin_pass`] we check if the pool is now the only owner of the handle
-    /// and if so mark it as deallocated.
+    /// Every [`DynamicResourcePool::begin_pass`] we check if the pool is now the only owner of the handle, as if so deallocate.
     all_resources: SlotMap<Handle, Arc<DynamicResource<Handle, Desc, Res>>>,
 
-    /// Any resource that has been deallocated last pass.
-    /// We keep them around for a bit longer to allow reclamation
+    /// Any resource that has been deallocated last pass, potentially to be re-used in the next pass.
     last_pass_deallocated: FxHashMap<Desc, RVec<Handle>>,
 }
 
