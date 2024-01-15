@@ -49,7 +49,11 @@ impl ComputePipelinePool {
         device: &WgpuDevice,
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
-            let shader = "";
+            let shader = include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/kernels",
+                "/add_scalar.wgsl"
+            ));
             let label = Some(desc.kernel_key);
             let module = if std::env::var("RATCHET_CHECKED").is_ok() {
                 log::warn!("Using checked shader compilation");

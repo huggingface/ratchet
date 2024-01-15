@@ -1,5 +1,6 @@
 use derive_new::new;
 use encase::ShaderType;
+use wgpu::DynamicOffset;
 
 use crate::{
     gpu::{
@@ -59,15 +60,23 @@ impl Operation for Binary {
     fn compile(
         &self,
         device: &WgpuDevice,
-        uniform: &CpuUniform,
-    ) -> Result<(ComputePipelineHandle, WorkgroupCount), OperationError> {
+        uniform: &mut CpuUniform,
+    ) -> Result<(ComputePipelineHandle, WorkgroupCount, DynamicOffset), OperationError> {
         let (lhs, rhs) = (&self.lhs, &self.rhs);
+        let meta = BinaryMeta {
+            M: lhs.shape()[0] as _,
+            N: lhs.shape()[1] as _,
+        };
+        let offset = uniform.write(&meta).unwrap();
         let wgcx = WorkgroupCount::div_ceil(lhs.shape()[0], 64);
 
         let storage_layout = self.storage_layout(device);
+        let uniform_layout = device
+            .get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())
+            .unwrap();
         let pipeline_layout = device
             .get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
-                entries: rvec![storage_layout],
+                entries: rvec![storage_layout, uniform_layout],
             })
             .unwrap();
         let pipeline = device
@@ -77,6 +86,6 @@ impl Operation for Binary {
                 elem: KernelElement::Scalar,
             })
             .unwrap();
-        Ok((pipeline, wgc![wgcx as _, 1, 1]))
+        Ok((pipeline, wgc![wgcx as _, 1, 1], offset as u32))
     }
 }

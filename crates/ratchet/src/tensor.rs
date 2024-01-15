@@ -1,10 +1,12 @@
-use crate::gpu::CpuUniform;
+use crate::gpu::{BufferDescriptor, CpuUniform};
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, Operation, Shape, Storage, Strides, TensorDType,
+    ops::*, rvec, CompiledOp, DType, Device, Operation, RVec, RawGPUBuffer, RawStorage, Shape,
+    Storage, Strides, TensorDType,
 };
 use crate::{BinaryOp, LazyOp};
 use parking_lot::RwLock;
 use std::sync::Arc;
+use wgpu::BufferUsages;
 
 /// Unique identifier for tensors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -89,6 +91,10 @@ impl Inner {
 }
 
 impl Tensor {
+    pub fn id(&self) -> TensorId {
+        self.inner.id
+    }
+
     pub fn rank(&self) -> usize {
         self.meta.shape.len()
     }
@@ -101,8 +107,32 @@ impl Tensor {
         &self.meta.shape
     }
 
+    pub fn num_bytes(&self) -> usize {
+        self.meta.shape.numel() * self.meta.dt.size_of()
+    }
+
     pub fn device(&self) -> &Device {
         &self.device
+    }
+
+    pub fn storage(&self) -> &Arc<RwLock<Storage>> {
+        &self.storage
+    }
+
+    pub fn resolved(&self) -> bool {
+        self.storage().try_read().unwrap().raw().is_some()
+    }
+
+    pub(crate) fn set_storage(&self, storage: Storage) {
+        *self.storage().write() = storage;
+    }
+
+    pub fn srcs(&self) -> RVec<&Tensor> {
+        match &self.inner.op {
+            LazyOp::Const => rvec![],
+            LazyOp::Binary(b) => b.srcs(),
+            _ => unimplemented!(),
+        }
     }
 
     pub fn add(&self, other: &Tensor) -> Tensor {
@@ -124,8 +154,7 @@ impl Tensor {
     /// If a non-CPU device is specified, the data will be copied to the device.
     pub fn from_vec<T: TensorDType>(data: Vec<T>, shape: Shape, device: Device) -> Tensor {
         let strides = Strides::from(&shape);
-        //TODO: allow creating straight on the GPU
-        let storage = Storage::from_slice(&data, &shape);
+        let storage = Storage::from_slice(&data, &shape, &device);
         let meta = Metadata {
             shape,
             dt: T::dt(),
@@ -159,22 +188,61 @@ impl Tensor {
         visited
     }
 
+    //TODO: massively refactor, just seeing if it can work for now
     pub fn resolve(&self) {
         println!("Order: {:#?}", self.execution_order());
         let mut compiled_ops = vec![];
-        let uniform = CpuUniform::new();
-        let device = self.device().get_gpu().unwrap();
-        for t in self.execution_order() {
-            let (pipeline_handle, wgc) = t.op.compile(&device, &uniform);
-            let storage_bind_groups = CompiledOp::create_storage_bind_groups();
+        let mut uniform = CpuUniform::new();
+        let device = self.device().is_gpu().unwrap();
 
-            compiled_ops.push(CompiledOp::new(
-                wgc,
-                pipeline_handle,
-                rvec![storage_layout],
-                0,
-            ))
+        //Here we need to do memory allocation
+        //Root nodes should be constants or user provided inputs
+        let execution_order = self.execution_order();
+
+        let mut allocations = self
+            .device()
+            .is_gpu()
+            .unwrap()
+            .allocate_intermediates(&execution_order, &device);
+
+        //Allocate for leaf node (ourselves)
+        allocations.insert(
+            self.id(),
+            device
+                .allocate_buffer(&BufferDescriptor {
+                    size: self.num_bytes() as _,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                })
+                .unwrap(),
+        );
+
+        for t in execution_order {
+            if !t.resolved() {
+                let storage = Storage::new(Some(RawStorage::from(
+                    allocations.get(&t.id()).unwrap().clone(),
+                )));
+                t.set_storage(storage);
+            }
+
+            if let Some((pipeline_handle, wgc, offset)) = t.op.compile(&device, &mut uniform) {
+                let storage_layout = t.op.storage_layout(&device);
+                let storage_bind_groups = CompiledOp::create_storage_bind_groups(
+                    &t.op.srcs(),
+                    &rvec![&t],
+                    rvec![storage_layout],
+                    &device,
+                );
+
+                compiled_ops.push(CompiledOp::new(
+                    wgc,
+                    pipeline_handle,
+                    storage_bind_groups,
+                    offset,
+                ))
+            }
         }
+        println!("Compiled ops: {:#?}", compiled_ops);
         //Execute kernels
 
         //Return result
@@ -183,14 +251,15 @@ impl Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::shape;
+    use crate::{shape, DeviceRequest};
 
     use super::*;
 
     #[test]
     fn test_cfg() {
-        let a = Tensor::from_vec(vec![1, 2, 3, 4], shape![2, 2], Device::CPU);
-        let b = Tensor::from_vec(vec![1, 2, 3, 4], shape![2, 2], Device::CPU);
+        let device = Device::request_device(DeviceRequest::GPU);
+        let a = Tensor::from_vec(vec![1, 2, 3, 4], shape![2, 2], device.clone());
+        let b = Tensor::from_vec(vec![1, 2, 3, 4], shape![2, 2], device);
         let c = a.add(&b);
         c.resolve();
     }

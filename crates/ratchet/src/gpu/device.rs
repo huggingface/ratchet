@@ -1,10 +1,11 @@
-use crate::gpu::*;
+use crate::{gpu::*, Tensor, TensorId};
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use wgpu::{Adapter, DeviceType, Limits};
 
 use crate::DeviceError;
 
-use super::{BufferDescriptor, BufferPool, GPUBuffer, PoolError};
+use super::{BufferDescriptor, GPUBuffer, PoolError};
 
 pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 
@@ -20,7 +21,7 @@ pub struct WgpuDevice {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     ordinal: u32,
-    buffer_pool: Arc<BufferPool>,
+    buffer_allocator: Arc<BufferAllocator>,
     bind_group_pool: Arc<BindGroupPool>,
     bind_group_layout_pool: Arc<BindGroupLayoutPool>,
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
@@ -88,7 +89,7 @@ impl WgpuDevice {
         Ok(Self {
             queue: Arc::new(queue),
             ordinal: 0, //TODO: Support multiple devices
-            buffer_pool: Arc::new(BufferPool::new()),
+            buffer_allocator: Arc::new(BufferAllocator::new()),
             bind_group_pool: Arc::new(BindGroupPool::new()),
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
@@ -146,19 +147,24 @@ impl WgpuDevice {
 }
 
 impl WgpuDevice {
+    /// TODO: should this use `create_buffer_init` on the allocator? Seems sketchy?
     pub fn create_buffer_init(
         &self,
         desc: &BufferDescriptor,
         queue: &wgpu::Queue,
         contents: &[u8],
     ) -> Result<GPUBuffer, DeviceError> {
-        let buf = self.buffer_pool.allocate(desc, self);
+        let buf = self.buffer_allocator.create_buffer(desc, self);
         queue.write_buffer(&buf.inner, 0, contents);
         Ok(buf)
     }
 
+    pub fn allocate_buffer(&self, desc: &BufferDescriptor) -> Result<GPUBuffer, DeviceError> {
+        Ok(self.buffer_allocator.create_buffer(desc, self))
+    }
+
     pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<GPUBuffer, PoolError> {
-        self.buffer_pool.get(handle)
+        Ok(self.buffer_allocator.get(handle))
     }
 
     pub fn get_or_create_bind_group(
@@ -199,5 +205,14 @@ impl WgpuDevice {
         &self,
     ) -> StaticResourcePoolReadLockAccessor<'_, PipelineLayoutHandle, wgpu::PipelineLayout> {
         self.pipeline_layout_pool.resources()
+    }
+
+    pub fn allocate_intermediates(
+        &self,
+        execution_order: &[Tensor],
+        device: &WgpuDevice,
+    ) -> FxHashMap<TensorId, GPUBuffer> {
+        self.buffer_allocator
+            .allocate_intermediates(execution_order, device)
     }
 }

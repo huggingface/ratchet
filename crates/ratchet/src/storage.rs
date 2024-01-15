@@ -1,7 +1,7 @@
 use crate::{
     gpu::GPUBuffer,
     gpu::{BufferDescriptor, WgpuDevice},
-    Device, DeviceError, Shape, Strides, TensorDType,
+    Device, DeviceError, Shape, TensorDType,
 };
 use std::{alloc::Layout, fmt::Debug};
 use wgpu::BufferUsages;
@@ -16,36 +16,38 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub unsafe fn uninitialized(dt: DType, shape: &Shape, alignment: usize) -> Self {
-        let bytes = shape.numel() * dt.size_of();
-        let layout = std::alloc::Layout::from_size_align(bytes, alignment).unwrap();
-        let data = if bytes == 0 {
-            std::ptr::null()
-        } else {
-            let ptr = std::alloc::alloc(layout);
-            assert!(!ptr.is_null());
-            ptr
-        } as *mut u8;
-        let storage = RawCPUBuffer::new(data, layout);
-        Self {
-            raw: Some(RawStorage::CPU(storage)),
-        }
-    }
-
-    pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape) -> Self {
+    pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape, device: &Device) -> Self {
         assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);
-        let mut storage = unsafe { Storage::uninitialized(T::dt(), shape, T::dt().size_of()) };
-        let raw = match storage.raw.as_mut().unwrap() {
-            RawStorage::CPU(storage) => storage,
-            _ => unreachable!(),
-        };
-        raw.as_bytes_mut().copy_from_slice(bytes);
-        storage
+        match device {
+            Device::CPU => {
+                let mut storage =
+                    unsafe { RawCPUBuffer::uninitialized(bytes.len(), T::dt().size_of()) };
+                storage.as_bytes_mut().copy_from_slice(bytes);
+                let raw = Some(RawStorage::CPU(storage));
+                Self { raw }
+            }
+            Device::GPU(wgpu_device) => {
+                let raw = Some(RawStorage::GPU(RawGPUBuffer::from_slice(
+                    data,
+                    shape,
+                    wgpu_device,
+                )));
+                Self { raw }
+            }
+        }
     }
 
     pub fn raw(&self) -> Option<&RawStorage> {
         self.raw.as_ref()
+    }
+
+    pub fn try_buffer_handle(&self) -> Option<&GPUBuffer> {
+        println!("SELF: {:?}", self);
+        match self.raw.as_ref()? {
+            RawStorage::GPU(raw) => Some(&raw.buf),
+            _ => None,
+        }
     }
 }
 
@@ -53,6 +55,12 @@ impl Storage {
 pub enum RawStorage {
     CPU(RawCPUBuffer),
     GPU(RawGPUBuffer),
+}
+
+impl From<GPUBuffer> for RawStorage {
+    fn from(buf: GPUBuffer) -> Self {
+        Self::GPU(RawGPUBuffer { buf })
+    }
 }
 
 pub trait Storable: Debug + Clone + 'static {
@@ -67,6 +75,18 @@ pub trait Storable: Debug + Clone + 'static {
 pub struct RawCPUBuffer(*mut u8, Layout);
 
 impl RawCPUBuffer {
+    unsafe fn uninitialized(size: usize, alignment: usize) -> Self {
+        let layout = std::alloc::Layout::from_size_align(size, alignment).unwrap();
+        let data = if size == 0 {
+            std::ptr::null()
+        } else {
+            let ptr = std::alloc::alloc(layout);
+            assert!(!ptr.is_null());
+            ptr
+        } as *mut u8;
+        Self(data, layout)
+    }
+
     pub fn inner(&self) -> (*mut u8, Layout) {
         (self.0, self.1)
     }
@@ -150,9 +170,34 @@ impl Storable for RawCPUBuffer {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, derive_new::new)]
 pub struct RawGPUBuffer {
     buf: GPUBuffer,
+}
+
+impl RawGPUBuffer {
+    pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape, device: &WgpuDevice) -> Self {
+        assert_eq!(data.len(), shape.numel());
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        let buffer = device
+            .create_buffer_init(
+                &BufferDescriptor::new(
+                    bytes.len() as _,
+                    BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+                    false,
+                ),
+                device.queue(),
+                bytes,
+            )
+            .unwrap();
+        device.queue().submit(None);
+        device.poll(wgpu::Maintain::Wait);
+        Self { buf: buffer }
+    }
+
+    pub fn inner(&self) -> &GPUBuffer {
+        &self.buf
+    }
 }
 
 impl std::fmt::Debug for RawGPUBuffer {
