@@ -1,4 +1,4 @@
-use crate::{gpu::WgpuDevice, rvec, Device, RVec};
+use crate::{gpu::WgpuDevice, rvec, RVec};
 
 use super::{
     static_resource_pool::{PoolError, StaticResourcePool},

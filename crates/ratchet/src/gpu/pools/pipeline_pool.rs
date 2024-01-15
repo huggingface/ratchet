@@ -52,6 +52,7 @@ impl ComputePipelinePool {
         device: &WgpuDevice,
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
+            //TODO: shader shouldn't be hardcoded
             let shader = include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/kernels",

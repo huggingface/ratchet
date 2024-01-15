@@ -4,7 +4,7 @@ use crate::{
     Device, DeviceError, Shape, TensorDType,
 };
 use std::{alloc::Layout, fmt::Debug};
-use wgpu::{util::DownloadBuffer, BufferUsages};
+use wgpu::BufferUsages;
 
 use crate::DType;
 
@@ -19,6 +19,10 @@ unsafe impl Send for Storage {}
 unsafe impl Sync for Storage {}
 
 impl Storage {
+    pub fn empty() -> Self {
+        Self { raw: None }
+    }
+
     pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape, device: &Device) -> Self {
         assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);

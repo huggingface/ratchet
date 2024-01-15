@@ -8,13 +8,32 @@ use crate::{
 };
 use crate::{BinaryOp, LazyOp};
 use bytemuck::NoUninit;
+use derive_new::new;
+use half::{bf16, f16};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use wgpu::BufferUsages;
 
+macro_rules! impl_read_to_host {
+    ($($dtype:ident => $type:ty),*) => {
+        fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> Storage {
+            match dt {
+                $(DType::$dtype => Storage::from_slice::<$type>(bytemuck::cast_slice(bytes), &shape, &Device::CPU),)*
+                _ => todo!("Attempted to read GPU tensor to host with unsupported dtype: {:?}", dt),
+            }
+        }
+    };
+}
+
 /// Unique identifier for tensors.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TensorId(usize);
+
+impl std::fmt::Debug for TensorId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("TensorID:").field(&self.0).finish()
+    }
+}
 
 impl TensorId {
     fn new() -> Self {
@@ -29,8 +48,6 @@ impl TensorId {
 ///
 /// A tensor is a lazy representation of an operation. It, and the nodes required to compute it's
 /// value, will not be computed until `resolve` is called.
-///
-/// After resolving, the Tensor is a logical view of a Storage object.
 #[derive(Clone)]
 pub struct Tensor {
     inner: Arc<Inner>,
@@ -61,7 +78,7 @@ impl std::ops::Deref for Tensor {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(new, Debug, Clone)]
 pub struct Metadata {
     shape: Shape,
     dt: DType,
@@ -148,29 +165,23 @@ impl Tensor {
         //Determine output shape
         //Binary::check_invariants(self, other);
         //Binary::shape_inference(self.shape(), other.shape());
-        let op = LazyOp::Binary(Binary::new(self.clone(), other.clone(), BinaryOp::Add));
         //TODO: real shapes & strides
-        let storage = Storage::new(None);
-        let inner = Inner::new(op, self.meta.clone(), storage, self.device.clone());
+        let op = LazyOp::Binary(Binary::new(self.clone(), other.clone(), BinaryOp::Add));
         Tensor {
-            inner: Arc::new(inner),
+            inner: Inner::new(op, self.meta.clone(), Storage::empty(), self.device.clone()).into(),
         }
     }
 
-    /// Creates a data from a vector.
+    /// Creates a new tensor from a vector of data.
     ///
+    /// The Tensor is instantly resolved.
     /// If a non-CPU device is specified, the data will be copied to the device.
     pub fn from_vec<T: TensorDType>(data: Vec<T>, shape: Shape, device: Device) -> Tensor {
-        let strides = Strides::from(&shape);
         let storage = Storage::from_slice(&data, &shape, &device);
-        let meta = Metadata {
-            shape,
-            dt: T::dt(),
-            strides,
-        };
-        let inner = Inner::new(LazyOp::Const, meta, storage, device);
+        let strides = Strides::from(&shape);
+        let meta = Metadata::new(shape, T::dt(), strides);
         Tensor {
-            inner: Arc::new(inner),
+            inner: Inner::new(LazyOp::Const, meta, storage, device).into(),
         }
     }
 
@@ -202,15 +213,13 @@ impl Tensor {
         let mut uniform = CpuUniform::new();
         let device = self.device().is_gpu().unwrap();
 
-        //Here we need to do memory allocation
-        //Root nodes should be constants or user provided inputs
         let execution_order = self.execution_order();
 
         let mut allocations = self
             .device()
             .is_gpu()
             .unwrap()
-            .allocate_intermediates(&execution_order, &device);
+            .allocate_intermediates(&execution_order, device);
 
         //Allocate for leaf node (ourselves)
         allocations.insert(
@@ -233,12 +242,12 @@ impl Tensor {
             }
 
             if let Some((pipeline_handle, wgc, offset)) = t.op.compile(&device, &mut uniform) {
-                let storage_layout = t.op.storage_layout(&device);
+                let storage_layout = t.op.storage_layout(device);
                 let storage_bind_groups = CompiledOp::create_storage_bind_groups(
                     &t.op.srcs(),
                     &rvec![&t],
                     rvec![storage_layout],
-                    &device,
+                    device,
                 );
 
                 compiled_ops.push(CompiledOp::new(
@@ -251,7 +260,7 @@ impl Tensor {
         }
         let gpu_uniform = device.create_uniform_init(uniform);
         let gpu_uniform_bind_group = CompiledOp::create_uniform_bind_group(
-            &device,
+            device,
             &device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
                 entries: &[wgpu::BindGroupLayoutEntry::dynamic_uniform_buffer()],
@@ -259,28 +268,13 @@ impl Tensor {
             &gpu_uniform,
         );
         let executable = Executable::new(compiled_ops, gpu_uniform, gpu_uniform_bind_group);
-        let index = executable.dispatch_operations(&device);
+        let index = executable.dispatch_operations(device);
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
 
-        self.into_cpu();
+        self.to_cpu();
     }
 
-    fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> Storage {
-        match dt {
-            DType::F32 => {
-                Storage::from_slice::<f32>(bytemuck::cast_slice(bytes), &shape, &Device::CPU)
-            }
-            DType::I32 => {
-                Storage::from_slice::<i32>(bytemuck::cast_slice(bytes), &shape, &Device::CPU)
-            }
-            _ => todo!(
-                "Attempted to read GPU tensor to host with unsupported dtype: {:?}",
-                dt
-            ),
-        }
-    }
-
-    async fn into_cpu_inner(&self) {
+    async fn to_cpu_inner(&self) {
         let device = self.device().is_gpu().unwrap();
         let shape = self.shape().clone();
         let dt = self.dt();
@@ -300,7 +294,6 @@ impl Tensor {
             device.queue(),
             &buffer_slice,
             move |buffer| {
-                // Called on download completed
                 tx.send(match buffer {
                     Ok(db) => Ok(Self::read_to_host(shape, dt, &db)),
                     Err(error) => Err(error),
@@ -315,9 +308,17 @@ impl Tensor {
     }
 
     ///Consumes the GPU tensor and returns a CPU tensor
-    pub fn into_cpu(&self) {
-        pollster::block_on(self.into_cpu_inner())
+    pub fn to_cpu(&self) {
+        pollster::block_on(self.to_cpu_inner())
     }
+
+    impl_read_to_host!(
+        F32 => f32,
+        I32 => i32,
+        U32 => u32,
+        F16 => f16,
+        BF16 => bf16
+    );
 }
 
 #[cfg(test)]
@@ -329,7 +330,6 @@ mod tests {
     #[test]
     fn test_cfg() {
         let device = Device::request_device(DeviceRequest::GPU);
-        println!("{:#?}", device);
         let a = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
         let b = Tensor::from_vec(vec![55.], shape![1], device);
         let c = a.add(&b);
