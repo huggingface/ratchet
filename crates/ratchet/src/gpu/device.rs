@@ -173,9 +173,15 @@ impl WgpuDevice {
         Ok(self.bind_group_layout_pool.allocate(desc, self))
     }
 
-    pub fn get_bind_group_layout_resources(
+    pub fn bind_group_layout_resources(
         &self,
     ) -> StaticResourcePoolReadLockAccessor<'_, BindGroupLayoutHandle, wgpu::BindGroupLayout> {
         self.bind_group_layout_pool.resources()
+    }
+
+    pub fn pipeline_layout_resources(
+        &self,
+    ) -> StaticResourcePoolReadLockAccessor<'_, PipelineLayoutHandle, wgpu::PipelineLayout> {
+        self.pipeline_layout_pool.resources()
     }
 }
