@@ -50,7 +50,7 @@ impl CompiledOp {
                 layout: *bind_group_layout,
             };
 
-            let bind_group = device.allocate_bind_group(&descriptor).unwrap();
+            let bind_group = device.get_or_create_bind_group(&descriptor).unwrap();
             storage_groups.push(bind_group);
         }
         storage_groups

@@ -95,7 +95,7 @@ impl BindGroupPool {
     /// Returns a reference-counted, currently unused bind-group.
     /// Once ownership to the handle is given up, the bind group may be reclaimed in future passs.
     /// The handle also keeps alive any dependent resources.
-    pub fn allocate(&self, desc: &BindGroupDescriptor, device: &WgpuDevice) -> GpuBindGroup {
+    pub fn get_or_create(&self, desc: &BindGroupDescriptor, device: &WgpuDevice) -> GpuBindGroup {
         // Retrieve strong handles to buffers and textures.
         // This way, an owner of a bind group handle keeps buffers & textures alive!.
         let owned_buffers: RVec<GPUBuffer> = {

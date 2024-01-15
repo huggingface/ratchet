@@ -48,13 +48,14 @@ impl Operation for Binary {
 
     fn storage_layout(&self, device: &WgpuDevice) -> BindGroupLayoutHandle {
         device
-            .allocate_bind_group_layout(&BindGroupLayoutDescriptor::binary())
+            .get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())
             .unwrap()
     }
 
     fn compile(&self, device: &Device, uniform: &CpuUniform) -> Result<CompiledOp, OperationError> {
         let (lhs, rhs) = (self.lhs, self.rhs);
         let workload = GpuWorkload::div_ceil(lhs.shape()[0], 64);
+        let pipeline = device.
         //TODO: fetch pipeline
 
         //CompiledOp {

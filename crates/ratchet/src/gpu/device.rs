@@ -24,6 +24,7 @@ pub struct WgpuDevice {
     bind_group_pool: Arc<BindGroupPool>,
     bind_group_layout_pool: Arc<BindGroupLayoutPool>,
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
+    compute_pipeline_pool: Arc<ComputePipelinePool>,
 }
 
 impl std::ops::Deref for WgpuDevice {
@@ -91,6 +92,7 @@ impl WgpuDevice {
             bind_group_pool: Arc::new(BindGroupPool::new()),
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
+            compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
             device,
         })
     }
@@ -159,18 +161,32 @@ impl WgpuDevice {
         self.buffer_pool.get(handle)
     }
 
-    pub fn allocate_bind_group(
+    pub fn get_or_create_bind_group(
         &self,
         desc: &BindGroupDescriptor,
     ) -> Result<GpuBindGroup, PoolError> {
-        Ok(self.bind_group_pool.allocate(desc, self))
+        Ok(self.bind_group_pool.get_or_create(desc, self))
     }
 
-    pub fn allocate_bind_group_layout(
+    pub fn get_or_create_bind_group_layout(
         &self,
         desc: &BindGroupLayoutDescriptor,
     ) -> Result<BindGroupLayoutHandle, PoolError> {
-        Ok(self.bind_group_layout_pool.allocate(desc, self))
+        Ok(self.bind_group_layout_pool.get_or_create(desc, self))
+    }
+
+    pub fn get_or_create_pipeline_layout(
+        &self,
+        desc: &PipelineLayoutDescriptor,
+    ) -> Result<PipelineLayoutHandle, PoolError> {
+        Ok(self.pipeline_layout_pool.get_or_create(desc, self))
+    }
+
+    pub fn get_or_create_compute_pipeline(
+        &self,
+        desc: &ComputePipelineDescriptor,
+    ) -> Result<ComputePipelineHandle, PoolError> {
+        Ok(self.compute_pipeline_pool.get_or_create(desc, self))
     }
 
     pub fn bind_group_layout_resources(
