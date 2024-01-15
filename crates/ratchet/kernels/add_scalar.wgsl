@@ -37,4 +37,5 @@ fn main(
         let index = batch_offset + offset + i;
         Y[index] = A[index] + b;
     }
+    Y[1] = 3.0;
 }

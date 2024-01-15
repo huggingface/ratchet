@@ -154,9 +154,6 @@ impl BufferAllocator {
                 free.push(buf.clone());
             }
         }
-        for (id, buf) in assignments.iter() {
-            println!("{:#?}: {:#?}", id, buf);
-        }
         assignments
     }
 }

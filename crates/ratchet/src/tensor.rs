@@ -198,7 +198,6 @@ impl Tensor {
 
     //TODO: massively refactor, just seeing if it can work for now
     pub fn resolve(&self) {
-        println!("Order: {:#?}", self.execution_order());
         let mut compiled_ops = vec![];
         let mut uniform = CpuUniform::new();
         let device = self.device().is_gpu().unwrap();
@@ -226,7 +225,6 @@ impl Tensor {
         );
 
         for t in execution_order {
-            println!("T: {:#?}", t);
             if !t.resolved() {
                 let storage = Storage::new(Some(RawStorage::from(
                     allocations.get(&t.id()).unwrap().clone(),
@@ -265,7 +263,6 @@ impl Tensor {
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
 
         self.into_cpu();
-        println!("SELF: {:#?}", self);
     }
 
     fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> Storage {
@@ -332,9 +329,13 @@ mod tests {
     #[test]
     fn test_cfg() {
         let device = Device::request_device(DeviceRequest::GPU);
+        println!("{:#?}", device);
         let a = Tensor::from_vec(vec![1, 2, 3, 4], shape![2, 2], device.clone());
         let b = Tensor::from_vec(vec![55], shape![1, 1], device);
         let c = a.add(&b);
         c.resolve();
+        println!("\nA: {:#?}", a);
+        println!("\nB: {:#?}", b);
+        println!("\nC: {:#?}", c);
     }
 }

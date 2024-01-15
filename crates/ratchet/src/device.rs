@@ -17,11 +17,20 @@ pub enum DeviceRequest {
     GPU,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub enum Device {
     #[default]
     CPU,
     GPU(WgpuDevice),
+}
+
+impl std::fmt::Debug for Device {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Device::CPU => write!(f, "CPU"),
+            Device::GPU(gpu) => write!(f, "GPU:{}", gpu.ordinal()),
+        }
+    }
 }
 
 impl Device {
