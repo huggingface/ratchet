@@ -23,6 +23,7 @@ pub struct WgpuDevice {
     buffer_pool: Arc<BufferPool>,
     bind_group_pool: Arc<BindGroupPool>,
     bind_group_layout_pool: Arc<BindGroupLayoutPool>,
+    pipeline_layout_pool: Arc<PipelineLayoutPool>,
 }
 
 impl std::ops::Deref for WgpuDevice {
@@ -89,6 +90,7 @@ impl WgpuDevice {
             buffer_pool: Arc::new(BufferPool::new()),
             bind_group_pool: Arc::new(BindGroupPool::new()),
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
+            pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
             device,
         })
     }

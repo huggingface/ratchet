@@ -1,3 +1,5 @@
+use derive_new::new;
+
 use crate::{gpu::WgpuDevice, RVec};
 
 use super::{
@@ -15,13 +17,19 @@ pub struct PipelineLayoutDescriptor {
 }
 
 #[derive(Default)]
-pub struct GpuPipelineLayoutPool {
+pub struct PipelineLayoutPool {
     inner:
         StaticResourcePool<GpuPipelineLayoutHandle, PipelineLayoutDescriptor, wgpu::PipelineLayout>,
 }
 
-impl GpuPipelineLayoutPool {
-    pub fn get_or_create(
+impl PipelineLayoutPool {
+    pub fn new() -> Self {
+        Self {
+            inner: StaticResourcePool::default(),
+        }
+    }
+
+    pub fn allocate(
         &self,
         desc: &PipelineLayoutDescriptor,
         device: &WgpuDevice,
