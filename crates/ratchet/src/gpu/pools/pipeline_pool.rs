@@ -2,7 +2,10 @@ use std::borrow::Cow;
 
 use crate::gpu::WgpuDevice;
 
-use super::{PipelineLayoutHandle, StaticResourcePool, StaticResourcePoolAccessor};
+use super::{
+    PipelineLayoutHandle, StaticResourcePool, StaticResourcePoolAccessor,
+    StaticResourcePoolReadLockAccessor,
+};
 
 slotmap::new_key_type! { pub struct ComputePipelineHandle; }
 
@@ -80,5 +83,14 @@ impl ComputePipelinePool {
                 entry_point: "main",
             })
         })
+    }
+
+    /// Locks the resource pool for resolving handles.
+    ///
+    /// While it is locked, no new resources can be added.
+    pub fn resources(
+        &self,
+    ) -> StaticResourcePoolReadLockAccessor<'_, ComputePipelineHandle, wgpu::ComputePipeline> {
+        self.inner.resources()
     }
 }
