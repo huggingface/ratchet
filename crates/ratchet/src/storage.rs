@@ -3,26 +3,57 @@ use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
     Device, DeviceError, Shape, Strides, TensorDType,
 };
-use derive_new::new;
-use std::{alloc::Layout, fmt::Debug, ops::RangeBounds};
-use wgpu::{Buffer, BufferUsages};
+use std::{alloc::Layout, fmt::Debug};
+use wgpu::BufferUsages;
 
 use crate::DType;
 
 /// Storage is a wrapper around a raw buffer.
-///
-/// Storage provides the interpretation of the raw buffer.
-/// DType, Shape & Strides can all be thought of as a lens through which the raw buffer is viewed.
-#[derive(new, Debug)]
+/// RawStorage is Optional as the tensor may not be resolved.
+#[derive(derive_new::new, Debug)]
 pub struct Storage {
     device: Device,
-    dtype: DType,
-    shape: Shape,
-    strides: Strides,
     raw: Option<RawStorage>,
 }
 
-impl Storage {}
+impl Storage {
+    pub unsafe fn uninitialized(dt: DType, shape: &Shape, alignment: usize) -> Self {
+        let bytes = shape.numel() * dt.size_of();
+        let layout = std::alloc::Layout::from_size_align(bytes, alignment).unwrap();
+        let data = if bytes == 0 {
+            std::ptr::null()
+        } else {
+            let ptr = std::alloc::alloc(layout);
+            assert!(!ptr.is_null());
+            ptr
+        } as *mut u8;
+        let storage = RawCPUBuffer::new(data, layout);
+        Self {
+            device: Device::CPU,
+            raw: Some(RawStorage::CPU(storage)),
+        }
+    }
+
+    pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape) -> Self {
+        assert_eq!(data.len(), shape.numel());
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        let mut storage = unsafe { Storage::uninitialized(T::dt(), shape, T::dt().size_of()) };
+        let raw = match storage.raw.as_mut().unwrap() {
+            RawStorage::CPU(storage) => storage,
+            _ => unreachable!(),
+        };
+        raw.as_bytes_mut().copy_from_slice(bytes);
+        storage
+    }
+
+    pub fn raw(&self) -> Option<&RawStorage> {
+        self.raw.as_ref()
+    }
+
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+}
 
 #[derive(Debug)]
 pub enum RawStorage {
@@ -94,7 +125,7 @@ impl Storable for RawCPUBuffer {
         )?;
         device.queue().submit(None);
         device.poll(wgpu::Maintain::Wait);
-        Ok(RawGPUBuffer(buffer))
+        Ok(RawGPUBuffer { buf: buffer })
     }
 
     fn to_cpu(self) -> RawCPUBuffer {
@@ -126,65 +157,23 @@ impl Storable for RawCPUBuffer {
 }
 
 #[derive(Clone)]
-pub struct RawGPUBuffer(GPUBuffer);
-
-impl From<GPUBuffer> for RawGPUBuffer {
-    fn from(b: GPUBuffer) -> Self {
-        Self(b)
-    }
+pub struct RawGPUBuffer {
+    buf: GPUBuffer,
 }
 
 impl std::fmt::Debug for RawGPUBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GPUStorage")
-            .field("buffer", &self.0.global_id())
-            .field("size", &self.0.size())
-            .field("usage", &self.0.usage())
+            .field("buffer", &self.buf.global_id())
+            .field("size", &self.buf.size())
+            .field("usage", &self.buf.usage())
             .finish()
     }
 }
 
 impl PartialEq for RawGPUBuffer {
     fn eq(&self, other: &Self) -> bool {
-        self.0.global_id() == other.0.global_id()
-    }
-}
-
-impl RawGPUBuffer {
-    pub fn new(buffer: GPUBuffer) -> Self {
-        Self(buffer)
-    }
-
-    pub fn inner(&self) -> &GPUBuffer {
-        &self.0
-    }
-
-    pub fn set_inner(&mut self, b: GPUBuffer) {
-        self.0 = b;
-    }
-
-    pub fn as_entire_binding(&self) -> wgpu::BindingResource {
-        self.0.as_entire_binding()
-    }
-
-    pub fn usage(&self) -> wgpu::BufferUsages {
-        self.0.usage()
-    }
-
-    pub fn slice<S: RangeBounds<wgpu::BufferAddress>>(&self, bounds: S) -> wgpu::BufferSlice {
-        self.0.slice(bounds)
-    }
-
-    pub fn unmap(&self) {
-        self.0.unmap();
-    }
-
-    pub fn buffer_id(&self) -> wgpu::Id<Buffer> {
-        self.0.global_id()
-    }
-
-    pub fn size(&self) -> wgpu::BufferAddress {
-        self.0.size()
+        self.buf.global_id() == other.buf.global_id()
     }
 }
 
@@ -198,7 +187,7 @@ impl Storable for RawGPUBuffer {
     }
 
     fn n_bytes(&self) -> usize {
-        self.0.size() as usize
+        self.buf.size() as usize
     }
 
     fn dump(&self, _: DType, _: bool) -> String {

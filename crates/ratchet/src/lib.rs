@@ -3,6 +3,7 @@
 mod compiled_op;
 mod device;
 mod dtype;
+mod enforcer;
 mod gpu;
 mod op;
 mod ops;
@@ -16,6 +17,7 @@ mod view;
 pub use compiled_op::*;
 pub use device::*;
 pub use dtype::*;
+pub use enforcer::*;
 pub use op::*;
 pub use ops::*;
 pub use shape::*;

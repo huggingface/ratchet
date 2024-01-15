@@ -11,6 +11,20 @@ pub enum DType {
     U32,
 }
 
+impl DType {
+    /// Returns the size of the type in bytes.
+    pub fn size_of(self) -> usize {
+        match self {
+            DType::Q8 => 1,
+            DType::F16 => 2,
+            DType::BF16 => 2,
+            DType::F32 => 4,
+            DType::I32 => 4,
+            DType::U32 => 4,
+        }
+    }
+}
+
 pub trait TensorDType:
     Clone
     + std::fmt::Debug
