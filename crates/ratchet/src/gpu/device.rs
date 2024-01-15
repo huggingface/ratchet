@@ -159,6 +159,10 @@ impl WgpuDevice {
         Ok(buf)
     }
 
+    pub fn create_uniform_init(&self, cpu_uniform: CpuUniform) -> GPUBuffer {
+        self.buffer_allocator.create_uniform_init(cpu_uniform, self)
+    }
+
     pub fn allocate_buffer(&self, desc: &BufferDescriptor) -> Result<GPUBuffer, DeviceError> {
         Ok(self.buffer_allocator.create_buffer(desc, self))
     }
@@ -205,6 +209,12 @@ impl WgpuDevice {
         &self,
     ) -> StaticResourcePoolReadLockAccessor<'_, PipelineLayoutHandle, wgpu::PipelineLayout> {
         self.pipeline_layout_pool.resources()
+    }
+
+    pub fn pipeline_resources(
+        &self,
+    ) -> StaticResourcePoolReadLockAccessor<'_, ComputePipelineHandle, wgpu::ComputePipeline> {
+        self.compute_pipeline_pool.resources()
     }
 
     pub fn allocate_intermediates(

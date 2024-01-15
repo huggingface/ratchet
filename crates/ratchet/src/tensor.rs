@@ -1,9 +1,13 @@
-use crate::gpu::{BufferDescriptor, CpuUniform};
+use crate::gpu::{
+    BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, BufferDescriptor, CpuUniform,
+    StaticResourcePoolAccessor,
+};
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, Operation, RVec, RawGPUBuffer, RawStorage, Shape,
-    Storage, Strides, TensorDType,
+    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RVec, RawCPUBuffer,
+    RawGPUBuffer, RawStorage, Shape, Storage, Strides, TensorDType,
 };
 use crate::{BinaryOp, LazyOp};
+use bytemuck::NoUninit;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use wgpu::BufferUsages;
@@ -34,10 +38,11 @@ pub struct Tensor {
 
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let storage = self.storage().try_read().unwrap();
         f.debug_struct("Tensor")
             .field("id", &self.inner.id)
             .field("op", &self.inner.op)
-            .field("storage", &self.inner.storage)
+            .field("storage", &storage.dump(self.dt(), false))
             .finish()
     }
 }
@@ -71,6 +76,9 @@ pub struct Inner {
     device: Device,
     storage: Arc<RwLock<Storage>>,
 }
+
+unsafe impl Send for Inner {}
+unsafe impl Sync for Inner {}
 
 impl AsRef<Inner> for Inner {
     fn as_ref(&self) -> &Inner {
@@ -218,6 +226,7 @@ impl Tensor {
         );
 
         for t in execution_order {
+            println!("T: {:#?}", t);
             if !t.resolved() {
                 let storage = Storage::new(Some(RawStorage::from(
                     allocations.get(&t.id()).unwrap().clone(),
@@ -242,9 +251,75 @@ impl Tensor {
                 ))
             }
         }
-        //Execute kernels
+        let gpu_uniform = device.create_uniform_init(uniform);
+        let gpu_uniform_bind_group = CompiledOp::create_uniform_bind_group(
+            &device,
+            &device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[wgpu::BindGroupLayoutEntry::dynamic_uniform_buffer()],
+            }),
+            &gpu_uniform,
+        );
+        let executable = Executable::new(compiled_ops, gpu_uniform, gpu_uniform_bind_group);
+        let index = executable.dispatch_operations(&device);
+        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
 
-        //Return result
+        self.into_cpu();
+        println!("SELF: {:#?}", self);
+    }
+
+    fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> Storage {
+        match dt {
+            DType::F32 => {
+                Storage::from_slice::<f32>(bytemuck::cast_slice(bytes), &shape, &Device::CPU)
+            }
+            DType::I32 => {
+                Storage::from_slice::<i32>(bytemuck::cast_slice(bytes), &shape, &Device::CPU)
+            }
+            _ => todo!(
+                "Attempted to read GPU tensor to host with unsupported dtype: {:?}",
+                dt
+            ),
+        }
+    }
+
+    async fn into_cpu_inner(&self) {
+        let device = self.device().is_gpu().unwrap();
+        let shape = self.shape().clone();
+        let dt = self.dt();
+
+        let gpu_storage = {
+            let storage_resource = self.storage().try_read().unwrap();
+            storage_resource.try_gpu().unwrap().clone()
+        };
+        if !gpu_storage.usage().contains(BufferUsages::COPY_SRC) {
+            panic!("Attempted to read GPU tensor to host without COPY_SRC usage")
+        }
+        let buffer_slice = gpu_storage.slice(..);
+        let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
+
+        wgpu::util::DownloadBuffer::read_buffer(
+            device,
+            device.queue(),
+            &buffer_slice,
+            move |buffer| {
+                // Called on download completed
+                tx.send(match buffer {
+                    Ok(db) => Ok(Self::read_to_host(shape, dt, &db)),
+                    Err(error) => Err(error),
+                })
+                .unwrap();
+            },
+        );
+        device.poll(wgpu::Maintain::Wait);
+        let storage = rx.receive().await.unwrap();
+        self.set_storage(storage.unwrap());
+        //TOOD: update device here!!!
+    }
+
+    ///Consumes the GPU tensor and returns a CPU tensor
+    pub fn into_cpu(&self) {
+        pollster::block_on(self.into_cpu_inner())
     }
 }
 
@@ -258,7 +333,7 @@ mod tests {
     fn test_cfg() {
         let device = Device::request_device(DeviceRequest::GPU);
         let a = Tensor::from_vec(vec![1, 2, 3, 4], shape![2, 2], device.clone());
-        let b = Tensor::from_vec(vec![1, 2, 3, 4], shape![2, 2], device);
+        let b = Tensor::from_vec(vec![55], shape![1, 1], device);
         let c = a.add(&b);
         c.resolve();
     }

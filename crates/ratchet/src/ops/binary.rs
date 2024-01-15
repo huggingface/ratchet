@@ -8,7 +8,7 @@ use crate::{
         ComputePipelineHandle, CpuUniform, KernelElement, PipelineLayoutDescriptor, WgpuDevice,
         WorkgroupCount,
     },
-    rvec, wgc, CompiledOp, OpMetadata, Operation, OperationError, RVec, Tensor,
+    rvec, wgc, OpMetadata, Operation, OperationError, RVec, Tensor,
 };
 
 #[derive(Debug)]

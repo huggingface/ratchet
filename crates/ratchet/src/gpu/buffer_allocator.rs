@@ -7,7 +7,7 @@ use crate::{
 };
 use std::cell::{Ref, RefCell, RefMut};
 
-use super::WgpuDevice;
+use super::{CpuUniform, WgpuDevice, UNIFORM_ALIGN};
 
 pub struct BufferAllocator {
     //TODO: should this be RefCell
@@ -29,10 +29,6 @@ impl BufferAllocator {
         self.pool.borrow().get(handle).unwrap()
     }
 
-    pub fn create_buffer(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> GPUBuffer {
-        self.pool.borrow_mut().allocate(desc, device)
-    }
-
     pub fn pool(&self) -> Ref<BufferPool> {
         self.pool.borrow()
     }
@@ -41,15 +37,39 @@ impl BufferAllocator {
         self.pool.borrow_mut()
     }
 
+    pub fn create_buffer(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> GPUBuffer {
+        self.pool.borrow_mut().get_or_create(desc, device)
+    }
+
     pub fn create_buffer_init(
         &self,
         desc: &BufferDescriptor,
         contents: &[u8],
         device: &WgpuDevice,
     ) -> GPUBuffer {
-        let buf = self.pool.borrow_mut().allocate(desc, device);
+        let buf = self.pool.borrow_mut().get_or_create(desc, device);
         device.queue().write_buffer(&buf.inner, 0, contents);
         buf
+    }
+
+    pub fn create_uniform_init(&self, uniform: CpuUniform, device: &WgpuDevice) -> GPUBuffer {
+        let mut uniform = uniform.into_inner();
+        uniform.resize(
+            uniform.len() + UNIFORM_ALIGN - uniform.len() % UNIFORM_ALIGN,
+            0u8,
+        );
+
+        let desc = BufferDescriptor::new(
+            uniform.len() as _,
+            BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            false,
+        );
+
+        let resource = self.pool.borrow_mut().get_or_create(&desc, device);
+        device
+            .queue()
+            .write_buffer(&resource.inner, 0, bytemuck::cast_slice(&uniform));
+        resource
     }
 
     //Specific allocation method for the graph
