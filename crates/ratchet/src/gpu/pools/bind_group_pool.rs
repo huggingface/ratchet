@@ -126,7 +126,7 @@ impl BindGroupPool {
                 })
                 .collect::<Vec<_>>();
 
-            let resources = device.get_bind_group_layout_resources();
+            let resources = device.bind_group_layout_resources();
             let bind_group_descriptor = wgpu::BindGroupDescriptor {
                 label: None,
                 entries: &entries,

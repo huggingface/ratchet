@@ -9,7 +9,7 @@ use super::{
     BindGroupLayoutHandle,
 };
 
-slotmap::new_key_type! { pub struct GpuPipelineLayoutHandle; }
+slotmap::new_key_type! { pub struct PipelineLayoutHandle; }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PipelineLayoutDescriptor {
@@ -18,8 +18,7 @@ pub struct PipelineLayoutDescriptor {
 
 #[derive(Default)]
 pub struct PipelineLayoutPool {
-    inner:
-        StaticResourcePool<GpuPipelineLayoutHandle, PipelineLayoutDescriptor, wgpu::PipelineLayout>,
+    inner: StaticResourcePool<PipelineLayoutHandle, PipelineLayoutDescriptor, wgpu::PipelineLayout>,
 }
 
 impl PipelineLayoutPool {
@@ -33,9 +32,9 @@ impl PipelineLayoutPool {
         &self,
         desc: &PipelineLayoutDescriptor,
         device: &WgpuDevice,
-    ) -> GpuPipelineLayoutHandle {
+    ) -> PipelineLayoutHandle {
         self.inner.get_or_create(desc, |desc| {
-            let bind_groups = device.get_bind_group_layout_resources();
+            let bind_groups = device.bind_group_layout_resources();
 
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
@@ -54,7 +53,7 @@ impl PipelineLayoutPool {
     /// While it is locked, no new resources can be added.
     pub fn resources(
         &self,
-    ) -> StaticResourcePoolReadLockAccessor<'_, GpuPipelineLayoutHandle, wgpu::PipelineLayout> {
+    ) -> StaticResourcePoolReadLockAccessor<'_, PipelineLayoutHandle, wgpu::PipelineLayout> {
         self.inner.resources()
     }
 
