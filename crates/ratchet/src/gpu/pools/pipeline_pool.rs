@@ -23,11 +23,11 @@ impl From<&KernelElement> for u32 {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, derive_new::new)]
-pub struct ComputePipelineDescriptor {
-    pipeline_layout: PipelineLayoutHandle,
-    kernel_key: &'static str, //string uniquely identifying the kernel
-    elem: KernelElement,
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub(crate) struct ComputePipelineDescriptor {
+    pub pipeline_layout: PipelineLayoutHandle,
+    pub kernel_key: &'static str, //string uniquely identifying the kernel
+    pub elem: KernelElement,
     //aux_ctx: Option<RVec<(&'static str, u32)>>, Used for sizing SMEM
 }
 

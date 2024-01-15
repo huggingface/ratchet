@@ -1,17 +1,18 @@
-use std::sync::Arc;
-
 use crate::gpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutHandle, GPUBuffer, GpuBindGroup,
-    GpuWorkload, WgpuDevice, UNIFORM_ALIGN,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutHandle, ComputePipelineHandle, GPUBuffer,
+    GpuBindGroup, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
 };
 use crate::{drvec, rvec, DRVec, RVec, Tensor};
 use derive_new::new;
 use wgpu::DynamicOffset;
 
+//Compiled op represents a single kernel invocation
+//We need to be more general here, and somehow encode encoder.copy_buffer_to_buffer as a COPY
+//operation
 #[derive(Debug, new)]
 pub struct CompiledOp {
-    workload: GpuWorkload,
-    pipeline: Arc<wgpu::ComputePipeline>,
+    workgroup_count: WorkgroupCount,
+    pipeline: ComputePipelineHandle,
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
 }
@@ -56,6 +57,7 @@ impl CompiledOp {
         storage_groups
     }
 
+    //TODO: pool this
     pub fn create_uniform_bind_group(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,

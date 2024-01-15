@@ -12,7 +12,6 @@ use crate::DType;
 /// RawStorage is Optional as the tensor may not be resolved.
 #[derive(derive_new::new, Debug)]
 pub struct Storage {
-    device: Device,
     raw: Option<RawStorage>,
 }
 
@@ -29,7 +28,6 @@ impl Storage {
         } as *mut u8;
         let storage = RawCPUBuffer::new(data, layout);
         Self {
-            device: Device::CPU,
             raw: Some(RawStorage::CPU(storage)),
         }
     }
@@ -48,10 +46,6 @@ impl Storage {
 
     pub fn raw(&self) -> Option<&RawStorage> {
         self.raw.as_ref()
-    }
-
-    pub fn device(&self) -> &Device {
-        &self.device
     }
 }
 

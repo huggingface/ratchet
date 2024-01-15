@@ -3,8 +3,11 @@ use std::fmt::Debug;
 use encase::internal::WriteInto;
 use encase::ShaderType;
 
-use crate::gpu::{BindGroupLayoutHandle, CpuUniform, WgpuDevice, UNIFORM_ALIGN};
-use crate::{Binary, CompiledOp, Device, RVec, Tensor};
+use crate::gpu::{
+    BindGroupLayoutHandle, ComputePipelineHandle, CpuUniform, WgpuDevice, WorkgroupCount,
+    UNIFORM_ALIGN,
+};
+use crate::{Binary, CompiledOp, RVec, Tensor};
 
 #[derive(Debug)]
 pub enum UnaryOp {
@@ -20,8 +23,26 @@ pub enum LazyOp {
 }
 
 impl LazyOp {
-    pub fn compile(&self) -> CompiledOp {
-        todo!()
+    pub fn compile(
+        &self,
+        device: &WgpuDevice,
+        uniform: &CpuUniform,
+    ) -> (ComputePipelineHandle, WorkgroupCount) {
+        match self {
+            LazyOp::Empty => todo!(),
+            LazyOp::Binary(b) => b.compile(device, uniform).unwrap(),
+            LazyOp::Unary(_, _) => todo!(),
+            LazyOp::Const => todo!(),
+        }
+    }
+
+    pub fn can_compile(&self) -> bool {
+        match self {
+            LazyOp::Empty => false,
+            LazyOp::Binary(_) => true,
+            LazyOp::Unary(_, _) => true,
+            LazyOp::Const => false,
+        }
     }
 }
 
@@ -53,7 +74,11 @@ pub trait Operation: Debug + 'static {
 
     fn srcs(&self) -> RVec<&Tensor>;
 
-    fn compile(&self, device: &Device, uniform: &CpuUniform) -> Result<CompiledOp, OperationError>;
+    fn compile(
+        &self,
+        device: &WgpuDevice,
+        uniform: &CpuUniform,
+    ) -> Result<(ComputePipelineHandle, WorkgroupCount), OperationError>;
 
     fn storage_layout(&self, device: &WgpuDevice) -> BindGroupLayoutHandle;
 }
