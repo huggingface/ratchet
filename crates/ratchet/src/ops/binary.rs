@@ -62,11 +62,11 @@ impl Operation for Binary {
         device: &WgpuDevice,
         uniform: &mut CpuUniform,
     ) -> Result<(ComputePipelineHandle, WorkgroupCount, DynamicOffset), OperationError> {
-        let (lhs, rhs) = (&self.lhs, &self.rhs);
-        let meta = BinaryMeta {
-            M: lhs.shape()[0] as _,
-            N: lhs.shape()[1] as _,
-        };
+        let (lhs, _) = (&self.lhs, &self.rhs);
+        let M = lhs.shape()[0] as u32;
+        let N = lhs.shape()[1] as u32;
+        let meta = BinaryMeta { M, N };
+        println!("Binary: {:?}", meta);
         let offset = uniform.write(&meta).unwrap();
         let wgcx = WorkgroupCount::div_ceil(lhs.shape()[0], 64);
 
