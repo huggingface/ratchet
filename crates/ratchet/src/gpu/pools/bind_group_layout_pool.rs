@@ -125,7 +125,7 @@ impl BindGroupLayoutPool {
 }
 
 impl BindGroupLayoutPool {
-    pub fn allocate(
+    pub fn get_or_create(
         &self,
         descriptor: &BindGroupLayoutDescriptor,
         device: &WgpuDevice,

@@ -31,17 +31,22 @@ pub struct ComputePipelineDescriptor {
     //aux_ctx: Option<RVec<(&'static str, u32)>>, Used for sizing SMEM
 }
 
-#[derive(Default)]
 pub struct ComputePipelinePool {
     inner:
         StaticResourcePool<ComputePipelineHandle, ComputePipelineDescriptor, wgpu::ComputePipeline>,
 }
 
 impl ComputePipelinePool {
+    pub fn new() -> Self {
+        Self {
+            inner: StaticResourcePool::default(),
+        }
+    }
+
     pub fn get_or_create(
         &self,
         desc: &ComputePipelineDescriptor,
-        device: WgpuDevice,
+        device: &WgpuDevice,
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
             let shader = "";

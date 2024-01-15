@@ -28,7 +28,7 @@ impl PipelineLayoutPool {
         }
     }
 
-    pub fn allocate(
+    pub fn get_or_create(
         &self,
         desc: &PipelineLayoutDescriptor,
         device: &WgpuDevice,
