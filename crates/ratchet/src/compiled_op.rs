@@ -12,7 +12,7 @@ use wgpu::DynamicOffset;
 #[derive(Debug, new)]
 pub struct CompiledOp {
     workgroup_count: WorkgroupCount,
-    pipeline: ComputePipelineHandle,
+    pipeline_handle: ComputePipelineHandle,
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
 }
@@ -78,5 +78,13 @@ impl CompiledOp {
             }],
         });
         bind_group
+    }
+
+    pub fn workgroup_count(&self) -> WorkgroupCount {
+        self.workgroup_count
+    }
+
+    pub fn offset(&self) -> DynamicOffset {
+        self.offset
     }
 }
