@@ -105,7 +105,7 @@ impl BindGroupPool {
                 .collect()
         };
 
-        let resource = self.inner.allocate(desc, |desc| {
+        let resource = self.inner.get_or_create(desc, |desc| {
             let mut buffer_index = 0;
 
             let entries = desc

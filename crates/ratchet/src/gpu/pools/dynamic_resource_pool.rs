@@ -84,7 +84,7 @@ where
     Handle: Key,
     Desc: Clone + Eq + Hash + Debug + DynamicResourcesDesc,
 {
-    pub fn allocate<F: ResourceConstructor<Desc, Res>>(
+    pub fn get_or_create<F: ResourceConstructor<Desc, Res>>(
         &self,
         desc: &Desc,
         constructor: F,
@@ -287,8 +287,8 @@ mod tests {
         // Holding on to the resource avoids both re-use and dropping.
         {
             let drop_counter_before = DROP_COUNTER.with(|c| c.get());
-            let resource0 = pool.allocate(&ConcreteResourceDesc(0), |_| ConcreteResource);
-            let resource1 = pool.allocate(&ConcreteResourceDesc(0), |_| ConcreteResource);
+            let resource0 = pool.get_or_create(&ConcreteResourceDesc(0), |_| ConcreteResource);
+            let resource1 = pool.get_or_create(&ConcreteResourceDesc(0), |_| ConcreteResource);
             assert_ne!(resource0.handle, resource1.handle);
             drop(resource1);
 
@@ -306,8 +306,8 @@ mod tests {
     #[test]
     fn individual_handles() {
         let mut pool = Pool::default();
-        let res0 = pool.allocate(&ConcreteResourceDesc(0), |_| ConcreteResource);
-        let res1 = pool.allocate(&ConcreteResourceDesc(0), |_| ConcreteResource);
+        let res0 = pool.get_or_create(&ConcreteResourceDesc(0), |_| ConcreteResource);
+        let res1 = pool.get_or_create(&ConcreteResourceDesc(0), |_| ConcreteResource);
         assert_ne!(res0.handle, res1.handle);
         pool.begin_pass(1234, |_| {});
     }
@@ -317,11 +317,11 @@ mod tests {
     #[test]
     fn handle_unchanged_on_reuse() {
         let mut pool = Pool::default();
-        let res0 = pool.allocate(&ConcreteResourceDesc(0), |_| ConcreteResource);
+        let res0 = pool.get_or_create(&ConcreteResourceDesc(0), |_| ConcreteResource);
         let handle0 = res0.handle;
         drop(res0);
         pool.begin_pass(1234, |_| {});
-        let res1 = pool.allocate(&ConcreteResourceDesc(0), |_| ConcreteResource);
+        let res1 = pool.get_or_create(&ConcreteResourceDesc(0), |_| ConcreteResource);
 
         assert_eq!(handle0, res1.handle);
         pool.begin_pass(1235, |_| {});
@@ -339,7 +339,7 @@ mod tests {
             assert_eq!(drop_counter_before, DROP_COUNTER.with(|c| c.get()));
 
             let new_resource_created = Cell::new(false);
-            let resource = pool.allocate(&ConcreteResourceDesc(desc), |_| {
+            let resource = pool.get_or_create(&ConcreteResourceDesc(desc), |_| {
                 new_resource_created.set(true);
                 ConcreteResource
             });

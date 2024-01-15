@@ -31,7 +31,7 @@ impl CompiledOp {
 
         for tensor in srcs.iter().chain(dsts.iter()) {
             let buf = tensor.storage().try_read().unwrap();
-            let buffer_handle = buf.try_buffer_handle().unwrap();
+            let buffer_handle = buf.try_gpu().unwrap();
             bind_group_entries.push(BindGroupEntry {
                 handle: buffer_handle.handle,
                 offset: 0,
@@ -61,7 +61,7 @@ impl CompiledOp {
 
     //TODO: pool this
     pub fn create_uniform_bind_group(
-        device: &wgpu::Device,
+        device: &WgpuDevice,
         layout: &wgpu::BindGroupLayout,
         buf: &GPUBuffer,
     ) -> wgpu::BindGroup {
@@ -80,11 +80,19 @@ impl CompiledOp {
         bind_group
     }
 
-    pub fn workgroup_count(&self) -> WorkgroupCount {
-        self.workgroup_count
+    pub fn workgroup_count(&self) -> &WorkgroupCount {
+        &self.workgroup_count
     }
 
     pub fn offset(&self) -> DynamicOffset {
         self.offset
+    }
+
+    pub fn storage_groups(&self) -> &RVec<GpuBindGroup> {
+        &self.storage_groups
+    }
+
+    pub fn pipeline_handle(&self) -> ComputePipelineHandle {
+        self.pipeline_handle
     }
 }

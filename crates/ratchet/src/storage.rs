@@ -4,7 +4,7 @@ use crate::{
     Device, DeviceError, Shape, TensorDType,
 };
 use std::{alloc::Layout, fmt::Debug};
-use wgpu::BufferUsages;
+use wgpu::{util::DownloadBuffer, BufferUsages};
 
 use crate::DType;
 
@@ -14,6 +14,9 @@ use crate::DType;
 pub struct Storage {
     raw: Option<RawStorage>,
 }
+
+unsafe impl Send for Storage {}
+unsafe impl Sync for Storage {}
 
 impl Storage {
     pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape, device: &Device) -> Self {
@@ -38,16 +41,30 @@ impl Storage {
         }
     }
 
+    pub fn set_raw(&mut self, raw: RawStorage) {
+        self.raw = Some(raw);
+    }
+
     pub fn raw(&self) -> Option<&RawStorage> {
         self.raw.as_ref()
     }
 
-    pub fn try_buffer_handle(&self) -> Option<&GPUBuffer> {
+    pub fn try_gpu(&self) -> Option<&GPUBuffer> {
         println!("SELF: {:?}", self);
         match self.raw.as_ref()? {
             RawStorage::GPU(raw) => Some(&raw.buf),
             _ => None,
         }
+    }
+
+    pub fn dump(&self, dtype: DType, full: bool) -> String {
+        self.raw
+            .as_ref()
+            .map(|raw| match raw {
+                RawStorage::CPU(raw) => raw.dump(dtype, full),
+                RawStorage::GPU(raw) => raw.dump(dtype, full),
+            })
+            .unwrap_or_else(|| "None".to_string())
     }
 }
 
@@ -97,6 +114,12 @@ impl RawCPUBuffer {
 
     pub fn as_bytes(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.0, self.1.size()) }
+    }
+
+    pub fn from_bytes(bytes: &[u8], alignment: usize) -> Self {
+        let mut storage = unsafe { Self::uninitialized(bytes.len(), alignment) };
+        storage.as_bytes_mut().copy_from_slice(bytes);
+        storage
     }
 }
 
@@ -197,6 +220,10 @@ impl RawGPUBuffer {
 
     pub fn inner(&self) -> &GPUBuffer {
         &self.buf
+    }
+
+    pub fn usage(&self) -> BufferUsages {
+        self.buf.usage()
     }
 }
 
