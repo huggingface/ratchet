@@ -29,6 +29,7 @@ impl Executable {
                 timestamp_writes: None,
             });
             for step in self.steps.iter() {
+                println!("Executing step: {:?}", step);
                 cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle()).unwrap());
                 for (index, bind_group) in step.storage_groups().iter().enumerate() {
                     cpass.set_bind_group(index as u32, bind_group, &[]);

@@ -50,7 +50,6 @@ impl Storage {
     }
 
     pub fn try_gpu(&self) -> Option<&GPUBuffer> {
-        println!("SELF: {:?}", self);
         match self.raw.as_ref()? {
             RawStorage::GPU(raw) => Some(&raw.buf),
             _ => None,
@@ -202,6 +201,14 @@ impl RawGPUBuffer {
     pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape, device: &WgpuDevice) -> Self {
         assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);
+
+        let mut min_bytes = [0; 16];
+        let bytes = if bytes.len() < 16 {
+            min_bytes[..bytes.len()].copy_from_slice(bytes);
+            &min_bytes
+        } else {
+            bytes
+        };
         let buffer = device
             .create_buffer_init(
                 &BufferDescriptor::new(
