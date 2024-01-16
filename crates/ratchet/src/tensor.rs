@@ -43,6 +43,9 @@ impl std::ops::Deref for Tensor {
     }
 }
 
+/// # Metadata
+///
+/// All of the below field can be thought of as a "view" of the underlying storage.
 #[derive(new, Debug, Clone)]
 pub struct Metadata {
     shape: Shape,
@@ -218,20 +221,9 @@ impl Tensor {
                 ))
             }
         }
-        let gpu_uniform = device.create_uniform_init(uniform);
-        let gpu_uniform_bind_group = CompiledOp::create_uniform_bind_group(
-            device,
-            &device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &[wgpu::BindGroupLayoutEntry::dynamic_uniform_buffer()],
-            }),
-            &gpu_uniform,
-        );
-        let executable = Executable::new(compiled_ops, gpu_uniform, gpu_uniform_bind_group);
+        let executable = Executable::new(compiled_ops, uniform.into_gpu(device));
         let index = executable.dispatch_operations(device);
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
-
-        self.to_cpu();
     }
 
     async fn to_cpu_inner(&self) {
@@ -272,6 +264,8 @@ impl Tensor {
     }
 }
 
+impl Inner {}
+
 #[cfg(test)]
 mod tests {
     use crate::{shape, DeviceRequest};
@@ -288,5 +282,7 @@ mod tests {
         println!("\nA: {:#?}", a);
         println!("\nB: {:#?}", b);
         println!("\nC: {:#?}", c);
+        c.to_cpu();
+        println!("\nC CPU: {:#?}", c);
     }
 }
