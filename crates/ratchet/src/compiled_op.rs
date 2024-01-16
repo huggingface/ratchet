@@ -31,7 +31,7 @@ impl CompiledOp {
 
         for tensor in srcs.iter().chain(dsts.iter()) {
             let buf = tensor.storage().try_read().unwrap();
-            let gpu_buf = &buf.try_gpu().unwrap().buf;
+            let gpu_buf = &buf.try_gpu().unwrap().inner;
             bind_group_entries.push(BindGroupEntry {
                 handle: gpu_buf.handle,
                 offset: 0,
