@@ -1,6 +1,6 @@
 use crate::gpu::{BufferDescriptor, BufferUsagesExt, CpuUniform};
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RVec, RawStorage, Shape,
+    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RawStorage, Shape,
     Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};

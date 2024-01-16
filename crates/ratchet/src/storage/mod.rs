@@ -57,7 +57,7 @@ impl Storage {
 
     pub fn try_gpu(&self) -> Option<&RawGPUBuffer> {
         match self.raw.as_ref()? {
-            RawStorage::GPU(raw) => Some(&raw),
+            RawStorage::GPU(raw) => Some(raw),
             _ => None,
         }
     }
