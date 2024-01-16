@@ -221,8 +221,8 @@ impl WgpuDevice {
         execution_order: &[Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, GPUBuffer>, DeviceError> {
-        Ok(self
+        self
             .buffer_allocator
-            .allocate_cfg(execution_order, device)?)
+            .allocate_cfg(execution_order, device)
     }
 }
