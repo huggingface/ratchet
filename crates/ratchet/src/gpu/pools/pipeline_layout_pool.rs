@@ -1,5 +1,3 @@
-
-
 use crate::{gpu::WgpuDevice, RVec};
 
 use super::{

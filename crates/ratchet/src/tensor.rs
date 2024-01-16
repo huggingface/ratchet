@@ -9,6 +9,13 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use wgpu::BufferUsages;
 
+// thiserror error for Tensor
+#[derive(thiserror::Error, Debug)]
+pub enum TensorError {
+    #[error("Tensor is not resolved")]
+    NotResolved,
+}
+
 /// A multi-dimensional array of data.
 ///
 /// A tensor is a lazy representation of an operation. It, and the nodes required to compute it's
@@ -173,12 +180,12 @@ impl Tensor {
     }
 
     //TODO: massively refactor, just seeing if it can work for now
-    pub fn resolve(&self) {
-        let mut compiled_ops = vec![];
+    pub fn resolve(&self) -> Result<(), TensorError> {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu().unwrap();
 
         let execution_order = self.execution_order();
+        let mut compiled_ops = Vec::with_capacity(execution_order.len());
 
         let mut allocations = device
             .allocate_intermediates(&execution_order, device)
@@ -198,10 +205,8 @@ impl Tensor {
 
         for t in execution_order {
             if !t.resolved() {
-                let storage = Storage::new(Some(RawStorage::from(
-                    allocations.get(&t.id()).unwrap().clone(),
-                )));
-                t.set_storage(storage);
+                let raw_storage = RawStorage::from(allocations.get(&t.id()).unwrap().clone());
+                t.set_storage(Storage::new(Some(raw_storage)));
             }
 
             if let Some((pipeline_handle, wgc, offset)) = t.op.compile(device, &mut uniform) {
@@ -224,6 +229,7 @@ impl Tensor {
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device));
         let index = executable.dispatch_operations(device);
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
+        Ok(())
     }
 
     async fn to_cpu_inner(&self) {
@@ -278,7 +284,7 @@ mod tests {
         let a = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
         let b = Tensor::from_vec(vec![55.], shape![1], device);
         let c = a.add(&b);
-        c.resolve();
+        c.resolve().unwrap();
         println!("\nA: {:#?}", a);
         println!("\nB: {:#?}", b);
         println!("\nC: {:#?}", c);
