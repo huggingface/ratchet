@@ -25,7 +25,7 @@ pub use ops::*;
 pub use shape::*;
 pub use storage::*;
 pub use strides::*;
-pub use symshape::*;
+
 pub use tensor::*;
 pub use view::*;
 

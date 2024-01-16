@@ -6,13 +6,13 @@ pub use gpu_buffer::*;
 
 use crate::{
     gpu::GPUBuffer,
-    gpu::{BufferDescriptor, BufferUsagesExt, WgpuDevice},
+    gpu::{WgpuDevice},
     Device, DeviceError, Shape, TensorDType,
 };
 use bytemuck::NoUninit;
 use half::{bf16, f16};
-use std::{alloc::Layout, fmt::Debug};
-use wgpu::BufferUsages;
+use std::{fmt::Debug};
+
 
 use crate::DType;
 
