@@ -55,10 +55,13 @@ impl Storage {
         self.raw.as_ref()
     }
 
-    pub fn try_gpu(&self) -> Option<&RawGPUBuffer> {
-        match self.raw.as_ref()? {
-            RawStorage::GPU(raw) => Some(raw),
-            _ => None,
+    pub fn try_gpu(&self) -> Result<&RawGPUBuffer, DeviceError> {
+        match self.raw.as_ref() {
+            Some(RawStorage::GPU(raw)) => Ok(raw),
+            _ => Err(DeviceError::DeviceMismatch(
+                "GPU".to_string(),
+                "CPU".to_string(),
+            )),
         }
     }
 

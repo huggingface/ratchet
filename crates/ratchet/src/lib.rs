@@ -11,7 +11,6 @@ mod ops;
 mod shape;
 mod storage;
 mod strides;
-mod symshape;
 mod tensor;
 mod tensor_id;
 
@@ -25,9 +24,8 @@ pub use ops::*;
 pub use shape::*;
 pub use storage::*;
 pub use strides::*;
-pub use tensor_id::*;
-
 pub use tensor::*;
+pub use tensor_id::*;
 
 use smallvec::SmallVec;
 pub type RVec<T> = SmallVec<[T; 4]>;

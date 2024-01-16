@@ -120,7 +120,7 @@ impl BufferAllocator {
     ///
     /// Simple greedy algorithm for allocating all required buffers to store
     /// activations during an inference pass.
-    pub fn allocate_intermediates(
+    pub fn allocate_cfg(
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
