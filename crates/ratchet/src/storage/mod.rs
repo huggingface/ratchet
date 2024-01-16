@@ -4,7 +4,9 @@ mod gpu_buffer;
 pub use cpu_buffer::*;
 pub use gpu_buffer::*;
 
-use crate::{gpu::GPUBuffer, gpu::WgpuDevice, Device, DeviceError, Shape, TensorDType};
+use crate::{
+    gpu::GPUBuffer, gpu::WgpuDevice, Device, DeviceError, DeviceRequest, Shape, TensorDType,
+};
 use bytemuck::NoUninit;
 use half::{bf16, f16};
 use std::fmt::Debug;
@@ -22,7 +24,7 @@ macro_rules! impl_read_to_host {
     };
 }
 
-#[derive(derive_new::new, Debug)]
+#[derive(Debug)]
 pub struct Storage {
     raw: Option<RawStorage>, //Optional as the tensor may not be resolved
 }
@@ -79,6 +81,12 @@ impl Storage {
         F16 => f16,
         BF16 => bf16
     );
+}
+
+impl From<RawStorage> for Storage {
+    fn from(raw: RawStorage) -> Self {
+        Self { raw: Some(raw) }
+    }
 }
 
 #[derive(Debug)]

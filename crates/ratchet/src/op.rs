@@ -15,12 +15,22 @@ pub enum UnaryOp {
     Gelu,
 }
 
-#[derive(Debug)]
 pub enum LazyOp {
     Empty,
     Binary(Binary),
     Unary(Tensor, UnaryOp),
     Const,
+}
+
+impl std::fmt::Debug for LazyOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LazyOp::Empty => write!(f, "Empty"),
+            LazyOp::Binary(b) => write!(f, "{:?}", b),
+            LazyOp::Unary(_, _) => write!(f, "Unary"),
+            LazyOp::Const => write!(f, "Const"),
+        }
+    }
 }
 
 impl LazyOp {

@@ -36,6 +36,14 @@ impl std::fmt::Debug for Device {
 }
 
 impl Device {
+    pub fn is_cpu(&self) -> bool {
+        matches!(self, Device::CPU)
+    }
+
+    pub fn is_gpu(&self) -> bool {
+        matches!(self, Device::GPU(_))
+    }
+
     pub fn request_device(request: DeviceRequest) -> Result<Self, DeviceError> {
         match request {
             DeviceRequest::CPU => Ok(Device::CPU),

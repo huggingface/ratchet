@@ -4,7 +4,7 @@ pub struct TensorId(usize);
 
 impl std::fmt::Debug for TensorId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("TensorID:").field(&self.0).finish()
+        write!(f, "#{}", self.0)
     }
 }
 

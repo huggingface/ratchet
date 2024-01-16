@@ -139,7 +139,7 @@ impl BufferAllocator {
                 continue;
             }
 
-            for source in t.srcs() {
+            for source in t.op().srcs() {
                 //Here we should trace up once inplace is implemented
                 let num_bytes = source.num_bytes();
                 assignments.entry(source.id()).or_insert_with(|| {

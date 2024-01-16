@@ -53,10 +53,8 @@ impl RawGPUBuffer {
 
 impl std::fmt::Debug for RawGPUBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GPUStorage")
-            .field("buffer", &self.buf.global_id())
-            .field("size", &self.buf.size())
-            .field("usage", &self.buf.usage())
+        f.debug_struct("RawGPUBuffer")
+            .field("buf", &self.buf.global_id())
             .finish()
     }
 }
