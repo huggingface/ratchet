@@ -24,15 +24,26 @@ impl std::fmt::Debug for Strides {
 
 impl From<&Shape> for Strides {
     fn from(shape: &Shape) -> Self {
-        let shape = shape.iter().map(|x| *x as isize).collect::<RVec<_>>();
-
         let mut strides = rvec![];
         let mut stride = 1;
-        for size in shape.iter().rev() {
+        for size in shape.inner().iter().rev() {
             strides.push(stride);
-            stride *= *size;
+            stride *= *size as isize;
         }
         strides.reverse();
         Self(strides)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::shape;
+
+    #[test]
+    fn test_strides() {
+        use super::*;
+        let shape = shape![2, 3, 4];
+        let strides = Strides::from(&shape);
+        assert_eq!(strides.to_vec(), vec![12, 4, 1]);
     }
 }
