@@ -28,16 +28,13 @@ impl Executable {
             for step in self.steps.iter() {
                 cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle()).unwrap());
 
-                for (index, bind_group) in step.storage_groups().iter().enumerate() {
-                    cpass.set_bind_group(index as u32, bind_group, &[]);
+                for (group_index, bind_group) in step.storage_groups().iter().enumerate() {
+                    cpass.set_bind_group(group_index as u32, bind_group, &[]);
                 }
 
                 let uniform_group_index = step.storage_groups().len() as u32;
-                cpass.set_bind_group(
-                    uniform_group_index,
-                    self.gpu_uniform.bind_group(),
-                    &[step.offset()],
-                );
+                let uniform_group = self.gpu_uniform.bind_group();
+                cpass.set_bind_group(uniform_group_index, uniform_group, &[step.offset()]);
 
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
