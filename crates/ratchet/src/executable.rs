@@ -1,4 +1,4 @@
-use crate::gpu::{GPUBuffer, GpuUniform, StaticResourcePoolAccessor, WgpuDevice};
+use crate::gpu::{GpuUniform, StaticResourcePoolAccessor, WgpuDevice};
 use crate::CompiledOp;
 use derive_new::new;
 use wgpu::SubmissionIndex;

@@ -1,4 +1,4 @@
-use crate::gpu::{BindGroupLayoutEntryExt, BufferDescriptor, BufferUsagesExt, CpuUniform};
+use crate::gpu::{BufferDescriptor, BufferUsagesExt, CpuUniform};
 use crate::{
     ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RVec, RawStorage, Shape,
     Storage, Strides, TensorDType, TensorId,
