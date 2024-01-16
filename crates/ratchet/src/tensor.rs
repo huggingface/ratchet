@@ -14,6 +14,8 @@ use wgpu::BufferUsages;
 pub enum TensorError {
     #[error("Tensor is not resolved")]
     NotResolved,
+    #[error("Tensor {0:?} is missing storage")]
+    NoStorage(TensorId),
 }
 
 /// A multi-dimensional array of data.
@@ -77,12 +79,14 @@ impl AsRef<Inner> for Inner {
 
 impl Inner {
     fn new(op: LazyOp, meta: Metadata, storage: Storage, device: Device) -> Self {
+        let storage = Arc::new(RwLock::new(storage));
+        let id = TensorId::new();
         Self {
-            id: TensorId::new(),
+            id,
             meta,
             op,
             device,
-            storage: Arc::new(RwLock::new(storage)),
+            storage,
         }
     }
 }
@@ -120,18 +124,19 @@ impl Tensor {
         self.storage().try_read().unwrap().raw().is_some()
     }
 
-    pub(crate) fn set_storage(&self, storage: Storage) {
+    /// # Safety
+    ///
+    /// Make sure your device & storage are compatible.
+    pub(crate) unsafe fn set_storage(&self, storage: Storage) {
         *self.storage().write() = storage;
     }
 
-    pub fn srcs(&self) -> RVec<&Tensor> {
-        match &self.inner.op {
-            LazyOp::Const => rvec![],
-            LazyOp::Binary(b) => b.srcs(),
-            _ => unimplemented!(),
-        }
+    pub(crate) fn op(&self) -> &LazyOp {
+        &self.inner.op
     }
+}
 
+impl Tensor {
     pub fn add(&self, other: &Tensor) -> Tensor {
         //Enforce valid shape, dtype, device
         //Determine output shape
@@ -205,8 +210,12 @@ impl Tensor {
 
         for t in execution_order {
             if !t.resolved() {
-                let raw_storage = RawStorage::from(allocations.get(&t.id()).unwrap().clone());
-                t.set_storage(Storage::new(Some(raw_storage)));
+                let id = t.id();
+                let allocation = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+                assert!(t.device().is_gpu());
+                unsafe {
+                    t.set_storage(Storage::from(RawStorage::from(allocation.clone())));
+                }
             }
 
             if let Some((pipeline_handle, wgc, offset)) = t.op.compile(device, &mut uniform) {
@@ -261,16 +270,13 @@ impl Tensor {
         );
         device.poll(wgpu::Maintain::Wait);
         let storage = rx.receive().await.unwrap();
-        self.set_storage(storage.unwrap());
-        //TOOD: update device here!!!
+        unsafe { self.set_storage(storage.unwrap()) };
     }
 
     pub fn to_cpu(&self) {
         pollster::block_on(self.to_cpu_inner())
     }
 }
-
-impl Inner {}
 
 #[cfg(test)]
 mod tests {

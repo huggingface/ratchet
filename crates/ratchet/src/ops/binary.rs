@@ -19,7 +19,7 @@ pub enum BinaryOp {
     Div,
 }
 
-#[derive(Debug, new)]
+#[derive(new, Debug)]
 pub struct Binary {
     lhs: Tensor,
     rhs: Tensor,
