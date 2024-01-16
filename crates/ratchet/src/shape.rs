@@ -37,13 +37,9 @@ impl Shape {
 
 impl std::fmt::Debug for Shape {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut shape = String::from("[");
-        for (i, dim) in self.0.iter().enumerate() {
-            if i == 0 {
-                shape.push_str(&format!("{}", dim));
-            } else {
-                shape.push_str(&format!("x{}", dim));
-            }
+        let mut shape = format!("[{}", self.0[0]);
+        for (i, dim) in self.0.iter().enumerate().skip(1) {
+            shape.push_str(&format!("x{}", dim));
         }
         write!(f, "{}]", shape)
     }

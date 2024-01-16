@@ -7,7 +7,13 @@ use crate::{
 };
 use std::cell::{Ref, RefCell, RefMut};
 
-use super::{CpuUniform, WgpuDevice, UNIFORM_ALIGN};
+use super::{BufferUsagesExt, CpuUniform, WgpuDevice, UNIFORM_ALIGN};
+
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum AllocatorError {
+    #[error("Buffer not found")]
+    BufferNotFound,
+}
 
 pub struct BufferAllocator {
     //TODO: should this be RefCell
@@ -81,16 +87,17 @@ impl BufferAllocator {
         let mut closest_index = None;
         let mut closest_size_diff: Option<usize> = None;
         for (idx, b) in free.iter().enumerate() {
-            let size = b.descriptor.size as usize;
-            if size >= descriptor.size as usize {
+            let current_size = b.descriptor.size as _;
+            let required_size = descriptor.size as _;
+            if current_size >= required_size {
                 match closest_size_diff {
                     None => {
                         closest_index = Some(idx);
-                        closest_size_diff = Some(usize::abs_diff(size, descriptor.size as _))
+                        closest_size_diff = Some(usize::abs_diff(current_size, required_size))
                     }
-                    Some(d) if d > usize::abs_diff(size, descriptor.size as _) => {
+                    Some(d) if d > usize::abs_diff(current_size, required_size) => {
                         closest_index = Some(idx);
-                        closest_size_diff = Some(usize::abs_diff(size, descriptor.size as _))
+                        closest_size_diff = Some(usize::abs_diff(current_size, required_size))
                     }
                     _ => {}
                 }
@@ -117,7 +124,7 @@ impl BufferAllocator {
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
-    ) -> FxHashMap<TensorId, GPUBuffer> {
+    ) -> Result<FxHashMap<TensorId, GPUBuffer>, AllocatorError> {
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
 
@@ -125,8 +132,8 @@ impl BufferAllocator {
             if t.resolved() {
                 //TODO terrible
                 t.storage().try_read().unwrap().raw().map(|b| match b {
-                    crate::RawStorage::CPU(_) => todo!(),
                     crate::RawStorage::GPU(g) => assignments.insert(t.id(), g.inner().clone()),
+                    _ => unreachable!(),
                 });
 
                 continue;
@@ -134,14 +141,10 @@ impl BufferAllocator {
 
             for source in t.srcs() {
                 //Here we should trace up once inplace is implemented
-                let requested_bytes = source.num_bytes();
+                let num_bytes = source.num_bytes();
                 assignments.entry(source.id()).or_insert_with(|| {
                     self.graph_allocate(
-                        BufferDescriptor::new(
-                            requested_bytes as _,
-                            BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
-                            false,
-                        ),
+                        BufferDescriptor::new(num_bytes as _, BufferUsages::standard(), false),
                         &mut free,
                         device,
                     )
@@ -153,6 +156,6 @@ impl BufferAllocator {
                 free.push(buf.clone());
             }
         }
-        assignments
+        Ok(assignments)
     }
 }

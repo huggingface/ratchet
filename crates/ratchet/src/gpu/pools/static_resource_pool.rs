@@ -5,7 +5,7 @@ use parking_lot::{RwLock, RwLockReadGuard};
 use rustc_hash::FxHashMap;
 use slotmap::{Key, SlotMap};
 
-#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
 pub enum PoolError {
     #[error("Requested resource isn't available because the handle is no longer valid")]
     ResourceNotAvailable,

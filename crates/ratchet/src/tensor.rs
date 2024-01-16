@@ -1,10 +1,10 @@
 use crate::gpu::{
-    BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, BufferDescriptor, CpuUniform,
-    StaticResourcePoolAccessor,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, BufferDescriptor, BufferUsagesExt,
+    CpuUniform, StaticResourcePoolAccessor,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RVec, RawCPUBuffer,
-    RawGPUBuffer, RawStorage, Shape, Storage, Strides, TensorDType,
+    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RVec, RawCPUBuffer, RawStorage,
+    Shape, Storage, Strides, TensorDType,
 };
 use crate::{BinaryOp, LazyOp};
 use bytemuck::NoUninit;
@@ -13,17 +13,6 @@ use half::{bf16, f16};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use wgpu::BufferUsages;
-
-macro_rules! impl_read_to_host {
-    ($($dtype:ident => $type:ty),*) => {
-        fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> Storage {
-            match dt {
-                $(DType::$dtype => Storage::from_slice::<$type>(bytemuck::cast_slice(bytes), &shape, &Device::CPU),)*
-                _ => todo!("Attempted to read GPU tensor to host with unsupported dtype: {:?}", dt),
-            }
-        }
-    };
-}
 
 /// Unique identifier for tensors.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -93,9 +82,6 @@ pub struct Inner {
     device: Device,
     storage: Arc<RwLock<Storage>>,
 }
-
-unsafe impl Send for Inner {}
-unsafe impl Sync for Inner {}
 
 impl AsRef<Inner> for Inner {
     fn as_ref(&self) -> &Inner {
@@ -211,15 +197,13 @@ impl Tensor {
     pub fn resolve(&self) {
         let mut compiled_ops = vec![];
         let mut uniform = CpuUniform::new();
-        let device = self.device().is_gpu().unwrap();
+        let device = self.device().try_gpu().unwrap();
 
         let execution_order = self.execution_order();
 
-        let mut allocations = self
-            .device()
-            .is_gpu()
-            .unwrap()
-            .allocate_intermediates(&execution_order, device);
+        let mut allocations = device
+            .allocate_intermediates(&execution_order, device)
+            .unwrap();
 
         //Allocate for leaf node (ourselves)
         allocations.insert(
@@ -227,7 +211,7 @@ impl Tensor {
             device
                 .allocate_buffer(&BufferDescriptor {
                     size: self.num_bytes() as _,
-                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+                    usage: BufferUsages::standard(),
                     mapped_at_creation: false,
                 })
                 .unwrap(),
@@ -275,7 +259,7 @@ impl Tensor {
     }
 
     async fn to_cpu_inner(&self) {
-        let device = self.device().is_gpu().unwrap();
+        let device = self.device().try_gpu().unwrap();
         let shape = self.shape().clone();
         let dt = self.dt();
 
@@ -295,7 +279,7 @@ impl Tensor {
             &buffer_slice,
             move |buffer| {
                 tx.send(match buffer {
-                    Ok(db) => Ok(Self::read_to_host(shape, dt, &db)),
+                    Ok(db) => Ok(Storage::read_to_host(shape, dt, &db)),
                     Err(error) => Err(error),
                 })
                 .unwrap();
@@ -307,18 +291,9 @@ impl Tensor {
         //TOOD: update device here!!!
     }
 
-    ///Consumes the GPU tensor and returns a CPU tensor
     pub fn to_cpu(&self) {
         pollster::block_on(self.to_cpu_inner())
     }
-
-    impl_read_to_host!(
-        F32 => f32,
-        I32 => i32,
-        U32 => u32,
-        F16 => f16,
-        BF16 => bf16
-    );
 }
 
 #[cfg(test)]
@@ -329,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_cfg() {
-        let device = Device::request_device(DeviceRequest::GPU);
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let a = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
         let b = Tensor::from_vec(vec![55.], shape![1], device);
         let c = a.add(&b);

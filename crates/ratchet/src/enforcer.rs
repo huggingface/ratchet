@@ -8,7 +8,7 @@ pub enum InvariantError {
     ShapeMismatch {
         left: usize,
         right: usize,
-        a: usize, //RDim
+        a: usize, //TODO: RDim
         b: usize,
     },
     #[error("Rank mismatch. {accepted:?} != {actual}.")]
@@ -30,11 +30,11 @@ pub enum InvariantError {
     DTypeMismatch { expected: DType, actual: DType },
 }
 
-///Enforcer is a collection of methods to enforce invariants.
-///Used during the inference of operation outputs.
+/// # Enforcer
+///
+/// Enforcer enforces common invariants on tensors.
 pub struct Enforcer;
 
-//TODO: switch to slices
 impl Enforcer {
     pub fn check_input_arity(inputs: &[Tensor], expected: usize) -> Result<(), InvariantError> {
         Self::check_input_arity_range(inputs, expected..=expected + 1)

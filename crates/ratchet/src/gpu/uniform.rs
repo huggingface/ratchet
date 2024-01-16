@@ -1,7 +1,7 @@
 use encase::DynamicUniformBuffer;
 
 ///We use a single uniform buffer for all operations to hold their parameters.
-///Every operations writes its metadata into this buffer, and an offset is returned.
+///Every operation writes its metadata into this buffer, and an offset is returned.
 ///This offset is used when binding the buffer.
 pub struct CpuUniform(DynamicUniformBuffer<Vec<u8>>);
 
