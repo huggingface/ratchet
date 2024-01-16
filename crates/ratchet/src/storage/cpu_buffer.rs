@@ -79,7 +79,7 @@ impl Storable for RawCPUBuffer {
         ))
     }
 
-    fn to_cpu(&self, device: &Device) -> Result<RawCPUBuffer, DeviceError> {
+    fn to_cpu(&self, _device: &Device) -> Result<RawCPUBuffer, DeviceError> {
         Ok(self.clone())
     }
 
