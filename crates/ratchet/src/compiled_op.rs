@@ -1,6 +1,6 @@
 use crate::gpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutHandle, ComputePipelineHandle, GPUBuffer,
-    GpuBindGroup, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutHandle, ComputePipelineHandle,
+    GpuBindGroup, WgpuDevice, WorkgroupCount,
 };
 use crate::{drvec, rvec, RVec, Tensor};
 use derive_new::new;
