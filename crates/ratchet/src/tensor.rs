@@ -18,6 +18,8 @@ pub enum TensorError {
     NoStorage(TensorId),
     #[error(transparent)]
     DeviceError(#[from] crate::DeviceError),
+    #[error("Failed to transfer data to host")]
+    TransferError,
 }
 
 /// A multi-dimensional array of data.
@@ -31,11 +33,13 @@ pub struct Tensor {
 
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let storage = self.storage().try_read().unwrap();
+        let storage = self.storage().try_read().expect("Could not read storage");
+        let storage_fmt = storage.dump(self.dt(), false);
+        let (id, op) = (self.id(), self.op());
         f.debug_struct("Tensor")
-            .field("id", &self.inner.id)
-            .field("op", &self.inner.op)
-            .field("storage", &storage.dump(self.dt(), false))
+            .field("id", &id)
+            .field("op", &op)
+            .field("storage", &storage_fmt)
             .finish()
     }
 }
@@ -81,14 +85,12 @@ impl AsRef<Inner> for Inner {
 
 impl Inner {
     fn new(op: LazyOp, meta: Metadata, storage: Storage, device: Device) -> Self {
-        let storage = Arc::new(RwLock::new(storage));
-        let id = TensorId::new();
         Self {
-            id,
+            id: TensorId::new(),
             meta,
             op,
             device,
-            storage,
+            storage: Arc::new(RwLock::new(storage)),
         }
     }
 }
@@ -189,34 +191,30 @@ impl Tensor {
     //TODO: massively refactor, just seeing if it can work for now
     pub fn resolve(&self) -> Result<(), TensorError> {
         let mut uniform = CpuUniform::new();
-        let device = self.device().try_gpu().unwrap();
+        let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
 
-        let mut allocations = device
-            .allocate_intermediates(&execution_order, device)
-            .unwrap();
+        let mut allocations = device.allocate_cfg(&execution_order, device)?;
 
         //Allocate for leaf node (ourselves)
         allocations.insert(
             self.id(),
-            device
-                .allocate_buffer(&BufferDescriptor {
-                    size: self.num_bytes() as _,
-                    usage: BufferUsages::standard(),
-                    mapped_at_creation: false,
-                })
-                .unwrap(),
+            device.allocate_buffer(&BufferDescriptor {
+                size: self.num_bytes() as _,
+                usage: BufferUsages::standard(),
+                mapped_at_creation: false,
+            })?,
         );
 
         for t in execution_order {
             if !t.resolved() {
                 let id = t.id();
-                let allocation = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+                let gpu_buf = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
                 assert!(t.device().is_gpu());
                 unsafe {
-                    t.set_storage(Storage::from(RawStorage::from(allocation.clone())));
+                    t.set_storage(Storage::from(RawStorage::from(gpu_buf.clone())));
                 }
             }
 
@@ -248,7 +246,7 @@ impl Tensor {
 
         let gpu_storage = {
             let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
-            storage_resource.try_gpu().unwrap().clone()
+            storage_resource.try_gpu()?.clone()
         };
         gpu_storage.validate_usages(BufferUsages::COPY_SRC)?;
         let buffer_slice = gpu_storage.buf.slice(..);
@@ -268,7 +266,11 @@ impl Tensor {
             },
         );
         device.poll(wgpu::Maintain::Wait);
-        let storage = rx.receive().await.unwrap().unwrap();
+        let storage = rx
+            .receive()
+            .await
+            .ok_or(TensorError::TransferError)?
+            .map_err(|_| TensorError::TransferError)?;
 
         Ok(Tensor {
             inner: Inner::new(self.op().clone(), self.meta.clone(), storage, Device::CPU).into(),

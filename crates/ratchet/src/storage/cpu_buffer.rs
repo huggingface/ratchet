@@ -1,11 +1,10 @@
 use crate::{
-    gpu::{WgpuDevice},
+    gpu::WgpuDevice,
     storage::{RawGPUBuffer, Storable},
     DeviceError, Shape, TensorDType,
 };
 
 use std::{alloc::Layout, fmt::Debug};
-
 
 use crate::DType;
 

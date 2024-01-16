@@ -214,13 +214,15 @@ impl WgpuDevice {
         self.compute_pipeline_pool.resources()
     }
 
-    pub fn allocate_intermediates(
+    /// Allocates all buffers required for storage of activations.
+    /// Additionally, allocates buffer for leaf node, the tensor upon which resolve was called.
+    pub fn allocate_cfg(
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, GPUBuffer>, DeviceError> {
         Ok(self
             .buffer_allocator
-            .allocate_intermediates(execution_order, device)?)
+            .allocate_cfg(execution_order, device)?)
     }
 }

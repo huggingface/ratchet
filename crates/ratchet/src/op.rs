@@ -54,15 +54,6 @@ impl LazyOp {
         }
     }
 
-    pub fn can_compile(&self) -> bool {
-        match self {
-            LazyOp::Empty => false,
-            LazyOp::Binary(_) => true,
-            LazyOp::Unary(_, _) => true,
-            LazyOp::Const => false,
-        }
-    }
-
     pub fn storage_layout(&self, device: &WgpuDevice) -> BindGroupLayoutHandle {
         match self {
             LazyOp::Binary(b) => b.storage_layout(device),
