@@ -44,47 +44,23 @@ impl Enforcer {
         inputs: &[Tensor],
         accepted: RangeInclusive<usize>,
     ) -> Result<(), InvariantError> {
-        if !accepted.contains(&inputs.len()) {
-            Err(InvariantError::InputArity {
-                accepted,
-                actual: inputs.len(),
-            })
-        } else {
-            Ok(())
+        let actual = inputs.len();
+        if !accepted.contains(&actual) {
+            return Err(InvariantError::InputArity { accepted, actual });
         }
-    }
-
-    pub fn check_output_arity_range(
-        outputs: &[Tensor],
-        accepted: RangeInclusive<usize>,
-    ) -> Result<(), InvariantError> {
-        if !accepted.contains(&outputs.len()) {
-            Err(InvariantError::OutputArity {
-                accepted,
-                actual: outputs.len(),
-            })
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn check_output_arity(outputs: &[Tensor], expected: usize) -> Result<(), InvariantError> {
-        Self::check_output_arity_range(outputs, expected..=expected + 1)
+        Ok(())
     }
 
     pub fn check_shape_pair(
-        a: &Tensor,
-        b: &Tensor,
+        at: &Tensor,
+        bt: &Tensor,
         left: usize,
         right: usize,
     ) -> Result<(), InvariantError> {
-        if a.shape()[left] != b.shape()[right] {
-            return Err(InvariantError::ShapeMismatch {
-                left,
-                right,
-                a: a.shape()[left],
-                b: b.shape()[right],
-            });
+        let a = at.shape()[left];
+        let b = bt.shape()[right];
+        if a != b {
+            return Err(InvariantError::ShapeMismatch { left, right, a, b });
         }
         Ok(())
     }
@@ -117,25 +93,21 @@ impl Enforcer {
         Ok(())
     }
 
-    pub fn assert_dtype(tensor: &Tensor, dtype: DType) -> Result<(), InvariantError> {
-        if tensor.dt() != dtype {
-            return Err(InvariantError::DTypeMismatch {
-                expected: dtype,
-                actual: tensor.dt(),
-            });
+    pub fn assert_dtype(tensor: &Tensor, expected: DType) -> Result<(), InvariantError> {
+        let actual = tensor.dt();
+        if actual != expected {
+            return Err(InvariantError::DTypeMismatch { expected, actual });
         }
         Ok(())
     }
 
     pub fn assert_rank_range(
         tensor: &Tensor,
-        range: RangeInclusive<usize>,
+        accepted: RangeInclusive<usize>,
     ) -> Result<(), InvariantError> {
-        if !range.contains(&tensor.rank()) {
-            return Err(InvariantError::RankMismatch {
-                accepted: range,
-                actual: tensor.rank(),
-            });
+        let actual = tensor.rank();
+        if !accepted.contains(&actual) {
+            return Err(InvariantError::RankMismatch { accepted, actual });
         }
         Ok(())
     }
