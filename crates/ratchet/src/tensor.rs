@@ -199,6 +199,7 @@ impl Tensor {
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
 
         //Allocate for leaf node (ourselves)
+        //TODO: remove
         allocations.insert(
             self.id(),
             device.allocate_buffer(&BufferDescriptor {
@@ -220,6 +221,7 @@ impl Tensor {
 
             if let Some((pipeline_handle, wgc, offset)) = t.op.compile(device, &mut uniform) {
                 let storage_layout = t.op.storage_layout(device);
+                //TODO: this is ugly
                 let storage_bind_groups = CompiledOp::create_storage_bind_groups(
                     &t.op.srcs(),
                     &rvec![&t],

@@ -84,34 +84,28 @@ impl BufferAllocator {
         free: &mut Vec<GPUBuffer>,
         device: &WgpuDevice,
     ) -> GPUBuffer {
+        let required_size = descriptor.size as _;
         let mut closest_index = None;
         let mut closest_size_diff: Option<usize> = None;
-        for (idx, b) in free.iter().enumerate() {
-            let current_size = b.descriptor.size as _;
-            let required_size = descriptor.size as _;
+        for (idx, buffer) in free.iter().enumerate() {
+            let current_size = buffer.descriptor.size as _;
+
             if current_size >= required_size {
-                match closest_size_diff {
-                    None => {
-                        closest_index = Some(idx);
-                        closest_size_diff = Some(usize::abs_diff(current_size, required_size))
-                    }
-                    Some(d) if d > usize::abs_diff(current_size, required_size) => {
-                        closest_index = Some(idx);
-                        closest_size_diff = Some(usize::abs_diff(current_size, required_size))
-                    }
-                    _ => {}
+                let size_diff = usize::abs_diff(current_size, required_size);
+
+                if closest_size_diff.map_or(true, |diff| size_diff < diff) {
+                    closest_index = Some(idx);
+                    closest_size_diff = Some(size_diff);
                 }
             }
         }
 
+        if std::env::var("RATCHET_DEBUG").is_ok() {
+            return self.create_buffer(&descriptor, device);
+        }
+
         match closest_index {
-            Some(idx) => {
-                if std::env::var("RATCHET_DEBUG").is_ok() {
-                    self.create_buffer(&descriptor, device)
-                } else {
-                    free.remove(idx)
-                }
-            }
+            Some(idx) => free.remove(idx),
             None => self.create_buffer(&descriptor, device),
         }
     }
@@ -140,7 +134,7 @@ impl BufferAllocator {
             }
 
             for source in t.op().srcs() {
-                //Here we should trace up once inplace is implemented
+                //TODO: add support for inplace here when added
                 let num_bytes = source.num_bytes();
                 assignments.entry(source.id()).or_insert_with(|| {
                     self.graph_allocate(
