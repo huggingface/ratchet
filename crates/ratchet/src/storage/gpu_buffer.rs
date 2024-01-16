@@ -1,10 +1,9 @@
 use crate::{
-    gpu::GPUBuffer,
     gpu::{BufferDescriptor, WgpuDevice},
-    storage::{RawCPUBuffer, Storable}, DeviceError, Shape, TensorDType,
+    gpu::{BufferUsagesExt, GPUBuffer},
+    storage::{RawCPUBuffer, Storable},
+    DeviceError, Shape, TensorDType,
 };
-
-
 
 use wgpu::BufferUsages;
 
@@ -16,24 +15,25 @@ pub struct RawGPUBuffer {
 }
 
 impl RawGPUBuffer {
+    const MIN_SIZE: usize = 16;
+
     pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape, device: &WgpuDevice) -> Self {
         assert_eq!(data.len(), shape.numel());
-        let bytes: &[u8] = bytemuck::cast_slice(data);
+        Self::from_bytes(bytemuck::cast_slice(data), device)
+    }
 
-        let mut min_bytes = [0; 16];
-        let bytes = if bytes.len() < 16 {
-            min_bytes[..bytes.len()].copy_from_slice(bytes);
+    pub(crate) fn from_bytes(bytes: &[u8], device: &WgpuDevice) -> Self {
+        let num_bytes = bytes.len();
+        let mut min_bytes = [0; Self::MIN_SIZE];
+        let bytes = if num_bytes < Self::MIN_SIZE {
+            min_bytes[..num_bytes].copy_from_slice(bytes);
             &min_bytes
         } else {
             bytes
         };
         let buffer = device
             .create_buffer_init(
-                &BufferDescriptor::new(
-                    bytes.len() as _,
-                    BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
-                    false,
-                ),
+                &BufferDescriptor::new(bytes.len() as _, BufferUsages::standard(), false),
                 bytes,
             )
             .unwrap();

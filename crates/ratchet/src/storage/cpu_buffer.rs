@@ -1,8 +1,8 @@
 use crate::{
     gpu::{BufferDescriptor, BufferUsagesExt, WgpuDevice},
-    storage::{RawGPUBuffer, Storable}, DeviceError, Shape, TensorDType,
+    storage::{RawGPUBuffer, Storable},
+    DeviceError, Shape, TensorDType,
 };
-
 
 use std::{alloc::Layout, fmt::Debug};
 use wgpu::BufferUsages;
@@ -72,21 +72,7 @@ impl Drop for RawCPUBuffer {
 
 impl Storable for RawCPUBuffer {
     fn to_device(self, device: &WgpuDevice) -> Result<RawGPUBuffer, DeviceError> {
-        let mut min_bytes = [0; 16];
-        let bytes = if self.as_bytes().len() < 16 {
-            min_bytes[..self.as_bytes().len()].copy_from_slice(self.as_bytes());
-            &min_bytes
-        } else {
-            self.as_bytes()
-        };
-
-        let buffer = device.create_buffer_init(
-            &BufferDescriptor::new(bytes.len() as _, BufferUsages::standard(), false),
-            bytes,
-        )?;
-        device.queue().submit(None);
-        device.poll(wgpu::Maintain::Wait);
-        Ok(RawGPUBuffer { buf: buffer })
+        Ok(RawGPUBuffer::from_bytes(self.as_bytes(), device))
     }
 
     fn to_cpu(self) -> RawCPUBuffer {
