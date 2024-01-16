@@ -1,7 +1,7 @@
 use crate::gpu::{BufferDescriptor, BufferUsagesExt, CpuUniform};
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RawStorage, Shape,
-    Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RawStorage, Shape, Storage,
+    Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
@@ -300,7 +300,7 @@ mod tests {
         println!("\nA: {:#?}", a);
         println!("\nB: {:#?}", b);
         println!("\nC: {:#?}", c);
-        c.to_cpu();
-        println!("\nC CPU: {:#?}", c);
+        let d = c.to(Device::CPU).unwrap();
+        println!("\nD: {:#?}", d);
     }
 }
