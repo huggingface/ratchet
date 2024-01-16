@@ -31,6 +31,14 @@ pub struct Tensor {
     inner: Arc<Inner>,
 }
 
+impl Tensor {
+    fn new(inner: Inner) -> Self {
+        Self {
+            inner: Arc::new(inner),
+        }
+    }
+}
+
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let storage = self.storage().try_read().expect("Could not read storage");
@@ -90,6 +98,16 @@ impl Inner {
             id: TensorId::new(),
             meta,
             op,
+            device,
+            storage: Arc::new(RwLock::new(storage)),
+        }
+    }
+
+    fn from_move(&self, storage: Storage, device: Device) -> Self {
+        Self {
+            id: TensorId::new(),
+            meta: self.meta.clone(),
+            op: self.op.clone(),
             device,
             storage: Arc::new(RwLock::new(storage)),
         }
@@ -162,9 +180,7 @@ impl Tensor {
         let storage = Storage::from_slice(&data, &shape, &device);
         let strides = Strides::from(&shape);
         let meta = Metadata::new(shape, T::dt(), strides);
-        Tensor {
-            inner: Inner::new(LazyOp::Const, meta, storage, device).into(),
-        }
+        Tensor::new(Inner::new(LazyOp::Const, meta, storage, device))
     }
 
     fn execution_order(&self) -> Vec<Tensor> {
@@ -250,11 +266,7 @@ impl Tensor {
             storage_resource.try_gpu()?.clone()
         };
         let cpu_storage = Storage::from(raw_gpu_buf.to_cpu(self.device()).unwrap());
-
-        let (op, meta) = (self.op().clone(), self.meta.clone());
-        Ok(Tensor {
-            inner: Inner::new(op, meta, cpu_storage, Device::CPU).into(),
-        })
+        Ok(Tensor::new(self.inner.from_move(cpu_storage, Device::CPU)))
     }
 
     pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
