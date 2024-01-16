@@ -1,7 +1,7 @@
 use crate::gpu::{BufferDescriptor, BufferUsagesExt, CpuUniform};
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RawStorage, Shape, Storable,
-    Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, CompiledOp, DType, Device, DeviceStorage, Executable, Operation, OperationError,
+    RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
@@ -20,6 +20,8 @@ pub enum TensorError {
     DeviceError(#[from] crate::DeviceError),
     #[error("Failed to transfer data to host")]
     TransferError,
+    #[error(transparent)]
+    OperationError(#[from] OperationError),
 }
 
 /// A multi-dimensional array of data.
@@ -236,7 +238,7 @@ impl Tensor {
             }
 
             if let Some((pipeline_handle, wgc, offset)) = t.op.compile(device, &mut uniform) {
-                let storage_layout = t.op.storage_layout(device);
+                let storage_layout = t.op.storage_layout(device)?;
                 //TODO: this is ugly
                 let storage_bind_groups = CompiledOp::create_storage_bind_groups(
                     &t.op.srcs(),
@@ -254,7 +256,7 @@ impl Tensor {
             }
         }
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device));
-        let index = executable.dispatch_operations(device);
+        let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(())
     }

@@ -1,7 +1,7 @@
 use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
     gpu::{BufferUsagesExt, GPUBuffer},
-    storage::{RawCPUBuffer, Storable},
+    storage::{DeviceStorage, RawCPUBuffer},
     Device, DeviceError, Shape, TensorDType, TensorError,
 };
 
@@ -77,7 +77,7 @@ impl PartialEq for RawGPUBuffer {
     }
 }
 
-impl Storable for RawGPUBuffer {
+impl DeviceStorage for RawGPUBuffer {
     fn to_device(self, _: &Device) -> Result<RawGPUBuffer, DeviceError> {
         Ok(self)
     }

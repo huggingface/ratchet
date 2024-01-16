@@ -1,4 +1,4 @@
-use crate::gpu::{GpuUniform, StaticResourcePoolAccessor, WgpuDevice};
+use crate::gpu::{GpuUniform, PoolError, StaticResourcePoolAccessor, WgpuDevice};
 use crate::CompiledOp;
 use derive_new::new;
 use wgpu::SubmissionIndex;
@@ -13,9 +13,19 @@ pub struct Executable {
     gpu_uniform: GpuUniform,
 }
 
+//this error ExecutionError
+#[derive(Debug, thiserror::Error)]
+pub enum ExecutionError {
+    #[error(transparent)]
+    PipelineNotFound(#[from] PoolError),
+}
+
 impl Executable {
     #[cfg(not(feature = "gpu-profiling"))]
-    pub fn dispatch_operations(&self, device: &WgpuDevice) -> SubmissionIndex {
+    pub fn dispatch_operations(
+        &self,
+        device: &WgpuDevice,
+    ) -> Result<SubmissionIndex, ExecutionError> {
         let pipeline_resources = device.pipeline_resources();
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -26,7 +36,7 @@ impl Executable {
                 timestamp_writes: None,
             });
             for step in self.steps.iter() {
-                cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle()).unwrap());
+                cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle())?);
 
                 for (group_index, bind_group) in step.storage_groups().iter().enumerate() {
                     cpass.set_bind_group(group_index as u32, bind_group, &[]);
@@ -40,6 +50,6 @@ impl Executable {
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
             }
         }
-        device.queue().submit(Some(encoder.finish()))
+        Ok(device.queue().submit(Some(encoder.finish())))
     }
 }
