@@ -1,12 +1,11 @@
 use crate::{
     gpu::GPUBuffer,
-    gpu::{BufferDescriptor, BufferUsagesExt, WgpuDevice},
-    storage::{RawCPUBuffer, Storable},
-    Device, DeviceError, Shape, TensorDType,
+    gpu::{BufferDescriptor, WgpuDevice},
+    storage::{RawCPUBuffer, Storable}, DeviceError, Shape, TensorDType,
 };
-use bytemuck::NoUninit;
-use half::{bf16, f16};
-use std::{alloc::Layout, fmt::Debug};
+
+
+
 use wgpu::BufferUsages;
 
 use crate::DType;

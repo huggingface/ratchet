@@ -63,13 +63,13 @@ impl ComputePipelinePool {
                 log::warn!("Using checked shader compilation");
                 device.create_shader_module(wgpu::ShaderModuleDescriptor {
                     label,
-                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader)),
+                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader)),
                 })
             } else {
                 unsafe {
                     device.create_shader_module_unchecked(wgpu::ShaderModuleDescriptor {
                         label,
-                        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader)),
+                        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader)),
                     })
                 }
             };

@@ -1,15 +1,15 @@
 use crate::gpu::{
-    BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, BufferDescriptor, BufferUsagesExt,
+    BindGroupLayoutEntryExt, BufferDescriptor, BufferUsagesExt,
     CpuUniform, StaticResourcePoolAccessor,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RVec, RawCPUBuffer, RawStorage,
+    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RVec, RawStorage,
     Shape, Storage, Strides, TensorDType,
 };
 use crate::{BinaryOp, LazyOp};
-use bytemuck::NoUninit;
+
 use derive_new::new;
-use half::{bf16, f16};
+
 use parking_lot::RwLock;
 use std::sync::Arc;
 use wgpu::BufferUsages;
@@ -225,7 +225,7 @@ impl Tensor {
                 t.set_storage(storage);
             }
 
-            if let Some((pipeline_handle, wgc, offset)) = t.op.compile(&device, &mut uniform) {
+            if let Some((pipeline_handle, wgc, offset)) = t.op.compile(device, &mut uniform) {
                 let storage_layout = t.op.storage_layout(device);
                 let storage_bind_groups = CompiledOp::create_storage_bind_groups(
                     &t.op.srcs(),
