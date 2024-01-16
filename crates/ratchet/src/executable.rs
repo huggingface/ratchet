@@ -1,4 +1,4 @@
-use crate::gpu::{GPUBuffer, StaticResourcePoolAccessor, WgpuDevice};
+use crate::gpu::{GPUBuffer, GpuUniform, StaticResourcePoolAccessor, WgpuDevice};
 use crate::CompiledOp;
 use derive_new::new;
 use wgpu::SubmissionIndex;
@@ -10,8 +10,7 @@ use wgpu::SubmissionIndex;
 #[derive(new)]
 pub struct Executable {
     steps: Vec<CompiledOp>,
-    _uniform_buffer: GPUBuffer, //Keep alive until drop
-    uniform_group: wgpu::BindGroup,
+    gpu_uniform: GpuUniform,
 }
 
 impl Executable {
@@ -34,7 +33,11 @@ impl Executable {
                 }
 
                 let uniform_group_index = step.storage_groups().len() as u32;
-                cpass.set_bind_group(uniform_group_index, &self.uniform_group, &[step.offset()]);
+                cpass.set_bind_group(
+                    uniform_group_index,
+                    self.gpu_uniform.bind_group(),
+                    &[step.offset()],
+                );
 
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
                 cpass.dispatch_workgroups(x_count, y_count, z_count);

@@ -63,27 +63,6 @@ impl CompiledOp {
         group_index * Self::MAX_BINDINGS_PER_GROUP..group_end
     }
 
-    //TODO: pool this
-    pub fn create_uniform_bind_group(
-        device: &WgpuDevice,
-        layout: &wgpu::BindGroupLayout,
-        buf: &GPUBuffer,
-    ) -> wgpu::BindGroup {
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &buf.inner,
-                    offset: 0,
-                    size: Some(std::num::NonZeroU64::new(UNIFORM_ALIGN as _).unwrap()),
-                }),
-            }],
-        });
-        bind_group
-    }
-
     pub fn workgroup_count(&self) -> &WorkgroupCount {
         &self.workgroup_count
     }
