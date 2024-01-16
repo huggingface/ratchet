@@ -3,7 +3,7 @@ use wgpu::BufferUsages;
 
 use crate::{
     gpu::{BufferDescriptor, BufferPool, GPUBuffer, GpuBufferHandle},
-    Tensor, TensorId,
+    DeviceError, Tensor, TensorId,
 };
 use std::cell::{Ref, RefCell, RefMut};
 
@@ -118,18 +118,17 @@ impl BufferAllocator {
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
-    ) -> Result<FxHashMap<TensorId, GPUBuffer>, AllocatorError> {
+    ) -> Result<FxHashMap<TensorId, GPUBuffer>, DeviceError> {
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
 
         for t in execution_order {
             if t.resolved() {
-                //TODO terrible
-                t.storage().try_read().unwrap().raw().map(|b| match b {
-                    crate::RawStorage::GPU(g) => assignments.insert(t.id(), g.inner().clone()),
-                    _ => unreachable!(),
-                });
-
+                let storage_resource = t
+                    .storage()
+                    .try_read()
+                    .ok_or(AllocatorError::BufferNotFound)?;
+                assignments.insert(t.id(), storage_resource.try_gpu()?.inner.clone());
                 continue;
             }
 

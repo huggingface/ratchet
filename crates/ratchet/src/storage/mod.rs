@@ -5,22 +5,8 @@ pub use cpu_buffer::*;
 pub use gpu_buffer::*;
 
 use crate::{gpu::GPUBuffer, Device, DeviceError, Shape, TensorDType};
-use bytemuck::NoUninit;
-use half::{bf16, f16};
-use std::fmt::Debug;
 
 use crate::DType;
-
-macro_rules! impl_read_to_host {
-    ($($dtype:ident => $type:ty),*) => {
-        pub(crate) fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> Storage {
-            match dt {
-                $(DType::$dtype => Storage::from_slice::<$type>(bytemuck::cast_slice(bytes), &shape, &Device::CPU),)*
-                _ => todo!("Attempted to read GPU tensor to host with unsupported dtype: {:?}", dt),
-            }
-        }
-    };
-}
 
 #[derive(Debug)]
 pub struct Storage {
@@ -74,14 +60,6 @@ impl Storage {
             })
             .unwrap_or_else(|| "None".to_string())
     }
-
-    impl_read_to_host!(
-        F32 => f32,
-        I32 => i32,
-        U32 => u32,
-        F16 => f16,
-        BF16 => bf16
-    );
 }
 
 impl From<RawStorage> for Storage {
@@ -115,13 +93,13 @@ pub enum RawStorage {
 impl RawStorage {
     pub fn from_gpu(buf: GPUBuffer, dtype: DType) -> Self {
         RawStorage::GPU(RawGPUBuffer {
-            buf,
+            inner: buf,
             alignment: dtype.size_of(),
         })
     }
 }
 
-pub trait Storable: Debug + Clone + 'static {
+pub trait Storable: std::fmt::Debug + Clone + 'static {
     // To be expanded to other devices
     fn to_device(self, device: &Device) -> Result<RawGPUBuffer, DeviceError>;
     /// Creates a copy of the device buffer on the CPU

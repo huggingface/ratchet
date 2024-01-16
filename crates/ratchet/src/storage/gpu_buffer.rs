@@ -11,7 +11,7 @@ use crate::DType;
 
 #[derive(Clone, derive_new::new)]
 pub struct RawGPUBuffer {
-    pub(crate) buf: GPUBuffer,
+    pub(crate) inner: GPUBuffer,
     pub(crate) alignment: usize,
 }
 
@@ -41,39 +41,39 @@ impl RawGPUBuffer {
         device.queue().submit(None);
         device.poll(wgpu::Maintain::Wait);
         Self {
-            buf: buffer,
+            inner: buffer,
             alignment,
         }
     }
 
     /// Returns true if the buffer has all the given usages.
     pub(crate) fn validate_usages(&self, usages: BufferUsages) -> Result<(), DeviceError> {
-        match self.buf.usage().contains(usages) {
+        match self.inner.usage().contains(usages) {
             true => Ok(()),
-            false => Err(DeviceError::InvalidBufferUsage(self.buf.usage(), usages)),
+            false => Err(DeviceError::InvalidBufferUsage(self.inner.usage(), usages)),
         }
     }
 
     pub fn inner(&self) -> &GPUBuffer {
-        &self.buf
+        &self.inner
     }
 
     pub fn usage(&self) -> BufferUsages {
-        self.buf.usage()
+        self.inner.usage()
     }
 }
 
 impl std::fmt::Debug for RawGPUBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RawGPUBuffer")
-            .field("buf", &self.buf.global_id())
+            .field("buf", &self.inner.global_id())
             .finish()
     }
 }
 
 impl PartialEq for RawGPUBuffer {
     fn eq(&self, other: &Self) -> bool {
-        self.buf.global_id() == other.buf.global_id()
+        self.inner.global_id() == other.inner.global_id()
     }
 }
 
@@ -85,7 +85,7 @@ impl Storable for RawGPUBuffer {
     fn to_cpu(&self, device: &Device) -> Result<RawCPUBuffer, DeviceError> {
         self.validate_usages(BufferUsages::COPY_SRC)?;
         let device = device.try_gpu()?;
-        let buffer_slice = self.buf.slice(..);
+        let buffer_slice = self.inner.slice(..);
         let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
         let alignment = self.alignment;
 
@@ -113,7 +113,7 @@ impl Storable for RawGPUBuffer {
     }
 
     fn n_bytes(&self) -> usize {
-        self.buf.size() as usize
+        self.inner.size() as usize
     }
 
     fn dump(&self, _: DType, _: bool) -> String {
