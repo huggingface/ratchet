@@ -90,22 +90,42 @@ impl From<RawStorage> for Storage {
     }
 }
 
+impl From<RawCPUBuffer> for Storage {
+    fn from(raw: RawCPUBuffer) -> Self {
+        Self {
+            raw: Some(RawStorage::CPU(raw)),
+        }
+    }
+}
+
+impl From<RawGPUBuffer> for Storage {
+    fn from(raw: RawGPUBuffer) -> Self {
+        Self {
+            raw: Some(RawStorage::GPU(raw)),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum RawStorage {
     CPU(RawCPUBuffer),
     GPU(RawGPUBuffer),
 }
 
-impl From<GPUBuffer> for RawStorage {
-    fn from(buf: GPUBuffer) -> Self {
-        Self::GPU(RawGPUBuffer { buf })
+impl RawStorage {
+    pub fn from_gpu(buf: GPUBuffer, dtype: DType) -> Self {
+        RawStorage::GPU(RawGPUBuffer {
+            buf,
+            alignment: dtype.size_of(),
+        })
     }
 }
 
 pub trait Storable: Debug + Clone + 'static {
     // To be expanded to other devices
-    fn to_device(self, device: &WgpuDevice) -> Result<RawGPUBuffer, DeviceError>;
-    fn to_cpu(self) -> RawCPUBuffer;
+    fn to_device(self, device: &Device) -> Result<RawGPUBuffer, DeviceError>;
+    /// Creates a copy of the device buffer on the CPU
+    fn to_cpu(&self, device: &Device) -> Result<RawCPUBuffer, DeviceError>;
     fn n_bytes(&self) -> usize;
     fn dump(&self, dt: DType, full: bool) -> String;
 }
