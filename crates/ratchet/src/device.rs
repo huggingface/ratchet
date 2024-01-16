@@ -7,7 +7,7 @@ pub enum DeviceError {
     #[error("Failed to get adapter.")]
     AdapterRequestFailed,
     #[error("Failed to create storage with error: {0:?}")]
-    StorageCreationFailed(#[from] PoolError), //shouldn't be PoolError
+    StorageCreationFailed(#[from] PoolError), //TODO: shouldn't be PoolError
     #[error("Device mismatch, requested device: {0:?}, actual device: {1:?}")]
     DeviceMismatch(String, String),
     #[error("Failed to allocate buffer with error: {0:?}")]
@@ -39,10 +39,7 @@ impl Device {
     pub fn request_device(request: DeviceRequest) -> Result<Self, DeviceError> {
         match request {
             DeviceRequest::CPU => Ok(Device::CPU),
-            DeviceRequest::GPU => {
-                let gpu = pollster::block_on(WgpuDevice::new())?;
-                Ok(Device::GPU(gpu))
-            }
+            DeviceRequest::GPU => Ok(Device::GPU(pollster::block_on(WgpuDevice::new())?)),
         }
     }
 
@@ -54,8 +51,8 @@ impl Device {
         match self {
             Device::GPU(gpu) => Ok(gpu),
             Device::CPU => Err(DeviceError::DeviceMismatch(
-                "CPU".to_string(),
                 "GPU".to_string(),
+                "CPU".to_string(),
             )),
         }
     }

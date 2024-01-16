@@ -13,6 +13,7 @@ mod storage;
 mod strides;
 mod symshape;
 mod tensor;
+mod tensor_id;
 mod view;
 
 pub use compiled_op::*;
@@ -25,6 +26,7 @@ pub use ops::*;
 pub use shape::*;
 pub use storage::*;
 pub use strides::*;
+pub use tensor_id::*;
 
 pub use tensor::*;
 pub use view::*;
