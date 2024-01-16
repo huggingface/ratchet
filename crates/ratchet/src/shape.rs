@@ -12,6 +12,10 @@ impl Shape {
         Self(shape)
     }
 
+    pub fn inner(&self) -> &RVec<usize> {
+        &self.0
+    }
+
     pub fn numel(&self) -> usize {
         self.0.iter().product()
     }
