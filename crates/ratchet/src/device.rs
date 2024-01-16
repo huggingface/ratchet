@@ -1,6 +1,6 @@
-use crate::gpu::{PoolError, WgpuDevice};
+use crate::gpu::{AllocatorError, PoolError, WgpuDevice};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum DeviceError {
     #[error("Failed to acquire device with error: {0:?}")]
     DeviceAcquisitionFailed(#[from] wgpu::RequestDeviceError),
@@ -10,6 +10,8 @@ pub enum DeviceError {
     StorageCreationFailed(#[from] PoolError), //shouldn't be PoolError
     #[error("Device mismatch, requested device: {0:?}, actual device: {1:?}")]
     DeviceMismatch(String, String),
+    #[error("Failed to allocate buffer with error: {0:?}")]
+    BufferAllocationFailed(#[from] AllocatorError),
 }
 
 pub enum DeviceRequest {
@@ -34,31 +36,27 @@ impl std::fmt::Debug for Device {
 }
 
 impl Device {
-    pub fn request_device(request: DeviceRequest) -> Self {
+    pub fn request_device(request: DeviceRequest) -> Result<Self, DeviceError> {
         match request {
-            DeviceRequest::CPU => Device::CPU,
+            DeviceRequest::CPU => Ok(Device::CPU),
             DeviceRequest::GPU => {
-                let gpu = pollster::block_on(WgpuDevice::new()).expect("Failed to get adapter.");
-                Device::GPU(gpu)
+                let gpu = pollster::block_on(WgpuDevice::new())?;
+                Ok(Device::GPU(gpu))
             }
         }
     }
 
     pub fn label(&self) -> String {
-        match self {
-            Device::CPU => "CPU".to_string(),
-            Device::GPU(gpu) => format!("GPU:{}", gpu.ordinal()),
-        }
+        format!("{:?}", self)
     }
 
-    //TODO: whack name
-    pub fn is_gpu(&self) -> Result<&WgpuDevice, DeviceError> {
+    pub fn try_gpu(&self) -> Result<&WgpuDevice, DeviceError> {
         match self {
+            Device::GPU(gpu) => Ok(gpu),
             Device::CPU => Err(DeviceError::DeviceMismatch(
                 "CPU".to_string(),
                 "GPU".to_string(),
             )),
-            Device::GPU(gpu) => Ok(gpu),
         }
     }
 }

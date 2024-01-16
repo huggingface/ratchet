@@ -7,8 +7,7 @@ use derive_new::new;
 use wgpu::DynamicOffset;
 
 //Compiled op represents a single kernel invocation
-//We need to be more general here, and somehow encode encoder.copy_buffer_to_buffer as a COPY
-//operation
+//TODO: We need to be more general here, enum with encoder.copy_buffer_to_buffer as a COPY
 #[derive(Debug, new)]
 pub struct CompiledOp {
     workgroup_count: WorkgroupCount,
@@ -28,36 +27,40 @@ impl CompiledOp {
         device: &WgpuDevice,
     ) -> RVec<GpuBindGroup> {
         let mut binding_counter: usize = 0;
-        let mut bind_group_entries: DRVec<BindGroupEntry> = drvec![];
+        let mut bind_group_entries = drvec![];
 
         for tensor in srcs.iter().chain(dsts.iter()) {
             let buf = tensor.storage().try_read().unwrap();
-            let buffer_handle = buf.try_gpu().unwrap();
+            let gpu_buf = buf.try_gpu().unwrap();
             bind_group_entries.push(BindGroupEntry {
-                handle: buffer_handle.handle,
+                handle: gpu_buf.handle,
                 offset: 0,
-                size: Some(buffer_handle.size().try_into().unwrap()),
+                size: Some(gpu_buf.size().try_into().unwrap()),
             });
             binding_counter += 1;
         }
 
-        let mut storage_groups: RVec<GpuBindGroup> = rvec![];
+        let mut storage_groups = rvec![];
         for (group_index, bind_group_layout) in bind_group_layouts.iter().enumerate() {
-            let group_end = usize::min(
-                (group_index + 1) * Self::MAX_BINDINGS_PER_GROUP,
-                binding_counter,
-            );
-            let group_range = group_index * Self::MAX_BINDINGS_PER_GROUP..group_end;
+            let group_range = Self::group_range(group_index, binding_counter);
+            let entries = bind_group_entries[group_range].into();
+            let layout = *bind_group_layout;
 
-            let descriptor = BindGroupDescriptor {
-                entries: bind_group_entries[group_range].into(),
-                layout: *bind_group_layout,
-            };
-
-            let bind_group = device.get_or_create_bind_group(&descriptor).unwrap();
+            let bind_group = device
+                .get_or_create_bind_group(&BindGroupDescriptor { entries, layout })
+                .unwrap();
             storage_groups.push(bind_group);
         }
         storage_groups
+    }
+
+    /// Determines which bindings belong to which bind group
+    fn group_range(group_index: usize, binding_counter: usize) -> std::ops::Range<usize> {
+        let group_end = usize::min(
+            (group_index + 1) * Self::MAX_BINDINGS_PER_GROUP,
+            binding_counter,
+        );
+        group_index * Self::MAX_BINDINGS_PER_GROUP..group_end
     }
 
     //TODO: pool this

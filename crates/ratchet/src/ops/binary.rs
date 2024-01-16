@@ -65,10 +65,8 @@ impl Operation for Binary {
         let (lhs, _) = (&self.lhs, &self.rhs);
         let M = lhs.shape()[0] as u32;
         let N = lhs.shape()[1] as u32;
-        let meta = BinaryMeta { M, N };
-        println!("Binary: {:?}", meta);
-        let offset = uniform.write(&meta).unwrap();
-        let wgcx = WorkgroupCount::div_ceil(lhs.shape()[0], 64);
+        let offset = uniform.write(&BinaryMeta { M, N }).unwrap();
+        let wgcx = WorkgroupCount::div_ceil(M as _, 64);
 
         let storage_layout = self.storage_layout(device);
         let uniform_layout = device

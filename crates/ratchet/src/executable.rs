@@ -1,3 +1,4 @@
+use crate::gpu::StaticResourcePoolAccessor;
 use crate::gpu::{GPUBuffer, WgpuDevice};
 use crate::CompiledOp;
 use derive_new::new;
@@ -10,15 +11,13 @@ use wgpu::SubmissionIndex;
 #[derive(new)]
 pub struct Executable {
     steps: Vec<CompiledOp>,
-    uniform_buffer: GPUBuffer,
+    _uniform_buffer: GPUBuffer, //Keep alive until drop
     uniform_group: wgpu::BindGroup,
 }
 
 impl Executable {
     #[cfg(not(feature = "gpu-profiling"))]
     pub fn dispatch_operations(&self, device: &WgpuDevice) -> SubmissionIndex {
-        use crate::gpu::StaticResourcePoolAccessor;
-
         let pipeline_resources = device.pipeline_resources();
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -29,13 +28,15 @@ impl Executable {
                 timestamp_writes: None,
             });
             for step in self.steps.iter() {
-                println!("Executing step: {:?}", step);
                 cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle()).unwrap());
+
                 for (index, bind_group) in step.storage_groups().iter().enumerate() {
                     cpass.set_bind_group(index as u32, bind_group, &[]);
                 }
-                let uniform_index = step.storage_groups().len() as u32;
-                cpass.set_bind_group(uniform_index, &self.uniform_group, &[step.offset()]);
+
+                let uniform_group_index = step.storage_groups().len() as u32;
+                cpass.set_bind_group(uniform_group_index, &self.uniform_group, &[step.offset()]);
+
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
             }

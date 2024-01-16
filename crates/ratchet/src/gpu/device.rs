@@ -14,8 +14,8 @@ pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 /// A device is a handle to a physical GPU.
 /// It is used to create resources and submit commands to the GPU.
 ///
-/// Currently, WebGPU doesn't support multiple devices. Ordinal should always
-/// be 0.
+/// Currently, WebGPU doesn't support multiple devices.
+/// Ordinal should always be 0.
 #[derive(Clone)]
 pub struct WgpuDevice {
     device: Arc<wgpu::Device>,
@@ -48,7 +48,6 @@ impl PartialEq for WgpuDevice {
     }
 }
 
-//Device creation impls
 impl WgpuDevice {
     pub async fn new() -> Result<Self, DeviceError> {
         #[cfg(target_arch = "wasm32")]
@@ -88,7 +87,7 @@ impl WgpuDevice {
 
         Ok(Self {
             queue: Arc::new(queue),
-            ordinal: 0, //TODO: Support multiple devices
+            ordinal: 0,
             buffer_allocator: Arc::new(BufferAllocator::new()),
             bind_group_pool: Arc::new(BindGroupPool::new()),
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
@@ -147,16 +146,14 @@ impl WgpuDevice {
 }
 
 impl WgpuDevice {
-    /// TODO: should this use `create_buffer_init` on the allocator? Seems sketchy?
     pub fn create_buffer_init(
         &self,
         desc: &BufferDescriptor,
-        queue: &wgpu::Queue,
         contents: &[u8],
     ) -> Result<GPUBuffer, DeviceError> {
-        let buf = self.buffer_allocator.create_buffer(desc, self);
-        queue.write_buffer(&buf.inner, 0, contents);
-        Ok(buf)
+        Ok(self
+            .buffer_allocator
+            .create_buffer_init(desc, contents, self))
     }
 
     pub fn create_uniform_init(&self, cpu_uniform: CpuUniform) -> GPUBuffer {
@@ -167,7 +164,7 @@ impl WgpuDevice {
         Ok(self.buffer_allocator.create_buffer(desc, self))
     }
 
-    pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<GPUBuffer, PoolError> {
+    pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<GPUBuffer, DeviceError> {
         Ok(self.buffer_allocator.get(handle))
     }
 
@@ -221,8 +218,9 @@ impl WgpuDevice {
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
-    ) -> FxHashMap<TensorId, GPUBuffer> {
-        self.buffer_allocator
-            .allocate_intermediates(execution_order, device)
+    ) -> Result<FxHashMap<TensorId, GPUBuffer>, DeviceError> {
+        Ok(self
+            .buffer_allocator
+            .allocate_intermediates(execution_order, device)?)
     }
 }
