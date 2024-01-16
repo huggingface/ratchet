@@ -24,8 +24,8 @@ pub enum TensorError {
 
 /// A multi-dimensional array of data.
 ///
-/// A tensor is a lazy representation of an operation. It, and the nodes required to compute it's
-/// value, will not be computed until `resolve` is called.
+/// A tensor is a lazy representation of an operation. The nodes required to compute it's
+/// value and it's own value will not be computed until `resolve` is called.
 #[derive(Clone)]
 pub struct Tensor {
     inner: Arc<Inner>,
@@ -212,7 +212,6 @@ impl Tensor {
 
         let execution_order = self.execution_order();
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
-
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
 
         //Allocate for leaf node (ourselves)

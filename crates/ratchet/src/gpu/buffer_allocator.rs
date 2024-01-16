@@ -133,7 +133,7 @@ impl BufferAllocator {
             }
 
             for source in t.op().srcs() {
-                //TODO: add support for inplace here when added
+                //Add support for inplace here when added
                 let num_bytes = source.num_bytes();
                 assignments.entry(source.id()).or_insert_with(|| {
                     self.graph_allocate(
