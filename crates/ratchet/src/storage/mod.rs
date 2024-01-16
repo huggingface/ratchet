@@ -4,9 +4,7 @@ mod gpu_buffer;
 pub use cpu_buffer::*;
 pub use gpu_buffer::*;
 
-use crate::{
-    gpu::GPUBuffer, gpu::WgpuDevice, Device, DeviceError, DeviceRequest, Shape, TensorDType,
-};
+use crate::{gpu::GPUBuffer, gpu::WgpuDevice, Device, DeviceError, Shape, TensorDType};
 use bytemuck::NoUninit;
 use half::{bf16, f16};
 use std::fmt::Debug;
@@ -57,9 +55,9 @@ impl Storage {
         self.raw.as_ref()
     }
 
-    pub fn try_gpu(&self) -> Option<&GPUBuffer> {
+    pub fn try_gpu(&self) -> Option<&RawGPUBuffer> {
         match self.raw.as_ref()? {
-            RawStorage::GPU(raw) => Some(&raw.buf),
+            RawStorage::GPU(raw) => Some(&raw),
             _ => None,
         }
     }

@@ -11,7 +11,7 @@ use crate::{
     rvec, wgc, OpMetadata, Operation, OperationError, RVec, Tensor,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -19,7 +19,7 @@ pub enum BinaryOp {
     Div,
 }
 
-#[derive(new, Debug)]
+#[derive(new, Debug, Clone)]
 pub struct Binary {
     lhs: Tensor,
     rhs: Tensor,

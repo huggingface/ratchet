@@ -42,6 +42,14 @@ impl RawGPUBuffer {
         Self { buf: buffer }
     }
 
+    /// Returns true if the buffer has all the given usages.
+    pub(crate) fn validate_usages(&self, usages: BufferUsages) -> Result<(), DeviceError> {
+        match self.buf.usage().contains(usages) {
+            true => Ok(()),
+            false => Err(DeviceError::InvalidBufferUsage(self.buf.usage(), usages)),
+        }
+    }
+
     pub fn inner(&self) -> &GPUBuffer {
         &self.buf
     }

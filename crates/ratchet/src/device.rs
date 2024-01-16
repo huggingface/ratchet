@@ -12,6 +12,8 @@ pub enum DeviceError {
     DeviceMismatch(String, String),
     #[error("Failed to allocate buffer with error: {0:?}")]
     BufferAllocationFailed(#[from] AllocatorError),
+    #[error("Invalid GPU Buffer Usage, current: {0:?}, required: {1:?}")]
+    InvalidBufferUsage(wgpu::BufferUsages, wgpu::BufferUsages),
 }
 
 pub enum DeviceRequest {

@@ -10,11 +10,12 @@ use crate::gpu::{
 };
 use crate::{Binary, RVec, Tensor};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Gelu,
 }
 
+#[derive(Clone)]
 pub enum LazyOp {
     Empty,
     Binary(Binary),
