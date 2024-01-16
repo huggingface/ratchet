@@ -16,6 +16,8 @@ pub enum TensorError {
     NotResolved,
     #[error("Tensor {0:?} is missing storage")]
     NoStorage(TensorId),
+    #[error(transparent)]
+    DeviceError(#[from] crate::DeviceError),
 }
 
 /// A multi-dimensional array of data.
@@ -241,21 +243,18 @@ impl Tensor {
         Ok(())
     }
 
-    async fn to_cpu_inner(&self) {
-        let device = self.device().try_gpu().unwrap();
-        let shape = self.shape().clone();
-        let dt = self.dt();
+    async fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        let device = self.device().try_gpu()?;
 
         let gpu_storage = {
-            let storage_resource = self.storage().try_read().unwrap();
+            let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
             storage_resource.try_gpu().unwrap().clone()
         };
-        if !gpu_storage.usage().contains(BufferUsages::COPY_SRC) {
-            panic!("Attempted to read GPU tensor to host without COPY_SRC usage")
-        }
-        let buffer_slice = gpu_storage.slice(..);
+        gpu_storage.validate_usages(BufferUsages::COPY_SRC)?;
+        let buffer_slice = gpu_storage.buf.slice(..);
         let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
 
+        let (shape, dt) = (self.shape().clone(), self.dt());
         wgpu::util::DownloadBuffer::read_buffer(
             device,
             device.queue(),
@@ -265,16 +264,23 @@ impl Tensor {
                     Ok(db) => Ok(Storage::read_to_host(shape, dt, &db)),
                     Err(error) => Err(error),
                 })
-                .unwrap();
+                .expect("Failed to send result of read_buffer");
             },
         );
         device.poll(wgpu::Maintain::Wait);
-        let storage = rx.receive().await.unwrap();
-        unsafe { self.set_storage(storage.unwrap()) };
+        let storage = rx.receive().await.unwrap().unwrap();
+
+        Ok(Tensor {
+            inner: Inner::new(self.op().clone(), self.meta.clone(), storage, Device::CPU).into(),
+        })
     }
 
-    pub fn to_cpu(&self) {
-        pollster::block_on(self.to_cpu_inner())
+    pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
+            (Device::GPU(_), Device::CPU) => pollster::block_on(self.to_cpu()),
+            (Device::CPU, Device::GPU(_)) => todo!(),
+            _ => Ok(self.clone()),
+        }
     }
 }
 
