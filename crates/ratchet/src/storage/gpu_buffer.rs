@@ -2,7 +2,7 @@ use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
     gpu::{BufferUsagesExt, GPUBuffer},
     storage::{RawCPUBuffer, Storable},
-    Device, DeviceError, Shape, Storage, TensorDType, TensorError,
+    Device, DeviceError, Shape, TensorDType, TensorError,
 };
 
 use wgpu::BufferUsages;
@@ -95,7 +95,7 @@ impl Storable for RawGPUBuffer {
             &buffer_slice,
             move |buffer| {
                 tx.send(match buffer {
-                    Ok(db) => Ok(RawCPUBuffer::from_bytes(&*db, alignment)),
+                    Ok(db) => Ok(RawCPUBuffer::from_bytes(&db, alignment)),
                     Err(error) => Err(error),
                 })
                 .expect("Failed to send result of read_buffer");

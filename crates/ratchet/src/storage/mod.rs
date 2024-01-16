@@ -4,7 +4,7 @@ mod gpu_buffer;
 pub use cpu_buffer::*;
 pub use gpu_buffer::*;
 
-use crate::{gpu::GPUBuffer, gpu::WgpuDevice, Device, DeviceError, Shape, TensorDType};
+use crate::{gpu::GPUBuffer, Device, DeviceError, Shape, TensorDType};
 use bytemuck::NoUninit;
 use half::{bf16, f16};
 use std::fmt::Debug;
