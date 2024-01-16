@@ -51,10 +51,8 @@ impl Operation for Binary {
         rvec![&self.lhs, &self.rhs]
     }
 
-    fn storage_layout(&self, device: &WgpuDevice) -> BindGroupLayoutHandle {
-        device
-            .get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())
-            .unwrap()
+    fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError> {
+        Ok(device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())?)
     }
 
     fn compile(
@@ -68,7 +66,7 @@ impl Operation for Binary {
         let offset = uniform.write(&BinaryMeta { M, N }).unwrap();
         let wgcx = WorkgroupCount::div_ceil(M as _, 64);
 
-        let storage_layout = self.storage_layout(device);
+        let storage_layout = self.storage_layout(device)?;
         let uniform_layout = device
             .get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())
             .unwrap();

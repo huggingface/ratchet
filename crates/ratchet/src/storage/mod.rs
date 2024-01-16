@@ -99,7 +99,7 @@ impl RawStorage {
     }
 }
 
-pub trait Storable: std::fmt::Debug + Clone + 'static {
+pub trait DeviceStorage: std::fmt::Debug + Clone + 'static {
     // To be expanded to other devices
     fn to_device(self, device: &Device) -> Result<RawGPUBuffer, DeviceError>;
     /// Creates a copy of the device buffer on the CPU

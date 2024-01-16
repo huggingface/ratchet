@@ -1,5 +1,5 @@
 use crate::{
-    storage::{RawGPUBuffer, Storable},
+    storage::{DeviceStorage, RawGPUBuffer},
     Device, DeviceError, Shape, TensorDType,
 };
 
@@ -16,9 +16,7 @@ impl RawCPUBuffer {
     pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape) -> Self {
         assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);
-        let mut storage = unsafe { Self::uninitialized(bytes.len(), T::dt().size_of()) };
-        storage.as_bytes_mut().copy_from_slice(bytes);
-        storage
+        Self::from_bytes(bytes, T::dt().size_of())
     }
 
     unsafe fn uninitialized(size: usize, alignment: usize) -> Self {
@@ -70,13 +68,10 @@ impl Drop for RawCPUBuffer {
     }
 }
 
-impl Storable for RawCPUBuffer {
+impl DeviceStorage for RawCPUBuffer {
     fn to_device(self, device: &Device) -> Result<RawGPUBuffer, DeviceError> {
-        Ok(RawGPUBuffer::from_bytes(
-            self.as_bytes(),
-            self.1.align(),
-            device.try_gpu()?,
-        ))
+        let (bytes, align, gpu_device) = (self.as_bytes(), self.1.align(), device.try_gpu()?);
+        Ok(RawGPUBuffer::from_bytes(bytes, align, gpu_device))
     }
 
     fn to_cpu(&self, _device: &Device) -> Result<RawCPUBuffer, DeviceError> {

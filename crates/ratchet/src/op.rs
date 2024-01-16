@@ -5,8 +5,8 @@ use encase::ShaderType;
 use wgpu::DynamicOffset;
 
 use crate::gpu::{
-    BindGroupLayoutHandle, ComputePipelineHandle, CpuUniform, WgpuDevice, WorkgroupCount,
-    UNIFORM_ALIGN,
+    BindGroupLayoutHandle, ComputePipelineHandle, CpuUniform, PoolError, WgpuDevice,
+    WorkgroupCount, UNIFORM_ALIGN,
 };
 use crate::{Binary, RVec, Tensor};
 
@@ -54,7 +54,10 @@ impl LazyOp {
         }
     }
 
-    pub fn storage_layout(&self, device: &WgpuDevice) -> BindGroupLayoutHandle {
+    pub fn storage_layout(
+        &self,
+        device: &WgpuDevice,
+    ) -> Result<BindGroupLayoutHandle, OperationError> {
         match self {
             LazyOp::Binary(b) => b.storage_layout(device),
             _ => unimplemented!(),
@@ -66,6 +69,8 @@ impl LazyOp {
 pub enum OperationError {
     #[error("Failed to compile operation: {0}")]
     CompileError(String),
+    #[error("Failed to get storage layout: {0}")]
+    StorageLayoutError(#[from] PoolError),
 }
 
 ///A trait for types that are written into uniform buffers, these
@@ -96,5 +101,5 @@ pub trait Operation: Debug + 'static {
         uniform: &mut CpuUniform,
     ) -> Result<(ComputePipelineHandle, WorkgroupCount, DynamicOffset), OperationError>;
 
-    fn storage_layout(&self, device: &WgpuDevice) -> BindGroupLayoutHandle;
+    fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError>;
 }
