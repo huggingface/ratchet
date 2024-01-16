@@ -1,7 +1,7 @@
 use crate::gpu::{BufferDescriptor, BufferUsagesExt, CpuUniform};
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RawStorage, Shape, Storage,
-    Strides, TensorDType, TensorId,
+    ops::*, rvec, CompiledOp, DType, Device, Executable, Operation, RawStorage, Shape, Storable,
+    Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
@@ -68,6 +68,7 @@ pub struct Metadata {
     strides: Strides,
 }
 
+//TODO: method to go from storage -> Inner
 #[derive(Debug)]
 pub struct Inner {
     id: TensorId,
@@ -215,7 +216,7 @@ impl Tensor {
                 let gpu_buf = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
                 assert!(t.device().is_gpu());
                 unsafe {
-                    t.set_storage(Storage::from(RawStorage::from(gpu_buf.clone())));
+                    t.set_storage(Storage::from(RawStorage::from_gpu(gpu_buf.clone(), t.dt())));
                 }
             }
 
@@ -244,38 +245,15 @@ impl Tensor {
     }
 
     async fn to_cpu(&self) -> Result<Tensor, TensorError> {
-        let device = self.device().try_gpu()?;
-
-        let gpu_storage = {
+        let raw_gpu_buf = {
             let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
             storage_resource.try_gpu()?.clone()
         };
-        gpu_storage.validate_usages(BufferUsages::COPY_SRC)?;
-        let buffer_slice = gpu_storage.buf.slice(..);
-        let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
+        let cpu_storage = Storage::from(raw_gpu_buf.to_cpu(self.device()).unwrap());
 
-        let (shape, dt) = (self.shape().clone(), self.dt());
-        wgpu::util::DownloadBuffer::read_buffer(
-            device,
-            device.queue(),
-            &buffer_slice,
-            move |buffer| {
-                tx.send(match buffer {
-                    Ok(db) => Ok(Storage::read_to_host(shape, dt, &db)),
-                    Err(error) => Err(error),
-                })
-                .expect("Failed to send result of read_buffer");
-            },
-        );
-        device.poll(wgpu::Maintain::Wait);
-        let storage = rx
-            .receive()
-            .await
-            .ok_or(TensorError::TransferError)?
-            .map_err(|_| TensorError::TransferError)?;
-
+        let (op, meta) = (self.op().clone(), self.meta.clone());
         Ok(Tensor {
-            inner: Inner::new(self.op().clone(), self.meta.clone(), storage, Device::CPU).into(),
+            inner: Inner::new(op, meta, cpu_storage, Device::CPU).into(),
         })
     }
 

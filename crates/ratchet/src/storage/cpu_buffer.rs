@@ -1,7 +1,6 @@
 use crate::{
-    gpu::WgpuDevice,
     storage::{RawGPUBuffer, Storable},
-    DeviceError, Shape, TensorDType,
+    Device, DeviceError, Shape, TensorDType,
 };
 
 use std::{alloc::Layout, fmt::Debug};
@@ -10,6 +9,8 @@ use crate::DType;
 
 #[derive(derive_new::new, Debug, PartialEq, Eq)]
 pub struct RawCPUBuffer(*mut u8, Layout);
+
+unsafe impl Send for RawCPUBuffer {}
 
 impl RawCPUBuffer {
     pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape) -> Self {
@@ -70,12 +71,16 @@ impl Drop for RawCPUBuffer {
 }
 
 impl Storable for RawCPUBuffer {
-    fn to_device(self, device: &WgpuDevice) -> Result<RawGPUBuffer, DeviceError> {
-        Ok(RawGPUBuffer::from_bytes(self.as_bytes(), device))
+    fn to_device(self, device: &Device) -> Result<RawGPUBuffer, DeviceError> {
+        Ok(RawGPUBuffer::from_bytes(
+            self.as_bytes(),
+            self.1.align(),
+            device.try_gpu()?,
+        ))
     }
 
-    fn to_cpu(self) -> RawCPUBuffer {
-        self
+    fn to_cpu(&self, device: &Device) -> Result<RawCPUBuffer, DeviceError> {
+        Ok(self.clone())
     }
 
     fn n_bytes(&self) -> usize {
