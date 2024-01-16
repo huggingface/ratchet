@@ -1,6 +1,5 @@
-use encase::impl_wrapper;
-
 use crate::{rvec, RVec, Shape};
+use encase::impl_wrapper;
 
 #[derive(Clone, PartialEq, Eq, Default, Hash)]
 pub struct Strides(RVec<isize>);
@@ -15,13 +14,9 @@ impl Strides {
 
 impl std::fmt::Debug for Strides {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut shape = String::from("[");
-        for (i, dim) in self.0.iter().enumerate() {
-            if i == 0 {
-                shape.push_str(&format!("{}", dim));
-            } else {
-                shape.push_str(&format!("x{}", dim));
-            }
+        let mut shape = format!("[{}", self.0.first().unwrap_or(&0));
+        for dim in self.0.iter().skip(1) {
+            shape.push_str(&format!("x{}", dim));
         }
         write!(f, "{}]", shape)
     }

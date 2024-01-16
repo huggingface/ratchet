@@ -1,9 +1,11 @@
-use std::ops::RangeTo;
-
 use crate::RVec;
+use encase::impl_wrapper;
+use std::ops::RangeTo;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Shape(RVec<usize>);
+
+impl_wrapper!(Shape; using);
 
 impl Shape {
     pub fn new(shape: RVec<usize>) -> Self {
@@ -37,8 +39,8 @@ impl Shape {
 
 impl std::fmt::Debug for Shape {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut shape = format!("[{}", self.0[0]);
-        for (_i, dim) in self.0.iter().enumerate().skip(1) {
+        let mut shape = format!("[{}", self.0.first().unwrap_or(&0));
+        for dim in self.0.iter().skip(1) {
             shape.push_str(&format!("x{}", dim));
         }
         write!(f, "{}]", shape)
