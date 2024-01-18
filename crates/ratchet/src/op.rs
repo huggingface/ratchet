@@ -8,7 +8,7 @@ use crate::gpu::{
     BindGroupLayoutHandle, ComputePipelineHandle, CpuUniform, PoolError, WgpuDevice,
     WorkgroupCount, UNIFORM_ALIGN,
 };
-use crate::{Binary, RVec, Tensor, TensorView};
+use crate::{Binary, CompiledOp, InvariantError, RVec, StorageView, Tensor};
 
 #[derive(Debug, Clone)]
 pub enum UnaryOp {
@@ -35,31 +35,9 @@ impl std::fmt::Debug for LazyOp {
 }
 
 impl LazyOp {
-    pub fn compile(
-        &self,
-        device: &WgpuDevice,
-        uniform: &mut CpuUniform,
-    ) -> Option<(ComputePipelineHandle, WorkgroupCount, DynamicOffset)> {
-        match self {
-            LazyOp::Binary(b) => Some(b.compile(device, uniform).unwrap()),
-            LazyOp::Const => None,
-            _ => unimplemented!(),
-        }
-    }
-
     pub fn srcs(&self) -> RVec<&Tensor> {
         match self {
             LazyOp::Binary(b) => b.srcs(),
-            _ => unimplemented!(),
-        }
-    }
-
-    pub fn storage_layout(
-        &self,
-        device: &WgpuDevice,
-    ) -> Result<BindGroupLayoutHandle, OperationError> {
-        match self {
-            LazyOp::Binary(b) => b.storage_layout(device),
             _ => unimplemented!(),
         }
     }
@@ -71,6 +49,10 @@ pub enum OperationError {
     CompileError(String),
     #[error("Failed to get storage layout: {0}")]
     StorageLayoutError(#[from] PoolError),
+    #[error(transparent)]
+    InvariantError(#[from] InvariantError),
+    #[error(transparent)]
+    UniformError(#[from] encase::internal::Error),
 }
 
 ///A trait for types that are written into uniform buffers, these
@@ -97,11 +79,18 @@ pub trait Operation: Debug + 'static {
 
     fn compile(
         &self,
-        device: &WgpuDevice,
+        dst: &Tensor,
         uniform: &mut CpuUniform,
-    ) -> Result<(ComputePipelineHandle, WorkgroupCount, DynamicOffset), OperationError>;
+        device: &WgpuDevice,
+    ) -> Result<CompiledOp, OperationError>;
 
     fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError>;
 
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<TensorView, OperationError>;
+    /// # Output Inference
+    ///
+    /// Inference is an overloaded term, in this context it means to determine
+    /// the metadata of the output tensor given the input tensors.
+    ///
+    /// It also checks the invariants that need to hold for Binary.
+    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError>;
 }

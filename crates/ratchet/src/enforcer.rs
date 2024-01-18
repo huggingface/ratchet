@@ -36,12 +36,12 @@ pub enum InvariantError {
 pub struct Enforcer;
 
 impl Enforcer {
-    pub fn check_input_arity(inputs: &[Tensor], expected: usize) -> Result<(), InvariantError> {
+    pub fn check_input_arity(inputs: &[&Tensor], expected: usize) -> Result<(), InvariantError> {
         Self::check_input_arity_range(inputs, expected..=expected + 1)
     }
 
     pub fn check_input_arity_range(
-        inputs: &[Tensor],
+        inputs: &[&Tensor],
         accepted: RangeInclusive<usize>,
     ) -> Result<(), InvariantError> {
         let actual = inputs.len();
@@ -112,7 +112,7 @@ impl Enforcer {
         Ok(())
     }
 
-    pub fn assert_equal_ranks(tensors: &RVec<Tensor>) -> Result<usize, InvariantError> {
+    pub fn assert_equal_ranks(tensors: &[&Tensor]) -> Result<usize, InvariantError> {
         let rank = tensors[0].rank();
         for tensor in tensors.iter().skip(1) {
             if rank != tensor.rank() {

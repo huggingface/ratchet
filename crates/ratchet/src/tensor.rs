@@ -1,4 +1,4 @@
-use crate::gpu::CpuUniform;
+use crate::gpu::{CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, CompiledOp, DType, Device, DeviceStorage, Executable, Operation, OperationError,
     RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
@@ -33,7 +33,8 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    fn new(inner: Inner) -> Self {
+    fn new(op: LazyOp, meta: StorageView, storage: Storage, device: Device) -> Self {
+        let inner = Inner::new(op, meta, storage, device);
         Self {
             inner: Arc::new(inner),
         }
@@ -67,23 +68,19 @@ impl std::ops::Deref for Tensor {
     }
 }
 
-/// # View
-///
-/// All of the below field can be thought of as a "view" of the underlying storage.
 #[derive(new, Debug, Clone)]
-pub struct TensorView {
+pub struct StorageView {
     shape: Shape,
     dt: DType,
     strides: Strides,
 }
 
-//TODO: method to go from storage -> Inner
 #[derive(Debug)]
 pub struct Inner {
     id: TensorId,
     op: LazyOp,
-    view: TensorView,
     device: Device,
+    view: StorageView,
     storage: Arc<RwLock<Storage>>,
 }
 
@@ -94,21 +91,11 @@ impl AsRef<Inner> for Inner {
 }
 
 impl Inner {
-    fn new(op: LazyOp, meta: TensorView, storage: Storage, device: Device) -> Self {
+    fn new(op: LazyOp, meta: StorageView, storage: Storage, device: Device) -> Self {
         Self {
             id: TensorId::new(),
             view: meta,
             op,
-            device,
-            storage: Arc::new(RwLock::new(storage)),
-        }
-    }
-
-    fn from_move(&self, storage: Storage, device: Device) -> Self {
-        Self {
-            id: TensorId::new(),
-            view: self.view.clone(),
-            op: self.op.clone(),
             device,
             storage: Arc::new(RwLock::new(storage)),
         }
@@ -118,6 +105,10 @@ impl Inner {
 impl Tensor {
     pub fn id(&self) -> TensorId {
         self.inner.id
+    }
+
+    pub fn view(&self) -> &StorageView {
+        &self.view
     }
 
     pub fn rank(&self) -> usize {
@@ -166,7 +157,6 @@ impl Tensor {
         //Determine output shape
         //Binary::check_invariants(self, other);
         //Binary::shape_inference(self.shape(), other.shape());
-        //TODO: real shapes & strides
         let op = LazyOp::Binary(Binary::new(self.clone(), other.clone(), BinaryOp::Add));
         Tensor {
             inner: Inner::new(op, self.view.clone(), Storage::empty(), self.device.clone()).into(),
@@ -180,8 +170,8 @@ impl Tensor {
     pub fn from_vec<T: TensorDType>(data: Vec<T>, shape: Shape, device: Device) -> Tensor {
         let storage = Storage::from_slice(&data, &shape, &device);
         let strides = Strides::from(&shape);
-        let meta = TensorView::new(shape, T::dt(), strides);
-        Tensor::new(Inner::new(LazyOp::Const, meta, storage, device))
+        let meta = StorageView::new(shape, T::dt(), strides);
+        Tensor::new(LazyOp::Const, meta, storage, device)
     }
 
     fn execution_order(&self) -> Vec<Tensor> {
@@ -206,7 +196,14 @@ impl Tensor {
         visited
     }
 
-    //TODO: massively refactor, just seeing if it can work for now
+    pub fn compile(&self, uniform: &mut CpuUniform, device: &WgpuDevice) -> Option<CompiledOp> {
+        match self.op() {
+            LazyOp::Binary(b) => Some(b.compile(self, uniform, device).unwrap()),
+            LazyOp::Const => None,
+            _ => unimplemented!(),
+        }
+    }
+
     pub fn resolve(&self) -> Result<(), TensorError> {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
@@ -214,9 +211,6 @@ impl Tensor {
         let execution_order = self.execution_order();
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
-
-        //Allocate for leaf node (ourselves)
-        //TODO: remove
 
         for t in execution_order {
             if !t.resolved() {
@@ -228,22 +222,8 @@ impl Tensor {
                 }
             }
 
-            if let Some((pipeline_handle, wgc, offset)) = t.op.compile(device, &mut uniform) {
-                let storage_layout = t.op.storage_layout(device)?;
-                //TODO: this is ugly
-                let storage_bind_groups = CompiledOp::create_storage_bind_groups(
-                    &t.op.srcs(),
-                    &rvec![&t],
-                    rvec![storage_layout],
-                    device,
-                );
-
-                compiled_ops.push(CompiledOp::new(
-                    wgc,
-                    pipeline_handle,
-                    storage_bind_groups,
-                    offset,
-                ))
+            if let Some(compiled_op) = t.compile(&mut uniform, device) {
+                compiled_ops.push(compiled_op);
             }
         }
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device));
@@ -258,7 +238,13 @@ impl Tensor {
             storage_resource.try_gpu()?.clone()
         };
         let cpu_storage = Storage::from(raw_gpu_buf.to_cpu(self.device()).unwrap());
-        Ok(Tensor::new(self.inner.from_move(cpu_storage, Device::CPU)))
+
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            cpu_storage,
+            Device::CPU,
+        ))
     }
 
     pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
