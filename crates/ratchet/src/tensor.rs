@@ -1,6 +1,6 @@
 use crate::gpu::{CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, CompiledOp, DType, Device, DeviceStorage, Executable, Operation, OperationError,
+    ops::*, CompiledOp, DType, Device, DeviceStorage, Executable, Operation, OperationError,
     RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
@@ -162,8 +162,7 @@ impl Tensor {
             new_view,
             Storage::empty(),
             self.device.clone(),
-        )
-        .into())
+        ))
     }
 
     /// Creates a new tensor from a vector of data.
