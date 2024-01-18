@@ -1,4 +1,4 @@
-use crate::gpu::{BufferDescriptor, BufferUsagesExt, CpuUniform};
+use crate::gpu::CpuUniform;
 use crate::{
     ops::*, rvec, CompiledOp, DType, Device, DeviceStorage, Executable, Operation, OperationError,
     RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
@@ -7,7 +7,6 @@ use crate::{BinaryOp, LazyOp};
 use derive_new::new;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use wgpu::BufferUsages;
 
 // thiserror error for Tensor
 #[derive(thiserror::Error, Debug)]
@@ -68,11 +67,11 @@ impl std::ops::Deref for Tensor {
     }
 }
 
-/// # Metadata
+/// # View
 ///
 /// All of the below field can be thought of as a "view" of the underlying storage.
 #[derive(new, Debug, Clone)]
-pub struct Metadata {
+pub struct TensorView {
     shape: Shape,
     dt: DType,
     strides: Strides,
@@ -83,7 +82,7 @@ pub struct Metadata {
 pub struct Inner {
     id: TensorId,
     op: LazyOp,
-    meta: Metadata,
+    view: TensorView,
     device: Device,
     storage: Arc<RwLock<Storage>>,
 }
@@ -95,10 +94,10 @@ impl AsRef<Inner> for Inner {
 }
 
 impl Inner {
-    fn new(op: LazyOp, meta: Metadata, storage: Storage, device: Device) -> Self {
+    fn new(op: LazyOp, meta: TensorView, storage: Storage, device: Device) -> Self {
         Self {
             id: TensorId::new(),
-            meta,
+            view: meta,
             op,
             device,
             storage: Arc::new(RwLock::new(storage)),
@@ -108,7 +107,7 @@ impl Inner {
     fn from_move(&self, storage: Storage, device: Device) -> Self {
         Self {
             id: TensorId::new(),
-            meta: self.meta.clone(),
+            view: self.view.clone(),
             op: self.op.clone(),
             device,
             storage: Arc::new(RwLock::new(storage)),
@@ -122,19 +121,19 @@ impl Tensor {
     }
 
     pub fn rank(&self) -> usize {
-        self.meta.shape.len()
+        self.view.shape.len()
     }
 
     pub fn dt(&self) -> DType {
-        self.meta.dt
+        self.view.dt
     }
 
     pub fn shape(&self) -> &Shape {
-        &self.meta.shape
+        &self.view.shape
     }
 
     pub fn num_bytes(&self) -> usize {
-        self.meta.shape.numel() * self.meta.dt.size_of()
+        self.view.shape.numel() * self.view.dt.size_of()
     }
 
     pub fn device(&self) -> &Device {
@@ -170,7 +169,7 @@ impl Tensor {
         //TODO: real shapes & strides
         let op = LazyOp::Binary(Binary::new(self.clone(), other.clone(), BinaryOp::Add));
         Tensor {
-            inner: Inner::new(op, self.meta.clone(), Storage::empty(), self.device.clone()).into(),
+            inner: Inner::new(op, self.view.clone(), Storage::empty(), self.device.clone()).into(),
         }
     }
 
@@ -181,7 +180,7 @@ impl Tensor {
     pub fn from_vec<T: TensorDType>(data: Vec<T>, shape: Shape, device: Device) -> Tensor {
         let storage = Storage::from_slice(&data, &shape, &device);
         let strides = Strides::from(&shape);
-        let meta = Metadata::new(shape, T::dt(), strides);
+        let meta = TensorView::new(shape, T::dt(), strides);
         Tensor::new(Inner::new(LazyOp::Const, meta, storage, device))
     }
 
@@ -214,18 +213,10 @@ impl Tensor {
 
         let execution_order = self.execution_order();
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
-        let mut allocations = device.allocate_cfg(&execution_order, device)?;
+        let allocations = device.allocate_cfg(&execution_order, device)?;
 
         //Allocate for leaf node (ourselves)
         //TODO: remove
-        allocations.insert(
-            self.id(),
-            device.allocate_buffer(&BufferDescriptor {
-                size: self.num_bytes() as _,
-                usage: BufferUsages::standard(),
-                mapped_at_creation: false,
-            })?,
-        );
 
         for t in execution_order {
             if !t.resolved() {
