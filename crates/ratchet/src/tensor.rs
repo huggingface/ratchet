@@ -39,6 +39,10 @@ impl Tensor {
             inner: Arc::new(inner),
         }
     }
+
+    fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
+        Self::new(op, meta, Storage::empty(), device)
+    }
 }
 
 impl std::fmt::Debug for Tensor {
@@ -157,10 +161,21 @@ impl Tensor {
 
         let binary = Binary::new(self.clone(), other.clone(), BinaryOp::Add);
         let new_view = binary.infer_output(&[self, other])?;
-        Ok(Tensor::new(
+        Ok(Tensor::lazy(
             LazyOp::Binary(binary),
             new_view,
-            Storage::empty(),
+            self.device.clone(),
+        ))
+    }
+
+    pub fn matmul(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+        Matmul::check_invariants(&[self, other])?;
+
+        let matmul = Matmul::new(self.clone(), other.clone());
+        let new_view = matmul.infer_output(&[self, other])?;
+        Ok(Tensor::lazy(
+            LazyOp::Matmul(matmul),
+            new_view,
             self.device.clone(),
         ))
     }
@@ -190,6 +205,11 @@ impl Tensor {
                     stack.push(sources[0].clone());
                     stack.push(sources[1].clone());
                 }
+                LazyOp::Matmul(m) => {
+                    let sources = m.srcs();
+                    stack.push(sources[0].clone());
+                    stack.push(sources[1].clone());
+                }
                 _ => unimplemented!(),
             }
             visited.push(tensor);
@@ -201,6 +221,7 @@ impl Tensor {
     pub fn compile(&self, uniform: &mut CpuUniform, device: &WgpuDevice) -> Option<CompiledOp> {
         match self.op() {
             LazyOp::Binary(b) => Some(b.compile(self, uniform, device).unwrap()),
+            LazyOp::Matmul(m) => Some(m.compile(self, uniform, device).unwrap()),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -268,8 +289,8 @@ mod tests {
     fn test_cfg() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
-        let b = Tensor::from_vec(vec![55.], shape![1], device);
-        let c = a.add(&b)?;
+        let b = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device);
+        let c = a.matmul(&b)?;
         c.resolve()?;
         println!("\nA: {:#?}", a);
         println!("\nB: {:#?}", b);
