@@ -10,8 +10,8 @@ use wgpu::DynamicOffset;
 //TODO: We need to be more general here, enum with encoder.copy_buffer_to_buffer as a COPY
 #[derive(Debug, new)]
 pub struct CompiledOp {
-    workgroup_count: WorkgroupCount,
     pipeline_handle: ComputePipelineHandle,
+    workgroup_count: WorkgroupCount,
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
 }
@@ -19,17 +19,16 @@ pub struct CompiledOp {
 impl CompiledOp {
     const MAX_BINDINGS_PER_GROUP: usize = 4;
 
-    //TODO: dsts -> dst
     pub fn create_storage_bind_groups(
         srcs: &[&Tensor],
-        dsts: &[&Tensor],
+        dst: &Tensor,
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
     ) -> RVec<GpuBindGroup> {
         let mut binding_counter: usize = 0;
         let mut bind_group_entries = drvec![];
 
-        for tensor in srcs.iter().chain(dsts.iter()) {
+        for tensor in srcs.iter().chain(std::iter::once(&dst)) {
             let buf = tensor.storage().try_read().unwrap();
             let gpu_buf = &buf.try_gpu().unwrap().inner;
             bind_group_entries.push(BindGroupEntry {
