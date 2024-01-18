@@ -2,7 +2,6 @@ use std::fmt::Debug;
 
 use encase::internal::WriteInto;
 use encase::ShaderType;
-use wgpu::DynamicOffset;
 
 use crate::gpu::{
     BindGroupLayoutHandle, ComputePipelineHandle, CpuUniform, PoolError, WgpuDevice,
@@ -85,6 +84,8 @@ pub trait Operation: Debug + 'static {
     ) -> Result<CompiledOp, OperationError>;
 
     fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError>;
+
+    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
 
     /// # Output Inference
     ///
