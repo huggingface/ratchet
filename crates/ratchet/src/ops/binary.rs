@@ -110,7 +110,12 @@ impl Operation for Binary {
     }
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Enforcer::check_input_arity(srcs, 2)?;
         Ok(srcs[0].view().clone())
+    }
+
+    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
+        Enforcer::check_input_arity(srcs, 2)?;
+        Enforcer::check_dtype_match(srcs)?;
+        Ok(())
     }
 }

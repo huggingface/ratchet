@@ -152,15 +152,18 @@ impl Tensor {
 }
 
 impl Tensor {
-    pub fn add(&self, other: &Tensor) -> Tensor {
-        //Enforce valid shape, dtype, device
-        //Determine output shape
-        //Binary::check_invariants(self, other);
-        //Binary::shape_inference(self.shape(), other.shape());
-        let op = LazyOp::Binary(Binary::new(self.clone(), other.clone(), BinaryOp::Add));
-        Tensor {
-            inner: Inner::new(op, self.view.clone(), Storage::empty(), self.device.clone()).into(),
-        }
+    pub fn add(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+        Binary::check_invariants(&[self, other])?;
+
+        let binary = Binary::new(self.clone(), other.clone(), BinaryOp::Add);
+        let new_view = binary.infer_output(&[self, other])?;
+        Ok(Tensor::new(
+            LazyOp::Binary(binary),
+            new_view,
+            Storage::empty(),
+            self.device.clone(),
+        )
+        .into())
     }
 
     /// Creates a new tensor from a vector of data.
@@ -263,16 +266,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cfg() {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+    fn test_cfg() -> anyhow::Result<()> {
+        let device = Device::request_device(DeviceRequest::GPU)?;
         let a = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
         let b = Tensor::from_vec(vec![55.], shape![1], device);
-        let c = a.add(&b);
-        c.resolve().unwrap();
+        let c = a.add(&b)?;
+        c.resolve()?;
         println!("\nA: {:#?}", a);
         println!("\nB: {:#?}", b);
         println!("\nC: {:#?}", c);
-        let d = c.to(Device::CPU).unwrap();
+        let d = c.to(Device::CPU)?;
         println!("\nD: {:#?}", d);
+        Ok(())
     }
 }

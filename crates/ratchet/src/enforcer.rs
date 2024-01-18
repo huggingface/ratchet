@@ -124,4 +124,17 @@ impl Enforcer {
         }
         Ok(rank)
     }
+
+    pub fn check_dtype_match(tensors: &[&Tensor]) -> Result<DType, InvariantError> {
+        let dtype = tensors[0].dt();
+        for tensor in tensors.iter().skip(1) {
+            if dtype != tensor.dt() {
+                return Err(InvariantError::DTypeMismatch {
+                    expected: dtype,
+                    actual: tensor.dt(),
+                });
+            }
+        }
+        Ok(dtype)
+    }
 }
