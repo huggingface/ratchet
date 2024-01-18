@@ -55,6 +55,7 @@ impl Operation for Binary {
         Ok(device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())?)
     }
 
+    //TODO: rethink compile signature
     fn compile(
         &self,
         device: &WgpuDevice,

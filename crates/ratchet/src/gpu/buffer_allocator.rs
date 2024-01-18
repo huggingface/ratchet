@@ -77,7 +77,11 @@ impl BufferAllocator {
         resource
     }
 
-    //Specific allocation method for the graph
+    /// # Graph memory allocation
+    ///
+    /// Greedy algorithm, that takes the first buffer larger than the request
+    /// In future, since we know the entire graph and sizes, we can
+    /// do better.
     fn graph_allocate(
         &self,
         descriptor: BufferDescriptor,
@@ -89,7 +93,6 @@ impl BufferAllocator {
         let mut closest_size_diff: Option<usize> = None;
         for (idx, buffer) in free.iter().enumerate() {
             let current_size = buffer.descriptor.size as _;
-
             if current_size >= required_size {
                 let size_diff = usize::abs_diff(current_size, required_size);
 
@@ -134,10 +137,13 @@ impl BufferAllocator {
 
             for source in t.op().srcs() {
                 //Add support for inplace here when added
-                let num_bytes = source.num_bytes();
                 assignments.entry(source.id()).or_insert_with(|| {
                     self.graph_allocate(
-                        BufferDescriptor::new(num_bytes as _, BufferUsages::standard(), false),
+                        BufferDescriptor::new(
+                            source.num_bytes() as _,
+                            BufferUsages::standard(),
+                            false,
+                        ),
                         &mut free,
                         device,
                     )
@@ -149,6 +155,16 @@ impl BufferAllocator {
                 free.push(buf.clone());
             }
         }
+        //Allocate for CFG output
+        let output = execution_order.last().unwrap();
+        assignments.insert(
+            output.id(),
+            device.allocate_buffer(&BufferDescriptor {
+                size: output.num_bytes() as _,
+                usage: BufferUsages::standard(),
+                mapped_at_creation: false,
+            })?,
+        );
         Ok(assignments)
     }
 }

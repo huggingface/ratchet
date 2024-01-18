@@ -8,7 +8,7 @@ use crate::gpu::{
     BindGroupLayoutHandle, ComputePipelineHandle, CpuUniform, PoolError, WgpuDevice,
     WorkgroupCount, UNIFORM_ALIGN,
 };
-use crate::{Binary, RVec, Tensor};
+use crate::{Binary, RVec, Tensor, TensorView};
 
 #[derive(Debug, Clone)]
 pub enum UnaryOp {
@@ -102,4 +102,6 @@ pub trait Operation: Debug + 'static {
     ) -> Result<(ComputePipelineHandle, WorkgroupCount, DynamicOffset), OperationError>;
 
     fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError>;
+
+    fn infer_output(&self, srcs: &[&Tensor]) -> Result<TensorView, OperationError>;
 }
