@@ -4,8 +4,7 @@ use encase::internal::WriteInto;
 use encase::ShaderType;
 
 use crate::gpu::{
-    BindGroupLayoutHandle, ComputePipelineHandle, CpuUniform, PoolError, WgpuDevice,
-    WorkgroupCount, UNIFORM_ALIGN,
+    BindGroupLayoutHandle, CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN,
 };
 use crate::{Binary, CompiledOp, InvariantError, RVec, StorageView, Tensor};
 
