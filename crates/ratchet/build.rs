@@ -25,7 +25,7 @@ impl Default for KernelGenerator {
 
 impl KernelGenerator {
     fn generate(&mut self) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 }
 

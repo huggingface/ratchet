@@ -16,6 +16,10 @@ impl Shape {
         &self.0
     }
 
+    pub fn insert(&mut self, index: usize, dim: usize) {
+        self.0.insert(index, dim);
+    }
+
     pub fn numel(&self) -> usize {
         self.0.iter().product()
     }
@@ -38,6 +42,31 @@ impl Shape {
 
     pub fn rank(&self) -> usize {
         self.len()
+    }
+
+    #[inline]
+    pub fn left_pad_to(&mut self, scalar: usize, rank: usize) {
+        while self.0.len() < rank {
+            self.0.insert(0, scalar);
+        }
+    }
+
+    #[inline]
+    pub fn right_pad_to(&mut self, scalar: usize, rank: usize) {
+        while self.0.len() < rank {
+            self.0.push(scalar);
+        }
+    }
+
+    pub fn drain<R>(&mut self, range: R) -> smallvec::Drain<'_, [usize; 4]>
+    where
+        R: std::ops::RangeBounds<usize>,
+    {
+        self.0.drain(range)
+    }
+
+    pub fn slice(&self, range: std::ops::Range<usize>) -> Self {
+        Shape(self.0[range].to_vec().into())
     }
 }
 

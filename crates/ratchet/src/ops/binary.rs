@@ -1,11 +1,10 @@
 use derive_new::new;
 use encase::ShaderType;
 
-
 use crate::{
     gpu::{
-        BindGroupLayoutDescriptor, BindGroupLayoutHandle, ComputePipelineDescriptor, CpuUniform, KernelElement, PipelineLayoutDescriptor, WgpuDevice,
-        WorkgroupCount,
+        BindGroupLayoutDescriptor, BindGroupLayoutHandle, ComputePipelineDescriptor, CpuUniform,
+        KernelElement, PipelineLayoutDescriptor, WgpuDevice, WorkgroupCount,
     },
     rvec, wgc, CompiledOp, Enforcer, OpMetadata, Operation, OperationError, RVec, StorageView,
     Tensor,
