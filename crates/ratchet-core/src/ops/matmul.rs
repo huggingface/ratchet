@@ -32,8 +32,8 @@ impl MatmulSpec {
         let mut a_shape = A.shape().clone();
         let mut b_shape = B.shape().clone();
         let mut c_shape = C.shape().clone();
-        let mut a_dt = A.dt();
-        let mut b_dt = B.dt();
+        let a_dt = A.dt();
+        let b_dt = B.dt();
 
         if (a_shape.rank() < 2) || (b_shape.rank() < 2) {
             panic!("MatMul: inputs must be at least 2D");
@@ -49,7 +49,7 @@ impl MatmulSpec {
             _ => {}
         };
 
-        let b_rank = b_shape.rank();
+        let _b_rank = b_shape.rank();
 
         let stack_dims = c_shape.rank() - 2;
         let stack_shape = c_shape.slice(0..stack_dims);

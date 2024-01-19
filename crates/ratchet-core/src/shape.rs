@@ -107,3 +107,15 @@ impl std::ops::Index<RangeTo<usize>> for Shape {
         &self.0[index]
     }
 }
+
+impl From<Vec<usize>> for Shape {
+    fn from(shape: Vec<usize>) -> Self {
+        Self(shape.into())
+    }
+}
+
+impl From<Vec<u32>> for Shape {
+    fn from(shape: Vec<u32>) -> Self {
+        Self(shape.into_iter().map(|x| x as usize).collect())
+    }
+}

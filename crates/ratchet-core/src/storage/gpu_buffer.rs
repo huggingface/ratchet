@@ -2,9 +2,10 @@ use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
     gpu::{BufferUsagesExt, GPUBuffer},
     storage::{DeviceStorage, RawCPUBuffer},
-    Device, DeviceError, Shape, TensorDType, TensorError,
+    Device, DeviceError, Shape, TensorError,
 };
 
+use bytemuck::NoUninit;
 use wgpu::BufferUsages;
 
 use crate::DType;
@@ -18,9 +19,13 @@ pub struct RawGPUBuffer {
 impl RawGPUBuffer {
     const MIN_SIZE: usize = 16;
 
-    pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape, device: &WgpuDevice) -> Self {
+    pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &WgpuDevice) -> Self {
         assert_eq!(data.len(), shape.numel());
-        Self::from_bytes(bytemuck::cast_slice(data), T::dt().size_of(), device)
+        Self::from_bytes(
+            bytemuck::cast_slice(data),
+            std::mem::align_of::<T>(),
+            device,
+        )
     }
 
     pub(crate) fn from_bytes(bytes: &[u8], alignment: usize, device: &WgpuDevice) -> Self {
