@@ -39,9 +39,9 @@ pub enum GgmlDType {
     Q8K,
 }
 
-impl Into<ratchet::DType> for GgmlDType {
-    fn into(self) -> ratchet::DType {
-        match self {
+impl From<GgmlDType> for ratchet::DType {
+    fn from(val: GgmlDType) -> Self {
+        match val {
             GgmlDType::F32 => ratchet::DType::F32,
             GgmlDType::F16 => ratchet::DType::F16,
             _ => unimplemented!(),
