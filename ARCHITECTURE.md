@@ -30,17 +30,18 @@ First let's understand what's required when quantizing / dequantzing.
 
 [Quantization - Neural Network Distiller](https://intellabs.github.io/distiller/algo_quantization.html)
 
-To be brief, we need to group values into blocks, (let's say 16 values), and then we need, to get the absolute maximum value of the block.
-This works quite well for performant matrix multiplication in WebGPU and other graphics based shading languages, **IF** you bind the buffers separately.
-Binding them separately allows you to pack 4 quantized values in into a `vec4`, and bind the absmax separate.
-Then it's just 2 loads, 1 for the 4 values of the group, and 1 for the absmax.
+To be brief, values are grouped into blocks (let's say 16 values). This block of values has 1 or more associated, half or full precision values. These values are used to scale the block of values. The question is, how do you manage this in memory?
+
+### Approach 1: Separate tensors 
+With your own quant scheme, you could have 2(3) separate tensors, one for weights and one for scales.
+This is pretty ideal, because then in the shader you can do the buffer binding like below:
 
 ```wgsl
 @group(0) @binding(0)
 var<storage, read> A: array<vec4<f32>>;
 
 @group(0) @binding(1)
-var<storage, read> B: array<u32>;
+var<storage, read> B: array<u32>; //this is the quantized weights, wgpu only supports 32 bit values for now
 
 @group(0) @binding(2)
 var<storage, read> absmax: array<f32>;
@@ -48,9 +49,19 @@ var<storage, read> absmax: array<f32>;
 @group(1) @binding(0)
 var<storage, read_write> C: array<vec4<f32>>;
 ```
+The above bindings are optimal for performance, and that's what we are optimizing for the most.
 
-What's the problem with the above approach?
-With different buffer bindings you then end up with much less code reuse between a standard matmul & a quantized matrix multiply.
+But if you have 2 separate tensors, what does your model loading code look like? What does your matmul API look like?
 
-TBD
+ONNX and others have a different operation altogether `QMatmul`. You'll also require 2 entirely different model implementations like so:
+`https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/whisper/quantized_model.rs`
+`https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/whisper/model.rs`
 
+This to me seems quite annoying. Is there any way we can avoid it?
+
+I think to summarize the hard requirements of this:
+1. Maximal performance is the #1 priority, everything else is secondary.
+2. 1 model implementation is very very desirable.
+3. The API should be invisible, the user should just call `.matmul()` with Tensor B of datatype Q4_XYZ, and it should just work.
+
+I think the fastest way to achieve that is to use a custom quantization scheme for now. We can revisit this.
