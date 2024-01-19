@@ -1,4 +1,5 @@
 use byteorder::{LittleEndian, ReadBytesExt};
+use derive_new::new;
 use ratchet::Shape;
 use std::{
     collections::HashMap,
@@ -66,70 +67,6 @@ impl GGMLFormat {
     }
 }
 
-#[derive(Debug)]
-pub struct HParams {
-    pub n_vocab: i32,
-    pub n_audio_ctx: i32,
-    pub n_audio_state: i32,
-    pub n_audio_head: i32,
-    pub n_audio_layer: i32,
-    pub n_text_ctx: i32,
-    pub n_text_state: i32,
-    pub n_text_head: i32,
-    pub n_text_layer: i32,
-    pub n_mels: i32,
-    pub ftype: i32,
-}
-
-impl HParams {
-    pub fn read<R: BufRead>(reader: &mut R) -> Result<Self, std::io::Error> {
-        let n_vocab = reader.read_i32::<LittleEndian>()?;
-        let n_audio_ctx = reader.read_i32::<LittleEndian>()?;
-        let n_audio_state = reader.read_i32::<LittleEndian>()?;
-        let n_audio_head = reader.read_i32::<LittleEndian>()?;
-        let n_audio_layer = reader.read_i32::<LittleEndian>()?;
-        let n_text_ctx = reader.read_i32::<LittleEndian>()?;
-        let n_text_state = reader.read_i32::<LittleEndian>()?;
-        let n_text_head = reader.read_i32::<LittleEndian>()?;
-        let n_text_layer = reader.read_i32::<LittleEndian>()?;
-        let n_mels = reader.read_i32::<LittleEndian>()?;
-        let ftype = reader.read_i32::<LittleEndian>()?;
-        Ok(Self {
-            n_vocab,
-            n_audio_ctx,
-            n_audio_state,
-            n_audio_head,
-            n_audio_layer,
-            n_text_ctx,
-            n_text_state,
-            n_text_head,
-            n_text_layer,
-            n_mels,
-            ftype,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct MelFilters {
-    pub n_mel: i32,
-    pub n_fft: i32,
-    pub mels: Vec<f32>,
-}
-
-impl MelFilters {
-    pub fn read<R: BufRead>(reader: &mut R) -> Result<Self, std::io::Error> {
-        let n_mel = reader.read_i32::<LittleEndian>()?;
-        let n_fft = reader.read_i32::<LittleEndian>()?;
-
-        let mels = (0..(n_mel * n_fft))
-            .map(|_| reader.read_f32::<LittleEndian>())
-            .collect::<Result<Vec<f32>, std::io::Error>>()?;
-
-        Ok(Self { n_mel, n_fft, mels })
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct TensorHeader {
     pub name: String,
@@ -171,29 +108,28 @@ impl TensorHeader {
     }
 }
 
-pub struct GGMLLoader;
+#[derive(Debug, new)]
+pub struct LoadedModel<M: GGMLCompatible> {
+    pub header: M::ModelHeader,
+    pub tensors: HashMap<String, TensorHeader>,
+}
+
+struct GGMLLoader;
 
 impl GGMLLoader {
-    pub fn load<R: BufRead + Seek>(
+    pub fn load<R: BufRead + Seek, M: GGMLCompatible>(
         reader: &mut R,
-    ) -> Result<HashMap<String, TensorHeader>, LoadError> {
+    ) -> Result<LoadedModel<M>, LoadError> {
         let mut tensor_map = HashMap::new();
         let last_position = reader.seek(std::io::SeekFrom::End(0))?;
         reader.seek(std::io::SeekFrom::Start(0))?;
-        let _format = GGMLFormat::read(reader)?;
-        let hparams = HParams::read(reader)?;
-        let filters = MelFilters::read(reader)?;
-        let n_tokens = reader.read_i32::<LittleEndian>()?;
-        for _ in 0..n_tokens {
-            let token_len = reader.read_u32::<LittleEndian>()?;
-            reader.seek(SeekFrom::Current(token_len as i64))?;
-        }
+        let model_header = M::load_header(reader)?;
 
         while reader.stream_position()? != last_position {
             let header = Self::load_single(reader)?;
             tensor_map.insert(header.name.clone(), header);
         }
-        Ok(tensor_map)
+        Ok(LoadedModel::new(model_header, tensor_map))
     }
 
     fn load_single<R: BufRead + Seek>(reader: &mut R) -> Result<TensorHeader, LoadError> {
@@ -212,11 +148,24 @@ impl GGMLLoader {
         })?;
 
         let start_offset = reader.stream_position()?;
-        let shape: Shape = dims.into();
-        let header = TensorHeader::new(name, shape, dtype.into(), start_offset);
+        let header = TensorHeader::new(name, dims.into(), dtype.into(), start_offset);
         let data_size = header.data_size() as u64;
         reader.seek(SeekFrom::Start(start_offset + data_size))?;
         Ok(header)
+    }
+}
+
+/// # GGML Compatible
+///
+/// Implement this for your Model if you want to load it from a GGML file.
+pub trait GGMLCompatible {
+    type ModelHeader;
+
+    fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError>;
+    fn load_model<R: BufRead + Seek, M: GGMLCompatible>(
+        reader: &mut R,
+    ) -> Result<LoadedModel<M>, LoadError> {
+        GGMLLoader::load(reader)
     }
 }
 
