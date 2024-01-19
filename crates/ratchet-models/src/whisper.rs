@@ -1,7 +1,7 @@
-use std::io::{BufRead, SeekFrom};
+use std::io::{BufRead, Seek, SeekFrom};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use ratchet_loader::{GGMLCompatible, GGMLFormat};
+use ratchet_loader::{GGMLCompatible, GGMLFormat, LoadError};
 
 pub struct Whisper;
 
@@ -79,9 +79,7 @@ impl MelFilters {
 impl GGMLCompatible for Whisper {
     type ModelHeader = WhisperGGMLHeader;
 
-    fn load_header<R: std::io::prelude::BufRead + std::io::prelude::Seek>(
-        reader: &mut R,
-    ) -> Result<Self::ModelHeader, ratchet_loader::LoadError> {
+    fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError> {
         let format = GGMLFormat::read(reader)?;
         let hparams = HParams::read(reader)?;
         let filters = MelFilters::read(reader)?;
@@ -96,5 +94,25 @@ impl GGMLCompatible for Whisper {
             filters,
             n_tokens,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Whisper;
+    use hf_hub::api::sync::Api;
+    use ratchet_loader::GGMLCompatible;
+
+    #[test]
+    fn load_ggml() {
+        let api = Api::new().unwrap();
+        let model = api.model("ggerganov/whisper.cpp".to_string());
+        let path = model.get("ggml-tiny.bin").unwrap();
+
+        let stash = Whisper::load_ggml(&mut std::io::BufReader::new(
+            std::fs::File::open(path).unwrap(),
+        ))
+        .unwrap();
+        assert_eq!(stash.tensors.len(), 167);
     }
 }

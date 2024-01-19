@@ -109,7 +109,7 @@ impl TensorHeader {
 }
 
 #[derive(Debug, new)]
-pub struct LoadedModel<M: GGMLCompatible> {
+pub struct GGMLModel<M: GGMLCompatible> {
     pub header: M::ModelHeader,
     pub tensors: HashMap<String, TensorHeader>,
 }
@@ -119,7 +119,7 @@ struct GGMLLoader;
 impl GGMLLoader {
     pub fn load<R: BufRead + Seek, M: GGMLCompatible>(
         reader: &mut R,
-    ) -> Result<LoadedModel<M>, LoadError> {
+    ) -> Result<GGMLModel<M>, LoadError> {
         let mut tensor_map = HashMap::new();
         let last_position = reader.seek(std::io::SeekFrom::End(0))?;
         reader.seek(std::io::SeekFrom::Start(0))?;
@@ -129,7 +129,7 @@ impl GGMLLoader {
             let header = Self::load_single(reader)?;
             tensor_map.insert(header.name.clone(), header);
         }
-        Ok(LoadedModel::new(model_header, tensor_map))
+        Ok(GGMLModel::new(model_header, tensor_map))
     }
 
     fn load_single<R: BufRead + Seek>(reader: &mut R) -> Result<TensorHeader, LoadError> {
@@ -137,7 +137,7 @@ impl GGMLLoader {
         let name_len = reader.read_i32::<LittleEndian>()?;
         let dtype = reader.read_u32::<LittleEndian>()?;
 
-        let mut dims = vec![0u32; n_dims as usize];
+        let mut dims = vec![0u32; n_dims];
         reader.read_u32_into::<LittleEndian>(&mut dims)?;
         dims.reverse();
 
@@ -148,7 +148,7 @@ impl GGMLLoader {
         })?;
 
         let start_offset = reader.stream_position()?;
-        let header = TensorHeader::new(name, dims.into(), dtype.into(), start_offset);
+        let header = TensorHeader::new(name, dims.into(), dtype, start_offset);
         let data_size = header.data_size() as u64;
         reader.seek(SeekFrom::Start(start_offset + data_size))?;
         Ok(header)
@@ -158,32 +158,11 @@ impl GGMLLoader {
 /// # GGML Compatible
 ///
 /// Implement this for your Model if you want to load it from a GGML file.
-pub trait GGMLCompatible {
+pub trait GGMLCompatible: Sized {
     type ModelHeader;
 
     fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError>;
-    fn load_model<R: BufRead + Seek, M: GGMLCompatible>(
-        reader: &mut R,
-    ) -> Result<LoadedModel<M>, LoadError> {
+    fn load_ggml<R: BufRead + Seek>(reader: &mut R) -> Result<GGMLModel<Self>, LoadError> {
         GGMLLoader::load(reader)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::GGMLLoader;
-    use hf_hub::api::sync::Api;
-
-    #[test]
-    fn load_ggml() {
-        let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
-
-        let tensors = GGMLLoader::load(&mut std::io::BufReader::new(
-            std::fs::File::open(path).unwrap(),
-        ))
-        .unwrap();
-        assert_eq!(tensors.len(), 167);
     }
 }
