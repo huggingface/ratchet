@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "crates/ratchet-core",
-    "crates/ratchet-loader",
+    "crates/ratchet-loader", 
+    "crates/ratchet-models",
 ]
 resolver = "2"
 
@@ -26,3 +27,6 @@ derive-new = "0.6.0"
 log = "0.4.20"
 thiserror = "1.0.56"
 byteorder = "1.5.0"
+
+[workspace.dev-dependencies]
+hf-hub = "0.3.0"
