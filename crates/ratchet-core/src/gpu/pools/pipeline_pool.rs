@@ -16,7 +16,13 @@ pub enum KernelElement {
     Scalar,
 }
 
-impl From<&KernelElement> for u32 {
+impl KernelElement {
+    pub fn as_size(&self) -> usize {
+        self.into()
+    }
+}
+
+impl From<&KernelElement> for usize {
     fn from(item: &KernelElement) -> Self {
         match item {
             KernelElement::Vec4 => 4,

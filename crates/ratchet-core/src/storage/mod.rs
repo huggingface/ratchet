@@ -1,10 +1,11 @@
 mod cpu_buffer;
 mod gpu_buffer;
 
+use bytemuck::NoUninit;
 pub use cpu_buffer::*;
 pub use gpu_buffer::*;
 
-use crate::{gpu::GPUBuffer, Device, DeviceError, Shape, TensorDType};
+use crate::{gpu::GPUBuffer, Device, DeviceError, Shape};
 
 use crate::DType;
 
@@ -21,7 +22,7 @@ impl Storage {
         Self { raw: None }
     }
 
-    pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape, device: &Device) -> Self {
+    pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &Device) -> Self {
         assert_eq!(data.len(), shape.numel());
         match device {
             Device::CPU => Self {

@@ -4,6 +4,7 @@ use crate::{
     RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
+use bytemuck::NoUninit;
 use derive_new::new;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -34,10 +35,13 @@ pub struct Tensor {
 
 impl Tensor {
     fn new(op: LazyOp, meta: StorageView, storage: Storage, device: Device) -> Self {
-        let inner = Inner::new(op, meta, storage, device);
         Self {
-            inner: Arc::new(inner),
+            inner: Arc::new(Inner::new(op, meta, storage, device)),
         }
+    }
+
+    fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
+        Self::new(op, meta, Storage::empty(), device)
     }
 }
 
@@ -157,20 +161,35 @@ impl Tensor {
 
         let binary = Binary::new(self.clone(), other.clone(), BinaryOp::Add);
         let new_view = binary.infer_output(&[self, other])?;
-        Ok(Tensor::new(
+        Ok(Tensor::lazy(
             LazyOp::Binary(binary),
             new_view,
-            Storage::empty(),
             self.device.clone(),
         ))
     }
 
-    /// Creates a new tensor from a vector of data.
+    pub fn matmul(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+        Matmul::check_invariants(&[self, other])?;
+
+        let matmul = Matmul::new(self.clone(), other.clone());
+        let new_view = matmul.infer_output(&[self, other])?;
+        Ok(Tensor::lazy(
+            LazyOp::Matmul(matmul),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
+    /// Creates a new tensor from a chunk of data.
     ///
     /// The Tensor is instantly resolved.
     /// If a non-CPU device is specified, the data will be copied to the device.
-    pub fn from_vec<T: TensorDType>(data: Vec<T>, shape: Shape, device: Device) -> Tensor {
-        let storage = Storage::from_slice(&data, &shape, &device);
+    pub fn from_data<T: TensorDType, U: AsRef<[T]>>(
+        data: U,
+        shape: Shape,
+        device: Device,
+    ) -> Tensor {
+        let storage = Storage::from_slice(data.as_ref(), &shape, &device);
         let strides = Strides::from(&shape);
         let meta = StorageView::new(shape, T::dt(), strides);
         Tensor::new(LazyOp::Const, meta, storage, device)
@@ -190,6 +209,11 @@ impl Tensor {
                     stack.push(sources[0].clone());
                     stack.push(sources[1].clone());
                 }
+                LazyOp::Matmul(m) => {
+                    let sources = m.srcs();
+                    stack.push(sources[0].clone());
+                    stack.push(sources[1].clone());
+                }
                 _ => unimplemented!(),
             }
             visited.push(tensor);
@@ -201,6 +225,7 @@ impl Tensor {
     pub fn compile(&self, uniform: &mut CpuUniform, device: &WgpuDevice) -> Option<CompiledOp> {
         match self.op() {
             LazyOp::Binary(b) => Some(b.compile(self, uniform, device).unwrap()),
+            LazyOp::Matmul(m) => Some(m.compile(self, uniform, device).unwrap()),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -239,12 +264,10 @@ impl Tensor {
             let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
             storage_resource.try_gpu()?.clone()
         };
-        let cpu_storage = Storage::from(raw_gpu_buf.to_cpu(self.device()).unwrap());
-
         Ok(Tensor::new(
             LazyOp::Const,
             self.view.clone(),
-            cpu_storage,
+            Storage::from(raw_gpu_buf.to_cpu(self.device())?),
             Device::CPU,
         ))
     }
@@ -267,8 +290,8 @@ mod tests {
     #[test]
     fn test_cfg() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
-        let b = Tensor::from_vec(vec![55.], shape![1], device);
+        let a = Tensor::from_data(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
+        let b = Tensor::from_data(vec![1337.], shape![1], device);
         let c = a.add(&b)?;
         c.resolve()?;
         println!("\nA: {:#?}", a);
