@@ -3,10 +3,8 @@ use std::fmt::Debug;
 use encase::internal::WriteInto;
 use encase::ShaderType;
 
-use crate::gpu::{
-    BindGroupLayoutHandle, CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN,
-};
-use crate::{Binary, CompiledOp, InvariantError, RVec, StorageView, Tensor};
+use crate::gpu::{BindGroupLayoutHandle, CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
+use crate::{Binary, CompiledOp, InvariantError, Matmul, RVec, StorageView, Tensor};
 
 #[derive(Debug, Clone)]
 pub enum UnaryOp {
@@ -16,6 +14,7 @@ pub enum UnaryOp {
 #[derive(Clone)]
 pub enum LazyOp {
     Empty,
+    Matmul(Matmul),
     Binary(Binary),
     Unary(Tensor, UnaryOp),
     Const,
@@ -24,6 +23,7 @@ pub enum LazyOp {
 impl std::fmt::Debug for LazyOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            LazyOp::Matmul(m) => write!(f, "{:?}", m),
             LazyOp::Empty => write!(f, "Empty"),
             LazyOp::Binary(b) => write!(f, "{:?}", b),
             LazyOp::Unary(_, _) => write!(f, "Unary"),
@@ -36,6 +36,7 @@ impl LazyOp {
     pub fn srcs(&self) -> RVec<&Tensor> {
         match self {
             LazyOp::Binary(b) => b.srcs(),
+            LazyOp::Matmul(m) => m.srcs(),
             _ => unimplemented!(),
         }
     }

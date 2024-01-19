@@ -1,3 +1,5 @@
+use bytemuck::NoUninit;
+
 use crate::{
     storage::{DeviceStorage, RawGPUBuffer},
     Device, DeviceError, Shape, TensorDType,
@@ -13,10 +15,10 @@ pub struct RawCPUBuffer(*mut u8, Layout);
 unsafe impl Send for RawCPUBuffer {}
 
 impl RawCPUBuffer {
-    pub fn from_slice<T: TensorDType>(data: &[T], shape: &Shape) -> Self {
+    pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape) -> Self {
         assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);
-        Self::from_bytes(bytes, T::dt().size_of())
+        Self::from_bytes(bytes, std::mem::align_of::<T>())
     }
 
     unsafe fn uninitialized(size: usize, alignment: usize) -> Self {

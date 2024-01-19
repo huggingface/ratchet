@@ -6,6 +6,12 @@ edition = "2021"
 [features]
 gpu_profiling = []
 
+[build-dependencies]
+tera = "1.19.0"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+globwalk = "0.8.1"
+
 [dependencies]
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
