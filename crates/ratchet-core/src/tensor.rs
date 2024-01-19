@@ -4,6 +4,7 @@ use crate::{
     RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
+use bytemuck::NoUninit;
 use derive_new::new;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -34,9 +35,8 @@ pub struct Tensor {
 
 impl Tensor {
     fn new(op: LazyOp, meta: StorageView, storage: Storage, device: Device) -> Self {
-        let inner = Inner::new(op, meta, storage, device);
         Self {
-            inner: Arc::new(inner),
+            inner: Arc::new(Inner::new(op, meta, storage, device)),
         }
     }
 
@@ -180,12 +180,16 @@ impl Tensor {
         ))
     }
 
-    /// Creates a new tensor from a vector of data.
+    /// Creates a new tensor from a chunk of data.
     ///
     /// The Tensor is instantly resolved.
     /// If a non-CPU device is specified, the data will be copied to the device.
-    pub fn from_vec<T: TensorDType>(data: Vec<T>, shape: Shape, device: Device) -> Tensor {
-        let storage = Storage::from_slice(&data, &shape, &device);
+    pub fn from_data<T: TensorDType, U: AsRef<[T]>>(
+        data: U,
+        shape: Shape,
+        device: Device,
+    ) -> Tensor {
+        let storage = Storage::from_slice(data.as_ref(), &shape, &device);
         let strides = Strides::from(&shape);
         let meta = StorageView::new(shape, T::dt(), strides);
         Tensor::new(LazyOp::Const, meta, storage, device)
@@ -260,12 +264,10 @@ impl Tensor {
             let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
             storage_resource.try_gpu()?.clone()
         };
-        let cpu_storage = Storage::from(raw_gpu_buf.to_cpu(self.device()).unwrap());
-
         Ok(Tensor::new(
             LazyOp::Const,
             self.view.clone(),
-            cpu_storage,
+            Storage::from(raw_gpu_buf.to_cpu(self.device())?),
             Device::CPU,
         ))
     }
@@ -288,9 +290,9 @@ mod tests {
     #[test]
     fn test_cfg() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
-        let b = Tensor::from_vec(vec![1., 2., 3., 4.], shape![2, 2], device);
-        let c = a.matmul(&b)?;
+        let a = Tensor::from_data(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
+        let b = Tensor::from_data(vec![1337.], shape![1], device);
+        let c = a.add(&b)?;
         c.resolve()?;
         println!("\nA: {:#?}", a);
         println!("\nB: {:#?}", b);

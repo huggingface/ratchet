@@ -26,15 +26,7 @@ impl DType {
 }
 
 pub trait TensorDType:
-    Clone
-    + std::fmt::Debug
-    + std::fmt::Display
-    + PartialEq
-    + 'static
-    + num_traits::Zero
-    + Send
-    + Sync
-    + bytemuck::Pod
+    Clone + std::fmt::Debug + PartialEq + 'static + num_traits::Zero + Send + Sync + bytemuck::Pod
 {
     fn dt() -> DType;
 
