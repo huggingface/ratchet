@@ -1,4 +1,3 @@
-#![feature(trait_alias)]
 #![allow(non_snake_case)]
 mod compiled_op;
 mod device;

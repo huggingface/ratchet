@@ -17,9 +17,6 @@ pub enum PoolError {
     UnknownDescriptor,
 }
 
-pub trait ResourceConstructor<Descriptor, Resource> = Fn(&Descriptor) -> Resource;
-pub trait ResourceDestructor<Resource> = FnMut(&Resource);
-
 /// Generic resource pool for all resources that are fully described upon creation, i.e. never have any variable content.
 ///
 /// This implies, a resource is uniquely defined by its description.
@@ -56,7 +53,7 @@ where
         })
     }
 
-    pub fn get_or_create<C: ResourceConstructor<Descriptor, Resource>>(
+    pub fn get_or_create<C: Fn(&Descriptor) -> Resource>(
         &self,
         descriptor: &Descriptor,
         constructor: C,
