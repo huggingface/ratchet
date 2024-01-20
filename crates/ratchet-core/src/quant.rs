@@ -73,19 +73,19 @@ pub fn sint8_quantize<F: Float + AsPrimitive<i32> + Debug>(
 
     let sf = F::from(127.).unwrap();
 
-    let mut local_absmax = F::neg_infinity();
+    let mut block_absmax = F::neg_infinity();
     for i in (0..(K * N)).step_by(pack_size) {
         if i % group_size == 0 {
-            local_absmax = matrix[i..i + group_size]
+            block_absmax = matrix[i..i + group_size]
                 .iter()
                 .fold(F::neg_infinity(), |acc, &x| acc.max(x.abs()));
         }
-        let packed_value: i32 = ((matrix[i] / local_absmax * sf).round().as_() & 0xFF)
-            | (((matrix[i + 1] / local_absmax * sf).round().as_() & 0xFF) << 8)
-            | (((matrix[i + 2] / local_absmax * sf).round().as_() & 0xFF) << 16)
-            | (((matrix[i + 3] / local_absmax * sf).round().as_() & 0xFF) << 24);
+        let packed_value: i32 = ((matrix[i] / block_absmax * sf).round().as_() & 0xFF)
+            | (((matrix[i + 1] / block_absmax * sf).round().as_() & 0xFF) << 8)
+            | (((matrix[i + 2] / block_absmax * sf).round().as_() & 0xFF) << 16)
+            | (((matrix[i + 3] / block_absmax * sf).round().as_() & 0xFF) << 24);
         quantized_matrix[i / pack_size] = packed_value as u32;
-        absmax_matrix[i / group_size] = local_absmax;
+        absmax_matrix[i / group_size] = block_absmax;
     }
     (quantized_matrix, absmax_matrix)
 }
@@ -101,12 +101,12 @@ pub fn sint8_dequantize(
     let mut matrix = vec![0.0; K * N];
 
     for i in (0..(K * N)).step_by(pack_size) {
-        let local_absmax = absmax_matrix[div_floor(i, group_size)];
+        let block_absmax = absmax_matrix[div_floor(i, group_size)];
         let packed_value = quantized_matrix[div_floor(i, pack_size)] as i32;
-        matrix[i] = ((packed_value << 24) >> 24) as f32 / 127.0 * local_absmax;
-        matrix[i + 1] = ((packed_value << 16) >> 24) as f32 / 127.0 * local_absmax;
-        matrix[i + 2] = ((packed_value << 8) >> 24) as f32 / 127.0 * local_absmax;
-        matrix[i + 3] = (packed_value >> 24) as f32 / 127.0 * local_absmax;
+        matrix[i] = ((packed_value << 24) >> 24) as f32 / 127.0 * block_absmax;
+        matrix[i + 1] = ((packed_value << 16) >> 24) as f32 / 127.0 * block_absmax;
+        matrix[i + 2] = ((packed_value << 8) >> 24) as f32 / 127.0 * block_absmax;
+        matrix[i + 3] = (packed_value >> 24) as f32 / 127.0 * block_absmax;
     }
 
     matrix

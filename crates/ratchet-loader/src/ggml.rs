@@ -1,4 +1,4 @@
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use derive_new::new;
 use ratchet::Shape;
 use std::{
@@ -58,6 +58,24 @@ impl GGMLFormat {
         }
     }
 
+    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        let (magic, version) = match self {
+            Self::GGML(magic) => (magic, None),
+            Self::GGJT(magic, version) => (magic, Some(version)),
+            Self::GGLA(magic, version) => (magic, Some(version)),
+            Self::GGMF(magic, version) => (magic, Some(version)),
+            Self::GGSN(magic, version) => (magic, Some(version)),
+        };
+
+        writer.write_u32::<LittleEndian>(*magic)?;
+
+        if let Some(version) = version {
+            writer.write_u32::<LittleEndian>(*version)?;
+        }
+
+        Ok(())
+    }
+
     fn align32(&self) -> bool {
         match self {
             Self::GGML(_) => false,
@@ -94,17 +112,8 @@ impl TensorHeader {
 
     pub fn read_data<R: BufRead + Seek>(&self, reader: &mut R) -> std::io::Result<Vec<u8>> {
         let n_bytes = self.data_size();
-        let mut buf: Vec<MaybeUninit<u8>> = Vec::with_capacity(n_bytes);
-        unsafe {
-            buf.set_len(n_bytes);
-        }
-        let buf_slice =
-            unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u8, n_bytes) };
-
         reader.seek(SeekFrom::Start(self.start_offset))?;
-        reader.read_exact(buf_slice)?;
-        let buf = unsafe { std::mem::transmute::<_, Vec<u8>>(buf) };
-        Ok(buf)
+        reader.read_bytes_with_len(n_bytes)
     }
 }
 
@@ -164,5 +173,28 @@ pub trait GGMLCompatible: Sized {
     fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError>;
     fn load_ggml<R: BufRead + Seek>(reader: &mut R) -> Result<GGMLModel<Self>, LoadError> {
         GGMLLoader::load(reader)
+    }
+    //Writing is optional
+    fn write_header<W: std::io::Write>(_: &Self::ModelHeader, _: &mut W) -> std::io::Result<()> {
+        unimplemented!()
+    }
+
+    fn write_ggml<W: std::io::Write>(_: &GGMLModel<Self>, _: &mut W) -> std::io::Result<()> {
+        unimplemented!("Writing GGML files is unimplemented for this model")
+    }
+}
+
+struct GGMLWriter;
+
+impl GGMLWriter {
+    pub fn write<W: std::io::Write, M: GGMLCompatible>(
+        writer: &mut W,
+        model: &GGMLModel<M>,
+    ) -> std::io::Result<()> {
+        M::write_header(&model.header, writer)?;
+        for (name, tensor) in &model.tensors {
+            //Self::write_single(writer, tensor)?;
+        }
+        todo!()
     }
 }
