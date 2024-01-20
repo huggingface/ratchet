@@ -1,6 +1,6 @@
 use std::io::{BufRead, Seek, SeekFrom};
 
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ratchet_loader::{GGMLCompatible, GGMLFormat, LoadError};
 
 pub struct Whisper;
@@ -54,6 +54,21 @@ impl HParams {
             ftype,
         })
     }
+
+    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_i32::<LittleEndian>(self.n_vocab)?;
+        writer.write_i32::<LittleEndian>(self.n_audio_ctx)?;
+        writer.write_i32::<LittleEndian>(self.n_audio_state)?;
+        writer.write_i32::<LittleEndian>(self.n_audio_head)?;
+        writer.write_i32::<LittleEndian>(self.n_audio_layer)?;
+        writer.write_i32::<LittleEndian>(self.n_text_ctx)?;
+        writer.write_i32::<LittleEndian>(self.n_text_state)?;
+        writer.write_i32::<LittleEndian>(self.n_text_head)?;
+        writer.write_i32::<LittleEndian>(self.n_text_layer)?;
+        writer.write_i32::<LittleEndian>(self.n_mels)?;
+        writer.write_i32::<LittleEndian>(self.ftype)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -73,6 +88,15 @@ impl MelFilters {
             .collect::<Result<Vec<f32>, std::io::Error>>()?;
 
         Ok(Self { n_mel, n_fft, mels })
+    }
+
+    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_i32::<LittleEndian>(self.n_mel)?;
+        writer.write_i32::<LittleEndian>(self.n_fft)?;
+        for mel in &self.mels {
+            writer.write_f32::<LittleEndian>(*mel)?;
+        }
+        Ok(())
     }
 }
 
@@ -94,6 +118,20 @@ impl GGMLCompatible for Whisper {
             filters,
             n_tokens,
         })
+    }
+
+    fn write_header<W: std::io::Write>(
+        header: &Self::ModelHeader,
+        writer: &mut W,
+    ) -> std::io::Result<()> {
+        header.format.write(writer)?;
+        header.hparams.write(writer)?;
+        header.filters.write(writer)?;
+        writer.write_i32::<LittleEndian>(header.n_tokens)?;
+        for _ in 0..header.n_tokens {
+            writer.write_u32::<LittleEndian>(0)?;
+        }
+        Ok(())
     }
 }
 

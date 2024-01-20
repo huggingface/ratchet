@@ -9,6 +9,9 @@ use derive_new::new;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
+#[cfg(feature = "rand")]
+use {rand::prelude::*, rand_distr::StandardNormal};
+
 // thiserror error for Tensor
 #[derive(thiserror::Error, Debug)]
 pub enum TensorError {
@@ -180,6 +183,19 @@ impl Tensor {
         ))
     }
 
+    #[cfg(feature = "rand")]
+    pub fn randn<T: TensorDType + num_traits::Float>(shape: Shape, device: Device) -> Self {
+        let mut rng = rand::thread_rng();
+        //TODO: fix copy on CPU
+        let data = (0..shape.numel())
+            .map(|_| {
+                let sample: f32 = StandardNormal.sample(&mut rng);
+                T::from(sample).expect("Failed to convert sample")
+            })
+            .collect::<Vec<_>>();
+        Self::from_data(data, shape, device)
+    }
+
     /// Creates a new tensor from a chunk of data.
     ///
     /// The Tensor is instantly resolved.
@@ -290,9 +306,9 @@ mod tests {
     #[test]
     fn test_cfg() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::from_data(vec![1., 2., 3., 4.], shape![2, 2], device.clone());
-        let b = Tensor::from_data(vec![1337.], shape![1], device);
-        let c = a.add(&b)?;
+        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
+        let c = a.matmul(&b)?;
         c.resolve()?;
         println!("\nA: {:#?}", a);
         println!("\nB: {:#?}", b);

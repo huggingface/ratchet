@@ -6,10 +6,10 @@ use encase::ShaderType;
 use crate::{
     gpu::{
         BindGroupLayoutDescriptor, BindGroupLayoutHandle, ComputePipelineDescriptor, CpuUniform,
-        KernelElement, PipelineLayoutDescriptor, WgpuDevice, WorkgroupCount,
+        PipelineLayoutDescriptor, WgpuDevice, WorkgroupCount,
     },
-    rvec, wgc, CompiledOp, DType, Enforcer, OpMetadata, Operation, OperationError, RVec, Shape,
-    StorageView, Tensor,
+    rvec, wgc, CompiledOp, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError,
+    RVec, Shape, StorageView, Tensor,
 };
 
 // Defines a matrix multiplication operation.
@@ -229,7 +229,7 @@ impl Operation for Matmul {
     }
 
     fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError> {
-        Ok(device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::ternary())?)
+        Ok(device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())?)
     }
 
     fn compile(
@@ -243,7 +243,8 @@ impl Operation for Matmul {
         let C = dst;
         let spec = MatmulSpec::new(A, B, C);
 
-        let kernel_elem = spec.select_kernel_element();
+        //let kernel_element = spec.select_kernel_element();
+        let kernel_element = KernelElement::Scalar;
 
         let M = spec.m() as u32;
         let N = spec.n() as u32;
@@ -258,15 +259,15 @@ impl Operation for Matmul {
             }
         }
 
-        let a_offset = calculate_offset(spec.a_stack() as _, M, K, &kernel_elem);
-        let b_offset = calculate_offset(spec.b_stack() as _, K, N, &kernel_elem);
-        let c_offset = calculate_offset(spec.c_stack() as _, M, N, &kernel_elem);
+        let a_offset = calculate_offset(spec.a_stack() as _, M, K, &kernel_element);
+        let b_offset = calculate_offset(spec.b_stack() as _, K, N, &kernel_element);
+        let c_offset = calculate_offset(spec.c_stack() as _, M, N, &kernel_element);
 
         let metadata = MatmulMeta::new(M, N, K, a_offset, b_offset, c_offset);
         let offset = uniform.write(&metadata)?;
 
         let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
-        let group_y = WorkgroupCount::div_ceil(spec.n(), 8 * kernel_elem.as_size()) as u32;
+        let group_y = WorkgroupCount::div_ceil(spec.n(), 8 * kernel_element.as_size()) as u32;
 
         let storage_layout = self.storage_layout(device)?;
         let uniform_layout =
@@ -278,8 +279,8 @@ impl Operation for Matmul {
         let pipeline_handle =
             device.get_or_create_compute_pipeline(&ComputePipelineDescriptor {
                 pipeline_layout,
-                kernel_key: "qgemm",
-                elem: kernel_elem,
+                kernel_name: "sgemm",
+                kernel_element,
             })?;
 
         let storage_bind_groups = CompiledOp::create_storage_bind_groups(

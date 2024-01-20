@@ -1,4 +1,3 @@
-#![feature(trait_alias)]
 #![allow(non_snake_case)]
 mod compiled_op;
 mod device;
@@ -6,8 +5,10 @@ mod dtype;
 mod enforcer;
 mod executable;
 mod gpu;
+mod kernels;
 mod op;
 mod ops;
+mod quant;
 mod shape;
 mod storage;
 mod strides;
@@ -19,8 +20,10 @@ pub use device::*;
 pub use dtype::*;
 pub use enforcer::*;
 pub use executable::*;
+pub use kernels::*;
 pub use op::*;
 pub use ops::*;
+pub use quant::*;
 pub use shape::*;
 pub use storage::*;
 pub use strides::*;
