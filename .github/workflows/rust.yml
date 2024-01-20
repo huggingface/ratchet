@@ -9,7 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   WGPU_DX12_COMPILER: dxc
-  RUSTFLAGS: --cfg=web_sys_unstable_apis 
+  RUSTFLAGS: --cfg=web_sys_unstable_apis
 
 jobs:
   build:
@@ -31,7 +31,7 @@ jobs:
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
           sudo add-apt-repository ppa:kisak/kisak-mesa
           sudo apt-get update
-          sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev 
+          sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev
 
       - name: Setup
         run: |
@@ -41,4 +41,4 @@ jobs:
       - name: Run tests
         run: cargo test
       - name: Run integration tests
-        run: (cd crates/integration-tests;sh run-tests.sh)
+        run: (cd crates/ratchet-integration-tests;sh run-tests.sh)
