@@ -41,24 +41,21 @@ impl ComputePipelinePool {
         device: &WgpuDevice,
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
-            println!("Creating pipeline for {:?}", desc);
             let kernel_key = desc.build_kernel_key();
-            println!("Kernel key: {}", kernel_key);
             let shader = KERNELS.get(kernel_key.as_str()).unwrap();
             let label = Some(kernel_key.as_str());
+
+            let shader_module_desc = wgpu::ShaderModuleDescriptor {
+                label,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader)),
+            };
+
+            //We don't cache shader modules because pipelines are cached
             let module = if std::env::var("RATCHET_CHECKED").is_ok() {
                 log::warn!("Using checked shader compilation");
-                device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label,
-                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader)),
-                })
+                device.create_shader_module(shader_module_desc)
             } else {
-                unsafe {
-                    device.create_shader_module_unchecked(wgpu::ShaderModuleDescriptor {
-                        label,
-                        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader)),
-                    })
-                }
+                unsafe { device.create_shader_module_unchecked(shader_module_desc) }
             };
 
             let pipeline_layouts = device.pipeline_layout_resources();
