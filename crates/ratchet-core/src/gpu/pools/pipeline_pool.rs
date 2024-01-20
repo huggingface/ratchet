@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::gpu::WgpuDevice;
+use crate::{gpu::WgpuDevice, KernelElement, KERNELS};
 
 use super::{
     PipelineLayoutHandle, StaticResourcePool, StaticResourcePoolAccessor,
@@ -10,34 +10,17 @@ use super::{
 slotmap::new_key_type! { pub struct ComputePipelineHandle; }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum KernelElement {
-    Vec4,
-    Vec2,
-    Scalar,
-}
-
-impl KernelElement {
-    pub fn as_size(&self) -> usize {
-        self.into()
-    }
-}
-
-impl From<&KernelElement> for usize {
-    fn from(item: &KernelElement) -> Self {
-        match item {
-            KernelElement::Vec4 => 4,
-            KernelElement::Vec2 => 2,
-            KernelElement::Scalar => 1,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub(crate) struct ComputePipelineDescriptor {
+pub struct ComputePipelineDescriptor {
     pub pipeline_layout: PipelineLayoutHandle,
-    pub kernel_key: &'static str, //string uniquely identifying the kernel
-    pub elem: KernelElement,
+    pub kernel_name: &'static str, //string uniquely identifying the kernel
+    pub kernel_element: KernelElement,
     //aux_ctx: Option<RVec<(&'static str, u32)>>, Used for sizing SMEM
+}
+
+impl ComputePipelineDescriptor {
+    pub fn build_kernel_key(&self) -> String {
+        format!("{}_{}", self.kernel_name, self.kernel_element.as_str())
+    }
 }
 
 pub struct ComputePipelinePool {
@@ -58,13 +41,11 @@ impl ComputePipelinePool {
         device: &WgpuDevice,
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
-            //TODO: shader shouldn't be hardcoded
-            let shader = include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/kernels",
-                "/add_scalar.wgsl"
-            ));
-            let label = Some(desc.kernel_key);
+            println!("Creating pipeline for {:?}", desc);
+            let kernel_key = desc.build_kernel_key();
+            println!("Kernel key: {}", kernel_key);
+            let shader = KERNELS.get(kernel_key.as_str()).unwrap();
+            let label = Some(kernel_key.as_str());
             let module = if std::env::var("RATCHET_CHECKED").is_ok() {
                 log::warn!("Using checked shader compilation");
                 device.create_shader_module(wgpu::ShaderModuleDescriptor {
