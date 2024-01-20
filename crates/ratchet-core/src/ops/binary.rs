@@ -4,10 +4,10 @@ use encase::ShaderType;
 use crate::{
     gpu::{
         BindGroupLayoutDescriptor, BindGroupLayoutHandle, ComputePipelineDescriptor, CpuUniform,
-        KernelElement, PipelineLayoutDescriptor, WgpuDevice, WorkgroupCount,
+        PipelineLayoutDescriptor, WgpuDevice, WorkgroupCount,
     },
-    rvec, wgc, CompiledOp, Enforcer, OpMetadata, Operation, OperationError, RVec, StorageView,
-    Tensor,
+    rvec, wgc, CompiledOp, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec,
+    StorageView, Tensor,
 };
 
 #[derive(Debug, Clone)]
@@ -85,11 +85,12 @@ impl Operation for Binary {
         let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
             entries: rvec![storage_layout, uniform_layout],
         })?;
+
         let pipeline_handle =
             device.get_or_create_compute_pipeline(&ComputePipelineDescriptor {
                 pipeline_layout,
-                kernel_key: self.op.kernel_key(),
-                elem: KernelElement::Scalar,
+                kernel_name: "add",
+                kernel_element: KernelElement::Scalar,
             })?;
 
         let storage_bind_groups = CompiledOp::create_storage_bind_groups(

@@ -306,9 +306,9 @@ mod tests {
     #[test]
     fn test_cfg() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::randn::<f32>(shape![2, 2], device.clone());
-        let b = Tensor::randn::<f32>(shape![1], device.clone());
-        let c = a.add(&b)?;
+        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
+        let c = a.matmul(&b)?;
         c.resolve()?;
         println!("\nA: {:#?}", a);
         println!("\nB: {:#?}", b);

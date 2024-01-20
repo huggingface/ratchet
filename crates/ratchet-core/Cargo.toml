@@ -34,6 +34,7 @@ anyhow = "1.0.79"
 num = "0.4.1"
 rand_distr = { version = "0.4.3", optional = true }
 rand = { version = "0.8.4", optional = true }
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 rand = "0.8.4"
