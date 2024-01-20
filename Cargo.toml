@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/integration-tests",
     "crates/ratchet-core",
     "crates/ratchet-loader", 
     "crates/ratchet-models",
