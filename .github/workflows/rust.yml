@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  WGPU_DX12_COMPILER: dxc
+  RUSTFLAGS: --cfg=web_sys_unstable_apis 
 
 jobs:
   build:
@@ -15,6 +17,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+      - name: (linux) install llvmpipe, lavapipe, vulkan sdk, alsa
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -e
+          sudo apt-get update -y -qq
+          # vulkan sdk
+          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+          sudo add-apt-repository ppa:kisak/kisak-mesa
+          sudo apt-get update
+          sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev 
+
       - name: Setup
         run: |
           cargo install wasm-pack
