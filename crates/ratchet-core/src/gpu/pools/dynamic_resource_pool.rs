@@ -1,5 +1,5 @@
 // All resource management taken from [Rerun](https://github.com/rerun-io/rerun) MIT.
-use super::{PoolError, ResourceConstructor, ResourceDestructor};
+use super::PoolError;
 use crate::RVec;
 use std::{
     collections::hash_map::Entry,
@@ -82,7 +82,7 @@ where
     Handle: Key,
     Desc: Clone + Eq + Hash + Debug + DynamicResourcesDesc,
 {
-    pub fn get_or_create<F: ResourceConstructor<Desc, Res>>(
+    pub fn get_or_create<F: Fn(&Desc) -> Res>(
         &self,
         desc: &Desc,
         constructor: F,
@@ -141,7 +141,7 @@ where
 
     pub fn begin_pass<D>(&mut self, pass_index: u64, mut destructor: D)
     where
-        D: ResourceDestructor<Res>,
+        D: FnMut(&Res),
     {
         self.current_pass_index = pass_index;
         let state = self.state.get_mut();
