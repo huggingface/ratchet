@@ -353,7 +353,10 @@ impl Tensor {
         py: &'p pyo3::Python<'p>,
     ) -> &PyArrayDyn<T> {
         use numpy::PyArray;
-        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+        println!("TO PY: {:?}", self);
+        let cloned = self.deep_clone();
+        println!("CLONED: {:?}", cloned);
+        PyArray::from_owned_array(*py, cloned.into_ndarray::<T>())
     }
 
     pub fn deep_clone(&self) -> Tensor {
