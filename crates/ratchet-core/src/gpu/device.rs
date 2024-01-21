@@ -5,7 +5,7 @@ use wgpu::{Adapter, DeviceType, Limits};
 
 use crate::DeviceError;
 
-use super::{BufferDescriptor, GPUBuffer, PoolError};
+use super::{BufferDescriptor, PoolError, PooledGPUBuffer};
 
 pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 
@@ -151,21 +151,21 @@ impl WgpuDevice {
         &self,
         desc: &BufferDescriptor,
         contents: &[u8],
-    ) -> Result<GPUBuffer, DeviceError> {
+    ) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self
             .buffer_allocator
             .create_buffer_init(desc, contents, self))
     }
 
-    pub fn create_uniform_init(&self, cpu_uniform: CpuUniform) -> GPUBuffer {
+    pub fn create_uniform_init(&self, cpu_uniform: CpuUniform) -> PooledGPUBuffer {
         self.buffer_allocator.create_uniform_init(cpu_uniform, self)
     }
 
-    pub fn allocate_buffer(&self, desc: &BufferDescriptor) -> Result<GPUBuffer, DeviceError> {
+    pub fn allocate_buffer(&self, desc: &BufferDescriptor) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self.buffer_allocator.create_buffer(desc, self))
     }
 
-    pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<GPUBuffer, DeviceError> {
+    pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self.buffer_allocator.get(handle))
     }
 
@@ -221,7 +221,7 @@ impl WgpuDevice {
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
-    ) -> Result<FxHashMap<TensorId, GPUBuffer>, DeviceError> {
+    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
         self.buffer_allocator.allocate_cfg(execution_order, device)
     }
 }

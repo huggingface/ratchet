@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 use wgpu::BufferUsages;
 
 use crate::{
-    gpu::{BufferDescriptor, BufferPool, GPUBuffer, GpuBufferHandle},
+    gpu::{BufferDescriptor, BufferPool, GpuBufferHandle, PooledGPUBuffer},
     DeviceError, Tensor, TensorId,
 };
 use std::cell::{Ref, RefCell, RefMut};
@@ -31,7 +31,7 @@ impl BufferAllocator {
         self.pool.borrow_mut().begin_pass(pass_index);
     }
 
-    pub fn get(&self, handle: GpuBufferHandle) -> GPUBuffer {
+    pub fn get(&self, handle: GpuBufferHandle) -> PooledGPUBuffer {
         self.pool.borrow().get(handle).unwrap()
     }
 
@@ -43,7 +43,7 @@ impl BufferAllocator {
         self.pool.borrow_mut()
     }
 
-    pub fn create_buffer(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> GPUBuffer {
+    pub fn create_buffer(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> PooledGPUBuffer {
         self.pool.borrow_mut().get_or_create(desc, device)
     }
 
@@ -52,13 +52,13 @@ impl BufferAllocator {
         desc: &BufferDescriptor,
         contents: &[u8],
         device: &WgpuDevice,
-    ) -> GPUBuffer {
+    ) -> PooledGPUBuffer {
         let buf = self.pool.borrow_mut().get_or_create(desc, device);
         device.queue().write_buffer(&buf.inner, 0, contents);
         buf
     }
 
-    pub fn create_uniform_init(&self, uniform: CpuUniform, device: &WgpuDevice) -> GPUBuffer {
+    pub fn create_uniform_init(&self, uniform: CpuUniform, device: &WgpuDevice) -> PooledGPUBuffer {
         let mut uniform = uniform.into_inner();
         uniform.resize(
             uniform.len() + UNIFORM_ALIGN - uniform.len() % UNIFORM_ALIGN,
@@ -85,9 +85,9 @@ impl BufferAllocator {
     fn graph_allocate(
         &self,
         descriptor: BufferDescriptor,
-        free: &mut Vec<GPUBuffer>,
+        free: &mut Vec<PooledGPUBuffer>,
         device: &WgpuDevice,
-    ) -> GPUBuffer {
+    ) -> PooledGPUBuffer {
         let required_size = descriptor.size as _;
         let mut closest_index = None;
         let mut closest_size_diff: Option<usize> = None;
@@ -121,17 +121,16 @@ impl BufferAllocator {
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
-    ) -> Result<FxHashMap<TensorId, GPUBuffer>, DeviceError> {
+    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
 
         for t in execution_order {
             if t.resolved() {
-                let storage_resource = t
-                    .storage()
-                    .try_read()
-                    .ok_or(AllocatorError::BufferNotFound)?;
-                assignments.insert(t.id(), storage_resource.try_gpu()?.inner.clone());
+                assignments.insert(
+                    t.id(),
+                    t.storage().as_ref().unwrap().try_gpu()?.inner.clone(),
+                );
                 continue;
             }
 

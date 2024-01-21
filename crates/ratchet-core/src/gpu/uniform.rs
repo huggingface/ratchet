@@ -5,7 +5,7 @@ use crate::{
     rvec,
 };
 
-use super::{BindGroupDescriptor, GPUBuffer, GpuBindGroup, WgpuDevice};
+use super::{BindGroupDescriptor, GpuBindGroup, PooledGPUBuffer, WgpuDevice};
 use encase::DynamicUniformBuffer;
 
 ///We use a single uniform buffer for all operations to hold their parameters.
@@ -56,7 +56,7 @@ impl CpuUniform {
 }
 
 pub struct GpuUniform {
-    buf: GPUBuffer,
+    buf: PooledGPUBuffer,
     bind_group: GpuBindGroup,
 }
 

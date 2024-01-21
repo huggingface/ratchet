@@ -1,60 +1,31 @@
 use bytemuck::NoUninit;
 
-use crate::{
-    storage::{DeviceStorage, RawGPUBuffer},
-    Device, DeviceError, Shape, TensorDType,
-};
+use crate::{storage::DeviceStorage, Device, DeviceError, GPUBuffer, Shape, TensorDType};
 
-use std::{alloc::Layout, fmt::Debug};
+use std::{alloc::Layout, fmt::Debug, sync::Arc};
 
 use crate::DType;
 
 #[derive(derive_new::new, Debug, PartialEq, Eq)]
 pub struct RawCPUBuffer(*mut u8, Layout);
 
-unsafe impl Send for RawCPUBuffer {}
-
 impl RawCPUBuffer {
-    pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape) -> Self {
-        assert_eq!(data.len(), shape.numel());
-        let bytes: &[u8] = bytemuck::cast_slice(data);
-        Self::from_bytes(bytes, std::mem::align_of::<T>())
-    }
-
-    unsafe fn uninitialized(size: usize, alignment: usize) -> Self {
-        let layout = std::alloc::Layout::from_size_align(size, alignment).unwrap();
-        let data = if size == 0 {
-            std::ptr::null()
-        } else {
-            let ptr = std::alloc::alloc(layout);
-            assert!(!ptr.is_null());
-            ptr
-        } as *mut u8;
-        Self(data, layout)
-    }
-
-    pub fn inner(&self) -> (*mut u8, Layout) {
+    pub fn into_raw_parts(&self) -> (*mut u8, Layout) {
         (self.0, self.1)
     }
 
-    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.0, self.1.size()) }
+    pub fn n_bytes(&self) -> usize {
+        self.1.size()
     }
 
     pub fn as_bytes(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.0, self.1.size()) }
     }
-
-    pub fn from_bytes(bytes: &[u8], alignment: usize) -> Self {
-        let mut storage = unsafe { Self::uninitialized(bytes.len(), alignment) };
-        storage.as_bytes_mut().copy_from_slice(bytes);
-        storage
-    }
 }
 
 impl Clone for RawCPUBuffer {
     fn clone(&self) -> Self {
-        let (ptr, layout) = self.inner();
+        let (ptr, layout) = self.into_raw_parts();
         let alloc = unsafe { std::alloc::alloc(layout) };
         unsafe { ptr.copy_to_nonoverlapping(alloc, layout.size()) };
 
@@ -70,22 +41,85 @@ impl Drop for RawCPUBuffer {
     }
 }
 
-impl DeviceStorage for RawCPUBuffer {
-    fn to_device(self, device: &Device) -> Result<RawGPUBuffer, DeviceError> {
-        let (bytes, align, gpu_device) = (self.as_bytes(), self.1.align(), device.try_gpu()?);
-        Ok(RawGPUBuffer::from_bytes(bytes, align, gpu_device))
+/// Managed CPU buffer
+#[derive(Debug, Clone, derive_new::new)]
+pub struct CPUBuffer {
+    inner: Arc<RawCPUBuffer>,
+}
+
+unsafe impl Send for CPUBuffer {}
+unsafe impl Sync for CPUBuffer {}
+
+impl CPUBuffer {
+    pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape) -> Self {
+        assert_eq!(data.len(), shape.numel());
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        Self::from_bytes(bytes, std::mem::align_of::<T>())
     }
 
-    fn to_cpu(&self, _device: &Device) -> Result<RawCPUBuffer, DeviceError> {
+    pub fn inner(&self) -> &Arc<RawCPUBuffer> {
+        &self.inner
+    }
+
+    unsafe fn uninitialized(size: usize, alignment: usize) -> Self {
+        let layout = std::alloc::Layout::from_size_align(size, alignment).unwrap();
+        let data = if size == 0 {
+            std::ptr::null()
+        } else {
+            let ptr = std::alloc::alloc(layout);
+            assert!(!ptr.is_null());
+            ptr
+        } as *mut u8;
+        Self::from_raw_parts(data, layout)
+    }
+
+    pub fn from_raw_parts(data: *mut u8, layout: Layout) -> Self {
+        Self {
+            inner: Arc::new(RawCPUBuffer(data, layout)),
+        }
+    }
+
+    pub fn from_bytes(bytes: &[u8], alignment: usize) -> Self {
+        let layout = std::alloc::Layout::from_size_align(bytes.len(), alignment).unwrap();
+        let data = if bytes.len() == 0 {
+            std::ptr::null()
+        } else {
+            let ptr = unsafe { std::alloc::alloc(layout) };
+            assert!(!ptr.is_null());
+            unsafe { ptr.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len()) };
+            ptr
+        } as *mut u8;
+        Self::from_raw_parts(data, layout)
+    }
+
+    pub fn deep_clone(&self) -> Self {
+        let (ptr, layout) = self.inner().into_raw_parts();
+        let alloc = unsafe { std::alloc::alloc(layout) };
+        unsafe { ptr.copy_to_nonoverlapping(alloc, layout.size()) };
+
+        Self::from_raw_parts(alloc, layout)
+    }
+}
+
+impl DeviceStorage for CPUBuffer {
+    fn to_device(&self, device: &Device) -> Result<GPUBuffer, DeviceError> {
+        let gpu_device = device.try_gpu()?;
+        let raw = self.inner();
+        let (ptr, layout) = raw.into_raw_parts();
+        let bytes = unsafe { std::slice::from_raw_parts(ptr, layout.size()) };
+        Ok(GPUBuffer::from_bytes(bytes, layout.align(), gpu_device))
+    }
+
+    fn to_cpu(&self, _device: &Device) -> Result<CPUBuffer, DeviceError> {
         Ok(self.clone())
     }
 
     fn n_bytes(&self) -> usize {
-        self.1.size()
+        self.inner().n_bytes()
     }
 
     fn dump(&self, dtype: DType, full: bool) -> String {
-        let bytes = unsafe { std::slice::from_raw_parts(self.0, self.1.size()) };
+        let bytes = self.inner().as_bytes();
 
         fn dump_inner<T: TensorDType>(data: &[T], full: bool) -> String {
             let length = if data.len() < 64 { data.len() } else { 64 };

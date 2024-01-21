@@ -1,12 +1,12 @@
 use crate::gpu::{CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, CompiledOp, DType, Device, DeviceStorage, Executable, Operation, OperationError,
-    RawCPUBuffer, RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
+    ops::*, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer, Operation,
+    OperationError, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
 use derive_new::new;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 use std::sync::Arc;
 
 #[cfg(feature = "rand")]
@@ -43,21 +43,24 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    fn new(op: LazyOp, meta: StorageView, storage: Storage, device: Device) -> Self {
+    fn new(op: LazyOp, meta: StorageView, storage: Option<Storage>, device: Device) -> Self {
         Self {
             inner: Arc::new(Inner::new(op, meta, storage, device)),
         }
     }
 
     fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
-        Self::new(op, meta, Storage::empty(), device)
+        Self::new(op, meta, None, device)
+    }
+
+    fn update_storage(&self, storage: Storage) {
+        *self.inner.storage.write() = Some(storage);
     }
 }
 
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let storage = self.storage().try_read().expect("Could not read storage");
-        let storage_fmt = storage.dump(self.dt(), false);
+        let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
         let (id, op) = (self.id(), self.op());
         f.debug_struct("Tensor")
             .field("id", &id)
@@ -94,7 +97,7 @@ pub struct Inner {
     op: LazyOp,
     device: Device,
     view: StorageView,
-    storage: Arc<RwLock<Storage>>,
+    storage: Arc<RwLock<Option<Storage>>>,
 }
 
 impl AsRef<Inner> for Inner {
@@ -104,7 +107,7 @@ impl AsRef<Inner> for Inner {
 }
 
 impl Inner {
-    fn new(op: LazyOp, meta: StorageView, storage: Storage, device: Device) -> Self {
+    fn new(op: LazyOp, meta: StorageView, storage: Option<Storage>, device: Device) -> Self {
         Self {
             id: TensorId::new(),
             view: meta,
@@ -144,19 +147,12 @@ impl Tensor {
         &self.device
     }
 
-    pub fn storage(&self) -> &Arc<RwLock<Storage>> {
-        &self.storage
+    pub fn storage(&self) -> RwLockReadGuard<Option<Storage>> {
+        self.inner.storage.read()
     }
 
     pub fn resolved(&self) -> bool {
-        self.storage().try_read().unwrap().raw().is_some()
-    }
-
-    /// # Safety
-    ///
-    /// Make sure your device & storage are compatible.
-    pub(crate) unsafe fn set_storage(&self, storage: Storage) {
-        *self.storage().write() = storage;
+        self.storage().is_some()
     }
 
     pub(crate) fn op(&self) -> &LazyOp {
@@ -214,7 +210,7 @@ impl Tensor {
         let storage = Storage::from_slice(data.as_ref(), &shape, &device);
         let strides = Strides::from(&shape);
         let meta = StorageView::new(shape, T::dt(), strides);
-        Tensor::new(LazyOp::Const, meta, storage, device)
+        Tensor::new(LazyOp::Const, meta, Some(storage), device)
     }
 
     fn execution_order(&self) -> Vec<Tensor> {
@@ -264,11 +260,14 @@ impl Tensor {
         for t in execution_order {
             if !t.resolved() {
                 let id = t.id();
-                let gpu_buf = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+                let pooled_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
                 assert!(t.device().is_gpu());
-                unsafe {
-                    t.set_storage(Storage::from(RawStorage::from_gpu(gpu_buf.clone(), t.dt())));
-                }
+
+                let storage = Storage::GPU(GPUBuffer {
+                    inner: pooled_buffer.clone(),
+                    alignment: t.dt().size_of(),
+                });
+                t.update_storage(storage);
             }
 
             if let Some(compiled_op) = t.compile(&mut uniform, device) {
@@ -281,36 +280,69 @@ impl Tensor {
         Ok(())
     }
 
-    async fn to_cpu(&self) -> Result<Tensor, TensorError> {
-        let raw_gpu_buf = {
-            let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
-            storage_resource.try_gpu()?.clone()
+    fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        if self.device().is_cpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let storage = storage_guard.as_ref().unwrap();
+        let gpu_buf = match storage {
+            Storage::GPU(g) => g,
+            _ => unreachable!(),
         };
+        let cpu_buf = gpu_buf.to_cpu(&self.device)?;
+
         Ok(Tensor::new(
             LazyOp::Const,
             self.view.clone(),
-            Storage::from(raw_gpu_buf.to_cpu(self.device())?),
+            Some(Storage::CPU(cpu_buf)),
             Device::CPU,
         ))
     }
 
+    fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
+        if self.device().is_gpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let storage = storage_guard.as_ref().unwrap();
+        let cpu_buf = match storage {
+            Storage::CPU(g) => g,
+            _ => unreachable!(),
+        };
+        let gpu_buf = cpu_buf.to_device(dst_device)?;
+
+        let wgpu_device = dst_device.try_gpu()?;
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(Storage::GPU(gpu_buf)),
+            Device::GPU(wgpu_device.clone()),
+        ))
+    }
+
+    /// Transfers the tensor to the specified device.
+    ///
+    /// If the tensor is already on the specified device, it will be returned as-is,
+    /// and the underlying storage will not be copied.
+    /// If the tensor is on a different device, it will be copied to the specified device.
     pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
-        match (self.device(), device) {
-            (Device::GPU(_), Device::CPU) => pollster::block_on(self.to_cpu()),
-            (Device::CPU, Device::GPU(_)) => todo!(),
+        match (self.device(), &device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu(),
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(&device),
             _ => Ok(self.clone()),
         }
     }
 
     #[cfg(feature = "pyo3")]
-    pub fn into_ndarray<T: TensorDType>(&self) -> ArrayD<T> {
+    pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
         assert!(self.device().is_cpu());
-        let storage = self.storage().try_read().unwrap();
-        let raw_cpu = storage.try_cpu().unwrap();
         let shape = self.shape().to_vec();
         if self.num_bytes() != 0 {
-            let ptr = raw_cpu.inner().0 as *const T;
-            unsafe { ArrayViewD::from_shape_ptr(shape, ptr).to_owned() }
+            let storage_guard = self.storage();
+            let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
+            let (ptr, _) = buffer.inner().into_raw_parts();
+            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
         } else {
             ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
         }
@@ -322,7 +354,19 @@ impl Tensor {
         py: &'p pyo3::Python<'p>,
     ) -> &PyArrayDyn<T> {
         use numpy::PyArray;
-        PyArray::from_owned_array(*py, self.clone().into_ndarray::<T>())
+        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+
+    pub fn deep_clone(&self) -> Tensor {
+        let storage_guard = self.storage();
+        let storage = storage_guard.as_ref().unwrap();
+        let cloned_storage = storage.deep_clone(self.device()).unwrap();
+        Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(cloned_storage),
+            self.device.clone(),
+        )
     }
 }
 
@@ -338,13 +382,16 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
             let shape = it.shape().to_vec().into();
             let strides = Strides::from(&shape);
             let vec = it.into_raw_vec().into_boxed_slice();
-            //This is causing a double free
             let ptr = Box::into_raw(vec) as *mut u8;
 
-            let raw_buf = RawCPUBuffer::new(ptr, layout);
-            let storage = Storage::from(RawStorage::CPU(raw_buf));
+            let cpu_buf = CPUBuffer::from_raw_parts(ptr, layout);
             let meta = StorageView::new(shape, T::dt(), strides);
-            Tensor::new(LazyOp::Const, meta, storage, Device::CPU)
+            Tensor::new(
+                LazyOp::Const,
+                meta,
+                Some(Storage::CPU(cpu_buf)),
+                Device::CPU,
+            )
         } else {
             panic!("Cannot convert numpy array with non-contiguous memory layout to tensor");
         }
@@ -383,10 +430,20 @@ mod tests {
 
     #[test]
     fn test_pyo3() -> anyhow::Result<()> {
-        let device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let c: anyhow::Result<Tensor> = Python::with_gil(|py| {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+
+        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
+        let a = a.to(gpu_device.clone())?;
+        let b = b.to(gpu_device)?;
+
+        let c = a.matmul(&b)?;
+        c.resolve()?;
+
+        let our_result = c.to(cpu_device)?;
+
+        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
             let prg = PyModule::from_code(
                 py,
                 r#"
@@ -405,7 +462,8 @@ def matmul(a, b):
                 .extract::<&PyArrayDyn<f32>>()?;
             Ok(Tensor::from(result))
         });
-        println!("\nTORCH: {:#?}", c);
+        println!("\nTORCH: {:#?}", ground);
+        println!("\nOURS: {:#?}", our_result);
 
         Ok(())
     }
