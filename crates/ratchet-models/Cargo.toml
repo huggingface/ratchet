@@ -15,5 +15,5 @@ derive-new.workspace = true
 log.workspace = true
 
 [dev-dependencies]
-hf-hub = { version = "0.3.0" }
+hf-hub = "0.3.2"
 

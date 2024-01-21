@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-half.workspace = true
 ratchet = { path = "../ratchet-core" }
+half.workspace = true
 byteorder.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
@@ -16,4 +16,4 @@ derive-new.workspace = true
 log.workspace = true
 
 [dev-dependencies]
-hf-hub = "0.3.2"
+hf-hub = "0.3.2" 

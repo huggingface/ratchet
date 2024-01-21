@@ -10,6 +10,7 @@ env:
   CARGO_TERM_COLOR: always
   WGPU_DX12_COMPILER: dxc
   RUSTFLAGS: --cfg=web_sys_unstable_apis
+  RUST_BACKTRACE: 1
 
 jobs:
   build:
