@@ -246,8 +246,8 @@ impl Tensor {
 
     pub fn compile(&self, uniform: &mut CpuUniform, device: &WgpuDevice) -> Option<CompiledOp> {
         match self.op() {
-            LazyOp::Binary(b) => Some(b.compile(self, uniform, device).unwrap()),
-            LazyOp::Matmul(m) => Some(m.compile(self, uniform, device).unwrap()),
+            LazyOp::Binary(b) => b.compile(self, uniform, device).ok(),
+            LazyOp::Matmul(m) => m.compile(self, uniform, device).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -338,6 +338,7 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
             let shape = it.shape().to_vec().into();
             let strides = Strides::from(&shape);
             let vec = it.into_raw_vec().into_boxed_slice();
+            //This is causing a double free
             let ptr = Box::into_raw(vec) as *mut u8;
 
             let raw_buf = RawCPUBuffer::new(ptr, layout);

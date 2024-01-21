@@ -14,6 +14,8 @@ pub enum DeviceError {
     BufferAllocationFailed(#[from] AllocatorError),
     #[error("Invalid GPU Buffer Usage, current: {0:?}, required: {1:?}")]
     InvalidBufferUsage(wgpu::BufferUsages, wgpu::BufferUsages),
+    #[error("Failed to transfer buffer with error: {0:?}")]
+    BufferTransferFailed(#[from] wgpu::BufferAsyncError),
 }
 
 pub enum DeviceRequest {
