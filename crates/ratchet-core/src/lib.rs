@@ -33,6 +33,7 @@ pub use tensor_id::*;
 use smallvec::SmallVec;
 pub type RVec<T> = SmallVec<[T; 4]>;
 pub type DRVec<T> = SmallVec<[T; 8]>; //Double RVec
+pub type RawGPUBuffer = wgpu::Buffer;
 
 //https://github.com/sonos/tract/blob/main/data/src/macros.rs#L2
 #[macro_export]

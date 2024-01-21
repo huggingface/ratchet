@@ -29,8 +29,9 @@ impl CompiledOp {
         let mut bind_group_entries = drvec![];
 
         for tensor in srcs.iter().chain(std::iter::once(&dst)) {
-            let buf = tensor.storage().try_read().unwrap();
-            let gpu_buf = &buf.try_gpu().unwrap().inner;
+            let storage_guard = tensor.storage();
+            let storage = storage_guard.as_ref().unwrap();
+            let gpu_buf = &storage.try_gpu().unwrap().inner;
             bind_group_entries.push(BindGroupEntry {
                 handle: gpu_buf.handle,
                 offset: 0,
