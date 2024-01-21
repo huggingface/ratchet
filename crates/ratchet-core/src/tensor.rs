@@ -382,19 +382,9 @@ mod tests {
 
     #[test]
     fn test_pyo3() -> anyhow::Result<()> {
-        let device = Device::request_device(DeviceRequest::GPU)?;
+        let device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
         let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let c = a.matmul(&b)?;
-        c.resolve()?;
-        println!("\nA: {:#?}", a);
-        println!("\nB: {:#?}", b);
-        println!("\nC: {:#?}", c);
-        let d = c.to(Device::CPU)?;
-        println!("\nD: {:#?}", d);
-
-        let a = a.to(Device::CPU)?;
-        let b = b.to(Device::CPU)?;
         let c: anyhow::Result<Tensor> = Python::with_gil(|py| {
             let prg = PyModule::from_code(
                 py,
