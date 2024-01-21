@@ -395,14 +395,10 @@ mod tests {
 
         let a = a.to(Device::CPU)?;
         let b = b.to(Device::CPU)?;
-        let c = Python::with_gil(|py| {
-            let npy_a = a.to_py::<f32>(&py);
-            let npy_b = b.to_py::<f32>(&py);
-
-            let activators = PyModule::from_code(
+        let c: anyhow::Result<Tensor> = Python::with_gil(|py| {
+            let prg = PyModule::from_code(
                 py,
                 r#"
-import numpy as np
 import torch
 
 def matmul(a, b):
@@ -410,19 +406,15 @@ def matmul(a, b):
 "#,
                 "x.py",
                 "x",
-            )
-            .unwrap();
+            )?;
 
-            let result = activators
-                .getattr("matmul")
-                .unwrap()
-                .call1((npy_a, npy_b))
-                .unwrap()
-                .extract::<&PyArrayDyn<f32>>()
-                .unwrap();
-            Tensor::from(result)
+            let result = prg
+                .getattr("matmul")?
+                .call1((a.to_py::<f32>(&py), b.to_py::<f32>(&py)))?
+                .extract::<&PyArrayDyn<f32>>()?;
+            Ok(Tensor::from(result))
         });
-        println!("\nC: {:#?}", c);
+        println!("\nTORCH: {:#?}", c);
 
         Ok(())
     }
