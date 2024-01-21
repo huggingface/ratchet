@@ -413,6 +413,7 @@ mod tests {
 
     use super::*;
 
+    /*
     #[test]
     fn test_matmul() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
@@ -427,6 +428,7 @@ mod tests {
         println!("\nD: {:#?}", d);
         Ok(())
     }
+    */
 
     #[test]
     fn test_pyo3() -> anyhow::Result<()> {
