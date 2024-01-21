@@ -33,6 +33,12 @@ jobs:
           sudo apt-get update
           sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev
 
+      - name: Setup python 
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10.6'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
       - name: Setup
         run: |
           cargo install wasm-pack
