@@ -38,7 +38,7 @@ impl GPUBuffer {
             bytes
         };
         let inner = device
-            .create_buffer_init(
+            .get_or_create_buffer_init(
                 &BufferDescriptor::new(bytes.len() as _, BufferUsages::standard(), false),
                 bytes,
             )
@@ -62,6 +62,26 @@ impl GPUBuffer {
 
     pub fn usage(&self) -> BufferUsages {
         self.inner.usage()
+    }
+
+    pub fn deep_clone(&self, device: &WgpuDevice) -> Self {
+        //Here we need to create a buffer just like ours
+        let clone = device
+            .get_or_create_buffer(&BufferDescriptor::new(
+                self.inner.size(),
+                self.inner.usage(),
+                false,
+            ))
+            .unwrap();
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&self.inner, 0, &clone, 0, self.inner.size());
+        device.queue().submit(Some(encoder.finish()));
+        device.poll(wgpu::Maintain::Wait);
+        Self {
+            inner: clone,
+            alignment: self.alignment,
+        }
     }
 }
 

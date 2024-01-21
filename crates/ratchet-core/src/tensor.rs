@@ -285,11 +285,10 @@ impl Tensor {
             return Ok(self.clone());
         }
         let storage_guard = self.storage();
-        let storage = storage_guard.as_ref().unwrap();
-        let gpu_buf = match storage {
-            Storage::GPU(g) => g,
-            _ => unreachable!(),
-        };
+        let gpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_gpu()?;
         let cpu_buf = gpu_buf.to_cpu(&self.device)?;
 
         Ok(Tensor::new(
@@ -305,11 +304,10 @@ impl Tensor {
             return Ok(self.clone());
         }
         let storage_guard = self.storage();
-        let storage = storage_guard.as_ref().unwrap();
-        let cpu_buf = match storage {
-            Storage::CPU(g) => g,
-            _ => unreachable!(),
-        };
+        let cpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_cpu()?;
         let gpu_buf = cpu_buf.to_device(dst_device)?;
 
         let wgpu_device = dst_device.try_gpu()?;
@@ -434,15 +432,6 @@ mod tests {
         let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
 
-        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
-        let a = a.to(gpu_device.clone())?;
-        let b = b.to(gpu_device)?;
-
-        let c = a.matmul(&b)?;
-        c.resolve()?;
-
-        let our_result = c.to(cpu_device)?;
-
         let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
             let prg = PyModule::from_code(
                 py,
@@ -462,6 +451,15 @@ def matmul(a, b):
                 .extract::<&PyArrayDyn<f32>>()?;
             Ok(Tensor::from(result))
         });
+
+        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
+        let a = a.to(gpu_device.clone())?;
+        let b = b.to(gpu_device)?;
+
+        let c = a.matmul(&b)?;
+        c.resolve()?;
+
+        let our_result = c.to(cpu_device)?;
         println!("\nTORCH: {:#?}", ground);
         println!("\nOURS: {:#?}", our_result);
 

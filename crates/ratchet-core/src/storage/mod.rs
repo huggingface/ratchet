@@ -44,10 +44,13 @@ impl Storage {
         }
     }
 
-    pub fn deep_clone(&self, _: &Device) -> Result<Self, DeviceError> {
+    pub fn deep_clone(&self, device: &Device) -> Result<Self, DeviceError> {
         match self {
             Storage::CPU(buf) => Ok(Storage::CPU(buf.deep_clone())),
-            _ => todo!(),
+            Storage::GPU(buf) => {
+                let gpu_device = device.try_gpu()?;
+                Ok(Storage::GPU(buf.deep_clone(gpu_device)))
+            }
         }
     }
 }

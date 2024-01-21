@@ -158,7 +158,7 @@ impl BufferAllocator {
         let output = execution_order.last().unwrap();
         assignments.insert(
             output.id(),
-            device.allocate_buffer(&BufferDescriptor {
+            device.get_or_create_buffer(&BufferDescriptor {
                 size: output.num_bytes() as _,
                 usage: BufferUsages::standard(),
                 mapped_at_creation: false,

@@ -147,7 +147,7 @@ impl WgpuDevice {
 }
 
 impl WgpuDevice {
-    pub fn create_buffer_init(
+    pub fn get_or_create_buffer_init(
         &self,
         desc: &BufferDescriptor,
         contents: &[u8],
@@ -161,7 +161,10 @@ impl WgpuDevice {
         self.buffer_allocator.create_uniform_init(cpu_uniform, self)
     }
 
-    pub fn allocate_buffer(&self, desc: &BufferDescriptor) -> Result<PooledGPUBuffer, DeviceError> {
+    pub fn get_or_create_buffer(
+        &self,
+        desc: &BufferDescriptor,
+    ) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self.buffer_allocator.create_buffer(desc, self))
     }
 
