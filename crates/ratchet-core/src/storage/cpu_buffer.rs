@@ -25,18 +25,21 @@ impl RawCPUBuffer {
 
 impl Clone for RawCPUBuffer {
     fn clone(&self) -> Self {
-        let (ptr, layout) = self.into_raw_parts();
-        let alloc = unsafe { std::alloc::alloc(layout) };
-        unsafe { ptr.copy_to_nonoverlapping(alloc, layout.size()) };
-
-        Self(alloc, layout)
+        let data = if self.1.size() == 0 {
+            std::ptr::null()
+        } else {
+            let ptr = unsafe { std::alloc::alloc(self.1) };
+            assert!(!ptr.is_null());
+            ptr
+        } as *mut u8;
+        unsafe { self.0.copy_to_nonoverlapping(data, self.1.size()) };
+        Self(data, self.1)
     }
 }
 
 impl Drop for RawCPUBuffer {
     fn drop(&mut self) {
         if !self.0.is_null() && self.1.size() > 0 {
-            println!("DROPPING CPU BUFFER: {:p}", self.0);
             unsafe { std::alloc::dealloc(self.0, self.1) }
         }
     }

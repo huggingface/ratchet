@@ -340,21 +340,19 @@ impl Tensor {
             let storage_guard = self.storage();
             let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
             let (ptr, _) = buffer.inner().into_raw_parts();
-            println!("POINTER PASSED TO NDARRAY: {:?}", ptr);
-            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
+            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).into_owned() }
         } else {
-            ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
+            ArrayViewD::from_shape(shape, &[]).unwrap().into_owned()
         }
     }
 
     #[cfg(feature = "pyo3")]
-    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
-        &'s self,
-        py: &'p pyo3::Python<'p>,
+    pub fn to_py<'p, T: TensorDType + numpy::Element>(
+        self,
+        py: pyo3::Python<'p>,
     ) -> &PyArrayDyn<T> {
         use numpy::PyArray;
-        let cloned = self.deep_clone();
-        PyArray::from_owned_array(*py, cloned.into_ndarray::<T>())
+        PyArray::from_owned_array(py, self.into_ndarray::<T>())
     }
 
     pub fn deep_clone(&self) -> Tensor {
@@ -413,7 +411,6 @@ mod tests {
 
     use super::*;
 
-    /*
     #[test]
     fn test_matmul() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
@@ -428,13 +425,12 @@ mod tests {
         println!("\nD: {:#?}", d);
         Ok(())
     }
-    */
 
     #[test]
     fn test_pyo3() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1024, 512], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![512, 384], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
 
         let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
             let prg = PyModule::from_code(
@@ -451,7 +447,7 @@ def matmul(a, b):
 
             let result = prg
                 .getattr("matmul")?
-                .call1((a.to_py::<f32>(&py), b.to_py::<f32>(&py)))?
+                .call1((a.clone().to_py::<f32>(py), b.clone().to_py::<f32>(py)))?
                 .extract::<&PyArrayDyn<f32>>()?;
             Ok(Tensor::from(result))
         });
