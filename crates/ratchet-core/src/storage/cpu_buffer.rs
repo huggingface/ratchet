@@ -94,8 +94,10 @@ impl CPUBuffer {
 
     pub fn deep_clone(&self) -> Self {
         let (ptr, layout) = self.inner().into_raw_parts();
+        println!("before deep clone: {:p}", ptr);
         let alloc = unsafe { std::alloc::alloc(layout) };
         unsafe { ptr.copy_to_nonoverlapping(alloc, layout.size()) };
+        println!("after deep clone: {:p}", alloc);
 
         Self::from_raw_parts(alloc, layout)
     }

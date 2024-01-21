@@ -46,6 +46,6 @@ jobs:
       - name: Build
         run: cargo build
       - name: Run tests
-        run: cargo test
+        run: cargo test -- --nocapture
       - name: Run integration tests
         run: (cd crates/ratchet-integration-tests;sh run-tests.sh)

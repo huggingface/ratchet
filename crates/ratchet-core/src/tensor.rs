@@ -340,6 +340,7 @@ impl Tensor {
             let storage_guard = self.storage();
             let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
             let (ptr, _) = buffer.inner().into_raw_parts();
+            println!("INTO NDARRAY: {:?}", ptr);
             unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
         } else {
             ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
@@ -426,45 +427,46 @@ mod tests {
         Ok(())
     }
 
-    /*
-        #[test]
-        fn test_pyo3() -> anyhow::Result<()> {
-            let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-            let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
-            let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+    #[test]
+    fn test_pyo3() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
 
-            let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
-                let prg = PyModule::from_code(
-                    py,
-                    r#"
-    import torch
+        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
+            let prg = PyModule::from_code(
+                py,
+                r#"
+import torch
 
-    def matmul(a, b):
-        return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
     "#,
-                    "x.py",
-                    "x",
-                )?;
+                "x.py",
+                "x",
+            )?;
 
-                let result = prg
-                    .getattr("matmul")?
-                    .call1((a.to_py::<f32>(&py), b.to_py::<f32>(&py)))?
-                    .extract::<&PyArrayDyn<f32>>()?;
-                Ok(Tensor::from(result))
-            });
+            let result = prg
+                .getattr("matmul")?
+                .call1((a.to_py::<f32>(&py), b.to_py::<f32>(&py)))?
+                .extract::<&PyArrayDyn<f32>>()?;
+            Ok(Tensor::from(result))
+        });
+        println!("\nTORCH: {:#?}", ground);
 
-            let gpu_device = Device::request_device(DeviceRequest::GPU)?;
-            let a = a.to(gpu_device.clone())?;
-            let b = b.to(gpu_device)?;
+        println!("\nA: {:#?}", a);
+        println!("\nB: {:#?}", b);
 
-            let c = a.matmul(&b)?;
-            c.resolve()?;
+        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
+        let a = a.to(gpu_device.clone())?;
+        let b = b.to(gpu_device)?;
 
-            let our_result = c.to(cpu_device)?;
-            println!("\nTORCH: {:#?}", ground);
-            println!("\nOURS: {:#?}", our_result);
+        let c = a.matmul(&b)?;
+        c.resolve()?;
 
-            Ok(())
-        }
-        */
+        let our_result = c.to(cpu_device)?;
+        println!("\nOURS: {:#?}", our_result);
+
+        Ok(())
+    }
 }
