@@ -340,7 +340,7 @@ impl Tensor {
             let storage_guard = self.storage();
             let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
             let (ptr, _) = buffer.inner().into_raw_parts();
-            println!("INTO NDARRAY: {:?}", ptr);
+            println!("POINTER PASSED TO NDARRAY: {:?}", ptr);
             unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
         } else {
             ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
@@ -353,9 +353,7 @@ impl Tensor {
         py: &'p pyo3::Python<'p>,
     ) -> &PyArrayDyn<T> {
         use numpy::PyArray;
-        println!("TO PY: {:?}", self);
         let cloned = self.deep_clone();
-        println!("CLONED: {:?}", cloned);
         PyArray::from_owned_array(*py, cloned.into_ndarray::<T>())
     }
 
@@ -433,8 +431,8 @@ mod tests {
     #[test]
     fn test_pyo3() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![1024, 512], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![512, 384], cpu_device.clone());
 
         let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
             let prg = PyModule::from_code(
