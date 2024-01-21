@@ -51,7 +51,7 @@ impl PartialEq for WgpuDevice {
 impl WgpuDevice {
     pub async fn new() -> Result<Self, DeviceError> {
         #[cfg(target_arch = "wasm32")]
-        let adapter = Self::select_adapter().await;
+        let adapter = Self::select_adapter().await?;
         #[cfg(not(target_arch = "wasm32"))]
         let adapter = Self::select_adapter()?;
 
@@ -106,7 +106,7 @@ impl WgpuDevice {
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn select_adapter() -> Adapter {
+    async fn select_adapter() -> Result<Adapter, DeviceError> {
         let instance = wgpu::Instance::default();
         let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
         instance
@@ -116,10 +116,10 @@ impl WgpuDevice {
                 force_fallback_adapter: false,
             })
             .await
-            .map_err(|e| {
-                log::error!("Failed to create device: {:?}", e);
-                e
-            })?
+            .ok_or({
+                log::error!("Failed to request adapter.");
+                DeviceError::AdapterRequestFailed
+            })
     }
 
     #[cfg(not(target_arch = "wasm32"))]
