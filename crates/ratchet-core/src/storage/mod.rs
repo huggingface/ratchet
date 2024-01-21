@@ -52,6 +52,16 @@ impl Storage {
         }
     }
 
+    pub fn try_cpu(&self) -> Result<&RawCPUBuffer, DeviceError> {
+        match self.raw.as_ref() {
+            Some(RawStorage::CPU(raw)) => Ok(raw),
+            _ => Err(DeviceError::DeviceMismatch(
+                "CPU".to_string(),
+                "GPU".to_string(),
+            )),
+        }
+    }
+
     pub fn dump(&self, dtype: DType, full: bool) -> String {
         self.raw
             .as_ref()

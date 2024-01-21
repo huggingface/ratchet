@@ -1,7 +1,7 @@
 use crate::gpu::{CpuUniform, WgpuDevice};
 use crate::{
     ops::*, CompiledOp, DType, Device, DeviceStorage, Executable, Operation, OperationError,
-    RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
+    RawCPUBuffer, RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
@@ -11,6 +11,12 @@ use std::sync::Arc;
 
 #[cfg(feature = "rand")]
 use {rand::prelude::*, rand_distr::StandardNormal};
+
+#[cfg(feature = "pyo3")]
+use {
+    ndarray::{ArrayD, ArrayViewD},
+    numpy::PyArrayDyn,
+};
 
 // thiserror error for Tensor
 #[derive(thiserror::Error, Debug)]
@@ -295,16 +301,72 @@ impl Tensor {
             _ => Ok(self.clone()),
         }
     }
+
+    #[cfg(feature = "pyo3")]
+    pub fn into_ndarray<T: TensorDType>(&self) -> ArrayD<T> {
+        assert!(self.device().is_cpu());
+        let storage = self.storage().try_read().unwrap();
+        let raw_cpu = storage.try_cpu().unwrap();
+        let shape = self.shape().to_vec();
+        if self.num_bytes() != 0 {
+            let ptr = raw_cpu.inner().0 as *const T;
+            unsafe { ArrayViewD::from_shape_ptr(shape, ptr).to_owned() }
+        } else {
+            ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
+        }
+    }
+
+    #[cfg(feature = "pyo3")]
+    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
+        &'s self,
+        py: &'p pyo3::Python<'p>,
+    ) -> &PyArrayDyn<T> {
+        use numpy::PyArray;
+        PyArray::from_owned_array(*py, self.clone().into_ndarray::<T>())
+    }
+}
+
+#[cfg(feature = "pyo3")]
+impl<T: TensorDType> From<ArrayD<T>> for Tensor {
+    fn from(it: ArrayD<T>) -> Self {
+        if it.as_slice().is_some() {
+            let layout = std::alloc::Layout::from_size_align(
+                it.len() * std::mem::size_of::<T>(),
+                std::mem::align_of::<T>(),
+            )
+            .unwrap();
+            let shape = it.shape().to_vec().into();
+            let strides = Strides::from(&shape);
+            let vec = it.into_raw_vec().into_boxed_slice();
+            let ptr = Box::into_raw(vec) as *mut u8;
+
+            let raw_buf = RawCPUBuffer::new(ptr, layout);
+            let storage = Storage::from(RawStorage::CPU(raw_buf));
+            let meta = StorageView::new(shape, T::dt(), strides);
+            Tensor::new(LazyOp::Const, meta, storage, Device::CPU)
+        } else {
+            panic!("Cannot convert numpy array with non-contiguous memory layout to tensor");
+        }
+    }
+}
+
+#[cfg(feature = "pyo3")]
+impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
+    fn from(array: &PyArrayDyn<T>) -> Self {
+        Self::from(array.to_owned_array())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use pyo3::{types::PyModule, Python};
+
     use crate::{shape, DeviceRequest};
 
     use super::*;
 
     #[test]
-    fn test_cfg() -> anyhow::Result<()> {
+    fn test_matmul() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
         let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
@@ -315,6 +377,53 @@ mod tests {
         println!("\nC: {:#?}", c);
         let d = c.to(Device::CPU)?;
         println!("\nD: {:#?}", d);
+        Ok(())
+    }
+
+    #[test]
+    fn test_pyo3() -> anyhow::Result<()> {
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
+        let c = a.matmul(&b)?;
+        c.resolve()?;
+        println!("\nA: {:#?}", a);
+        println!("\nB: {:#?}", b);
+        println!("\nC: {:#?}", c);
+        let d = c.to(Device::CPU)?;
+        println!("\nD: {:#?}", d);
+
+        let a = a.to(Device::CPU)?;
+        let b = b.to(Device::CPU)?;
+        let c = Python::with_gil(|py| {
+            let npy_a = a.to_py::<f32>(&py);
+            let npy_b = b.to_py::<f32>(&py);
+
+            let activators = PyModule::from_code(
+                py,
+                r#"
+import numpy as np
+import torch
+
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
+"#,
+                "x.py",
+                "x",
+            )
+            .unwrap();
+
+            let result = activators
+                .getattr("matmul")
+                .unwrap()
+                .call1((npy_a, npy_b))
+                .unwrap()
+                .extract::<&PyArrayDyn<f32>>()
+                .unwrap();
+            Tensor::from(result)
+        });
+        println!("\nC: {:#?}", c);
+
         Ok(())
     }
 }
