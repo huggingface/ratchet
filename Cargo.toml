@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/ratchet-core",
+    "crates/ratchet-downloader",
     "crates/ratchet-integration-tests",
     "crates/ratchet-loader", 
     "crates/ratchet-models",
@@ -28,6 +29,7 @@ derive-new = "0.6.0"
 log = "0.4.20"
 thiserror = "1.0.56"
 byteorder = "1.5.0"
+wasm-bindgen-test = "0.3.34"
 
 [workspace.dev-dependencies]
 hf-hub = "0.3.0"

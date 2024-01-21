@@ -31,6 +31,7 @@ glam = "0.25.0"
 pollster = "0.3.0"
 futures-intrusive = "0.5.0"
 anyhow = "1.0.79"
+getrandom = { version = "0.2", features = ["js"] } # Needed for wasm support in `num` trait
 num = "0.4.1"
 rand_distr = { version = "0.4.3", optional = true }
 rand = { version = "0.8.4", optional = true }
