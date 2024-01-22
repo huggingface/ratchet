@@ -19,6 +19,7 @@ impl RawCPUBuffer {
     }
 
     pub fn as_bytes(&self) -> &[u8] {
+        println!("Reading: {:p}", self.0);
         unsafe { std::slice::from_raw_parts(self.0, self.1.size()) }
     }
 
