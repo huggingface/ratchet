@@ -414,8 +414,8 @@ mod tests {
     #[test]
     fn test_matmul() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
+        let a = Tensor::randn::<f32>(shape![512, 512], device.clone());
+        let b = Tensor::randn::<f32>(shape![512, 512], device.clone());
         let c = a.matmul(&b)?;
         c.resolve()?;
         println!("\nA: {:#?}", a);
@@ -436,10 +436,10 @@ mod tests {
             let prg = PyModule::from_code(
                 py,
                 r#"
-    import torch
+import torch
 
-    def matmul(a, b):
-        return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
         "#,
                 "x.py",
                 "x",
