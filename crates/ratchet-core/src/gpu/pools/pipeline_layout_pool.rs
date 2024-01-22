@@ -10,7 +10,7 @@ use super::{
 slotmap::new_key_type! { pub struct PipelineLayoutHandle; }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub(crate) struct PipelineLayoutDescriptor {
+pub struct PipelineLayoutDescriptor {
     pub entries: RVec<BindGroupLayoutHandle>,
 }
 
