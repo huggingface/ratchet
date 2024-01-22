@@ -122,12 +122,9 @@ mod tests {
         let mut rng = rand::thread_rng();
         let range = Uniform::new(-0.2, 0.2);
         let matrix: Vec<f32> = (0..M * N).map(|_| rng.sample(range)).collect();
-        println!("Original matrix: {:?}", matrix);
 
         let (quantized_matrix, absmax) = super::sint8_quantize(&matrix, M, N);
-        println!("Absmax: {:?}", absmax);
         let dequantized_matrix = super::sint8_dequantize(&quantized_matrix, &absmax, M, N);
-        println!("Dequantized matrix: {:?}", dequantized_matrix);
         for i in 0..matrix.len() {
             assert!((matrix[i] - dequantized_matrix[i]).abs() < 0.001);
         }
@@ -138,12 +135,10 @@ mod tests {
         let matrix = vec![
             0.1, -0.1, 0.6, -0.5, 1.0, -1.0, 1.2, -1.2, 0.1, -0.1, 0.5, -0.5, 1.0, -1.0, 1.2, -1.2,
         ];
-        println!("{:?}", matrix);
         let (quantized_matrix, absmax) = super::sint4_quantize(&matrix, 4, 4);
         assert_eq!(quantized_matrix.len(), 2);
         assert_eq!(quantized_matrix, vec![2544293105, 2544292849]);
         let dequantized_matrix = super::sint4_dequantize(&quantized_matrix, absmax, 4, 4);
-        println!("{:?}", dequantized_matrix);
         for i in 0..matrix.len() {
             assert!((matrix[i] - dequantized_matrix[i]).abs() < 0.1);
         }

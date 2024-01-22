@@ -1,6 +1,6 @@
 // Adapted from https://github.com/rerun-io/rerun MIT licensed
 use super::{DynamicResource, DynamicResourcePool, DynamicResourcesDesc, PoolError};
-use crate::gpu::WgpuDevice;
+use crate::{gpu::WgpuDevice, RawGPUBuffer};
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, derive_new::new)]
 pub struct BufferDescriptor {
@@ -19,8 +19,8 @@ slotmap::new_key_type! { pub struct GpuBufferHandle; }
 
 /// A reference-counter baked buffer.
 /// Once all instances are dropped, the buffer will be marked for reclamation in the following pass.
-pub type GPUBuffer =
-    std::sync::Arc<DynamicResource<GpuBufferHandle, BufferDescriptor, wgpu::Buffer>>;
+pub type PooledGPUBuffer =
+    std::sync::Arc<DynamicResource<GpuBufferHandle, BufferDescriptor, RawGPUBuffer>>;
 
 impl DynamicResourcesDesc for BufferDescriptor {
     fn resource_size_in_bytes(&self) -> u64 {
@@ -37,7 +37,7 @@ impl DynamicResourcesDesc for BufferDescriptor {
 }
 
 pub struct BufferPool {
-    inner: DynamicResourcePool<GpuBufferHandle, BufferDescriptor, wgpu::Buffer>,
+    inner: DynamicResourcePool<GpuBufferHandle, BufferDescriptor, RawGPUBuffer>,
 }
 
 impl BufferPool {
@@ -47,7 +47,7 @@ impl BufferPool {
         }
     }
 
-    pub fn get_or_create(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> GPUBuffer {
+    pub fn get_or_create(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> PooledGPUBuffer {
         self.inner.get_or_create(desc, |desc| {
             let (size, usage, mapped_at_creation) = desc.fields();
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -64,7 +64,7 @@ impl BufferPool {
     }
 
     /// Method to retrieve a resource from a weak handle (used by [`super::GpuBindGroupPool`])
-    pub fn get(&self, handle: GpuBufferHandle) -> Result<GPUBuffer, PoolError> {
+    pub fn get(&self, handle: GpuBufferHandle) -> Result<PooledGPUBuffer, PoolError> {
         self.inner.get_from_handle(handle)
     }
 
