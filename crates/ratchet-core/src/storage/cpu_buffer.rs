@@ -61,6 +61,7 @@ impl Clone for RawCPUBuffer {
 impl Drop for RawCPUBuffer {
     fn drop(&mut self) {
         if !self.0.is_null() && self.1.size() > 0 {
+            println!("DROPPING: {:p}", self.0);
             unsafe { std::alloc::dealloc(self.0, self.1) }
         }
     }
