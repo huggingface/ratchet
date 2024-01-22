@@ -15,7 +15,7 @@ jobs:
         id: loc
         run: |
           cd ./crates/ratchet-core
-          LINES=$(scc -irs --exclude-file kernels | tail -1 | awk '{print $2}')
+          LINES=$(scc -irs --exclude-file kernel)
           echo "::set-output name=lines::$LINES"
 
       # Step to comment on the PR
@@ -23,11 +23,11 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const linesOfCode = '${{ steps.loc.outputs.lines }}';
+            const codeReport = '${{ steps.loc.outputs.lines }}';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Your PR has ${linesOfCode} lines of code.`
+              body: `${codeReport`
             })
 
