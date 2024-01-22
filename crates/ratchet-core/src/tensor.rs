@@ -426,49 +426,46 @@ mod tests {
         Ok(())
     }
 
-    /*
+    #[test]
+    fn test_pyo3() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
 
-        #[test]
-        fn test_pyo3() -> anyhow::Result<()> {
-            let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-            let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
-            let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
-
-            let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
-                let prg = PyModule::from_code(
-                    py,
-                    r#"
+        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
+            let prg = PyModule::from_code(
+                py,
+                r#"
     import torch
 
     def matmul(a, b):
         return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
         "#,
-                    "x.py",
-                    "x",
-                )?;
+                "x.py",
+                "x",
+            )?;
 
-                let result = prg
-                    .getattr("matmul")?
-                    .call1((a.clone().to_py::<f32>(py), b.clone().to_py::<f32>(py)))?
-                    .extract::<&PyArrayDyn<f32>>()?;
-                Ok(Tensor::from(result))
-            });
-            println!("\nTORCH: {:#?}", ground);
+            let result = prg
+                .getattr("matmul")?
+                .call1((a.clone().to_py::<f32>(py), b.clone().to_py::<f32>(py)))?
+                .extract::<&PyArrayDyn<f32>>()?;
+            Ok(Tensor::from(result))
+        });
+        println!("\nTORCH: {:#?}", ground);
 
-            println!("\nA: {:#?}", a);
-            println!("\nB: {:#?}", b);
+        println!("\nA: {:#?}", a);
+        println!("\nB: {:#?}", b);
 
-            let gpu_device = Device::request_device(DeviceRequest::GPU)?;
-            let a = a.to(gpu_device.clone())?;
-            let b = b.to(gpu_device)?;
+        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
+        let a = a.to(gpu_device.clone())?;
+        let b = b.to(gpu_device)?;
 
-            let c = a.matmul(&b)?;
-            c.resolve()?;
+        let c = a.matmul(&b)?;
+        c.resolve()?;
 
-            let our_result = c.to(cpu_device)?;
-            println!("\nOURS: {:#?}", our_result);
+        let our_result = c.to(cpu_device)?;
+        println!("\nOURS: {:#?}", our_result);
 
-            Ok(())
-        }
-        */
+        Ok(())
+    }
 }
