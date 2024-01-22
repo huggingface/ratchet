@@ -11,7 +11,6 @@ env:
   WGPU_DX12_COMPILER: dxc
   RUSTFLAGS: --cfg=web_sys_unstable_apis
   RUST_BACKTRACE: 1
-  RUST_MSRV: "1.64"
 
 jobs:
   build:
@@ -28,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install rust toolchain
-        uses: dtolnay/rust-toolchain@${{ env.RUST_MSRV }}
+        uses: dtolnay/rust-toolchain@1.64
 
       - name: Install cargo-nextest 
         uses: taiki-e/install-action@v2
