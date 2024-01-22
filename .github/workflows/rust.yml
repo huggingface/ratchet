@@ -80,8 +80,11 @@ jobs:
           cache: 'pip'
       - run: pip install -r requirements.txt
 
-      - name: Run tests
-        run: cargo test --nocapture 
+      - name: run tests
+        shell: bash
+        run: |
+          set -e
+          cargo nextest run --features pyo3 --no-fail-fast 
 
       - name: Install wasm-pack 
         run: |
