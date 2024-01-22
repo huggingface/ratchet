@@ -21,6 +21,13 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
+            const output = `
+              <details><summary>Show Code</summary>
+              \`\`\`\n
+              ${{ steps.scc.outputs.scc }}
+              \`\`\`
+              </details>
+            `;
             const codeReport = '${{ steps.scc.outputs.scc }}';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
