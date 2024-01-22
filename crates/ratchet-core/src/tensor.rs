@@ -304,17 +304,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cfg() -> anyhow::Result<()> {
-        let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let c = a.matmul(&b)?;
-        c.resolve()?;
-        println!("\nA: {:#?}", a);
-        println!("\nB: {:#?}", b);
-        println!("\nC: {:#?}", c);
-        let d = c.to(Device::CPU)?;
-        println!("\nD: {:#?}", d);
+    fn should_fail() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
+        let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+
+        let a_gpu = a.to(gpu_device.clone())?;
+        let b_gpu = b.to(gpu_device.clone())?;
+        let c_gpu = a_gpu.matmul(&b_gpu)?;
+        c_gpu.resolve()?;
         Ok(())
     }
 }
