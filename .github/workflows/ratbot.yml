@@ -10,7 +10,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step to count lines of code using scc
+      - name: Install scc
+        run: |
+          sudo snap install scc
+
       - name: Count lines of code
         id: loc
         run: |
