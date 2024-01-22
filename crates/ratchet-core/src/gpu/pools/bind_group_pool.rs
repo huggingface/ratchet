@@ -11,7 +11,7 @@ slotmap::new_key_type! { pub struct GpuBindGroupHandle; }
 #[derive(Clone)]
 pub struct GpuBindGroup {
     resource: Arc<DynamicResource<GpuBindGroupHandle, BindGroupDescriptor, wgpu::BindGroup>>,
-    _owned_buffers: RVec<GPUBuffer>,
+    _owned_buffers: RVec<PooledGPUBuffer>,
 }
 
 impl std::fmt::Debug for GpuBindGroup {
@@ -98,7 +98,7 @@ impl BindGroupPool {
     pub fn get_or_create(&self, desc: &BindGroupDescriptor, device: &WgpuDevice) -> GpuBindGroup {
         // Retrieve strong handles to buffers and textures.
         // This way, an owner of a bind group handle keeps buffers & textures alive!.
-        let owned_buffers: RVec<GPUBuffer> = {
+        let owned_buffers: RVec<PooledGPUBuffer> = {
             desc.entries
                 .iter()
                 .map(|e| device.get_buffer(e.handle).unwrap())

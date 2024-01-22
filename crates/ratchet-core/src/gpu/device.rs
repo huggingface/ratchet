@@ -5,7 +5,7 @@ use wgpu::{Adapter, DeviceType, Limits};
 
 use crate::DeviceError;
 
-use super::{BufferDescriptor, GPUBuffer, PoolError};
+use super::{BufferDescriptor, PoolError, PooledGPUBuffer};
 
 pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 
@@ -56,7 +56,7 @@ impl WgpuDevice {
         let adapter = Self::select_adapter()?;
 
         #[allow(unused_mut)]
-        let mut required_features = wgpu::Features::default();
+        let mut features = wgpu::Features::default();
         #[cfg(feature = "gpu-profiling")]
         {
             features |= wgpu::Features::TIMESTAMP_QUERY;
@@ -64,8 +64,8 @@ impl WgpuDevice {
 
         let mut device_descriptor = wgpu::DeviceDescriptor {
             label: Some("ratchet"),
-            required_features,
-            required_limits: Limits {
+            features,
+            limits: Limits {
                 max_buffer_size: MAX_BUFFER_SIZE,
                 max_storage_buffer_binding_size: MAX_BUFFER_SIZE as u32,
                 ..Default::default()
@@ -77,7 +77,7 @@ impl WgpuDevice {
                 "Failed to acq. device, trying again with reduced limits: {:?}",
                 e
             );
-            device_descriptor.required_limits = adapter.limits();
+            device_descriptor.limits = adapter.limits();
             adapter.request_device(&device_descriptor, None).await
         } else {
             device_request
@@ -147,25 +147,28 @@ impl WgpuDevice {
 }
 
 impl WgpuDevice {
-    pub fn create_buffer_init(
+    pub fn get_or_create_buffer_init(
         &self,
         desc: &BufferDescriptor,
         contents: &[u8],
-    ) -> Result<GPUBuffer, DeviceError> {
+    ) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self
             .buffer_allocator
             .create_buffer_init(desc, contents, self))
     }
 
-    pub fn create_uniform_init(&self, cpu_uniform: CpuUniform) -> GPUBuffer {
+    pub fn create_uniform_init(&self, cpu_uniform: CpuUniform) -> PooledGPUBuffer {
         self.buffer_allocator.create_uniform_init(cpu_uniform, self)
     }
 
-    pub fn allocate_buffer(&self, desc: &BufferDescriptor) -> Result<GPUBuffer, DeviceError> {
+    pub fn get_or_create_buffer(
+        &self,
+        desc: &BufferDescriptor,
+    ) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self.buffer_allocator.create_buffer(desc, self))
     }
 
-    pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<GPUBuffer, DeviceError> {
+    pub fn get_buffer(&self, handle: GpuBufferHandle) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self.buffer_allocator.get(handle))
     }
 
@@ -221,7 +224,7 @@ impl WgpuDevice {
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
-    ) -> Result<FxHashMap<TensorId, GPUBuffer>, DeviceError> {
+    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
         self.buffer_allocator.allocate_cfg(execution_order, device)
     }
 }

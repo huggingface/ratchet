@@ -1,16 +1,22 @@
 use crate::gpu::{CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, CompiledOp, DType, Device, DeviceStorage, Executable, Operation, OperationError,
-    RawStorage, Shape, Storage, Strides, TensorDType, TensorId,
+    ops::*, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer, Operation,
+    OperationError, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
 use derive_new::new;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 use std::sync::Arc;
 
 #[cfg(feature = "rand")]
 use {rand::prelude::*, rand_distr::StandardNormal};
+
+#[cfg(feature = "pyo3")]
+use {
+    ndarray::{ArrayD, ArrayViewD},
+    numpy::PyArrayDyn,
+};
 
 // thiserror error for Tensor
 #[derive(thiserror::Error, Debug)]
@@ -37,21 +43,24 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    fn new(op: LazyOp, meta: StorageView, storage: Storage, device: Device) -> Self {
+    fn new(op: LazyOp, meta: StorageView, storage: Option<Storage>, device: Device) -> Self {
         Self {
             inner: Arc::new(Inner::new(op, meta, storage, device)),
         }
     }
 
     fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
-        Self::new(op, meta, Storage::empty(), device)
+        Self::new(op, meta, None, device)
+    }
+
+    fn update_storage(&self, storage: Storage) {
+        *self.inner.storage.write() = Some(storage);
     }
 }
 
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let storage = self.storage().try_read().expect("Could not read storage");
-        let storage_fmt = storage.dump(self.dt(), false);
+        let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
         let (id, op) = (self.id(), self.op());
         f.debug_struct("Tensor")
             .field("id", &id)
@@ -88,7 +97,7 @@ pub struct Inner {
     op: LazyOp,
     device: Device,
     view: StorageView,
-    storage: Arc<RwLock<Storage>>,
+    storage: Arc<RwLock<Option<Storage>>>,
 }
 
 impl AsRef<Inner> for Inner {
@@ -98,7 +107,7 @@ impl AsRef<Inner> for Inner {
 }
 
 impl Inner {
-    fn new(op: LazyOp, meta: StorageView, storage: Storage, device: Device) -> Self {
+    fn new(op: LazyOp, meta: StorageView, storage: Option<Storage>, device: Device) -> Self {
         Self {
             id: TensorId::new(),
             view: meta,
@@ -138,19 +147,12 @@ impl Tensor {
         &self.device
     }
 
-    pub fn storage(&self) -> &Arc<RwLock<Storage>> {
-        &self.storage
+    pub fn storage(&self) -> RwLockReadGuard<Option<Storage>> {
+        self.inner.storage.read()
     }
 
     pub fn resolved(&self) -> bool {
-        self.storage().try_read().unwrap().raw().is_some()
-    }
-
-    /// # Safety
-    ///
-    /// Make sure your device & storage are compatible.
-    pub(crate) unsafe fn set_storage(&self, storage: Storage) {
-        *self.storage().write() = storage;
+        self.storage().is_some()
     }
 
     pub(crate) fn op(&self) -> &LazyOp {
@@ -208,7 +210,7 @@ impl Tensor {
         let storage = Storage::from_slice(data.as_ref(), &shape, &device);
         let strides = Strides::from(&shape);
         let meta = StorageView::new(shape, T::dt(), strides);
-        Tensor::new(LazyOp::Const, meta, storage, device)
+        Tensor::new(LazyOp::Const, meta, Some(storage), device)
     }
 
     fn execution_order(&self) -> Vec<Tensor> {
@@ -240,8 +242,8 @@ impl Tensor {
 
     pub fn compile(&self, uniform: &mut CpuUniform, device: &WgpuDevice) -> Option<CompiledOp> {
         match self.op() {
-            LazyOp::Binary(b) => Some(b.compile(self, uniform, device).unwrap()),
-            LazyOp::Matmul(m) => Some(m.compile(self, uniform, device).unwrap()),
+            LazyOp::Binary(b) => b.compile(self, uniform, device).ok(),
+            LazyOp::Matmul(m) => m.compile(self, uniform, device).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -258,11 +260,14 @@ impl Tensor {
         for t in execution_order {
             if !t.resolved() {
                 let id = t.id();
-                let gpu_buf = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+                let pooled_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
                 assert!(t.device().is_gpu());
-                unsafe {
-                    t.set_storage(Storage::from(RawStorage::from_gpu(gpu_buf.clone(), t.dt())));
-                }
+
+                let storage = Storage::GPU(GPUBuffer {
+                    inner: pooled_buffer.clone(),
+                    alignment: t.dt().size_of(),
+                });
+                t.update_storage(storage);
             }
 
             if let Some(compiled_op) = t.compile(&mut uniform, device) {
@@ -275,46 +280,170 @@ impl Tensor {
         Ok(())
     }
 
-    async fn to_cpu(&self) -> Result<Tensor, TensorError> {
-        let raw_gpu_buf = {
-            let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
-            storage_resource.try_gpu()?.clone()
-        };
+    fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        if self.device().is_cpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let gpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_gpu()?;
+        let cpu_buf = gpu_buf.to_cpu(&self.device)?;
+
         Ok(Tensor::new(
             LazyOp::Const,
             self.view.clone(),
-            Storage::from(raw_gpu_buf.to_cpu(self.device())?),
+            Some(Storage::CPU(cpu_buf)),
             Device::CPU,
         ))
     }
 
+    fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
+        if self.device().is_gpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let cpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_cpu()?;
+        let gpu_buf = cpu_buf.to_device(dst_device)?;
+
+        let wgpu_device = dst_device.try_gpu()?;
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(Storage::GPU(gpu_buf)),
+            Device::GPU(wgpu_device.clone()),
+        ))
+    }
+
+    /// Transfers the tensor to the specified device.
+    ///
+    /// If the tensor is already on the specified device, it will be returned as-is,
+    /// and the underlying storage will not be copied.
+    /// If the tensor is on a different device, it will be copied to the specified device.
     pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
-        match (self.device(), device) {
-            (Device::GPU(_), Device::CPU) => pollster::block_on(self.to_cpu()),
-            (Device::CPU, Device::GPU(_)) => todo!(),
+        match (self.device(), &device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu(),
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(&device),
             _ => Ok(self.clone()),
         }
+    }
+
+    #[cfg(feature = "pyo3")]
+    pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
+        assert!(self.device().is_cpu());
+        let shape = self.shape().to_vec();
+        if self.num_bytes() != 0 {
+            let storage_guard = self.storage();
+            let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
+            let (ptr, _) = buffer.inner().into_raw_parts();
+            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
+        } else {
+            ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
+        }
+    }
+
+    #[cfg(feature = "pyo3")]
+    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
+        &'s self,
+        py: &'p pyo3::Python<'p>,
+    ) -> &PyArrayDyn<T> {
+        use numpy::PyArray;
+        assert!(
+            self.device().is_cpu(),
+            "Cannot convert non-CPU tensor to numpy array"
+        );
+        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+
+    pub fn deep_clone(&self) -> Tensor {
+        let storage_guard = self.storage();
+        let storage = storage_guard.as_ref().unwrap();
+        let cloned_storage = storage.deep_clone().unwrap();
+        Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(cloned_storage),
+            self.device.clone(),
+        )
+    }
+}
+
+#[cfg(feature = "pyo3")]
+impl<T: TensorDType> From<ArrayD<T>> for Tensor {
+    fn from(it: ArrayD<T>) -> Self {
+        if it.as_slice().is_some() {
+            let layout = std::alloc::Layout::from_size_align(
+                it.len() * std::mem::size_of::<T>(),
+                std::mem::align_of::<T>(),
+            )
+            .unwrap();
+            let shape = it.shape().to_vec().into();
+            let strides = Strides::from(&shape);
+            let vec = it.into_raw_vec().into_boxed_slice();
+            let ptr = Box::into_raw(vec) as *mut u8;
+
+            let raw_buf = RawCPUBuffer::new(ptr, layout);
+            let meta = StorageView::new(shape, T::dt(), strides);
+            Tensor::new(
+                LazyOp::Const,
+                meta,
+                Some(Storage::CPU(CPUBuffer::new(raw_buf))),
+                Device::CPU,
+            )
+        } else {
+            panic!("Cannot convert numpy array with non-contiguous memory layout to tensor");
+        }
+    }
+}
+
+#[cfg(feature = "pyo3")]
+impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
+    fn from(array: &PyArrayDyn<T>) -> Self {
+        Self::from(array.to_owned_array())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use pyo3::{types::PyModule, Python};
+
     use crate::{shape, DeviceRequest};
 
     use super::*;
 
     #[test]
-    fn test_cfg() -> anyhow::Result<()> {
+    fn test_pyo3() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
+        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
+            let prg = PyModule::from_code(
+                py,
+                r#"
+import torch
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#,
+                "x.py",
+                "x",
+            )?;
+            let py_a = a.to_py::<f32>(&py);
+            let py_b = b.to_py::<f32>(&py);
+            let py_c = prg
+                .getattr("matmul")?
+                .call1((py_a, py_b))?
+                .extract::<&PyArrayDyn<f32>>()?;
+            Ok(Tensor::from(py_c))
+        });
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let c = a.matmul(&b)?;
-        c.resolve()?;
-        println!("\nA: {:#?}", a);
-        println!("\nB: {:#?}", b);
-        println!("\nC: {:#?}", c);
-        let d = c.to(Device::CPU)?;
-        println!("\nD: {:#?}", d);
+        let a_gpu = a.to(device.clone())?;
+        let b_gpu = b.to(device.clone())?;
+        let c_gpu = a_gpu.matmul(&b_gpu)?;
+        c_gpu.resolve()?;
+        let d_gpu = c_gpu.to(Device::CPU)?;
         Ok(())
     }
 }

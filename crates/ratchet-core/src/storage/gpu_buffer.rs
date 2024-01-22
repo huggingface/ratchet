@@ -1,8 +1,8 @@
 use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
-    gpu::{BufferUsagesExt, GPUBuffer},
-    storage::{DeviceStorage, RawCPUBuffer},
-    Device, DeviceError, Shape, TensorError,
+    gpu::{BufferUsagesExt, PooledGPUBuffer},
+    storage::{CPUBuffer, DeviceStorage},
+    Device, DeviceError, Shape,
 };
 
 use bytemuck::NoUninit;
@@ -10,13 +10,13 @@ use wgpu::BufferUsages;
 
 use crate::DType;
 
-#[derive(Clone, derive_new::new)]
-pub struct RawGPUBuffer {
-    pub(crate) inner: GPUBuffer,
+#[derive(Clone, Debug, derive_new::new)]
+pub struct GPUBuffer {
+    pub(crate) inner: PooledGPUBuffer,
     pub(crate) alignment: usize,
 }
 
-impl RawGPUBuffer {
+impl GPUBuffer {
     const MIN_SIZE: usize = 16;
 
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &WgpuDevice) -> Self {
@@ -37,18 +37,15 @@ impl RawGPUBuffer {
         } else {
             bytes
         };
-        let buffer = device
-            .create_buffer_init(
+        let inner = device
+            .get_or_create_buffer_init(
                 &BufferDescriptor::new(bytes.len() as _, BufferUsages::standard(), false),
                 bytes,
             )
             .unwrap();
         device.queue().submit(None);
         device.poll(wgpu::Maintain::Wait);
-        Self {
-            inner: buffer,
-            alignment,
-        }
+        Self { inner, alignment }
     }
 
     /// Returns true if the buffer has all the given usages.
@@ -59,39 +56,45 @@ impl RawGPUBuffer {
         }
     }
 
-    pub fn inner(&self) -> &GPUBuffer {
+    pub fn inner(&self) -> &PooledGPUBuffer {
         &self.inner
     }
 
     pub fn usage(&self) -> BufferUsages {
         self.inner.usage()
     }
-}
 
-impl std::fmt::Debug for RawGPUBuffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RawGPUBuffer")
-            .field("buf", &self.inner.global_id())
-            .finish()
+    #[allow(unused)]
+    pub fn deep_clone(&self, device: &WgpuDevice) -> Self {
+        let clone = device
+            .get_or_create_buffer(&BufferDescriptor::new(
+                self.inner.size(),
+                self.inner.usage(),
+                false,
+            ))
+            .unwrap();
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&self.inner, 0, &clone, 0, self.inner.size());
+        device.queue().submit(Some(encoder.finish()));
+        device.poll(wgpu::Maintain::Wait);
+        Self {
+            inner: clone,
+            alignment: self.alignment,
+        }
     }
 }
 
-impl PartialEq for RawGPUBuffer {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner.global_id() == other.inner.global_id()
-    }
-}
-
-impl DeviceStorage for RawGPUBuffer {
-    fn to_device(self, _: &Device) -> Result<RawGPUBuffer, DeviceError> {
-        Ok(self)
+impl DeviceStorage for GPUBuffer {
+    fn to_device(&self, _: &Device) -> Result<GPUBuffer, DeviceError> {
+        Ok(self.clone())
     }
 
-    fn to_cpu(&self, device: &Device) -> Result<RawCPUBuffer, DeviceError> {
+    fn to_cpu(&self, device: &Device) -> Result<CPUBuffer, DeviceError> {
         self.validate_usages(BufferUsages::COPY_SRC)?;
         let device = device.try_gpu()?;
         let buffer_slice = self.inner.slice(..);
-        let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
+        let (tx, rx) = std::sync::mpsc::channel();
         let alignment = self.alignment;
 
         wgpu::util::DownloadBuffer::read_buffer(
@@ -100,19 +103,14 @@ impl DeviceStorage for RawGPUBuffer {
             &buffer_slice,
             move |buffer| {
                 tx.send(match buffer {
-                    Ok(db) => Ok(RawCPUBuffer::from_bytes(&db, alignment)),
+                    Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
                     Err(error) => Err(error),
                 })
                 .expect("Failed to send result of read_buffer");
             },
         );
         device.poll(wgpu::Maintain::Wait);
-        //TODO: fix unwrap
-        let storage = pollster::block_on(async { rx.receive().await })
-            .ok_or(TensorError::TransferError)
-            .unwrap()
-            .map_err(|_| TensorError::TransferError)
-            .unwrap();
+        let storage = rx.recv().unwrap()?;
 
         Ok(storage)
     }
