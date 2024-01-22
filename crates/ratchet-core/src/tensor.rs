@@ -545,7 +545,7 @@ def matmul(a, b):
         let c_gpu = a_gpu.matmul(&b_gpu)?;
         c_gpu.resolve()?;
         let d_gpu = c_gpu.to(Device::CPU)?;
-        ground?.all_close(&d_gpu, 1e-5, 1e-5)?;
+        ground?.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
     }
 }

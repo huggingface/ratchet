@@ -131,7 +131,6 @@ impl WgpuDevice {
         let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
         let adapter = instance
             .enumerate_adapters(backends)
-            .into_iter()
             .max_by_key(|adapter| match adapter.get_info().device_type {
                 DeviceType::DiscreteGpu => 5,
                 DeviceType::Other => 4,
