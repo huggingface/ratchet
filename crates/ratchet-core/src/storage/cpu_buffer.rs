@@ -105,9 +105,8 @@ impl From<RawCPUBuffer> for CPUBuffer {
 impl DeviceStorage for CPUBuffer {
     fn to_device(&self, device: &Device) -> Result<GPUBuffer, DeviceError> {
         let gpu_device = device.try_gpu()?;
-        let raw = self.inner();
-        let (ptr, layout) = raw.into_raw_parts();
-        let bytes = unsafe { std::slice::from_raw_parts(ptr, layout.size()) };
+        let bytes = self.inner().as_bytes();
+        let layout = self.inner().1;
         Ok(GPUBuffer::from_bytes(bytes, layout.align(), gpu_device))
     }
 
