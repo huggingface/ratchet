@@ -64,6 +64,7 @@ impl GPUBuffer {
         self.inner.usage()
     }
 
+    #[allow(unused)]
     pub fn deep_clone(&self, device: &WgpuDevice) -> Self {
         let clone = device
             .get_or_create_buffer(&BufferDescriptor::new(

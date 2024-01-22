@@ -354,21 +354,6 @@ impl Tensor {
         use numpy::PyArray;
         PyArray::from_owned_array(*py, self.clone().into_ndarray::<T>())
     }
-
-    pub fn deep_clone(&self) -> Tensor {
-        let storage_clone = self
-            .storage()
-            .as_ref()
-            .unwrap()
-            .deep_clone(self.device())
-            .unwrap();
-        Tensor::new(
-            self.op().clone(),
-            self.view.clone(),
-            Some(storage_clone),
-            self.device.clone(),
-        )
-    }
 }
 
 #[cfg(feature = "pyo3")]

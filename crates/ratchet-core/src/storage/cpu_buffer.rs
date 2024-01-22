@@ -91,11 +91,6 @@ impl CPUBuffer {
         raw.as_bytes_mut().copy_from_slice(bytes);
         Self::from(raw)
     }
-
-    pub fn deep_clone(&self) -> Self {
-        let raw_clone = (*self.inner()).clone();
-        Self::from(raw_clone)
-    }
 }
 
 impl From<RawCPUBuffer> for CPUBuffer {
