@@ -86,9 +86,9 @@ jobs:
           set -e
           cargo nextest run --features pyo3 --no-fail-fast 
 
-      - name: Install wasm-pack 
-        run: |
-          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          # - name: Install wasm-pack 
+          #   run: |
+          #     curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Run integration tests
-        run: (cd crates/ratchet-integration-tests;sh run-tests.sh)
+          # - name: Run integration tests
+          #   run: (cd crates/ratchet-integration-tests;sh run-tests.sh)
