@@ -10,6 +10,10 @@ use crate::DType;
 pub struct RawCPUBuffer(*mut u8, Layout);
 
 impl RawCPUBuffer {
+    pub fn from_raw_parts(ptr: *mut u8, layout: Layout) -> Self {
+        Self(ptr, layout)
+    }
+
     pub fn into_raw_parts(&self) -> (*mut u8, Layout) {
         (self.0, self.1)
     }
@@ -21,19 +25,36 @@ impl RawCPUBuffer {
     pub fn as_bytes(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.0, self.1.size()) }
     }
+
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut(self.0, self.1.size()) }
+    }
+
+    pub fn uninitialized(size: usize, alignment: usize) -> Self {
+        let layout = std::alloc::Layout::from_size_align(size, alignment).unwrap();
+        let data = if size == 0 {
+            std::ptr::null()
+        } else {
+            let ptr = unsafe { std::alloc::alloc(layout) };
+            assert!(!ptr.is_null());
+            ptr
+        } as *mut u8;
+        Self(data, layout)
+    }
 }
 
 impl Clone for RawCPUBuffer {
     fn clone(&self) -> Self {
-        let data = if self.1.size() == 0 {
+        let (ptr, layout) = self.into_raw_parts();
+        let data = if layout.size() == 0 {
             std::ptr::null()
         } else {
-            let ptr = unsafe { std::alloc::alloc(self.1) };
+            let ptr = unsafe { std::alloc::alloc(layout) };
             assert!(!ptr.is_null());
             ptr
         } as *mut u8;
-        unsafe { self.0.copy_to_nonoverlapping(data, self.1.size()) };
-        Self(data, self.1)
+        unsafe { ptr.copy_to_nonoverlapping(data, layout.size()) };
+        Self(data, layout)
     }
 }
 
@@ -48,7 +69,7 @@ impl Drop for RawCPUBuffer {
 /// Managed CPU buffer
 #[derive(Debug, Clone, derive_new::new)]
 pub struct CPUBuffer {
-    inner: Arc<RawCPUBuffer>,
+    inner: RawCPUBuffer,
 }
 
 unsafe impl Send for CPUBuffer {}
@@ -61,49 +82,25 @@ impl CPUBuffer {
         Self::from_bytes(bytes, std::mem::align_of::<T>())
     }
 
-    pub fn inner(&self) -> &Arc<RawCPUBuffer> {
+    pub fn inner(&self) -> &RawCPUBuffer {
         &self.inner
     }
 
-    unsafe fn uninitialized(size: usize, alignment: usize) -> Self {
-        let layout = std::alloc::Layout::from_size_align(size, alignment).unwrap();
-        let data = if size == 0 {
-            std::ptr::null()
-        } else {
-            let ptr = std::alloc::alloc(layout);
-            assert!(!ptr.is_null());
-            ptr
-        } as *mut u8;
-        Self::from_raw_parts(data, layout)
-    }
-
-    pub fn from_raw_parts(data: *mut u8, layout: Layout) -> Self {
-        Self {
-            inner: Arc::new(RawCPUBuffer(data, layout)),
-        }
-    }
-
     pub fn from_bytes(bytes: &[u8], alignment: usize) -> Self {
-        let layout = std::alloc::Layout::from_size_align(bytes.len(), alignment).unwrap();
-        let data = if bytes.len() == 0 {
-            std::ptr::null()
-        } else {
-            let ptr = unsafe { std::alloc::alloc(layout) };
-            assert!(!ptr.is_null());
-            unsafe { ptr.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len()) };
-            ptr
-        } as *mut u8;
-        Self::from_raw_parts(data, layout)
+        let mut raw = RawCPUBuffer::uninitialized(bytes.len(), alignment);
+        raw.as_bytes_mut().copy_from_slice(bytes);
+        Self::from(raw)
     }
 
     pub fn deep_clone(&self) -> Self {
-        let (ptr, layout) = self.inner().into_raw_parts();
-        println!("before deep clone: {:p}", ptr);
-        let alloc = unsafe { std::alloc::alloc(layout) };
-        unsafe { ptr.copy_to_nonoverlapping(alloc, layout.size()) };
-        println!("after deep clone: {:p}", alloc);
+        let raw_clone = (*self.inner()).clone();
+        Self::from(raw_clone)
+    }
+}
 
-        Self::from_raw_parts(alloc, layout)
+impl From<RawCPUBuffer> for CPUBuffer {
+    fn from(raw: RawCPUBuffer) -> Self {
+        CPUBuffer { inner: raw }
     }
 }
 

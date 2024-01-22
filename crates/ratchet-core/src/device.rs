@@ -51,7 +51,9 @@ impl Device {
     pub fn request_device(request: DeviceRequest) -> Result<Self, DeviceError> {
         match request {
             DeviceRequest::CPU => Ok(Device::CPU),
-            DeviceRequest::GPU => Ok(Device::GPU(pollster::block_on(WgpuDevice::new())?)),
+            DeviceRequest::GPU => Ok(Device::GPU(pollster::block_on(async {
+                WgpuDevice::new().await
+            })?)),
         }
     }
 

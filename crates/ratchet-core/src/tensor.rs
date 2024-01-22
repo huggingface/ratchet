@@ -1,7 +1,7 @@
 use crate::gpu::{CpuUniform, WgpuDevice};
 use crate::{
     ops::*, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer, Operation,
-    OperationError, Shape, Storage, Strides, TensorDType, TensorId,
+    OperationError, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
@@ -340,29 +340,32 @@ impl Tensor {
             let storage_guard = self.storage();
             let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
             let (ptr, _) = buffer.inner().into_raw_parts();
-            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).into_owned() }
+            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
         } else {
-            ArrayViewD::from_shape(shape, &[]).unwrap().into_owned()
+            ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
         }
     }
 
     #[cfg(feature = "pyo3")]
-    pub fn to_py<'p, T: TensorDType + numpy::Element>(
-        self,
-        py: pyo3::Python<'p>,
+    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
+        &'s self,
+        py: &'p pyo3::Python<'p>,
     ) -> &PyArrayDyn<T> {
         use numpy::PyArray;
-        PyArray::from_owned_array(py, self.into_ndarray::<T>())
+        PyArray::from_owned_array(*py, self.clone().into_ndarray::<T>())
     }
 
     pub fn deep_clone(&self) -> Tensor {
-        let storage_guard = self.storage();
-        let storage = storage_guard.as_ref().unwrap();
-        let cloned_storage = storage.deep_clone(self.device()).unwrap();
+        let storage_clone = self
+            .storage()
+            .as_ref()
+            .unwrap()
+            .deep_clone(self.device())
+            .unwrap();
         Tensor::new(
-            LazyOp::Const,
+            self.op().clone(),
             self.view.clone(),
-            Some(cloned_storage),
+            Some(storage_clone),
             self.device.clone(),
         )
     }
@@ -382,12 +385,12 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
             let vec = it.into_raw_vec().into_boxed_slice();
             let ptr = Box::into_raw(vec) as *mut u8;
 
-            let cpu_buf = CPUBuffer::from_raw_parts(ptr, layout);
+            let raw_buf = RawCPUBuffer::from_raw_parts(ptr, layout);
             let meta = StorageView::new(shape, T::dt(), strides);
             Tensor::new(
                 LazyOp::Const,
                 meta,
-                Some(Storage::CPU(cpu_buf)),
+                Some(Storage::CPU(CPUBuffer::from(raw_buf))),
                 Device::CPU,
             )
         } else {
@@ -414,15 +417,12 @@ mod tests {
     #[test]
     fn test_matmul() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::randn::<f32>(shape![512, 512], device.clone());
-        let b = Tensor::randn::<f32>(shape![512, 512], device.clone());
+        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
+        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
         let c = a.matmul(&b)?;
         c.resolve()?;
-        println!("\nA: {:#?}", a);
-        println!("\nB: {:#?}", b);
-        println!("\nC: {:#?}", c);
         let d = c.to(Device::CPU)?;
-        println!("\nD: {:#?}", d);
+        println!("{:?}", d);
         Ok(())
     }
 
@@ -436,36 +436,32 @@ mod tests {
             let prg = PyModule::from_code(
                 py,
                 r#"
-import torch
+    import torch
 
-def matmul(a, b):
-    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
-        "#,
+    def matmul(a, b):
+        return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
+                "#,
                 "x.py",
                 "x",
             )?;
 
-            let result = prg
+            let py_a = a.to_py::<f32>(&py);
+            let py_b = b.to_py::<f32>(&py);
+
+            let py_c = prg
                 .getattr("matmul")?
-                .call1((a.clone().to_py::<f32>(py), b.clone().to_py::<f32>(py)))?
+                .call1((py_a, py_b))?
                 .extract::<&PyArrayDyn<f32>>()?;
-            Ok(Tensor::from(result))
+            Ok(Tensor::from(py_c))
         });
-        println!("\nTORCH: {:#?}", ground);
-
-        println!("\nA: {:#?}", a);
-        println!("\nB: {:#?}", b);
-
-        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
-        let a = a.to(gpu_device.clone())?;
-        let b = b.to(gpu_device)?;
-
-        let c = a.matmul(&b)?;
-        c.resolve()?;
-
-        let our_result = c.to(cpu_device)?;
-        println!("\nOURS: {:#?}", our_result);
-
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let a_gpu = a.to(device.clone())?;
+        let b_gpu = b.to(device.clone())?;
+        let c_gpu = a_gpu.matmul(&b_gpu)?;
+        c_gpu.resolve()?;
+        let d_gpu = c_gpu.to(Device::CPU)?;
+        println!("Ours: {:?}", d_gpu);
+        println!("Ground: {:?}", ground);
         Ok(())
     }
 }
