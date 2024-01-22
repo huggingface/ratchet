@@ -192,7 +192,7 @@ impl GGMLWriter {
         model: &GGMLModel<M>,
     ) -> std::io::Result<()> {
         M::write_header(&model.header, writer)?;
-        for (name, tensor) in &model.tensors {
+        for (_name, _tensor) in &model.tensors {
             //Self::write_single(writer, tensor)?;
         }
         todo!()
