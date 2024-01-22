@@ -275,11 +275,9 @@ impl Tensor {
         Ok(())
     }
 
-    async fn to_cpu(&self) -> Result<Tensor, TensorError> {
-        let raw_gpu_buf = {
-            let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
-            storage_resource.try_gpu()?.clone()
-        };
+    fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
+        let raw_gpu_buf = storage_resource.try_gpu()?.clone();
         Ok(Tensor::new(
             LazyOp::Const,
             self.view.clone(),
@@ -290,7 +288,7 @@ impl Tensor {
 
     pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
         match (self.device(), device) {
-            (Device::GPU(_), Device::CPU) => pollster::block_on(self.to_cpu()),
+            (Device::GPU(_), Device::CPU) => self.to_cpu(),
             (Device::CPU, Device::GPU(_)) => todo!(),
             _ => Ok(self.clone()),
         }

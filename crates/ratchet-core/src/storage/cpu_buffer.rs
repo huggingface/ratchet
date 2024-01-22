@@ -30,6 +30,7 @@ impl RawCPUBuffer {
             assert!(!ptr.is_null());
             ptr
         } as *mut u8;
+        println!("Uninitialized tensor ptr: {:p}", data);
         Self(data, layout)
     }
 
@@ -65,6 +66,7 @@ impl Clone for RawCPUBuffer {
 impl Drop for RawCPUBuffer {
     fn drop(&mut self) {
         if !self.0.is_null() && self.1.size() > 0 {
+            println!("Dropping tensor ptr: {:p}", self.0);
             unsafe { std::alloc::dealloc(self.0, self.1) }
         }
     }

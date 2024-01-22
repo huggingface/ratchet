@@ -91,7 +91,7 @@ impl DeviceStorage for RawGPUBuffer {
         self.validate_usages(BufferUsages::COPY_SRC)?;
         let device = device.try_gpu()?;
         let buffer_slice = self.inner.slice(..);
-        let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
+        let (tx, rx) = std::sync::mpsc::channel();
         let alignment = self.alignment;
 
         wgpu::util::DownloadBuffer::read_buffer(
@@ -108,8 +108,8 @@ impl DeviceStorage for RawGPUBuffer {
         );
         device.poll(wgpu::Maintain::Wait);
         //TODO: fix unwrap
-        let storage = pollster::block_on(async { rx.receive().await })
-            .ok_or(TensorError::TransferError)
+        let storage = rx
+            .recv()
             .unwrap()
             .map_err(|_| TensorError::TransferError)
             .unwrap();
