@@ -23,7 +23,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const linesOfCode = ${{ steps.loc.outputs.lines }};
+            const linesOfCode = '${{ steps.loc.outputs.lines }}';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
