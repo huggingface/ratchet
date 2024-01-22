@@ -414,7 +414,6 @@ mod tests {
 
     use super::*;
 
-    /*
     #[test]
     fn dbg() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
@@ -432,7 +431,6 @@ mod tests {
         }
         Ok(())
     }
-    */
 
     #[test]
     fn test_pyo3() -> anyhow::Result<()> {
