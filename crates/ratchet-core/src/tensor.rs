@@ -352,7 +352,23 @@ impl Tensor {
         py: &'p pyo3::Python<'p>,
     ) -> &PyArrayDyn<T> {
         use numpy::PyArray;
-        PyArray::from_owned_array(*py, self.clone().into_ndarray::<T>())
+        assert!(
+            self.device().is_cpu(),
+            "Cannot convert non-CPU tensor to numpy array"
+        );
+        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+
+    pub fn deep_clone(&self) -> Tensor {
+        let storage_guard = self.storage();
+        let storage = storage_guard.as_ref().unwrap();
+        let cloned_storage = storage.deep_clone().unwrap();
+        Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(cloned_storage),
+            self.device.clone(),
+        )
     }
 }
 
@@ -423,34 +439,32 @@ mod tests {
         let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
 
-        /*
-                let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
-                    let prg = PyModule::from_code(
-                        py,
-                        r#"
-        import torch
+        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
+            let prg = PyModule::from_code(
+                py,
+                r#"
+import torch
 
-        def matmul(a, b):
-            return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
                         "#,
-                        "x.py",
-                        "x",
-                    )?;
+                "x.py",
+                "x",
+            )?;
 
-                    let py_a = a.to_py::<f32>(&py);
-                    println!("py_a: {:?}", py_a);
-                    let py_b = b.to_py::<f32>(&py);
-                    println!("py_b: {:?}", py_b);
+            let py_a = a.to_py::<f32>(&py);
+            println!("py_a: {:?}", py_a);
+            let py_b = b.to_py::<f32>(&py);
+            println!("py_b: {:?}", py_b);
 
-                    let py_c = prg
-                        .getattr("matmul")?
-                        .call1((py_a, py_b))?
-                        .extract::<&PyArrayDyn<f32>>()?;
-                    println!("py_c: {:?}", py_c);
-                    Ok(Tensor::from(py_c))
-                });
-                println!("Ground: {:?}", ground);
-                */
+            let py_c = prg
+                .getattr("matmul")?
+                .call1((py_a, py_b))?
+                .extract::<&PyArrayDyn<f32>>()?;
+            println!("py_c: {:?}", py_c);
+            Ok(Tensor::from(py_c))
+        });
+        println!("Ground: {:?}", ground);
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = a.to(device.clone())?;
         let b_gpu = b.to(device.clone())?;

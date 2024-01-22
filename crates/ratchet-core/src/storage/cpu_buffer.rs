@@ -2,7 +2,7 @@ use bytemuck::NoUninit;
 
 use crate::{storage::DeviceStorage, Device, DeviceError, GPUBuffer, Shape, TensorDType};
 
-use std::{alloc::Layout, fmt::Debug, sync::Arc};
+use std::{alloc::Layout, fmt::Debug};
 
 use crate::DType;
 
@@ -91,6 +91,10 @@ impl CPUBuffer {
         let mut raw = RawCPUBuffer::uninitialized(bytes.len(), alignment);
         raw.as_bytes_mut().copy_from_slice(bytes);
         Self::from(raw)
+    }
+
+    pub fn deep_clone(&self) -> Result<Self, DeviceError> {
+        Ok(Self::from(self.inner().clone()))
     }
 }
 

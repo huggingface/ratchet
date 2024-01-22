@@ -43,6 +43,13 @@ impl Storage {
             _ => unimplemented!(),
         }
     }
+
+    pub fn deep_clone(&self) -> Result<Self, DeviceError> {
+        match self {
+            Storage::CPU(c) => Ok(Storage::CPU(c.deep_clone()?)),
+            _ => todo!(),
+        }
+    }
 }
 
 pub trait DeviceStorage: std::fmt::Debug + Clone + 'static {
