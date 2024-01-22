@@ -416,13 +416,16 @@ mod tests {
 
     #[test]
     fn dbg() -> anyhow::Result<()> {
-        let device = Device::request_device(DeviceRequest::GPU)?;
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
         for _ in 0..10 {
-            let a = Tensor::randn::<f32>(shape![128, 128], device.clone());
-            let b = Tensor::randn::<f32>(shape![128, 128], device.clone());
-            let c = a.matmul(&b)?;
-            c.resolve()?;
-            let d = c.to(Device::CPU)?;
+            let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+            let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+
+            let a_gpu = a.to(gpu_device.clone())?;
+            let b_gpu = b.to(gpu_device.clone())?;
+            let c_gpu = a_gpu.matmul(&b_gpu)?;
+            let d = c_gpu.to(Device::CPU)?;
             println!("{:?}", d);
         }
         Ok(())
