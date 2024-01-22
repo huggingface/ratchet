@@ -415,17 +415,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_matmul() -> anyhow::Result<()> {
+    fn dbg() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let b = Tensor::randn::<f32>(shape![1024, 1024], device.clone());
-        let c = a.matmul(&b)?;
-        c.resolve()?;
-        let d = c.to(Device::CPU)?;
-        println!("{:?}", d);
+        for _ in 0..10 {
+            let a = Tensor::randn::<f32>(shape![128, 128], device.clone());
+            let b = Tensor::randn::<f32>(shape![128, 128], device.clone());
+            let c = a.matmul(&b)?;
+            c.resolve()?;
+            let d = c.to(Device::CPU)?;
+            println!("{:?}", d);
+        }
         Ok(())
     }
 
+    /*
     #[test]
     fn test_pyo3() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
@@ -464,4 +467,5 @@ mod tests {
         println!("Ground: {:?}", ground);
         Ok(())
     }
+    */
 }

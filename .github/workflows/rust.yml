@@ -41,7 +41,7 @@ jobs:
           cache: 'pip'
       - run: pip install -r requirements.txt
       - name: Run tests
-        run: cargo test -- --nocapture
+        run: cargo test dbg -- --nocapture 
       - name: Install wasm-pack 
         run: |
           curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
