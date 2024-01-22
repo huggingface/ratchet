@@ -18,21 +18,60 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        include:
+          - name: Windows x86_64
+            os: windows-2022
+          - name: Linux x86_64
+            os: ubuntu-latest
+          #TODO: android?
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - name: Install rust toolchain
+        uses: dtolnay/rust-toolchain@1.70
+
+      - name: Install cargo-nextest 
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: (linux) install llvmpipe, lavapipe, vulkan sdk, alsa
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
           set -e
           sudo apt-get update -y -qq
-          # vulkan sdk
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
           sudo add-apt-repository ppa:kisak/kisak-mesa
           sudo apt-get update
           sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev
+
+      - name: (windows) install dxc
+        if: matrix.os == 'windows-2022'
+        uses: napokue/setup-dxc@v1.1.0
+
+      - name: (windows) install warp
+        if: matrix.os == 'windows-2022'
+        shell: bash
+        run: |
+          set -e
+          curl.exe -L https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/1.0.7.1 -o warp.zip
+          7z.exe e warp.zip -owarp build/native/amd64/d3d10warp.dll
+          mkdir -p target/ratchet/debug/deps
+          cp -v warp/d3d10warp.dll target/ratchet/debug/
+          cp -v warp/d3d10warp.dll target/ratchet/debug/deps
+
+      - name: (windows) install mesa
+        if: matrix.os == 'windows-2022'
+        shell: bash
+        run: |
+          set -e
+          curl.exe -L https://github.com/pal1000/mesa-dist-win/releases/download/23.2.1/mesa3d-23.2.1-release-msvc.7z -o mesa.7z
+          7z.exe e mesa.7z -omesa x64/{opengl32.dll,libgallium_wgl.dll,libglapi.dll,vulkan_lvp.dll,lvp_icd.x86_64.json}
+          cp -v mesa/* target/ratchet/debug/
+          cp -v mesa/* target/ratchet/debug/deps
+          echo "VK_DRIVER_FILES=$PWD/mesa/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+          echo "GALLIUM_DRIVER=llvmpipe" >> "$GITHUB_ENV"
 
       - name: Setup python 
         uses: actions/setup-python@v5
@@ -40,10 +79,13 @@ jobs:
           python-version: '3.10.6'
           cache: 'pip'
       - run: pip install -r requirements.txt
+
       - name: Run tests
-        run: cargo test tensor -- --test-threads=1 --nocapture 
+        run: cargo test --nocapture 
+
       - name: Install wasm-pack 
         run: |
           curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
       - name: Run integration tests
         run: (cd crates/ratchet-integration-tests;sh run-tests.sh)
