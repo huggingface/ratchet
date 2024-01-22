@@ -1,0 +1,33 @@
+name: Ratbot
+on:
+  pull_request_target
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      # Step to checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step to count lines of code using scc
+      - name: Count lines of code
+        id: loc
+        run: |
+          cd ./crates/ratchet-core
+          LINES=$(scc -irs --exclude-file kernels | tail -1 | awk '{print $2}')
+          echo "::set-output name=lines::$LINES"
+
+      # Step to comment on the PR
+      - name: Comment PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const linesOfCode = ${{ steps.loc.outputs.lines }};
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Your PR has ${linesOfCode} lines of code.`
+            })
+
