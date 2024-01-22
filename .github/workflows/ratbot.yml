@@ -12,9 +12,9 @@ jobs:
 
       - name: Get the lines of code.
         id: scc
-        uses: Adapt-API/scc-docker-action@master
+        uses: iryanbell/scc-docker-action@v1.0.2 
         with:
-          args: ${{ env.workspace }} -irs --exclude-file kernels
+          args: ${{ env.workspace }} -irs --exclude-file kernels 
 
       # Step to comment on the PR
       - name: Comment PR
