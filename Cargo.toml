@@ -19,7 +19,7 @@ strip = true
 #debug = 2
 
 [workspace.dependencies]
-wgpu = { version = "0.19.0", features = ["fragile-send-sync-non-atomic-wasm"] }
+wgpu = { version = "0.18.0", features = ["fragile-send-sync-non-atomic-wasm", "expose-ids"] }
 anyhow = "1.0.40"
 bytemuck = "1.14.0"
 num-traits = "0.2.17"
