@@ -275,23 +275,40 @@ impl Tensor {
         Ok(())
     }
 
-    async fn to_cpu(&self) -> Result<Tensor, TensorError> {
-        let raw_gpu_buf = {
-            let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
-            storage_resource.try_gpu()?.clone()
-        };
+    fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
+        if self.device().is_gpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage = self.storage();
+        let storage_resource = storage.try_read().ok_or(TensorError::NotResolved)?;
+        let raw = storage_resource.try_cpu()?.clone();
+        let gpu_buf = raw.to_device(dst_device)?;
+
+        let wgpu_device = dst_device.try_gpu()?;
+
         Ok(Tensor::new(
             LazyOp::Const,
             self.view.clone(),
-            Storage::from(raw_gpu_buf.to_cpu(self.device())?),
+            Storage::from(gpu_buf),
+            Device::GPU(wgpu_device.clone()),
+        ))
+    }
+
+    fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        let storage_resource = self.storage().try_read().ok_or(TensorError::NotResolved)?;
+        let raw = storage_resource.try_gpu()?.clone();
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Storage::from(raw.to_cpu(self.device())?),
             Device::CPU,
         ))
     }
 
     pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
-        match (self.device(), device) {
-            (Device::GPU(_), Device::CPU) => pollster::block_on(self.to_cpu()),
-            (Device::CPU, Device::GPU(_)) => todo!(),
+        match (self.device(), &device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu(),
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(&device),
             _ => Ok(self.clone()),
         }
     }
