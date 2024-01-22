@@ -40,9 +40,9 @@ jobs:
           python-version: '3.10.6'
           cache: 'pip'
       - run: pip install -r requirements.txt
-      - name: Setup
+      - name: Install wasm-pack 
         run: |
-          cargo install wasm-pack
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build
         run: cargo build
       - name: Run tests
