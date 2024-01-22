@@ -54,7 +54,7 @@ fn embed_kernels() -> anyhow::Result<()> {
 
         writeln!(
             &mut file,
-            "    m.insert(\"{}\", include_str!(\"{}\"));",
+            "    m.insert(\"{}\", include_str!(r\"{}\"));",
             name,
             path.display()
         )?;

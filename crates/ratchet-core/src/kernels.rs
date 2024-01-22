@@ -7,19 +7,19 @@ lazy_static! {
         m.insert(
             "qgemm_vec4",
             include_str!(
-                "/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/qgemm_vec4.wgsl"
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/qgemm_vec4.wgsl"
             ),
         );
         m.insert(
             "sgemm_scalar",
             include_str!(
-                "/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/sgemm_scalar.wgsl"
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/sgemm_scalar.wgsl"
             ),
         );
         m.insert(
             "add_scalar",
             include_str!(
-                "/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/add_scalar.wgsl"
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/add_scalar.wgsl"
             ),
         );
         m
