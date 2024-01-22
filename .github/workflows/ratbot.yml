@@ -10,16 +10,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install scc
-        run: |
-          sudo snap install scc
-
-      - name: Count lines of code
-        id: loc
-        run: |
-          cd ./crates/ratchet-core
-          LINES=$(scc -irs --exclude-file kernel)
-          echo "::set-output name=lines::$LINES"
+      - name: Get the lines of code.
+        id: scc
+        uses: Adapt-API/scc-docker-action@master
+        with:
+          args: ${{ env.workspace }} -irs --exclude-file kernels
 
       # Step to comment on the PR
       - name: Comment PR
