@@ -14,7 +14,7 @@ jobs:
         id: scc
         uses: iryanbell/scc-docker-action@v1.0.2 
         with:
-          args: ${{ env.workspace }} -irs --exclude-file kernels 
+          args: ${{ env.workspace }} -irs 
 
       # Step to comment on the PR
       - name: Comment PR
