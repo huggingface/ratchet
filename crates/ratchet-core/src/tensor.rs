@@ -487,10 +487,10 @@ mod tests {
             let prg = PyModule::from_code(
                 py,
                 r#"
-    import torch
+import torch
 
-    def matmul(a, b):
-        return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()
                                     "#,
                 "x.py",
                 "x",
