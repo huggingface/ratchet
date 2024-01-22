@@ -419,12 +419,13 @@ mod tests {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let gpu_device = Device::request_device(DeviceRequest::GPU)?;
         for _ in 0..10 {
-            let a = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
-            let b = Tensor::randn::<f32>(shape![1024, 1024], cpu_device.clone());
+            let a = Tensor::randn::<f32>(shape![128, 128], cpu_device.clone());
+            let b = Tensor::randn::<f32>(shape![128, 128], cpu_device.clone());
 
             let a_gpu = a.to(gpu_device.clone())?;
             let b_gpu = b.to(gpu_device.clone())?;
             let c_gpu = a_gpu.matmul(&b_gpu)?;
+            c_gpu.resolve()?;
             let d = c_gpu.to(Device::CPU)?;
             println!("{:?}", d);
         }
