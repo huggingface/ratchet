@@ -10,10 +10,6 @@ use crate::DType;
 pub struct RawCPUBuffer(*mut u8, Layout);
 
 impl RawCPUBuffer {
-    pub fn from_raw_parts(ptr: *mut u8, layout: Layout) -> Self {
-        Self(ptr, layout)
-    }
-
     pub fn into_raw_parts(&self) -> (*mut u8, Layout) {
         (self.0, self.1)
     }
@@ -39,6 +35,7 @@ impl RawCPUBuffer {
             assert!(!ptr.is_null());
             ptr
         } as *mut u8;
+        println!("Unintialized: {:p}", data);
         Self(data, layout)
     }
 }
@@ -53,6 +50,7 @@ impl Clone for RawCPUBuffer {
             assert!(!ptr.is_null());
             ptr
         } as *mut u8;
+        println!("Cloning: {:p} -> {:p}", ptr, data);
         unsafe { ptr.copy_to_nonoverlapping(data, layout.size()) };
         Self(data, layout)
     }
