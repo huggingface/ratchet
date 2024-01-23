@@ -6,9 +6,8 @@ jobs:
   comment:
     runs-on: ubuntu-latest
     steps:
-      # Step to checkout the repository code
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Get the lines of code.
         id: scc
@@ -16,15 +15,19 @@ jobs:
         with:
           args: ${{ env.workspace }} -irs 
 
-      # Step to comment on the PR
+      #TODO:
+      #Add model performance benchmarks
+      #Update comment to avoid noise
+
       - name: Comment PR
         uses: actions/github-script@v6
         with:
           script: |
             const codeReport = `
-              <details><summary>Show Code</summary>
               \`\`\`\n
+              ```
               ${{ steps.scc.outputs.scc }}
+              ```
               \`\`\`
               </details>
             `;
