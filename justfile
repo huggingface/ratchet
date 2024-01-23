@@ -6,4 +6,6 @@ install-pyo3:
 wasm CRATE:
   RUSTFLAGS=--cfg=web_sys_unstable_apis wasm-pack build --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --release
 wasm-test CRATE:
-  RUSTFLAGS=--cfg=web_sys_unstable_apis wasm-pack test --chrome `pwd`/crates/{{CRATE}}
+  RUSTFLAGS="--cfg=web_sys_unstable_apis -Z threads=8" wasm-pack test --chrome `pwd`/crates/{{CRATE}}
+wasm-test-headless CRATE:
+  RUSTFLAGS="--cfg=web_sys_unstable_apis -Z threads=8" wasm-pack test --chrome `pwd`/crates/{{CRATE}}
