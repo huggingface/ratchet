@@ -78,6 +78,7 @@ mod gguf {
     use winnow::binary::u32;
     use winnow::binary::u64;
     use winnow::binary::Endianness;
+    use winnow::error::ContextError;
     use winnow::Parser;
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -109,18 +110,25 @@ mod gguf {
     }
 
     #[inline]
-    fn metadata_kv(input: &mut BytesStream) -> winnow::PResult<u64> {
-        u64(Endianness::Little).parse_next(input)
+    fn metadata_kv<'i>(metadata_kv_count: u64) -> impl Parser<BytesStream<'i>, u64, ContextError> {
+        move |input: &mut BytesStream| u64(Endianness::Little).parse_next(input)
     }
 
     pub fn parse_header(input: &mut BytesStream) -> winnow::PResult<Header> {
         (magic_number, version, tensor_count, metadata_kv_count)
-            .parse_next(input)
-            .map(|(gguf, version, tensor_count, metadata_kv_count)| Header {
-                version,
-                tensor_count,
-                metadata_kv_count,
+            .flat_map(|(gguf, version, tensor_count, metadata_kv_count)| {
+                metadata_kv(metadata_kv_count).map(move |metadata_kv| {
+                    (gguf, version, tensor_count, metadata_kv_count, metadata_kv)
+                })
             })
+            .parse_next(input)
+            .map(
+                |(gguf, version, tensor_count, metadata_kv_count, metadata_kv)| Header {
+                    version,
+                    tensor_count,
+                    metadata_kv_count,
+                },
+            )
     }
 }
 
@@ -149,7 +157,7 @@ mod tests {
     fn test_parse_header() -> anyhow::Result<()> {
         let mut file = std::fs::File::open("./test-data/TheBloke_TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")?;
 
-        let buffer_size = 30;
+        let buffer_size = 40;
         let min_buffer_growth = 100;
         let buffer_growth_factor = 2;
         let mut buffer = circular::Buffer::with_capacity(buffer_size);
