@@ -13,6 +13,8 @@ gloo = "0.11.0"
 wasm-streams = "0.4.0"
 futures-util = { version = "^0.3.28", features = ["io", "sink"] }
 winnow = "0.5.34"
+circular = "0.3.0"
+anyhow.workspace = true
 
 [dependencies.web-sys]
 features = [
