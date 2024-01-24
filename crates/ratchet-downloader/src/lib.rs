@@ -75,49 +75,75 @@ impl Model {
 
 mod gguf {
     use crate::BytesStream;
-    use winnow::binary::u32;
-    use winnow::binary::u64;
-    use winnow::binary::Endianness;
-    use winnow::error::ContextError;
+    use winnow::binary::{u32, u64, u8, Endianness};
+
+    use winnow::error::{AddContext, ContextError, ErrMode, StrContext};
+    use winnow::token::take;
     use winnow::Parser;
 
-    #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct MetadataKv {
+        pub key: String,
+    }
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub struct Header {
         pub version: u32,
         pub tensor_count: u64,
         pub metadata_kv_count: u64,
+        pub metadata_kv: MetadataKv,
     }
 
     #[inline]
-    fn magic_number(input: &mut BytesStream) -> winnow::PResult<()> {
+    fn parse_magic_number(input: &mut BytesStream) -> winnow::PResult<()> {
         // [TODO] Fix endianness
         (71, 71, 85, 70).parse_next(input).map(|_magic_number| ())
     }
 
     #[inline]
-    fn version(input: &mut BytesStream) -> winnow::PResult<u32> {
+    fn parse_version(input: &mut BytesStream) -> winnow::PResult<u32> {
         u32(Endianness::Little).parse_next(input)
     }
 
     #[inline]
-    fn tensor_count(input: &mut BytesStream) -> winnow::PResult<u64> {
+    fn parse_tensor_count(input: &mut BytesStream) -> winnow::PResult<u64> {
         u64(Endianness::Little).parse_next(input)
     }
 
     #[inline]
-    fn metadata_kv_count(input: &mut BytesStream) -> winnow::PResult<u64> {
+    fn parse_metadata_kv_count(input: &mut BytesStream) -> winnow::PResult<u64> {
         u64(Endianness::Little).parse_next(input)
     }
 
+    fn parse_string(input: &mut BytesStream) -> winnow::PResult<String> {
+        u64(Endianness::Little)
+            .flat_map(|count| take(count))
+            .parse_next(input)
+            .and_then(|bytes| {
+                String::from_utf8(bytes.to_vec()).map_err(|err| {
+                    ErrMode::Cut(
+                        ContextError::new()
+                            .add_context(input, StrContext::Label("Failed to parse string")),
+                    )
+                })
+            })
+    }
+
     #[inline]
-    fn metadata_kv<'i>(metadata_kv_count: u64) -> impl Parser<BytesStream<'i>, u64, ContextError> {
-        move |input: &mut BytesStream| u64(Endianness::Little).parse_next(input)
+    fn parse_metadata_kv<'i>(
+        metadata_kv_count: u64,
+    ) -> impl Parser<BytesStream<'i>, MetadataKv, ContextError> {
+        move |input: &mut BytesStream| parse_string.parse_next(input).map(|key| MetadataKv { key })
     }
 
     pub fn parse_header(input: &mut BytesStream) -> winnow::PResult<Header> {
-        (magic_number, version, tensor_count, metadata_kv_count)
+        (
+            parse_magic_number,
+            parse_version,
+            parse_tensor_count,
+            parse_metadata_kv_count,
+        )
             .flat_map(|(gguf, version, tensor_count, metadata_kv_count)| {
-                metadata_kv(metadata_kv_count).map(move |metadata_kv| {
+                parse_metadata_kv(metadata_kv_count).map(move |metadata_kv| {
                     (gguf, version, tensor_count, metadata_kv_count, metadata_kv)
                 })
             })
@@ -127,6 +153,7 @@ mod gguf {
                     version,
                     tensor_count,
                     metadata_kv_count,
+                    metadata_kv,
                 },
             )
     }
@@ -157,7 +184,7 @@ mod tests {
     fn test_parse_header() -> anyhow::Result<()> {
         let mut file = std::fs::File::open("./test-data/TheBloke_TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")?;
 
-        let buffer_size = 40;
+        let buffer_size = 100;
         let min_buffer_growth = 100;
         let buffer_growth_factor = 2;
         let mut buffer = circular::Buffer::with_capacity(buffer_size);
@@ -167,12 +194,11 @@ mod tests {
         let mut input = BytesStream::new(Bytes::new(buffer.data()));
 
         let result = gguf::parse_header(&mut input).map_err(to_std_error)?;
-        let expected = gguf::Header {
-            version: 3,
-            tensor_count: 201,
-            metadata_kv_count: 23,
-        };
-        assert_eq!(result, expected);
+
+        println!("{}", result.metadata_kv.key);
+        assert_eq!(result.version, 3);
+        assert_eq!(result.tensor_count, 201);
+        assert_eq!(result.metadata_kv_count, 23);
         Ok(())
     }
 }
