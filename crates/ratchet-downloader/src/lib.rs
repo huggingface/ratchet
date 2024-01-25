@@ -75,7 +75,6 @@ impl Model {
 
 mod gguf {
     use crate::BytesStream;
-    use futures_util::io::repeat;
     use winnow::binary::{u32, u64, u8, Endianness};
 
     use winnow::combinator::fail;
@@ -92,8 +91,7 @@ mod gguf {
     pub struct Header {
         pub version: u32,
         pub tensor_count: u64,
-        pub metadata_kv_count: u64,
-        pub metadata_kv: MetadataKv,
+        pub metadata_kv: Vec<MetadataKv>,
     }
     #[derive(Clone, Debug)]
     pub enum MetadataValueType {
@@ -248,32 +246,6 @@ mod gguf {
         }
     }
 
-    // #[inline]
-    // fn parse_metadata_value_type<'i>(
-    //     metadata_value_type: u64,
-    // ) -> impl Parser<BytesStream<'i>, MetadataKv, ContextError> {
-    //     move |input: &mut BytesStream| {
-    //         let parser: Parser<BytesStream<'i>, MetadataKv, ContextError> =
-    //             match metadata_value_type {
-    //                 0 => u8.map(MetadataValue::GgufMetadataValueTypeUint8),
-    //                 1 => i8.map(MetadataValue::GgufMetadataValueTypeInt8),
-    //                 2 => u16.map(MetadataValue::GgufMetadataValueTypeUint16),
-    //                 3 => i16.map(MetadataValue::GgufMetadataValueTypeInt16),
-    //                 4 => u32.map(MetadataValue::GgufMetadataValueTypeUint32),
-    //                 5 => i32.map(MetadataValue::GgufMetadataValueTypeInt32),
-    //                 6 => f32.map(MetadataValue::GgufMetadataValueTypeFloat32),
-    //                 7 => bool.map(MetadataValue::GgufMetadataValueTypeBool),
-    //                 8 => parse_string.map(MetadataValue::GgufMetadataValueTypeString),
-    //                 // 9 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_ARRAY),
-    //                 10 => u64.map(MetadataValue::GgufMetadataValueTypeUint64),
-    //                 11 => i64.map(MetadataValue::GgufMetadataValueTypeInt64),
-    //                 12 => f64.map(MetadataValue::GgufMetadataValueTypeFloat64),
-    //                 other => parse_string.map(MetadataValue::GgufMetadataValueTypeString),
-    //             };
-    //         parser.parse_next(input)
-    //     }
-    // }
-
     fn parse_metadata_value_single(input: &mut BytesStream) -> winnow::PResult<MetadataValue> {
         parse_metadata_value_type
             .flat_map(|metadata_value_type| parse_metadata_value(metadata_value_type))
@@ -326,10 +298,13 @@ mod gguf {
             parse_metadata_kv_count,
         )
             .flat_map(|(gguf, version, tensor_count, metadata_kv_count)| {
-                parse_metadata_kv(metadata_kv_count).map(move |metadata_kv| Header {
+                winnow::combinator::repeat(
+                    metadata_kv_count as usize,
+                    parse_metadata_kv(metadata_kv_count),
+                )
+                .map(move |metadata_kv| Header {
                     version,
                     tensor_count,
-                    metadata_kv_count,
                     metadata_kv,
                 })
             })
@@ -359,7 +334,7 @@ mod tests {
     fn test_parse_header() -> anyhow::Result<()> {
         let mut file = std::fs::File::open("./test-data/TheBloke_TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")?;
 
-        let buffer_size = 100;
+        let buffer_size = 10_000_000;
         let min_buffer_growth = 100;
         let buffer_growth_factor = 2;
         let mut buffer = circular::Buffer::with_capacity(buffer_size);
@@ -373,7 +348,6 @@ mod tests {
         println!("{:#?}", result.metadata_kv);
         assert_eq!(result.version, 3);
         assert_eq!(result.tensor_count, 201);
-        assert_eq!(result.metadata_kv_count, 23);
         Ok(())
     }
 }
