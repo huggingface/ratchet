@@ -5,7 +5,7 @@ use bytemuck::NoUninit;
 pub use cpu_buffer::*;
 pub use gpu_buffer::*;
 
-use crate::{Device, DeviceError, QContainer, Shape};
+use crate::{Device, DeviceError, Shape};
 
 use crate::DType;
 

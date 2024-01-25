@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use encase::internal::WriteInto;
 use encase::ShaderType;
 
-use crate::gpu::{BindGroupLayoutHandle, CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
+use crate::gpu::{CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
 use crate::{Binary, CompiledOp, InvariantError, Matmul, RVec, StorageView, Tensor};
 
 #[derive(Debug, Clone)]

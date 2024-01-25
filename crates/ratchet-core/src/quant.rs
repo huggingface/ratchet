@@ -161,6 +161,6 @@ mod tests {
     pub fn test_sint8_qdq() {
         let ground = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
         let quantizer = Quantizer::new(Quantization::SInt8);
-        let quantized = quantizer.sint8_quantize(ground.deep_clone());
+        let _quantized = quantizer.sint8_quantize(ground.deep_clone());
     }
 }
