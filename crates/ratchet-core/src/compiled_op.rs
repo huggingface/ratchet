@@ -1,5 +1,5 @@
 use crate::gpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutHandle, ComputePipelineHandle,
+    BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle,
     GpuBindGroup, WgpuDevice, WorkgroupCount,
 };
 use crate::{drvec, rvec, RVec, Tensor};

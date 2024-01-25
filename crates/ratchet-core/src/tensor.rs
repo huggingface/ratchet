@@ -7,7 +7,7 @@ use crate::{BinaryOp, LazyOp};
 
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
-use std::num::NonZeroU64;
+
 use std::sync::Arc;
 
 #[cfg(feature = "rand")]
@@ -390,7 +390,7 @@ impl Tensor {
     pub fn deep_clone(&self) -> Tensor {
         let storage_guard = self.storage();
         let storage = storage_guard.as_ref().unwrap();
-        let cloned_storage = storage.deep_clone(&self.device()).unwrap();
+        let cloned_storage = storage.deep_clone(self.device()).unwrap();
         Tensor::new(
             LazyOp::Const,
             self.view.clone(),
