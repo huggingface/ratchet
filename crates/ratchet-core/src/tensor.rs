@@ -279,13 +279,11 @@ impl Tensor {
                 LazyOp::Const => {}
                 LazyOp::Binary(b) => {
                     let sources = b.srcs();
-                    stack.push(sources[0].clone());
-                    stack.push(sources[1].clone());
+                    stack.extend(sources.into_iter().cloned());
                 }
                 LazyOp::Matmul(m) => {
                     let sources = m.srcs();
-                    stack.push(sources[0].clone());
-                    stack.push(sources[1].clone());
+                    stack.extend(sources.into_iter().cloned());
                 }
                 _ => unimplemented!(),
             }
@@ -295,10 +293,16 @@ impl Tensor {
         visited
     }
 
-    pub fn compile(&self, uniform: &mut CpuUniform, device: &WgpuDevice) -> Option<CompiledOp> {
+    pub fn compile(
+        &self,
+        uniform: &mut CpuUniform,
+        device: &WgpuDevice,
+        can_inplace: bool,
+    ) -> Option<CompiledOp> {
         match self.op() {
-            LazyOp::Binary(b) => b.compile(self, uniform, device).ok(),
-            LazyOp::Matmul(m) => m.compile(self, uniform, device).ok(),
+            LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -312,20 +316,26 @@ impl Tensor {
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
-        for t in execution_order {
+        for (tix, t) in execution_order.iter().enumerate() {
             if !t.resolved() {
                 let id = t.id();
                 let pooled_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
                 assert!(t.device().is_gpu());
-
-                let storage = Storage::GPU(GPUBuffer {
+                let storage = GPUBuffer {
                     inner: pooled_buffer.clone(),
                     alignment: t.dt().size_of(),
-                });
-                t.update_storage(storage);
+                };
+                t.update_storage(Storage::GPU(storage));
             }
 
-            if let Some(compiled_op) = t.compile(&mut uniform, device) {
+            let can_inplace = t.op().supports_inplace()
+                && execution_order[tix + 1..]
+                    .iter()
+                    .filter(|t2| t2.op.srcs().contains(&t))
+                    .count()
+                    <= 1;
+
+            if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
             }
         }
