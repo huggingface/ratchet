@@ -174,13 +174,17 @@ pub trait GGMLCompatible: Sized {
     fn load_ggml<R: BufRead + Seek>(reader: &mut R) -> Result<GGMLModel<Self>, LoadError> {
         GGMLLoader::load(reader)
     }
+
     //Writing is optional
     fn write_header<W: std::io::Write>(_: &Self::ModelHeader, _: &mut W) -> std::io::Result<()> {
-        unimplemented!()
+        unimplemented!("Writing GGML files is unimplemented for this model")
     }
 
-    fn write_ggml<W: std::io::Write>(_: &GGMLModel<Self>, _: &mut W) -> std::io::Result<()> {
-        unimplemented!("Writing GGML files is unimplemented for this model")
+    fn write_ggml<W: std::io::Write>(
+        model: &GGMLModel<Self>,
+        writer: &mut W,
+    ) -> std::io::Result<()> {
+        GGMLWriter::write(writer, model)
     }
 }
 
@@ -195,6 +199,6 @@ impl GGMLWriter {
         for (_name, _tensor) in &model.tensors {
             //Self::write_single(writer, tensor)?;
         }
-        todo!()
+        Ok(())
     }
 }

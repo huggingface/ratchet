@@ -42,7 +42,7 @@ impl ComputePipelinePool {
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
             let kernel_key = desc.build_kernel_key();
-            let shader = KERNELS.get(kernel_key.as_str()).unwrap();
+            let shader = KERNELS.get(kernel_key.as_str()).expect("Kernel not found");
             let label = Some(kernel_key.as_str());
 
             let shader_module_desc = wgpu::ShaderModuleDescriptor {

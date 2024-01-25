@@ -22,6 +22,18 @@ lazy_static! {
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/add_scalar.wgsl"
             ),
         );
+        m.insert(
+            "sgemm_vec2",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/sgemm_vec2.wgsl"
+            ),
+        );
+        m.insert(
+            "sgemm_vec4",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/sgemm_vec4.wgsl"
+            ),
+        );
         m
     };
 }

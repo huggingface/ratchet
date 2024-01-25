@@ -7,13 +7,13 @@ pub struct Whisper;
 
 pub struct WhisperGGMLHeader {
     pub format: GGMLFormat,
-    pub hparams: HParams,
+    pub hparams: HyperParameters,
     pub filters: MelFilters,
     pub n_tokens: i32,
 }
 
 #[derive(Debug)]
-pub struct HParams {
+pub struct HyperParameters {
     pub n_vocab: i32,
     pub n_audio_ctx: i32,
     pub n_audio_state: i32,
@@ -27,7 +27,7 @@ pub struct HParams {
     pub ftype: i32,
 }
 
-impl HParams {
+impl HyperParameters {
     pub fn read<R: BufRead>(reader: &mut R) -> Result<Self, std::io::Error> {
         let n_vocab = reader.read_i32::<LittleEndian>()?;
         let n_audio_ctx = reader.read_i32::<LittleEndian>()?;
@@ -105,7 +105,7 @@ impl GGMLCompatible for Whisper {
 
     fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError> {
         let format = GGMLFormat::read(reader)?;
-        let hparams = HParams::read(reader)?;
+        let hparams = HyperParameters::read(reader)?;
         let filters = MelFilters::read(reader)?;
         let n_tokens = reader.read_i32::<LittleEndian>()?;
         for _ in 0..n_tokens {

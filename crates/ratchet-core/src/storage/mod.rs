@@ -16,6 +16,13 @@ pub enum Storage {
 }
 
 impl Storage {
+    pub unsafe fn from_quantized<T: NoUninit>(data: &[T], device: &Device) -> Self {
+        match device {
+            Device::CPU => Storage::CPU(unsafe { CPUBuffer::from_quantized(data) }),
+            _ => todo!(),
+        }
+    }
+
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &Device) -> Self {
         match device {
             Device::CPU => Storage::CPU(CPUBuffer::from_slice(data, shape)),
@@ -44,10 +51,16 @@ impl Storage {
         }
     }
 
-    pub fn deep_clone(&self) -> Result<Self, DeviceError> {
+    pub fn deep_clone(&self, device: &Device) -> Result<Self, DeviceError> {
         match self {
-            Storage::CPU(c) => Ok(Storage::CPU(c.deep_clone()?)),
-            _ => todo!(),
+            Storage::CPU(c) => {
+                assert!(device.is_cpu());
+                Ok(Storage::CPU(c.deep_clone()?))
+            }
+            Storage::GPU(g) => {
+                let wgpu_device = device.try_gpu()?;
+                Ok(Storage::GPU(g.deep_clone(wgpu_device)))
+            }
         }
     }
 }

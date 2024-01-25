@@ -5,8 +5,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{
-        BindGroupLayoutDescriptor, BindGroupLayoutHandle, ComputePipelineDescriptor, CpuUniform,
-        PipelineLayoutDescriptor, WgpuDevice, WorkgroupCount,
+        BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
+        WgpuDevice, WorkgroupCount,
     },
     rvec, wgc, CompiledOp, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError,
     RVec, Shape, StorageView, Tensor,
@@ -228,10 +228,6 @@ impl Operation for Matmul {
         rvec![&self.lhs, &self.rhs]
     }
 
-    fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError> {
-        Ok(device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())?)
-    }
-
     fn compile(
         &self,
         dst: &Tensor,
@@ -243,8 +239,7 @@ impl Operation for Matmul {
         let C = dst;
         let spec = MatmulSpec::new(A, B, C);
 
-        //let kernel_element = spec.select_kernel_element();
-        let kernel_element = KernelElement::Scalar;
+        let kernel_element = spec.select_kernel_element();
 
         let M = spec.m() as u32;
         let N = spec.n() as u32;
@@ -269,17 +264,29 @@ impl Operation for Matmul {
         let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
         let group_y = WorkgroupCount::div_ceil(spec.n(), 8 * kernel_element.as_size()) as u32;
 
-        let storage_layout = self.storage_layout(device)?;
+        let storage_layout_descriptor = match (A.dt(), B.dt()) {
+            (DType::F32, DType::F32) => BindGroupLayoutDescriptor::binary(),
+            (DType::F32, DType::WQ8) => BindGroupLayoutDescriptor::ternary(),
+            _ => panic!("Unsupported dtypes"),
+        };
+        let storage_layout = device.get_or_create_bind_group_layout(&storage_layout_descriptor)?;
+
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
         let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
+        let kernel_name = match (A.dt(), B.dt()) {
+            (DType::F32, DType::F32) => "sgemm",
+            (DType::F32, DType::WQ8) => "qgemm",
+            _ => panic!("Unsupported dtypes"),
+        };
+
         let pipeline_handle =
             device.get_or_create_compute_pipeline(&ComputePipelineDescriptor {
                 pipeline_layout,
-                kernel_name: "sgemm",
+                kernel_name,
                 kernel_element,
             })?;
 
@@ -299,13 +306,99 @@ impl Operation for Matmul {
     }
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        //TODO: THIS IS WRONG
+        //TODO: THIS IS WRONG 🚨
         Ok(srcs[0].view().clone())
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
         Enforcer::check_input_arity(srcs, 2)?;
-        Enforcer::check_dtype_match(srcs)?;
+        let allowed_pairs = [(DType::F32, DType::F32), (DType::F32, DType::WQ8)];
+        if !allowed_pairs.contains(&(srcs[0].dt(), srcs[1].dt())) {
+            //TODO: invariantError
+            panic!("Failed to validate DTypes")
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use numpy::PyArrayDyn;
+    use pyo3::{types::PyModule, Python};
+
+    use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
+
+    use super::*;
+
+    #[test]
+    fn test_sgemm() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
+        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
+            let prg = PyModule::from_code(
+                py,
+                r#"
+import torch
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#,
+                "x.py",
+                "x",
+            )?;
+            let py_a = a.to_py::<f32>(&py);
+            let py_b = b.to_py::<f32>(&py);
+            let py_c = prg
+                .getattr("matmul")?
+                .call1((py_a, py_b))?
+                .extract::<&PyArrayDyn<f32>>()?;
+            Ok(Tensor::from(py_c))
+        });
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let a_gpu = a.to(device.clone())?;
+        let b_gpu = b.to(device.clone())?;
+        let c_gpu = a_gpu.matmul(&b_gpu)?;
+        c_gpu.resolve()?;
+        let d_gpu = c_gpu.to(Device::CPU)?;
+        ground?.all_close(&d_gpu, 1e-4, 1e-4)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_qgemm() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![2048, 2048], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![2048, 2048], cpu_device.clone());
+        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
+            let prg = PyModule::from_code(
+                py,
+                r#"
+import torch
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#,
+                "x.py",
+                "x",
+            )?;
+            let py_a = a.to_py::<f32>(&py);
+            let py_b = b.to_py::<f32>(&py);
+            let py_c = prg
+                .getattr("matmul")?
+                .call1((py_a, py_b))?
+                .extract::<&PyArrayDyn<f32>>()?;
+            Ok(Tensor::from(py_c))
+        });
+
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let bq = quantizer.sint8_quantize(b);
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let a_gpu = a.to(device.clone())?;
+        let b_gpu = bq.to(device.clone())?;
+        let c_gpu = a_gpu.matmul(&b_gpu)?;
+        c_gpu.resolve()?;
+        let ours = c_gpu.to(Device::CPU)?;
+        println!("RATCHET WQ8\n{:?}\n", ours);
+        println!("PYTORCH FP32:\n{:?}", ground);
+        ground?.all_close(&ours, 1e1, 1e-1)?;
+
         Ok(())
     }
 }

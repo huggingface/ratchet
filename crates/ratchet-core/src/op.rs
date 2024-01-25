@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use encase::internal::WriteInto;
 use encase::ShaderType;
 
-use crate::gpu::{BindGroupLayoutHandle, CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
+use crate::gpu::{CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
 use crate::{Binary, CompiledOp, InvariantError, Matmul, RVec, StorageView, Tensor};
 
 #[derive(Debug, Clone)]
@@ -82,8 +82,6 @@ pub trait Operation: Debug + 'static {
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
     ) -> Result<CompiledOp, OperationError>;
-
-    fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError>;
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
 
