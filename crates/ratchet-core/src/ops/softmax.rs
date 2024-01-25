@@ -105,3 +105,12 @@ impl Operation for Softmax {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    pub fn softmax() -> anyhow::Result<()> {
+        Ok(())
+    }
+}

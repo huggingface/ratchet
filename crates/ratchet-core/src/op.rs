@@ -32,7 +32,12 @@ impl LazyOp {
     }
 
     pub fn supports_inplace(&self) -> bool {
-        lazy_op_delegate!(self, supports_inplace)
+        match self {
+            LazyOp::Binary(b) => b.supports_inplace(),
+            LazyOp::Matmul(m) => m.supports_inplace(),
+            LazyOp::Softmax(s) => s.supports_inplace(),
+            _ => false,
+        }
     }
 }
 
