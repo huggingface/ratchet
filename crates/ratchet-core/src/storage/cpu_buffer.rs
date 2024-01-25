@@ -1,6 +1,9 @@
 use bytemuck::{NoUninit, Pod};
 
-use crate::{storage::DeviceStorage, Device, DeviceError, GPUBuffer, Shape, TensorDType};
+use crate::{
+    storage::DeviceStorage, Device, DeviceError, GPUBuffer, QContainer, Shape, TensorDType,
+    WQ8Container,
+};
 
 use std::{alloc::Layout, fmt::Debug, sync::Arc};
 
@@ -138,7 +141,7 @@ impl DeviceStorage for CPUBuffer {
             DType::F32 => dump_inner(bytemuck::cast_slice::<u8, f32>(bytes), full),
             DType::I32 => dump_inner(bytemuck::cast_slice::<u8, i32>(bytes), full),
             DType::U32 => dump_inner(bytemuck::cast_slice::<u8, u32>(bytes), full),
-            _ => todo!(),
+            _ => unimplemented!("Unable to print quantized datatype"),
         }
     }
 }

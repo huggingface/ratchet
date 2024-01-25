@@ -5,7 +5,7 @@ use bytemuck::NoUninit;
 pub use cpu_buffer::*;
 pub use gpu_buffer::*;
 
-use crate::{Device, DeviceError, Shape};
+use crate::{Device, DeviceError, QContainer, Shape};
 
 use crate::DType;
 
@@ -51,10 +51,16 @@ impl Storage {
         }
     }
 
-    pub fn deep_clone(&self) -> Result<Self, DeviceError> {
+    pub fn deep_clone(&self, device: &Device) -> Result<Self, DeviceError> {
         match self {
-            Storage::CPU(c) => Ok(Storage::CPU(c.deep_clone()?)),
-            _ => todo!(),
+            Storage::CPU(c) => {
+                assert!(device.is_cpu());
+                Ok(Storage::CPU(c.deep_clone()?))
+            }
+            Storage::GPU(g) => {
+                let wgpu_device = device.try_gpu()?;
+                Ok(Storage::GPU(g.deep_clone(wgpu_device)))
+            }
         }
     }
 }

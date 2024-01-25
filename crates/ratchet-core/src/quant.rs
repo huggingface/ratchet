@@ -48,20 +48,20 @@ impl Quantizer {
             quantized_matrix[i / pack_size] = packed_value as u32;
             absmax_matrix[i / group_size] = block_absmax;
         }
+        // | u32 ------ u32 | f32 ------ f32 |
         quantized_matrix.append(&mut unsafe { std::mem::transmute(absmax_matrix) });
-        println!("Quantized matrix length: {}", quantized_matrix.len());
         unsafe {
             Tensor::from_quantized(
                 quantized_matrix,
                 tensor.shape().clone(),
-                DType::PQ8,
+                DType::WQ8,
                 Device::CPU,
             )
         }
     }
 
     pub fn sint8_dequantize(&self, quantized: Tensor) -> Tensor {
-        assert!(quantized.dt() == DType::PQ8);
+        assert!(quantized.dt() == DType::WQ8);
         let numel = quantized.shape().numel();
         let packed_numel = numel / self.format.pack_size() + numel / self.format.group_size();
         let pack_size = self.format.pack_size();
@@ -163,7 +163,7 @@ mod tests {
         let ground = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
         let quantizer = Quantizer::new(Quantization::SInt8);
         let quantized = quantizer.sint8_quantize(ground.deep_clone());
-        let dequantized = quantizer.sint8_dequantize(quantized);
+        println!("{:?}", quantized);
     }
 
     /*

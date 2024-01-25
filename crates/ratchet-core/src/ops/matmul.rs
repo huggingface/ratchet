@@ -8,8 +8,8 @@ use crate::{
         BindGroupLayoutDescriptor, BindGroupLayoutHandle, ComputePipelineDescriptor, CpuUniform,
         PipelineLayoutDescriptor, WgpuDevice, WorkgroupCount,
     },
-    rvec, wgc, CompiledOp, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError,
-    RVec, Shape, StorageView, Tensor,
+    rvec, wgc, CompiledOp, DType, Enforcer, InvariantError, KernelElement, OpMetadata, Operation,
+    OperationError, RVec, Shape, StorageView, Tensor,
 };
 
 // Defines a matrix multiplication operation.
@@ -243,8 +243,7 @@ impl Operation for Matmul {
         let C = dst;
         let spec = MatmulSpec::new(A, B, C);
 
-        //let kernel_element = spec.select_kernel_element();
-        let kernel_element = KernelElement::Scalar;
+        let kernel_element = spec.select_kernel_element();
 
         let M = spec.m() as u32;
         let N = spec.n() as u32;
@@ -299,13 +298,17 @@ impl Operation for Matmul {
     }
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        //TODO: THIS IS WRONG
+        //TODO: THIS IS WRONG 🚨
         Ok(srcs[0].view().clone())
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
         Enforcer::check_input_arity(srcs, 2)?;
-        Enforcer::check_dtype_match(srcs)?;
+        let allowed_pairs = [(DType::F32, DType::F32), (DType::F32, DType::WQ8)];
+        if !allowed_pairs.contains(&(srcs[0].dt(), srcs[1].dt())) {
+            //TODO: invariantError
+            panic!("Failed to validate DTypes")
+        }
         Ok(())
     }
 }
@@ -315,7 +318,7 @@ mod tests {
     use numpy::PyArrayDyn;
     use pyo3::{types::PyModule, Python};
 
-    use crate::{shape, Device, DeviceRequest};
+    use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
 
     use super::*;
 
@@ -357,7 +360,17 @@ def matmul(a, b):
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let bq = quantizer.sint8_quantize(b);
+        println!("BQ dt: {:?}", bq.dt());
 
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let a_gpu = a.to(device.clone())?;
+        let b_gpu = bq.to(device.clone())?;
+        let c_gpu = a_gpu.matmul(&b_gpu)?;
+        c_gpu.resolve()?;
+        let d_gpu = c_gpu.to(Device::CPU)?;
+        println!("D: {:?}", d_gpu);
         Ok(())
     }
 }

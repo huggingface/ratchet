@@ -1,4 +1,4 @@
-use crate::{RVec, Strides};
+use crate::RVec;
 use encase::impl_wrapper;
 use std::ops::RangeTo;
 
@@ -67,12 +67,6 @@ impl Shape {
 
     pub fn slice(&self, range: std::ops::Range<usize>) -> Self {
         Shape(self.0[range].to_vec().into())
-    }
-
-    pub fn is_contiguous(&self, strides: &Strides) -> bool {
-        //I have a struct Shape here
-        //I have a struct Strides here
-        //I want to check if the shape is contiguous
     }
 }
 
