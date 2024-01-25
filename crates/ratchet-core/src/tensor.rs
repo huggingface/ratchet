@@ -1,12 +1,13 @@
-use crate::gpu::{CpuUniform, WgpuDevice};
+use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer, Operation,
-    OperationError, QContainer, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
+    Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 #[cfg(feature = "rand")]
@@ -230,6 +231,30 @@ impl Tensor {
         let strides = Strides::from(&shape);
         let meta = StorageView::new(shape, dt, strides);
         Tensor::new(LazyOp::Const, meta, Some(storage), device)
+    }
+
+    /// # Bindings
+    ///
+    /// Only applicable to GPU tensors.
+    /// Generates the bind group entries required to bind the tensor to a kernel.
+    /// Quantized tensors may use multiple bind groups.
+    /// Unquantized tensors should only use a single bind group.
+    pub(crate) fn bindings(&self) -> RVec<BindGroupEntry> {
+        assert!(self.device().is_gpu());
+        let storage_guard = self.storage();
+        let storage = storage_guard.as_ref().unwrap();
+        let gpu_buf = storage.try_gpu().unwrap();
+        let handle = gpu_buf.inner().handle;
+        let segments = self.dt().segments(gpu_buf.inner().size() as usize);
+        segments.iter().fold(rvec![], |mut entries, segment| {
+            let entry = BindGroupEntry {
+                handle,
+                offset: segment.offset,
+                size: segment.size,
+            };
+            entries.push(entry);
+            entries
+        })
     }
 
     /// Converts the tensor into a 1D vector.

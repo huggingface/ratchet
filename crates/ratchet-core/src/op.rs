@@ -83,8 +83,6 @@ pub trait Operation: Debug + 'static {
         device: &WgpuDevice,
     ) -> Result<CompiledOp, OperationError>;
 
-    fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError>;
-
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
 
     /// # Output Inference

@@ -228,10 +228,6 @@ impl Operation for Matmul {
         rvec![&self.lhs, &self.rhs]
     }
 
-    fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError> {
-        Ok(device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())?)
-    }
-
     fn compile(
         &self,
         dst: &Tensor,
@@ -268,17 +264,29 @@ impl Operation for Matmul {
         let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
         let group_y = WorkgroupCount::div_ceil(spec.n(), 8 * kernel_element.as_size()) as u32;
 
-        let storage_layout = self.storage_layout(device)?;
+        let storage_layout_descriptor = match (A.dt(), B.dt()) {
+            (DType::F32, DType::F32) => BindGroupLayoutDescriptor::binary(),
+            (DType::F32, DType::WQ8) => BindGroupLayoutDescriptor::ternary(),
+            _ => panic!("Unsupported dtypes"),
+        };
+        let storage_layout = device.get_or_create_bind_group_layout(&storage_layout_descriptor)?;
+
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
         let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
+        let kernel_name = match (A.dt(), B.dt()) {
+            (DType::F32, DType::F32) => "sgemm",
+            (DType::F32, DType::WQ8) => "qgemm",
+            _ => panic!("Unsupported dtypes"),
+        };
+
         let pipeline_handle =
             device.get_or_create_compute_pipeline(&ComputePipelineDescriptor {
                 pipeline_layout,
-                kernel_name: "sgemm",
+                kernel_name,
                 kernel_element,
             })?;
 

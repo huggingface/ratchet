@@ -61,10 +61,6 @@ impl Operation for Binary {
         rvec![&self.lhs, &self.rhs]
     }
 
-    fn storage_layout(&self, device: &WgpuDevice) -> Result<BindGroupLayoutHandle, OperationError> {
-        Ok(device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())?)
-    }
-
     //TODO: we can refactor this into composite methods and share a single `compile` impl on the
     //trait
     fn compile(
@@ -79,7 +75,8 @@ impl Operation for Binary {
         let offset = uniform.write(&BinaryMeta { M, N })?;
         let wgcx = WorkgroupCount::div_ceil(M as _, 64);
 
-        let storage_layout = self.storage_layout(device)?;
+        let storage_layout =
+            device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())?;
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
         let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {

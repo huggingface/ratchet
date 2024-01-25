@@ -1,4 +1,7 @@
+use std::num::NonZeroU64;
+
 use half::{bf16, f16};
+use wgpu::{BufferAddress, BufferSize};
 
 use crate::{rvec, RVec};
 
@@ -27,6 +30,35 @@ impl DType {
             DType::WQ8 => 4, //Only works because they're both 4 bytes
         }
     }
+
+    pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
+        match self {
+            DType::WQ8 => {
+                let weights_size = total_bytes / 5 * 4;
+                let weights = BufferSegment {
+                    offset: 0,
+                    size: Some(NonZeroU64::new(weights_size as u64).unwrap()),
+                };
+                let absmax = BufferSegment {
+                    offset: weights_size as u64,
+                    size: Some(NonZeroU64::new(total_bytes as u64 - weights_size as u64).unwrap()),
+                };
+                rvec![weights, absmax]
+            }
+            _ => {
+                let size = NonZeroU64::new(total_bytes as u64).unwrap();
+                rvec![BufferSegment {
+                    offset: 0,
+                    size: Some(size),
+                }]
+            }
+        }
+    }
+}
+
+pub struct BufferSegment {
+    pub offset: BufferAddress,
+    pub size: Option<BufferSize>,
 }
 
 pub trait TensorDType:
