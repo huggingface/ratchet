@@ -28,7 +28,7 @@ struct Meta {
 @group(1) @binding(0)
 var<uniform> metadata: Meta;
 
-@compute @workgroup_size({{ workgroup_size_x }}, {{ workgroup_size_y }}, {{ workgroup_size_z }})
+@compute @workgroup_size(8,8,1)
 fn main(
   @builtin(global_invocation_id) global_id: vec3<u32>
 ) {

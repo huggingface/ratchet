@@ -1,4 +1,9 @@
+use std::num::NonZeroU64;
+
 use half::{bf16, f16};
+use wgpu::{BufferAddress, BufferSize};
+
+use crate::{rvec, RVec};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -9,6 +14,7 @@ pub enum DType {
     F32,
     I32,
     U32,
+    WQ8, //Packed Q8 (|--4xQ8(u32)--| |--f32--|)
 }
 
 impl DType {
@@ -21,7 +27,42 @@ impl DType {
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
+            DType::WQ8 => 4, //Only works because they're both 4 bytes
         }
+    }
+
+    pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
+        match self {
+            DType::WQ8 => {
+                let weights_size = total_bytes / 5 * 4;
+                assert!(weights_size % 256 == 0); //storage buffer alignment
+                let weights = BufferSegment::new(0, Some(weights_size as u64));
+
+                let absmax_size = total_bytes - weights_size;
+                assert!(absmax_size % 256 == 0); //storage buffer alignment
+                let absmax = BufferSegment::new(weights_size as u64, Some(absmax_size as u64));
+                rvec![weights, absmax]
+            }
+            _ => {
+                rvec![BufferSegment::new(0, Some(total_bytes as u64))]
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct BufferSegment {
+    pub offset: BufferAddress,
+    pub size: Option<BufferSize>,
+}
+
+impl BufferSegment {
+    pub fn new(offset: BufferAddress, size: Option<u64>) -> Self {
+        if let Some(size) = size {
+            assert!(size % 256 == 0); //storage buffer alignment
+        }
+        let size = size.map(NonZeroU64::new).unwrap();
+        Self { offset, size }
     }
 }
 

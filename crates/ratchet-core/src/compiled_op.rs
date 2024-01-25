@@ -1,13 +1,14 @@
 use crate::gpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutHandle, ComputePipelineHandle,
-    GpuBindGroup, WgpuDevice, WorkgroupCount,
+    BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle, GpuBindGroup, WgpuDevice,
+    WorkgroupCount,
 };
 use crate::{drvec, rvec, RVec, Tensor};
 use derive_new::new;
 use wgpu::DynamicOffset;
 
 //Compiled op represents a single kernel invocation
-//TODO: We need to be more general here, enum with encoder.copy_buffer_to_buffer as a COPY
+//TODO: We need to be more general here, enum with encoder.copy_buffer_to_buffer as a COPY, and
+//compiledOp as compute
 #[derive(Debug, new)]
 pub struct CompiledOp {
     pipeline_handle: ComputePipelineHandle,
@@ -19,30 +20,21 @@ pub struct CompiledOp {
 impl CompiledOp {
     const MAX_BINDINGS_PER_GROUP: usize = 4;
 
+    //TODO: Should return a Result
     pub fn create_storage_bind_groups(
         srcs: &[&Tensor],
         dst: &Tensor,
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
     ) -> RVec<GpuBindGroup> {
-        let mut binding_counter: usize = 0;
         let mut bind_group_entries = drvec![];
-
         for tensor in srcs.iter().chain(std::iter::once(&dst)) {
-            let storage_guard = tensor.storage();
-            let storage = storage_guard.as_ref().unwrap();
-            let gpu_buf = &storage.try_gpu().unwrap().inner;
-            bind_group_entries.push(BindGroupEntry {
-                handle: gpu_buf.handle,
-                offset: 0,
-                size: Some(gpu_buf.size().try_into().unwrap()),
-            });
-            binding_counter += 1;
+            bind_group_entries.append(&mut tensor.bindings());
         }
 
         let mut storage_groups = rvec![];
         for (group_index, bind_group_layout) in bind_group_layouts.iter().enumerate() {
-            let group_range = Self::group_range(group_index, binding_counter);
+            let group_range = Self::group_range(group_index, bind_group_entries.len());
             let entries = bind_group_entries[group_range].into();
             let layout = *bind_group_layout;
 

@@ -34,7 +34,7 @@ jobs:
         with:
           tool: cargo-nextest
 
-      - name: (linux) install llvmpipe, lavapipe, vulkan sdk, alsa
+      - name: (linux) install lavapipe, vulkan sdk, alsa
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
