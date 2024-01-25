@@ -366,8 +366,9 @@ def matmul(a, b):
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![2048, 2048], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![2048, 2048], cpu_device.clone());
+        println!("B: \n{:?}\n", b);
         let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
             let prg = PyModule::from_code(
                 py,
@@ -394,9 +395,11 @@ def matmul(a, b):
         let b_gpu = bq.to(device.clone())?;
         let c_gpu = a_gpu.matmul(&b_gpu)?;
         c_gpu.resolve()?;
-        let d_gpu = c_gpu.to(Device::CPU)?;
-        println!("D: {:?}", d_gpu);
-        println!("G: {:?}", ground?);
+        let ours = c_gpu.to(Device::CPU)?;
+        println!("RATCHET WQ8\n{:?}\n", ours);
+        println!("PYTORCH FP32:\n{:?}", ground);
+        ground?.all_close(&ours, 1e1, 1e-1)?;
+
         Ok(())
     }
 }

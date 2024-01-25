@@ -56,6 +56,7 @@ impl DType {
     }
 }
 
+#[derive(Debug)]
 pub struct BufferSegment {
     pub offset: BufferAddress,
     pub size: Option<BufferSize>,

@@ -28,7 +28,7 @@ impl Quantizer {
         let group_size = self.format.group_size();
 
         let mut quantized_matrix = vec![0u32; numel / pack_size];
-        let mut absmax_matrix = vec![0.; numel / group_size];
+        let mut absmax_matrix = vec![0f32; numel / group_size];
 
         let sf = 127.0f32;
         let mut block_absmax = f32::NEG_INFINITY;
@@ -48,7 +48,6 @@ impl Quantizer {
             quantized_matrix[i / pack_size] = packed_value as u32;
             absmax_matrix[i / group_size] = block_absmax;
         }
-        // | u32 ------ u32 | f32 ------ f32 |
         quantized_matrix.append(&mut unsafe { std::mem::transmute(absmax_matrix) });
         unsafe {
             Tensor::from_quantized(
@@ -163,22 +162,5 @@ mod tests {
         let ground = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
         let quantizer = Quantizer::new(Quantization::SInt8);
         let quantized = quantizer.sint8_quantize(ground.deep_clone());
-        println!("{:?}", quantized);
     }
-
-    /*
-    #[test]
-    pub fn test_sint4_qdq() {
-        let matrix = vec![
-            0.1, -0.1, 0.6, -0.5, 1.0, -1.0, 1.2, -1.2, 0.1, -0.1, 0.5, -0.5, 1.0, -1.0, 1.2, -1.2,
-        ];
-        let (quantized_matrix, absmax) = super::sint4_quantize(&matrix, 4, 4);
-        assert_eq!(quantized_matrix.len(), 2);
-        assert_eq!(quantized_matrix, vec![2544293105, 2544292849]);
-        let dequantized_matrix = super::sint4_dequantize(&quantized_matrix, absmax, 4, 4);
-        for i in 0..matrix.len() {
-            assert!((matrix[i] - dequantized_matrix[i]).abs() < 0.1);
-        }
-    }
-    */
 }
