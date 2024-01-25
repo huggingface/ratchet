@@ -233,6 +233,7 @@ impl Operation for Matmul {
         dst: &Tensor,
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
+        _can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
         let A = &self.lhs;
         let B = &self.rhs;

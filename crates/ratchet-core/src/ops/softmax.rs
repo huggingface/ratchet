@@ -4,80 +4,70 @@ use encase::ShaderType;
 use crate::{
     gpu::{
         BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-        WgpuDevice, WorkgroupCount,
+        WgpuDevice,
     },
     rvec, wgc, CompiledOp, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec,
     StorageView, Tensor,
 };
 
-#[derive(Debug, Clone)]
-pub enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-}
-
-impl BinaryOp {
-    pub fn kernel_key(&self) -> &'static str {
-        match self {
-            BinaryOp::Add => "add",
-            BinaryOp::Sub => "sub",
-            BinaryOp::Mul => "mul",
-            BinaryOp::Div => "div",
-        }
-    }
-}
-
 #[derive(new, Debug, Clone)]
-pub struct Binary {
-    lhs: Tensor,
-    rhs: Tensor,
-    op: BinaryOp,
+pub struct Softmax {
+    input: Tensor,
+    dim: usize,
 }
 
-impl Binary {
-    pub fn op(&self) -> &BinaryOp {
-        &self.op
-    }
-}
-
-#[derive(Debug, ShaderType)]
-pub struct BinaryMeta {
+#[derive(Debug, derive_new::new, ShaderType)]
+pub struct SoftmaxMeta {
     M: u32,
     N: u32,
+    ND4: u32,
 }
 
-impl OpMetadata for BinaryMeta {}
+impl OpMetadata for SoftmaxMeta {}
 
-impl Operation for Binary {
-    type Meta = BinaryMeta;
+impl Operation for Softmax {
+    type Meta = SoftmaxMeta;
 
     fn name(&self) -> &'static str {
-        "Binary"
+        "Softmax"
+    }
+
+    fn supports_inplace(&self) -> bool {
+        true
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.lhs, &self.rhs]
+        rvec![&self.input]
     }
 
-    //TODO: we can refactor this into composite methods and share a single `compile` impl on the
-    //trait
     fn compile(
         &self,
         dst: &Tensor,
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
-        _can_inplace: bool,
+        can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
-        let lhs = &self.lhs;
-        let M = lhs.shape()[0] as u32;
-        let N = lhs.shape()[1] as u32;
-        let offset = uniform.write(&BinaryMeta { M, N })?;
-        let wgcx = WorkgroupCount::div_ceil(M as _, 64);
+        let input = &self.input;
+        let M = input.shape()[self.dim - 1] as u32;
+        let N = input.shape()[self.dim] as u32;
+        let offset = uniform.write(&SoftmaxMeta { M, N, ND4: N / 4 })?;
+        let stacks = input.shape().slice(0..self.dim - 1).numel();
+        let workgroup_count = wgc![M as _, stacks as _, 1];
 
-        let storage_layout =
-            device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::binary())?;
+        let kernel_element = if N % 4 == 0 {
+            KernelElement::Vec4
+        } else if N % 2 == 0 {
+            KernelElement::Vec2
+        } else {
+            KernelElement::Scalar
+        };
+
+        let storage_layout_desc = if can_inplace {
+            BindGroupLayoutDescriptor::unary_inplace()
+        } else {
+            BindGroupLayoutDescriptor::unary()
+        };
+        let storage_layout = device.get_or_create_bind_group_layout(&storage_layout_desc)?;
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
         let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -87,8 +77,8 @@ impl Operation for Binary {
         let pipeline_handle =
             device.get_or_create_compute_pipeline(&ComputePipelineDescriptor {
                 pipeline_layout,
-                kernel_name: "add",
-                kernel_element: KernelElement::Scalar,
+                kernel_name: "softmax",
+                kernel_element,
             })?;
 
         let storage_bind_groups = CompiledOp::create_storage_bind_groups(
@@ -100,7 +90,7 @@ impl Operation for Binary {
 
         Ok(CompiledOp::new(
             pipeline_handle,
-            wgc![wgcx as _, 1, 1],
+            workgroup_count,
             storage_bind_groups,
             offset as _,
         ))
@@ -111,8 +101,7 @@ impl Operation for Binary {
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 2)?;
-        Enforcer::check_dtype_match(srcs)?;
+        Enforcer::check_input_arity(srcs, 1)?;
         Ok(())
     }
 }

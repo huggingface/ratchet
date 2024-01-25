@@ -1,8 +1,10 @@
 mod binary;
 mod matmul;
+mod softmax;
 
 pub use binary::*;
 pub use matmul::*;
+pub use softmax::*;
 
 /// # KernelElement
 ///
