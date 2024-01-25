@@ -324,11 +324,7 @@ impl Operation for Matmul {
 
 #[cfg(test)]
 mod tests {
-    use numpy::PyArrayDyn;
-    use pyo3::{
-        types::{PyModule, PyTuple},
-        Python,
-    };
+    use crate::test_util::run_py_prg;
 
     use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
 
@@ -341,20 +337,10 @@ mod tests {
         Ok((a, b))
     }
 
-    fn run_py_prg(prg: String, args: &[&Tensor]) -> anyhow::Result<Tensor> {
-        assert!(prg.contains("def x")); //🚨
-        Python::with_gil(|py| {
-            let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
-            let py_args = PyTuple::new(py, args.iter().map(|arg| arg.to_py::<f32>(&py)));
-            let py_result: &PyArrayDyn<f32> = prg.getattr("x")?.call1(py_args)?.extract()?;
-            Ok(Tensor::from(py_result))
-        })
-    }
-
     fn ground_truth(a: &Tensor, b: &Tensor) -> anyhow::Result<Tensor> {
         let prg = r#"
 import torch
-def x(a, b):
+def matmul(a, b):
     return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#;
         run_py_prg(prg.to_string(), &[a, b])
     }
