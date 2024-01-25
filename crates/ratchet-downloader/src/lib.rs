@@ -75,57 +75,58 @@ impl Model {
 
 mod gguf {
     use crate::BytesStream;
+    use futures_util::io::repeat;
     use winnow::binary::{u32, u64, u8, Endianness};
 
+    use winnow::combinator::fail;
     use winnow::error::{AddContext, ContextError, ErrMode, StrContext};
     use winnow::token::take;
     use winnow::Parser;
 
-    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, Debug)]
     pub struct MetadataKv {
         pub key: String,
-        pub value_type: MetadataValueType,
+        pub metadata_value: MetadataValue,
     }
-    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, Debug)]
     pub struct Header {
         pub version: u32,
         pub tensor_count: u64,
         pub metadata_kv_count: u64,
         pub metadata_kv: MetadataKv,
     }
-
-    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, Debug)]
     pub enum MetadataValueType {
-        // The value is a 8-bit unsigned integer.
-        GGUF_METADATA_VALUE_TYPE_UINT8 = 0,
-        // The value is a 8-bit signed integer.
-        GGUF_METADATA_VALUE_TYPE_INT8 = 1,
-        // The value is a 16-bit unsigned little-endian integer.
-        GGUF_METADATA_VALUE_TYPE_UINT16 = 2,
-        // The value is a 16-bit signed little-endian integer.
-        GGUF_METADATA_VALUE_TYPE_INT16 = 3,
-        // The value is a 32-bit unsigned little-endian integer.
-        GGUF_METADATA_VALUE_TYPE_UINT32 = 4,
-        // The value is a 32-bit signed little-endian integer.
-        GGUF_METADATA_VALUE_TYPE_INT32 = 5,
-        // The value is a 32-bit IEEE754 floating point number.
-        GGUF_METADATA_VALUE_TYPE_FLOAT32 = 6,
-        // The value is a boolean.
-        // 1-byte value where 0 is false and 1 is true.
-        // Anything else is invalid, and should be treated as either the model being invalid or the reader being buggy.
-        GGUF_METADATA_VALUE_TYPE_BOOL = 7,
-        // The value is a UTF-8 non-null-terminated string, with length prepended.
-        GGUF_METADATA_VALUE_TYPE_STRING = 8,
-        // The value is an array of other values, with the length and type prepended.
-        ///
-        // Arrays can be nested, and the length of the array is the number of elements in the array, not the number of bytes.
-        GGUF_METADATA_VALUE_TYPE_ARRAY = 9,
-        // The value is a 64-bit unsigned little-endian integer.
-        GGUF_METADATA_VALUE_TYPE_UINT64 = 10,
-        // The value is a 64-bit signed little-endian integer.
-        GGUF_METADATA_VALUE_TYPE_INT64 = 11,
-        // The value is a 64-bit IEEE754 floating point number.
-        GGUF_METADATA_VALUE_TYPE_FLOAT64 = 12,
+        GgufMetadataValueTypeUint8,
+        GgufMetadataValueTypeInt8,
+        GgufMetadataValueTypeUint16,
+        GgufMetadataValueTypeInt16,
+        GgufMetadataValueTypeUint32,
+        GgufMetadataValueTypeInt32,
+        GgufMetadataValueTypeFloat32,
+        GgufMetadataValueTypeBool,
+        GgufMetadataValueTypeString,
+        GgufMetadataValueTypeArray,
+        GgufMetadataValueTypeUint64,
+        GgufMetadataValueTypeInt64,
+        GgufMetadataValueTypeFloat64,
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum MetadataValue {
+        GgufMetadataValueUint8(u8),
+        GgufMetadataValueInt8(i8),
+        GgufMetadataValueUint16(u16),
+        GgufMetadataValueInt16(i16),
+        GgufMetadataValueUint32(u32),
+        GgufMetadataValueInt32(i32),
+        GgufMetadataValueFloat32(f32),
+        GgufMetadataValueBool(bool),
+        GgufMetadataValueString(String),
+        GgufMetadataValueArray(Vec<MetadataValue>),
+        GgufMetadataValueUint64(u64),
+        GgufMetadataValueInt64(i64),
+        GgufMetadataValueFloat64(f64),
     }
 
     #[inline]
@@ -144,26 +145,139 @@ mod gguf {
         u64(Endianness::Little).parse_next(input)
     }
 
-    #[inline]
+    fn parse_metadata_value_array(input: &mut BytesStream) -> winnow::PResult<MetadataValue> {
+        (parse_metadata_value_type, u64(Endianness::Little))
+            .flat_map(|(metadata_value_type, length)| {
+                winnow::combinator::repeat(
+                    length as usize,
+                    parse_metadata_value(metadata_value_type),
+                )
+            })
+            .parse_next(input)
+            .map(MetadataValue::GgufMetadataValueArray)
+    }
+
     fn parse_metadata_value_type(input: &mut BytesStream) -> winnow::PResult<MetadataValueType> {
         u32(Endianness::Little)
             .parse_next(input)
-            .and_then(|value| match value {
-                0 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_UINT8),
-                1 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_INT8),
-                2 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_UINT16),
-                3 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_INT16),
-                4 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_UINT32),
-                5 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_INT32),
-                6 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_FLOAT32),
-                7 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_BOOL),
-                8 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_STRING),
-                9 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_ARRAY),
-                10 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_UINT64),
-                11 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_INT64),
-                12 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_FLOAT64),
-                other => Err(cut_error(input, &"Found invalid metadata type value.")),
+            .and_then(|metadata_value_type| match metadata_value_type {
+                0 => Ok(MetadataValueType::GgufMetadataValueTypeUint8),
+                1 => Ok(MetadataValueType::GgufMetadataValueTypeInt8),
+                2 => Ok(MetadataValueType::GgufMetadataValueTypeUint16),
+                3 => Ok(MetadataValueType::GgufMetadataValueTypeInt16),
+                4 => Ok(MetadataValueType::GgufMetadataValueTypeUint32),
+                5 => Ok(MetadataValueType::GgufMetadataValueTypeInt32),
+                6 => Ok(MetadataValueType::GgufMetadataValueTypeFloat32),
+                7 => Ok(MetadataValueType::GgufMetadataValueTypeBool),
+                8 => Ok(MetadataValueType::GgufMetadataValueTypeString),
+                9 => Ok(MetadataValueType::GgufMetadataValueTypeArray),
+                10 => Ok(MetadataValueType::GgufMetadataValueTypeUint64),
+                11 => Ok(MetadataValueType::GgufMetadataValueTypeInt64),
+                12 => Ok(MetadataValueType::GgufMetadataValueTypeFloat64),
+                other => Err(cut_error(input, "Unknown metadata value type.")),
             })
+    }
+
+    #[inline]
+    fn parse_metadata_value<'i>(
+        metadata_value_type: MetadataValueType,
+    ) -> impl Parser<BytesStream<'i>, MetadataValue, ContextError> {
+        move |input: &mut BytesStream| match metadata_value_type {
+            MetadataValueType::GgufMetadataValueTypeUint8 => winnow::binary::u8
+                .map(MetadataValue::GgufMetadataValueUint8)
+                .parse_next(input),
+
+            MetadataValueType::GgufMetadataValueTypeInt8 => winnow::binary::i8
+                .map(MetadataValue::GgufMetadataValueInt8)
+                .parse_next(input),
+            MetadataValueType::GgufMetadataValueTypeUint16 => {
+                winnow::binary::u16(Endianness::Little)
+                    .map(MetadataValue::GgufMetadataValueUint16)
+                    .parse_next(input)
+            }
+            MetadataValueType::GgufMetadataValueTypeInt16 => {
+                winnow::binary::i16(Endianness::Little)
+                    .map(MetadataValue::GgufMetadataValueInt16)
+                    .parse_next(input)
+            }
+            MetadataValueType::GgufMetadataValueTypeUint32 => {
+                winnow::binary::u32(Endianness::Little)
+                    .map(MetadataValue::GgufMetadataValueUint32)
+                    .parse_next(input)
+            }
+            MetadataValueType::GgufMetadataValueTypeInt32 => {
+                winnow::binary::i32(Endianness::Little)
+                    .map(MetadataValue::GgufMetadataValueInt32)
+                    .parse_next(input)
+            }
+            MetadataValueType::GgufMetadataValueTypeFloat32 => {
+                winnow::binary::f32(Endianness::Little)
+                    .map(MetadataValue::GgufMetadataValueFloat32)
+                    .parse_next(input)
+            }
+            MetadataValueType::GgufMetadataValueTypeBool => winnow::binary::i8
+                .map(|b| {
+                    if b == 0 {
+                        MetadataValue::GgufMetadataValueBool(true)
+                    } else {
+                        MetadataValue::GgufMetadataValueBool(false)
+                    }
+                })
+                .parse_next(input),
+            MetadataValueType::GgufMetadataValueTypeString => parse_string
+                .map(MetadataValue::GgufMetadataValueString)
+                .parse_next(input),
+            MetadataValueType::GgufMetadataValueTypeArray => {
+                parse_metadata_value_array.parse_next(input)
+            }
+            MetadataValueType::GgufMetadataValueTypeUint64 => {
+                winnow::binary::u64(Endianness::Little)
+                    .map(MetadataValue::GgufMetadataValueUint64)
+                    .parse_next(input)
+            }
+            MetadataValueType::GgufMetadataValueTypeInt64 => {
+                winnow::binary::i64(Endianness::Little)
+                    .map(MetadataValue::GgufMetadataValueInt64)
+                    .parse_next(input)
+            }
+            MetadataValueType::GgufMetadataValueTypeFloat64 => {
+                winnow::binary::f64(Endianness::Little)
+                    .map(MetadataValue::GgufMetadataValueFloat64)
+                    .parse_next(input)
+            }
+        }
+    }
+
+    // #[inline]
+    // fn parse_metadata_value_type<'i>(
+    //     metadata_value_type: u64,
+    // ) -> impl Parser<BytesStream<'i>, MetadataKv, ContextError> {
+    //     move |input: &mut BytesStream| {
+    //         let parser: Parser<BytesStream<'i>, MetadataKv, ContextError> =
+    //             match metadata_value_type {
+    //                 0 => u8.map(MetadataValue::GgufMetadataValueTypeUint8),
+    //                 1 => i8.map(MetadataValue::GgufMetadataValueTypeInt8),
+    //                 2 => u16.map(MetadataValue::GgufMetadataValueTypeUint16),
+    //                 3 => i16.map(MetadataValue::GgufMetadataValueTypeInt16),
+    //                 4 => u32.map(MetadataValue::GgufMetadataValueTypeUint32),
+    //                 5 => i32.map(MetadataValue::GgufMetadataValueTypeInt32),
+    //                 6 => f32.map(MetadataValue::GgufMetadataValueTypeFloat32),
+    //                 7 => bool.map(MetadataValue::GgufMetadataValueTypeBool),
+    //                 8 => parse_string.map(MetadataValue::GgufMetadataValueTypeString),
+    //                 // 9 => Ok(MetadataValueType::GGUF_METADATA_VALUE_TYPE_ARRAY),
+    //                 10 => u64.map(MetadataValue::GgufMetadataValueTypeUint64),
+    //                 11 => i64.map(MetadataValue::GgufMetadataValueTypeInt64),
+    //                 12 => f64.map(MetadataValue::GgufMetadataValueTypeFloat64),
+    //                 other => parse_string.map(MetadataValue::GgufMetadataValueTypeString),
+    //             };
+    //         parser.parse_next(input)
+    //     }
+    // }
+
+    fn parse_metadata_value_single(input: &mut BytesStream) -> winnow::PResult<MetadataValue> {
+        parse_metadata_value_type
+            .flat_map(|metadata_value_type| parse_metadata_value(metadata_value_type))
+            .parse_next(input)
     }
 
     #[inline]
@@ -195,9 +309,12 @@ mod gguf {
         metadata_kv_count: u64,
     ) -> impl Parser<BytesStream<'i>, MetadataKv, ContextError> {
         move |input: &mut BytesStream| {
-            (parse_string, parse_metadata_value_type)
+            (parse_string, parse_metadata_value_single)
                 .parse_next(input)
-                .map(|(key, value_type)| MetadataKv { key, value_type })
+                .map(|(key, metadata_value)| MetadataKv {
+                    key,
+                    metadata_value,
+                })
         }
     }
 
@@ -209,19 +326,14 @@ mod gguf {
             parse_metadata_kv_count,
         )
             .flat_map(|(gguf, version, tensor_count, metadata_kv_count)| {
-                parse_metadata_kv(metadata_kv_count).map(move |metadata_kv| {
-                    (gguf, version, tensor_count, metadata_kv_count, metadata_kv)
-                })
-            })
-            .parse_next(input)
-            .map(
-                |(gguf, version, tensor_count, metadata_kv_count, metadata_kv)| Header {
+                parse_metadata_kv(metadata_kv_count).map(move |metadata_kv| Header {
                     version,
                     tensor_count,
                     metadata_kv_count,
                     metadata_kv,
-                },
-            )
+                })
+            })
+            .parse_next(input)
     }
     pub fn to_std_error(
         error: winnow::error::ErrMode<winnow::error::ContextError>,
@@ -259,7 +371,6 @@ mod tests {
         let result = gguf::parse_header(&mut input).map_err(gguf::to_std_error)?;
 
         println!("{:#?}", result.metadata_kv);
-        println!("{:#?}", result.metadata_kv.value_type);
         assert_eq!(result.version, 3);
         assert_eq!(result.tensor_count, 201);
         assert_eq!(result.metadata_kv_count, 23);
