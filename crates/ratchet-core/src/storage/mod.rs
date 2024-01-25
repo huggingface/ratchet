@@ -16,6 +16,13 @@ pub enum Storage {
 }
 
 impl Storage {
+    pub unsafe fn from_quantized<T: NoUninit>(data: &[T], device: &Device) -> Self {
+        match device {
+            Device::CPU => Storage::CPU(unsafe { CPUBuffer::from_quantized(data) }),
+            _ => todo!(),
+        }
+    }
+
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &Device) -> Self {
         match device {
             Device::CPU => Storage::CPU(CPUBuffer::from_slice(data, shape)),

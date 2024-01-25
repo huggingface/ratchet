@@ -84,11 +84,18 @@ impl std::ops::Deref for Tensor {
     }
 }
 
+/// Tensors are just an view into their underlying byte storage.
 #[derive(new, Debug, Clone)]
 pub struct StorageView {
     shape: Shape,
     dt: DType,
     strides: Strides,
+}
+
+impl StorageView {
+    pub fn is_contiguous(&self) -> bool {
+        self.shape.is_contiguous(&self.strides)
+    }
 }
 
 #[derive(Debug)]
@@ -211,6 +218,29 @@ impl Tensor {
         let strides = Strides::from(&shape);
         let meta = StorageView::new(shape, T::dt(), strides);
         Tensor::new(LazyOp::Const, meta, Some(storage), device)
+    }
+
+    pub(crate) unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
+        data: U,
+        shape: Shape,
+        dt: DType,
+        device: Device,
+    ) -> Tensor {
+        let storage = unsafe { Storage::from_quantized(data.as_ref(), &device) };
+        let strides = Strides::from(&shape);
+        let meta = StorageView::new(shape, dt, strides);
+        Tensor::new(LazyOp::Const, meta, Some(storage), device)
+    }
+
+    /// Converts the tensor into a 1D vector.
+    ///
+    /// The 1D vector contains the data from the tensor, as it was laid out in memory.
+    pub fn to_vec<T: TensorDType>(&self) -> anyhow::Result<Vec<T>> {
+        assert!(self.device().is_cpu());
+        let storage_guard = self.storage();
+        let buffer = storage_guard.as_ref().unwrap().try_cpu()?;
+        let slice = buffer.to_slice::<T>(self.shape());
+        Ok(slice.to_vec())
     }
 
     fn execution_order(&self) -> Vec<Tensor> {
@@ -505,47 +535,5 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
 impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
     fn from(array: &PyArrayDyn<T>) -> Self {
         Self::from(array.to_owned_array())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use pyo3::{types::PyModule, Python};
-
-    use crate::{shape, DeviceRequest};
-
-    use super::*;
-
-    #[test]
-    fn test_pyo3() -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
-        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
-            let prg = PyModule::from_code(
-                py,
-                r#"
-import torch
-def matmul(a, b):
-    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#,
-                "x.py",
-                "x",
-            )?;
-            let py_a = a.to_py::<f32>(&py);
-            let py_b = b.to_py::<f32>(&py);
-            let py_c = prg
-                .getattr("matmul")?
-                .call1((py_a, py_b))?
-                .extract::<&PyArrayDyn<f32>>()?;
-            Ok(Tensor::from(py_c))
-        });
-        let device = Device::request_device(DeviceRequest::GPU)?;
-        let a_gpu = a.to(device.clone())?;
-        let b_gpu = b.to(device.clone())?;
-        let c_gpu = a_gpu.matmul(&b_gpu)?;
-        c_gpu.resolve()?;
-        let d_gpu = c_gpu.to(Device::CPU)?;
-        ground?.all_close(&d_gpu, 1e-4, 1e-4)?;
-        Ok(())
     }
 }

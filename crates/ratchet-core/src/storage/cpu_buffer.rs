@@ -1,4 +1,4 @@
-use bytemuck::NoUninit;
+use bytemuck::{NoUninit, Pod};
 
 use crate::{storage::DeviceStorage, Device, DeviceError, GPUBuffer, Shape, TensorDType};
 
@@ -70,10 +70,26 @@ impl CPUBuffer {
         }
     }
 
+    /// # Safety
+    ///
+    /// We don't check the provide shape here.
+    /// The caller should ensure that this data is laid out correctly.
+    /// We also require that all of the elements have the same alignment.
+    /// So for PQ8, this is fine (u32 + f32)
+    pub unsafe fn from_quantized<T: NoUninit>(data: &[T]) -> Self {
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        Self::from_bytes(bytes, std::mem::align_of::<T>())
+    }
+
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape) -> Self {
         assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);
         Self::from_bytes(bytes, std::mem::align_of::<T>())
+    }
+
+    pub fn to_slice<T: NoUninit + Pod>(&self, shape: &Shape) -> &[T] {
+        assert_eq!(self.n_bytes(), shape.numel() * std::mem::size_of::<T>());
+        bytemuck::cast_slice(self.inner().as_bytes())
     }
 
     pub fn inner(&self) -> &RawCPUBuffer {
