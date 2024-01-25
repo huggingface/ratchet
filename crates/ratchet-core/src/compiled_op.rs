@@ -7,7 +7,8 @@ use derive_new::new;
 use wgpu::DynamicOffset;
 
 //Compiled op represents a single kernel invocation
-//TODO: We need to be more general here, enum with encoder.copy_buffer_to_buffer as a COPY
+//TODO: We need to be more general here, enum with encoder.copy_buffer_to_buffer as a COPY, and
+//compiledOp as compute
 #[derive(Debug, new)]
 pub struct CompiledOp {
     pipeline_handle: ComputePipelineHandle,
@@ -19,6 +20,7 @@ pub struct CompiledOp {
 impl CompiledOp {
     const MAX_BINDINGS_PER_GROUP: usize = 4;
 
+    //TODO: Should return a Result
     pub fn create_storage_bind_groups(
         srcs: &[&Tensor],
         dst: &Tensor,

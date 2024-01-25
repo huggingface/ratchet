@@ -9,6 +9,7 @@ pub enum DType {
     F32,
     I32,
     U32,
+    PQ8, //Packed Q8 (|--4xQ8(u32)--| |--f32--|)
 }
 
 impl DType {
@@ -21,6 +22,7 @@ impl DType {
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
+            DType::PQ8 => 4, //Only works because they're both 4 bytes
         }
     }
 }
