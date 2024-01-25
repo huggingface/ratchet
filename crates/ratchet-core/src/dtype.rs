@@ -35,22 +35,16 @@ impl DType {
         match self {
             DType::WQ8 => {
                 let weights_size = total_bytes / 5 * 4;
-                let weights = BufferSegment {
-                    offset: 0,
-                    size: Some(NonZeroU64::new(weights_size as u64).unwrap()),
-                };
-                let absmax = BufferSegment {
-                    offset: weights_size as u64,
-                    size: Some(NonZeroU64::new(total_bytes as u64 - weights_size as u64).unwrap()),
-                };
+                assert!(weights_size % 256 == 0); //storage buffer alignment
+                let weights = BufferSegment::new(0, Some(weights_size as u64));
+
+                let absmax_size = total_bytes - weights_size;
+                assert!(absmax_size % 256 == 0); //storage buffer alignment
+                let absmax = BufferSegment::new(weights_size as u64, Some(absmax_size as u64));
                 rvec![weights, absmax]
             }
             _ => {
-                let size = NonZeroU64::new(total_bytes as u64).unwrap();
-                rvec![BufferSegment {
-                    offset: 0,
-                    size: Some(size),
-                }]
+                rvec![BufferSegment::new(0, Some(total_bytes as u64))]
             }
         }
     }
@@ -60,6 +54,16 @@ impl DType {
 pub struct BufferSegment {
     pub offset: BufferAddress,
     pub size: Option<BufferSize>,
+}
+
+impl BufferSegment {
+    pub fn new(offset: BufferAddress, size: Option<u64>) -> Self {
+        if let Some(size) = size {
+            assert!(size % 256 == 0); //storage buffer alignment
+        }
+        let size = size.map(NonZeroU64::new).unwrap();
+        Self { offset, size }
+    }
 }
 
 pub trait TensorDType:
