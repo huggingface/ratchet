@@ -368,7 +368,6 @@ def matmul(a, b):
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![2048, 2048], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![2048, 2048], cpu_device.clone());
-        println!("B: \n{:?}\n", b);
         let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
             let prg = PyModule::from_code(
                 py,
