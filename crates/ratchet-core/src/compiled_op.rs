@@ -1,6 +1,6 @@
 use crate::gpu::{
-    BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle,
-    GpuBindGroup, WgpuDevice, WorkgroupCount,
+    BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle, GpuBindGroup, WgpuDevice,
+    WorkgroupCount,
 };
 use crate::{drvec, rvec, RVec, Tensor};
 use derive_new::new;
@@ -31,11 +31,10 @@ impl CompiledOp {
         for tensor in srcs.iter().chain(std::iter::once(&dst)) {
             bind_group_entries.append(&mut tensor.bindings());
         }
-        let binding_counter = bind_group_entries.len();
 
         let mut storage_groups = rvec![];
         for (group_index, bind_group_layout) in bind_group_layouts.iter().enumerate() {
-            let group_range = Self::group_range(group_index, binding_counter);
+            let group_range = Self::group_range(group_index, bind_group_entries.len());
             let entries = bind_group_entries[group_range].into();
             let layout = *bind_group_layout;
 

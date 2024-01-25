@@ -5,11 +5,11 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{
-        BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform,
-        PipelineLayoutDescriptor, WgpuDevice, WorkgroupCount,
+        BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
+        WgpuDevice, WorkgroupCount,
     },
-    rvec, wgc, CompiledOp, DType, Enforcer, KernelElement, OpMetadata, Operation,
-    OperationError, RVec, Shape, StorageView, Tensor,
+    rvec, wgc, CompiledOp, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError,
+    RVec, Shape, StorageView, Tensor,
 };
 
 // Defines a matrix multiplication operation.

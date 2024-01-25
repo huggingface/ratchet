@@ -1,8 +1,6 @@
 use bytemuck::{NoUninit, Pod};
 
-use crate::{
-    storage::DeviceStorage, Device, DeviceError, GPUBuffer, QContainer, Shape, TensorDType,
-};
+use crate::{storage::DeviceStorage, Device, DeviceError, GPUBuffer, Shape, TensorDType};
 
 use std::{alloc::Layout, fmt::Debug, sync::Arc};
 
