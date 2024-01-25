@@ -27,20 +27,11 @@ impl CompiledOp {
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
     ) -> RVec<GpuBindGroup> {
-        let mut binding_counter: usize = 0;
         let mut bind_group_entries = drvec![];
-
         for tensor in srcs.iter().chain(std::iter::once(&dst)) {
-            let storage_guard = tensor.storage();
-            let storage = storage_guard.as_ref().unwrap();
-            let gpu_buf = &storage.try_gpu().unwrap().inner;
-            bind_group_entries.push(BindGroupEntry {
-                handle: gpu_buf.handle,
-                offset: 0,
-                size: Some(gpu_buf.size().try_into().unwrap()),
-            });
-            binding_counter += 1;
+            bind_group_entries.append(&mut tensor.bindings());
         }
+        let binding_counter = bind_group_entries.len();
 
         let mut storage_groups = rvec![];
         for (group_index, bind_group_layout) in bind_group_layouts.iter().enumerate() {

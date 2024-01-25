@@ -15,6 +15,7 @@ impl BufferDescriptor {
     }
 }
 
+//All slotmap keys are COPY
 slotmap::new_key_type! { pub struct GpuBufferHandle; }
 
 /// A reference-counter baked buffer.
