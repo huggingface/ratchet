@@ -368,10 +368,27 @@ def matmul(a, b):
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
+        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
+            let prg = PyModule::from_code(
+                py,
+                r#"
+import torch
+def matmul(a, b):
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#,
+                "x.py",
+                "x",
+            )?;
+            let py_a = a.to_py::<f32>(&py);
+            let py_b = b.to_py::<f32>(&py);
+            let py_c = prg
+                .getattr("matmul")?
+                .call1((py_a, py_b))?
+                .extract::<&PyArrayDyn<f32>>()?;
+            Ok(Tensor::from(py_c))
+        });
+
         let quantizer = Quantizer::new(Quantization::SInt8);
         let bq = quantizer.sint8_quantize(b);
-        println!("BQ dt: {:?}", bq.dt());
-
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = a.to(device.clone())?;
         let b_gpu = bq.to(device.clone())?;
@@ -379,6 +396,7 @@ def matmul(a, b):
         c_gpu.resolve()?;
         let d_gpu = c_gpu.to(Device::CPU)?;
         println!("D: {:?}", d_gpu);
+        println!("G: {:?}", ground?);
         Ok(())
     }
 }
