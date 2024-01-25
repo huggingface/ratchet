@@ -1,7 +1,7 @@
 use crate::gpu::{CpuUniform, WgpuDevice};
 use crate::{
     ops::*, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer, Operation,
-    OperationError, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    OperationError, QContainer, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
@@ -94,7 +94,7 @@ pub struct StorageView {
 
 impl StorageView {
     pub fn is_contiguous(&self) -> bool {
-        self.shape.is_contiguous(&self.strides)
+        todo!()
     }
 }
 
@@ -365,7 +365,7 @@ impl Tensor {
     pub fn deep_clone(&self) -> Tensor {
         let storage_guard = self.storage();
         let storage = storage_guard.as_ref().unwrap();
-        let cloned_storage = storage.deep_clone().unwrap();
+        let cloned_storage = storage.deep_clone(&self.device()).unwrap();
         Tensor::new(
             LazyOp::Const,
             self.view.clone(),
