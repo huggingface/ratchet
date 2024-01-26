@@ -34,6 +34,18 @@ lazy_static! {
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/sgemm_vec4.wgsl"
             ),
         );
+        m.insert(
+            "softmax_scalar",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/softmax_scalar.wgsl"
+            ),
+        );
+        m.insert(
+            "softmax_vec4",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/softmax_vec4.wgsl"
+            ),
+        );
         m
     };
 }

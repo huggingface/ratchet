@@ -4,32 +4,15 @@ use encase::internal::WriteInto;
 use encase::ShaderType;
 
 use crate::gpu::{CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
-use crate::{Binary, CompiledOp, InvariantError, Matmul, RVec, StorageView, Tensor};
+use crate::{rvec, Binary, CompiledOp, InvariantError, Matmul, RVec, Softmax, StorageView, Tensor};
 
-#[derive(Debug, Clone)]
-pub enum UnaryOp {
-    Gelu,
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LazyOp {
-    Empty,
+    Dummy(Tensor),
     Matmul(Matmul),
     Binary(Binary),
-    Unary(Tensor, UnaryOp),
+    Softmax(Softmax),
     Const,
-}
-
-impl std::fmt::Debug for LazyOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LazyOp::Matmul(m) => write!(f, "{:?}", m),
-            LazyOp::Empty => write!(f, "Empty"),
-            LazyOp::Binary(b) => write!(f, "{:?}", b),
-            LazyOp::Unary(_, _) => write!(f, "Unary"),
-            LazyOp::Const => write!(f, "Const"),
-        }
-    }
 }
 
 impl LazyOp {
@@ -37,8 +20,25 @@ impl LazyOp {
         match self {
             LazyOp::Binary(b) => b.srcs(),
             LazyOp::Matmul(m) => m.srcs(),
+            LazyOp::Softmax(s) => s.srcs(),
+            LazyOp::Dummy(t) => rvec![t],
+            LazyOp::Const => rvec![], //end of the line kid
             _ => unimplemented!(),
         }
+    }
+
+    pub fn supports_inplace(&self) -> bool {
+        match self {
+            LazyOp::Binary(b) => b.supports_inplace(),
+            LazyOp::Matmul(m) => m.supports_inplace(),
+            LazyOp::Softmax(s) => s.supports_inplace(),
+            LazyOp::Const => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_const(&self) -> bool {
+        matches!(self, LazyOp::Const)
     }
 }
 
@@ -76,11 +76,16 @@ pub trait Operation: Debug + 'static {
 
     fn srcs(&self) -> RVec<&Tensor>;
 
+    fn supports_inplace(&self) -> bool {
+        false
+    }
+
     fn compile(
         &self,
         dst: &Tensor,
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
+        can_inplace: bool,
     ) -> Result<CompiledOp, OperationError>;
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
@@ -89,7 +94,5 @@ pub trait Operation: Debug + 'static {
     ///
     /// Inference is an overloaded term, in this context it means to determine
     /// the metadata of the output tensor given the input tensors.
-    ///
-    /// It also checks the invariants that need to hold for Binary.
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError>;
 }

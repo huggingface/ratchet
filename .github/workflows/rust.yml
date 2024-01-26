@@ -21,8 +21,6 @@ jobs:
         include:
           - name: Windows x86_64
             os: windows-2022
-          - name: Linux x86_64
-            os: ubuntu-latest
           #TODO: android?
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +82,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          cargo nextest run --features pyo3 --no-fail-fast 
+          cargo nextest run -j 1 --features pyo3 --no-fail-fast 
 
           # - name: Install wasm-pack 
           #   run: |

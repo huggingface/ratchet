@@ -1,7 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, shape, strides, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    GPUBuffer, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType,
+    TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
@@ -52,6 +53,15 @@ impl Tensor {
 
     fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
         Self::new(op, meta, None, device)
+    }
+
+    pub fn dummy(src: Tensor) -> Self {
+        Self::new(
+            LazyOp::Dummy(src),
+            StorageView::new(shape![], DType::F32, Strides::default()),
+            None,
+            Device::CPU,
+        )
     }
 
     fn update_storage(&self, storage: Storage) {
@@ -181,6 +191,19 @@ impl Tensor {
         ))
     }
 
+    //TODO: switch dim to isize and allow negative indexing
+    pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
+        Softmax::check_invariants(&[self])?;
+
+        let softmax = Softmax::new(self.clone(), dim);
+        let new_view = softmax.infer_output(&[self])?;
+        Ok(Tensor::lazy(
+            LazyOp::Softmax(softmax),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
     pub fn matmul(&self, other: &Tensor) -> anyhow::Result<Tensor> {
         Matmul::check_invariants(&[self, other])?;
 
@@ -278,14 +301,13 @@ impl Tensor {
             match &tensor.inner.op {
                 LazyOp::Const => {}
                 LazyOp::Binary(b) => {
-                    let sources = b.srcs();
-                    stack.push(sources[0].clone());
-                    stack.push(sources[1].clone());
+                    stack.extend(b.srcs().into_iter().cloned());
                 }
                 LazyOp::Matmul(m) => {
-                    let sources = m.srcs();
-                    stack.push(sources[0].clone());
-                    stack.push(sources[1].clone());
+                    stack.extend(m.srcs().into_iter().cloned());
+                }
+                LazyOp::Softmax(s) => {
+                    stack.extend(s.srcs().into_iter().cloned());
                 }
                 _ => unimplemented!(),
             }
@@ -295,10 +317,16 @@ impl Tensor {
         visited
     }
 
-    pub fn compile(&self, uniform: &mut CpuUniform, device: &WgpuDevice) -> Option<CompiledOp> {
+    pub fn compile(
+        &self,
+        uniform: &mut CpuUniform,
+        device: &WgpuDevice,
+        can_inplace: bool,
+    ) -> Option<CompiledOp> {
         match self.op() {
-            LazyOp::Binary(b) => b.compile(self, uniform, device).ok(),
-            LazyOp::Matmul(m) => m.compile(self, uniform, device).ok(),
+            LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -309,23 +337,30 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
+        println!("EXECUTION ORDER: \n{:#?}", execution_order);
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
-        for t in execution_order {
+        for (tix, t) in execution_order.iter().enumerate() {
             if !t.resolved() {
                 let id = t.id();
                 let pooled_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
                 assert!(t.device().is_gpu());
-
-                let storage = Storage::GPU(GPUBuffer {
+                let storage = GPUBuffer {
                     inner: pooled_buffer.clone(),
                     alignment: t.dt().size_of(),
-                });
-                t.update_storage(storage);
+                };
+                t.update_storage(Storage::GPU(storage));
             }
 
-            if let Some(compiled_op) = t.compile(&mut uniform, device) {
+            let can_inplace = t.op().supports_inplace()
+                && execution_order[tix + 1..]
+                    .iter()
+                    .filter(|t2| t2.op.srcs().contains(&t))
+                    .count()
+                    <= 1;
+
+            if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
             }
         }
@@ -379,10 +414,10 @@ impl Tensor {
     /// If the tensor is already on the specified device, it will be returned as-is,
     /// and the underlying storage will not be copied.
     /// If the tensor is on a different device, it will be copied to the specified device.
-    pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
-        match (self.device(), &device) {
+    pub fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
             (Device::GPU(_), Device::CPU) => self.to_cpu(),
-            (Device::CPU, Device::GPU(_)) => self.to_gpu(&device),
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
             _ => Ok(self.clone()),
         }
     }

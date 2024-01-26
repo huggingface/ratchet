@@ -68,6 +68,7 @@ impl Operation for Binary {
         dst: &Tensor,
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
+        _can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
         let lhs = &self.lhs;
         let M = lhs.shape()[0] as u32;
@@ -95,6 +96,7 @@ impl Operation for Binary {
             dst,
             rvec![storage_layout],
             device,
+            false,
         );
 
         Ok(CompiledOp::new(
