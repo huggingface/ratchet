@@ -26,10 +26,16 @@ impl CompiledOp {
         dst: &Tensor,
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
+        inplace: bool,
     ) -> RVec<GpuBindGroup> {
         let mut bind_group_entries = drvec![];
-        for tensor in srcs.iter().chain(std::iter::once(&dst)) {
+
+        for tensor in srcs.iter() {
             bind_group_entries.append(&mut tensor.bindings());
+        }
+
+        if !inplace {
+            bind_group_entries.append(&mut dst.bindings());
         }
 
         let mut storage_groups = rvec![];

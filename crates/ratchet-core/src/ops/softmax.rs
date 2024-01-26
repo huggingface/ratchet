@@ -86,6 +86,7 @@ impl Operation for Softmax {
             dst,
             rvec![storage_layout],
             device,
+            can_inplace,
         );
 
         Ok(CompiledOp::new(
@@ -97,6 +98,7 @@ impl Operation for Softmax {
     }
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
+        //TODO: FIX
         Ok(srcs[0].view().clone())
     }
 
@@ -108,9 +110,33 @@ impl Operation for Softmax {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_util::run_py_prg;
+    use crate::{shape, Device, DeviceRequest, Tensor};
+
+    fn ground_truth(a: &Tensor) -> anyhow::Result<Tensor> {
+        let prg = r#"
+import torch
+import torch.nn.functional as F
+def softmax(a):
+    return F.softmax(torch.from_numpy(a), dim=-1).numpy()
+"#;
+        run_py_prg(prg.to_string(), &[a])
+    }
 
     #[test]
     pub fn softmax() -> anyhow::Result<()> {
+        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
+        let a = Tensor::randn::<f32>(shape![256, 256], Device::CPU);
+        let ground = ground_truth(&a)?;
+
+        let a_gpu = a.to(gpu_device.clone())?;
+        let b = a_gpu.softmax(1)?;
+        b.resolve()?;
+        let ours = b.to(Device::CPU)?;
+        println!("GROUND: \n{:?}", ground);
+        println!("OURS: \n{:?}", ours);
+        ground.all_close(&ours, 1e-6, 1e-6)?;
+
         Ok(())
     }
 }
