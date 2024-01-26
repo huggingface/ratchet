@@ -29,7 +29,6 @@ jobs:
               ${{ steps.scc.outputs.scc }}
               ```
               \`\`\`
-              </details>
             `;
             github.rest.issues.createComment({
               issue_number: context.issue.number,

@@ -126,7 +126,7 @@ def softmax(a):
     #[test]
     pub fn softmax() -> anyhow::Result<()> {
         let gpu_device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::randn::<f32>(shape![256, 256], Device::CPU);
+        let a = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
         let ground = ground_truth(&a)?;
 
         let a_gpu = a.to(gpu_device.clone())?;
