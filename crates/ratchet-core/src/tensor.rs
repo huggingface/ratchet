@@ -181,6 +181,19 @@ impl Tensor {
         ))
     }
 
+    //TODO: switch dim to isize and allow negative indexing
+    pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
+        Softmax::check_invariants(&[self])?;
+
+        let softmax = Softmax::new(self.clone(), dim);
+        let new_view = softmax.infer_output(&[self])?;
+        Ok(Tensor::lazy(
+            LazyOp::Softmax(softmax),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
     pub fn matmul(&self, other: &Tensor) -> anyhow::Result<Tensor> {
         Matmul::check_invariants(&[self, other])?;
 
@@ -278,12 +291,13 @@ impl Tensor {
             match &tensor.inner.op {
                 LazyOp::Const => {}
                 LazyOp::Binary(b) => {
-                    let sources = b.srcs();
-                    stack.extend(sources.into_iter().cloned());
+                    stack.extend(b.srcs().into_iter().cloned());
                 }
                 LazyOp::Matmul(m) => {
-                    let sources = m.srcs();
-                    stack.extend(sources.into_iter().cloned());
+                    stack.extend(m.srcs().into_iter().cloned());
+                }
+                LazyOp::Softmax(s) => {
+                    stack.extend(s.srcs().into_iter().cloned());
                 }
                 _ => unimplemented!(),
             }
@@ -313,6 +327,7 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
+        println!("EXECUTION ORDER: \n{:#?}", execution_order);
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 

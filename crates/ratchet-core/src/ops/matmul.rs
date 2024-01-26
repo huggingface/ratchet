@@ -296,6 +296,7 @@ impl Operation for Matmul {
             dst,
             rvec![storage_layout],
             device,
+            false,
         );
 
         Ok(CompiledOp::new(

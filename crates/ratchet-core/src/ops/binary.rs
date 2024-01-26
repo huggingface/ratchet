@@ -96,6 +96,7 @@ impl Operation for Binary {
             dst,
             rvec![storage_layout],
             device,
+            false,
         );
 
         Ok(CompiledOp::new(

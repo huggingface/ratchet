@@ -11,11 +11,11 @@ struct Meta {
 @group(1) @binding(0)
 var<uniform> metadata: Meta;
 
-var<workgroup> smem: array<f32, {{ workgroup_size_x }}>; // max size is 16kb
+var<workgroup> smem: array<f32, 128>; // max size is 16kb
 var<workgroup> maximum: f32;
 var<workgroup> sum: f32;
 
-const BLOCK_SIZE = {{ workgroup_size_x }}u;
+const BLOCK_SIZE = 128u;
 const minFloat: f32 = -3.402823e+38f;
 
 fn block_sum(index: u32, stride: u32) {

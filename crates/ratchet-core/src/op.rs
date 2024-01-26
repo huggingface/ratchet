@@ -4,7 +4,7 @@ use encase::internal::WriteInto;
 use encase::ShaderType;
 
 use crate::gpu::{CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
-use crate::{Binary, CompiledOp, InvariantError, Matmul, RVec, Softmax, StorageView, Tensor};
+use crate::{rvec, Binary, CompiledOp, InvariantError, Matmul, RVec, Softmax, StorageView, Tensor};
 
 #[derive(Clone, Debug)]
 pub enum LazyOp {
@@ -15,20 +15,15 @@ pub enum LazyOp {
     Const,
 }
 
-macro_rules! lazy_op_delegate {
-    ($self:ident, $method:ident) => {
-        match $self {
-            LazyOp::Binary(b) => b.$method(),
-            LazyOp::Matmul(m) => m.$method(),
-            LazyOp::Softmax(s) => s.$method(),
-            _ => unimplemented!(),
-        }
-    };
-}
-
 impl LazyOp {
     pub fn srcs(&self) -> RVec<&Tensor> {
-        lazy_op_delegate!(self, srcs)
+        match self {
+            LazyOp::Binary(b) => b.srcs(),
+            LazyOp::Matmul(m) => m.srcs(),
+            LazyOp::Softmax(s) => s.srcs(),
+            LazyOp::Const => rvec![], //end of the line kid
+            _ => unimplemented!(),
+        }
     }
 
     pub fn supports_inplace(&self) -> bool {
@@ -36,6 +31,7 @@ impl LazyOp {
             LazyOp::Binary(b) => b.supports_inplace(),
             LazyOp::Matmul(m) => m.supports_inplace(),
             LazyOp::Softmax(s) => s.supports_inplace(),
+            LazyOp::Const => true,
             _ => false,
         }
     }

@@ -115,8 +115,12 @@ impl BufferAllocator {
 
     /// # Graph memory allocation
     ///
-    /// Simple greedy algorithm for allocating all required buffers to store
-    /// activations during an inference pass.
+    /// Simple greedy algorithm
+    /// 1. Iterate over all tensors in reverse order
+    /// 2. For each tensor, loop through it's sources
+    /// 3. Each source is inserted into the assignments.
+    /// 4. Release my output buffer (because we traverse in reverse order, when I arrive at myself,
+    ///    my output buffer is no longer needed)
     pub fn allocate_cfg(
         &self,
         execution_order: &[Tensor],
@@ -125,7 +129,7 @@ impl BufferAllocator {
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
 
-        for t in execution_order {
+        for t in execution_order.iter().rev() {
             if t.resolved() {
                 assignments.insert(
                     t.id(),
@@ -135,11 +139,26 @@ impl BufferAllocator {
             }
 
             for source in t.op().srcs() {
-                //Add support for inplace here when added
-                assignments.entry(source.id()).or_insert_with(|| {
+                let mut true_source = source;
+                loop {
+                    let is_const = true_source.op().srcs().is_empty();
+                    let has_one_source = true_source.op().srcs().len() == 1;
+                    let supports_inplace = t.op().supports_inplace();
+                    let has_one_consumer = true; //TODO: implement
+                    let can_inplace =
+                        (is_const || has_one_source) && supports_inplace && has_one_consumer;
+
+                    if can_inplace && !is_const {
+                        true_source = true_source.op().srcs()[0];
+                    } else {
+                        break;
+                    }
+                }
+
+                assignments.entry(true_source.id()).or_insert_with(|| {
                     self.graph_allocate(
                         BufferDescriptor::new(
-                            source.num_bytes() as _,
+                            true_source.num_bytes() as _,
                             BufferUsages::standard(),
                             false,
                         ),
@@ -154,16 +173,30 @@ impl BufferAllocator {
                 free.push(buf.clone());
             }
         }
-        //Allocate for CFG output
+
         let output = execution_order.last().unwrap();
-        assignments.insert(
-            output.id(),
-            device.get_or_create_buffer(&BufferDescriptor {
-                size: output.num_bytes() as _,
-                usage: BufferUsages::standard(),
-                mapped_at_creation: false,
-            })?,
-        );
+        let has_one_source = output.op().srcs().len() == 1;
+        let supports_inplace = output.op().supports_inplace();
+        let has_one_consumer = true; //TODO: implement
+        let can_inplace = supports_inplace && has_one_consumer && has_one_source;
+
+        if can_inplace {
+            let source = output.op().srcs()[0];
+            assignments.insert(output.id(), assignments[&source.id()].clone());
+        } else {
+            assignments.insert(
+                output.id(),
+                device.get_or_create_buffer(&BufferDescriptor {
+                    size: output.num_bytes() as _,
+                    usage: BufferUsages::standard(),
+                    mapped_at_creation: false,
+                })?,
+            );
+        }
+
+        println!("Allocated {} buffers", assignments.len());
+        println!("Free buffers: {}", free.len());
+        println!("ALLOCATIONS: {:#?}", assignments);
         Ok(assignments)
     }
 }
