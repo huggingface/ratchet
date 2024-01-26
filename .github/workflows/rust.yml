@@ -21,8 +21,6 @@ jobs:
         include:
           - name: Windows x86_64
             os: windows-2022
-          - name: Linux x86_64
-            os: ubuntu-latest
           #TODO: android?
     steps:
       - uses: actions/checkout@v4
