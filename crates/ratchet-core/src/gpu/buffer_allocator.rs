@@ -113,6 +113,32 @@ impl BufferAllocator {
         }
     }
 
+    /// # Inplace operations
+    ///
+    /// If an operation supports inplace, we need to "lease" the buffer
+    /// from the actual source (i.e the first non-inplace operation)
+    ///
+    /// On what conditions do we terminate the upward traversal?
+    /// 1. We reach a constant
+    /// 2. We reach an operation that does not support inplace
+    /// 3. We reach an operation that has more than one consumer
+    /// 4. We reach an operation that has more than one source
+    fn traverse_upwards_for_inplace(source: &Tensor) -> &Tensor {
+        let mut true_source = source;
+        loop {
+            let is_const = true_source.op().is_const();
+            let cant_inplace = !true_source.op().supports_inplace();
+            let multiple_sources = true_source.op().srcs().len() > 1;
+            let multiple_consumers = false; //TODO: implement
+            if cant_inplace || multiple_sources || multiple_consumers || is_const {
+                break;
+            }
+
+            true_source = true_source.op().srcs()[0];
+        }
+        true_source
+    }
+
     /// # Graph memory allocation
     ///
     /// Simple greedy algorithm
@@ -138,23 +164,12 @@ impl BufferAllocator {
                 continue;
             }
 
+            // I need all of my sources to be allocated in order to compute my output value.
+            // We "lease" the buffer, and it is released when we reach it in the execution order.
+            // If the current tensor is an inplace operation,
+            // we traverse upwards until we find a non-inplace operation.
             for source in t.op().srcs() {
-                let mut true_source = source;
-                loop {
-                    let is_const = true_source.op().srcs().is_empty();
-                    let has_one_source = true_source.op().srcs().len() == 1;
-                    let supports_inplace = t.op().supports_inplace();
-                    let has_one_consumer = true; //TODO: implement
-                    let can_inplace =
-                        (is_const || has_one_source) && supports_inplace && has_one_consumer;
-
-                    if can_inplace && !is_const {
-                        true_source = true_source.op().srcs()[0];
-                    } else {
-                        break;
-                    }
-                }
-
+                let true_source = Self::traverse_upwards_for_inplace(source);
                 assignments.entry(true_source.id()).or_insert_with(|| {
                     self.graph_allocate(
                         BufferDescriptor::new(
@@ -168,35 +183,37 @@ impl BufferAllocator {
                 });
             }
 
-            //release my buffer
+            //My buffer is no longer needed, since we traverse in reverse order
+            //Earlier tensors can use my buffer
             if let Some(buf) = assignments.get(&t.id()) {
                 free.push(buf.clone());
             }
         }
 
+        //The output never gets allocated in the above loop, because it is not a source.
+        //We know we need an allocation for the output.
+        //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
         let output = execution_order.last().unwrap();
-        let has_one_source = output.op().srcs().len() == 1;
-        let supports_inplace = output.op().supports_inplace();
-        let has_one_consumer = true; //TODO: implement
-        let can_inplace = supports_inplace && has_one_consumer && has_one_source;
+        let output_source = Self::traverse_upwards_for_inplace(output);
 
-        if can_inplace {
-            let source = output.op().srcs()[0];
-            assignments.insert(output.id(), assignments[&source.id()].clone());
-        } else {
-            assignments.insert(
-                output.id(),
-                device.get_or_create_buffer(&BufferDescriptor {
-                    size: output.num_bytes() as _,
-                    usage: BufferUsages::standard(),
-                    mapped_at_creation: false,
-                })?,
-            );
-        }
+        //If output source is allocated, we can use it's buffer
+        //Otherwise, we need to allocate a new buffer
+        let output_buffer = assignments
+            .get(&output_source.id())
+            .cloned()
+            .unwrap_or_else(|| {
+                self.graph_allocate(
+                    BufferDescriptor::new(
+                        output_source.num_bytes() as _,
+                        BufferUsages::standard(),
+                        false,
+                    ),
+                    &mut free,
+                    device,
+                )
+            });
+        assignments.insert(output.id(), output_buffer);
 
-        println!("Allocated {} buffers", assignments.len());
-        println!("Free buffers: {}", free.len());
-        println!("ALLOCATIONS: {:#?}", assignments);
         Ok(assignments)
     }
 }
