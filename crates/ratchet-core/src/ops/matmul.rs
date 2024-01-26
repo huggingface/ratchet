@@ -233,6 +233,7 @@ impl Operation for Matmul {
         dst: &Tensor,
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
+        _can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
         let A = &self.lhs;
         let B = &self.rhs;
@@ -295,6 +296,7 @@ impl Operation for Matmul {
             dst,
             rvec![storage_layout],
             device,
+            false,
         );
 
         Ok(CompiledOp::new(
@@ -323,81 +325,61 @@ impl Operation for Matmul {
 
 #[cfg(test)]
 mod tests {
-    use numpy::PyArrayDyn;
-    use pyo3::{types::PyModule, Python};
+    use crate::test_util::run_py_prg;
 
     use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
 
     use super::*;
 
-    #[test]
-    fn test_sgemm() -> anyhow::Result<()> {
+    fn matmul_harness() -> anyhow::Result<(Tensor, Tensor)> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
-        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
-            let prg = PyModule::from_code(
-                py,
-                r#"
+        Ok((a, b))
+    }
+
+    fn ground_truth(a: &Tensor, b: &Tensor) -> anyhow::Result<Tensor> {
+        let prg = r#"
 import torch
 def matmul(a, b):
-    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#,
-                "x.py",
-                "x",
-            )?;
-            let py_a = a.to_py::<f32>(&py);
-            let py_b = b.to_py::<f32>(&py);
-            let py_c = prg
-                .getattr("matmul")?
-                .call1((py_a, py_b))?
-                .extract::<&PyArrayDyn<f32>>()?;
-            Ok(Tensor::from(py_c))
-        });
+    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#;
+        run_py_prg(prg.to_string(), &[a, b])
+    }
+
+    #[test]
+    fn test_sgemm() -> anyhow::Result<()> {
+        let (a, b) = matmul_harness()?;
+        let ground = ground_truth(&a, &b)?;
+
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a_gpu = a.to(device.clone())?;
-        let b_gpu = b.to(device.clone())?;
+        let a_gpu = a.to(&device)?;
+        let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(&b_gpu)?;
         c_gpu.resolve()?;
-        let d_gpu = c_gpu.to(Device::CPU)?;
-        ground?.all_close(&d_gpu, 1e-4, 1e-4)?;
+
+        let d_gpu = c_gpu.to(&Device::CPU)?;
+        ground.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
     }
 
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![2048, 2048], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![2048, 2048], cpu_device.clone());
-        let ground: anyhow::Result<Tensor> = Python::with_gil(|py| {
-            let prg = PyModule::from_code(
-                py,
-                r#"
-import torch
-def matmul(a, b):
-    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#,
-                "x.py",
-                "x",
-            )?;
-            let py_a = a.to_py::<f32>(&py);
-            let py_b = b.to_py::<f32>(&py);
-            let py_c = prg
-                .getattr("matmul")?
-                .call1((py_a, py_b))?
-                .extract::<&PyArrayDyn<f32>>()?;
-            Ok(Tensor::from(py_c))
-        });
+        let (a, b) = matmul_harness()?;
+        let ground = ground_truth(&a, &b)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let bq = quantizer.sint8_quantize(b);
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a_gpu = a.to(device.clone())?;
-        let b_gpu = bq.to(device.clone())?;
+        let a_gpu = a.to(&device)?;
+        let b_gpu = bq.to(&device)?;
         let c_gpu = a_gpu.matmul(&b_gpu)?;
         c_gpu.resolve()?;
-        let ours = c_gpu.to(Device::CPU)?;
+        let ours = c_gpu.to(&Device::CPU)?;
+
         println!("RATCHET WQ8\n{:?}\n", ours);
         println!("PYTORCH FP32:\n{:?}", ground);
-        ground?.all_close(&ours, 1e1, 1e-1)?;
+
+        ground.all_close(&ours, 1e1, 1e-1)?;
 
         Ok(())
     }

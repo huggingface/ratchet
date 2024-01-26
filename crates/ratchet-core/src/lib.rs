@@ -81,3 +81,31 @@ macro_rules! shape {
         $crate::Shape::new(rvec![$($x,)*])
     });
 }
+
+#[cfg(test)]
+pub mod test_util {
+    use crate::Tensor;
+    use regex::Regex;
+    #[cfg(feature = "pyo3")]
+    use {
+        numpy::PyArrayDyn,
+        pyo3::{prelude::*, types::PyTuple},
+    };
+
+    /// It's a bit of a hack, but it's useful for testing.
+    #[cfg(feature = "pyo3")]
+    pub fn run_py_prg(prg: String, args: &[&Tensor]) -> anyhow::Result<Tensor> {
+        let re = Regex::new(r"def\s+(\w+)\s*\(").unwrap();
+        let func = match re.captures(&prg) {
+            Some(caps) => caps.get(1).map(|m| m.as_str()).unwrap(),
+            None => return Err(anyhow::anyhow!("No function name found")),
+        };
+
+        Python::with_gil(|py| {
+            let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
+            let py_args = PyTuple::new(py, args.iter().map(|arg| arg.to_py::<f32>(&py)));
+            let py_result: &PyArrayDyn<f32> = prg.getattr(func)?.call1(py_args)?.extract()?;
+            Ok(Tensor::from(py_result))
+        })
+    }
+}

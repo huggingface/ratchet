@@ -56,7 +56,7 @@ impl WgpuDevice {
         let adapter = Self::select_adapter()?;
 
         #[allow(unused_mut)]
-        let mut features = wgpu::Features::default();
+        let mut required_features = wgpu::Features::default();
         #[cfg(feature = "gpu-profiling")]
         {
             features |= wgpu::Features::TIMESTAMP_QUERY;
@@ -64,8 +64,8 @@ impl WgpuDevice {
 
         let mut device_descriptor = wgpu::DeviceDescriptor {
             label: Some("ratchet"),
-            features,
-            limits: Limits {
+            required_features,
+            required_limits: Limits {
                 max_buffer_size: MAX_BUFFER_SIZE,
                 max_storage_buffer_binding_size: MAX_BUFFER_SIZE as u32,
                 ..Default::default()
@@ -77,7 +77,7 @@ impl WgpuDevice {
                 "Failed to acq. device, trying again with reduced limits: {:?}",
                 e
             );
-            device_descriptor.limits = adapter.limits();
+            device_descriptor.required_limits = adapter.limits();
             adapter.request_device(&device_descriptor, None).await
         } else {
             device_request
@@ -131,6 +131,7 @@ impl WgpuDevice {
         let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
         let adapter = instance
             .enumerate_adapters(backends)
+            .into_iter()
             .max_by_key(|adapter| match adapter.get_info().device_type {
                 DeviceType::DiscreteGpu => 5,
                 DeviceType::Other => 4,
