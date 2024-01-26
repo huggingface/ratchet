@@ -84,7 +84,7 @@ mod gguf {
     use winnow::error::Needed;
     use winnow::error::{AddContext, ContextError, ErrMode, StrContext};
     use winnow::prelude;
-    use winnow::stream::Offset;
+    use winnow::stream::{Offset, Stream};
     use winnow::token::take;
     use winnow::Parser;
 
@@ -320,16 +320,18 @@ mod gguf {
 
     pub fn load_gguf(mut file: std::fs::File) -> Result<Option<Header>, anyhow::Error> {
         use std::io::Read;
-        let buffer_size = 10_000_000;
-        let min_buffer_growth = 10_000_000;
+        let buffer_size = 1_000_000;
+        let min_buffer_growth = 1_000_000;
         let buffer_growth_factor = 2;
         let mut buffer = circular::Buffer::with_capacity(buffer_size);
 
         let mut maybe_header: Option<Header> = None;
-        loop {
+        'outer: loop {
+            println!("Reading new buffer space");
             let read = file.read(buffer.space())?;
 
             if read == 0 {
+                println!("Read 0");
                 // Should be EOF since we always make sure there is `available_space`
                 assert_ne!(buffer.available_space(), 0);
                 assert_eq!(
@@ -338,19 +340,24 @@ mod gguf {
                     "leftover data: {}",
                     String::from_utf8_lossy(buffer.data())
                 );
-                break;
+                break 'outer;
             }
             buffer.fill(read);
 
-            loop {
+            println!("buffer position: {}", buffer.position());
+            'inner: loop {
                 let mut input = BytesStream::new(winnow::Bytes::new(buffer.data()));
+
+                println!("stream length: {}", input.len());
                 let result = parse_header.parse_peek(input);
                 match result {
                     Ok((remainder, header)) => {
                         // Tell the buffer how much we read
+                        println!("Read header!");
                         let consumed = remainder.offset_from(&input);
                         buffer.consume(consumed);
-                        maybe_header = Some(header)
+                        maybe_header = Some(header);
+                        break 'outer;
                     }
                     Err(ErrMode::Backtrack(e)) => {
                         let pos = buffer.position();
@@ -377,13 +384,15 @@ mod gguf {
                             println!("buffer shift");
                             buffer.shift();
                         }
-                        break;
+                        println!("breaking inner");
+                        break 'inner;
                     }
                     Err(ErrMode::Incomplete(Needed::Unknown)) => {
                         let new_capacity = buffer_growth_factor * buffer.capacity();
                         println!("growing buffer to {}", new_capacity);
                         buffer.grow(new_capacity);
-                        break;
+                        println!("breaking inner - unknown");
+                        break 'inner;
                     }
                 }
             }
