@@ -12,6 +12,9 @@ use web_sys::{console, ReadableStreamGetReaderOptions, ReadableStreamReaderMode}
 use winnow::{binary::bits::bytes, prelude::*, stream::Stream, Bytes, Partial};
 use winnow::{binary::u32, binary::u64, combinator::preceded, Parser};
 
+use std::io::Read;
+
+use anyhow::Error;
 mod fetch;
 pub mod huggingface;
 
@@ -78,7 +81,10 @@ mod gguf {
     use winnow::binary::{u32, u64, u8, Endianness};
 
     use winnow::combinator::fail;
+    use winnow::error::Needed;
     use winnow::error::{AddContext, ContextError, ErrMode, StrContext};
+    use winnow::prelude;
+    use winnow::stream::Offset;
     use winnow::token::take;
     use winnow::Parser;
 
@@ -273,6 +279,7 @@ mod gguf {
         input: &mut winnow::Partial<&winnow::Bytes>,
         error_msg: &'static str,
     ) -> ErrMode<ContextError> {
+        println!("Error: {}", error_msg);
         ErrMode::Cut(ContextError::new().add_context(input, StrContext::Label(error_msg)))
     }
 
@@ -310,6 +317,80 @@ mod gguf {
             })
             .parse_next(input)
     }
+
+    pub fn load_gguf(mut file: std::fs::File) -> Result<Option<Header>, anyhow::Error> {
+        use std::io::Read;
+        let buffer_size = 10_000_000;
+        let min_buffer_growth = 10_000_000;
+        let buffer_growth_factor = 2;
+        let mut buffer = circular::Buffer::with_capacity(buffer_size);
+
+        let mut maybe_header: Option<Header> = None;
+        loop {
+            let read = file.read(buffer.space())?;
+
+            if read == 0 {
+                // Should be EOF since we always make sure there is `available_space`
+                assert_ne!(buffer.available_space(), 0);
+                assert_eq!(
+                    buffer.available_data(),
+                    0,
+                    "leftover data: {}",
+                    String::from_utf8_lossy(buffer.data())
+                );
+                break;
+            }
+            buffer.fill(read);
+
+            loop {
+                let mut input = BytesStream::new(winnow::Bytes::new(buffer.data()));
+                let result = parse_header.parse_peek(input);
+                match result {
+                    Ok((remainder, header)) => {
+                        // Tell the buffer how much we read
+                        let consumed = remainder.offset_from(&input);
+                        buffer.consume(consumed);
+                        maybe_header = Some(header)
+                    }
+                    Err(ErrMode::Backtrack(e)) => {
+                        let pos = buffer.position();
+                        println!("Backtrack, position={}, error={}", pos, e);
+                        return Err(anyhow::format_err!(e.to_string()));
+                    }
+                    Err(ErrMode::Cut(e)) => {
+                        println!("Cut: {:#?}", e);
+                        return Err(anyhow::format_err!(e.to_string()));
+                    }
+                    Err(ErrMode::Incomplete(Needed::Size(size))) => {
+                        // Without the format telling us how much space is required, we really should
+                        // treat this the same as `Unknown` but are doing this to demonstrate how to
+                        // handle `Size`.
+                        //
+                        // Even when the format has a header to tell us `Size`, we could hit incidental
+                        // `Size(1)`s, so make sure we buffer more space than that to avoid reading
+                        // one byte at a time
+                        let head_room = size.get().max(min_buffer_growth);
+                        let new_capacity = buffer.available_data() + head_room;
+                        println!("growing buffer to {}", new_capacity);
+                        buffer.grow(new_capacity);
+                        if buffer.available_space() < head_room {
+                            println!("buffer shift");
+                            buffer.shift();
+                        }
+                        break;
+                    }
+                    Err(ErrMode::Incomplete(Needed::Unknown)) => {
+                        let new_capacity = buffer_growth_factor * buffer.capacity();
+                        println!("growing buffer to {}", new_capacity);
+                        buffer.grow(new_capacity);
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(maybe_header)
+    }
+
     pub fn to_std_error(
         error: winnow::error::ErrMode<winnow::error::ContextError>,
     ) -> std::io::Error {
@@ -323,10 +404,6 @@ mod gguf {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
-
-    use anyhow::Error;
-    use winnow::Bytes;
 
     use crate::{gguf, BytesStream};
 
@@ -334,20 +411,18 @@ mod tests {
     fn test_parse_header() -> anyhow::Result<()> {
         let mut file = std::fs::File::open("./test-data/TheBloke_TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")?;
 
-        let buffer_size = 10_000_000;
-        let min_buffer_growth = 100;
-        let buffer_growth_factor = 2;
-        let mut buffer = circular::Buffer::with_capacity(buffer_size);
-        let read = file.read(buffer.space())?;
-        buffer.fill(read);
+        let result = gguf::load_gguf(file);
 
-        let mut input = BytesStream::new(Bytes::new(buffer.data()));
+        match result {
+            Ok(None) => println!("Header was None"),
+            Ok(Some(header)) => {
+                println!("{:#?}", header.metadata_kv);
+                assert_eq!(header.version, 3);
+                assert_eq!(header.tensor_count, 201)
+            }
+            Err(err) => println!("Got an error: {:#?}", err),
+        }
 
-        let result = gguf::parse_header(&mut input).map_err(gguf::to_std_error)?;
-
-        println!("{:#?}", result.metadata_kv);
-        assert_eq!(result.version, 3);
-        assert_eq!(result.tensor_count, 201);
         Ok(())
     }
 }
