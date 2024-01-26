@@ -8,7 +8,7 @@ use crate::{rvec, Binary, CompiledOp, InvariantError, Matmul, RVec, Softmax, Sto
 
 #[derive(Clone, Debug)]
 pub enum LazyOp {
-    Empty,
+    Dummy(Tensor),
     Matmul(Matmul),
     Binary(Binary),
     Softmax(Softmax),
@@ -21,6 +21,7 @@ impl LazyOp {
             LazyOp::Binary(b) => b.srcs(),
             LazyOp::Matmul(m) => m.srcs(),
             LazyOp::Softmax(s) => s.srcs(),
+            LazyOp::Dummy(t) => rvec![t],
             LazyOp::Const => rvec![], //end of the line kid
             _ => unimplemented!(),
         }
@@ -34,6 +35,10 @@ impl LazyOp {
             LazyOp::Const => true,
             _ => false,
         }
+    }
+
+    pub fn is_const(&self) -> bool {
+        matches!(self, LazyOp::Const)
     }
 }
 

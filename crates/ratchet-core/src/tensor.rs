@@ -1,7 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, shape, strides, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    GPUBuffer, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType,
+    TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
@@ -52,6 +53,15 @@ impl Tensor {
 
     fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
         Self::new(op, meta, None, device)
+    }
+
+    pub fn dummy(src: Tensor) -> Self {
+        Self::new(
+            LazyOp::Dummy(src),
+            StorageView::new(shape![], DType::F32, Strides::default()),
+            None,
+            Device::CPU,
+        )
     }
 
     fn update_storage(&self, storage: Storage) {
