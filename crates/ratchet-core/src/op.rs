@@ -32,7 +32,7 @@ impl LazyOp {
             LazyOp::Binary(b) => b.supports_inplace(),
             LazyOp::Matmul(m) => m.supports_inplace(),
             LazyOp::Softmax(s) => s.supports_inplace(),
-            LazyOp::Const => true,
+            LazyOp::Const => false,
             _ => false,
         }
     }

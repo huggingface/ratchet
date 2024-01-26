@@ -31,6 +31,7 @@ impl DType {
         }
     }
 
+    //TODO: use a different method, total_bytes won't work with 256 byte padding
     pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
         match self {
             DType::WQ8 => {

@@ -119,18 +119,24 @@ impl BufferAllocator {
     /// from the actual source (i.e the first non-inplace operation)
     ///
     /// On what conditions do we terminate the upward traversal?
-    /// 1. We reach a constant
-    /// 2. We reach an operation that does not support inplace
-    /// 3. We reach an operation that has more than one consumer
-    /// 4. We reach an operation that has more than one source
-    fn traverse_upwards_for_inplace(source: &Tensor) -> &Tensor {
+    /// 1. We reach an operation that does not support inplace
+    /// 2. We reach an operation that has more than one consumer
+    /// 3. We reach an operation that has more than one source
+    fn determine_tensor_source<'a>(source: &'a Tensor, execution_order: &[Tensor]) -> &'a Tensor {
         let mut true_source = source;
         loop {
-            let is_const = true_source.op().is_const();
             let cant_inplace = !true_source.op().supports_inplace();
             let multiple_sources = true_source.op().srcs().len() > 1;
-            let multiple_consumers = false; //TODO: implement
-            if cant_inplace || multiple_sources || multiple_consumers || is_const {
+            let ts_index = execution_order
+                .iter()
+                .position(|t| t.id() == true_source.id())
+                .unwrap();
+            let multiple_consumers = execution_order[ts_index + 1..]
+                .iter()
+                .filter(|t| t.op().srcs().contains(&true_source))
+                .count()
+                > 1;
+            if cant_inplace || multiple_sources || multiple_consumers {
                 break;
             }
 
@@ -169,7 +175,7 @@ impl BufferAllocator {
             // If the current tensor is an inplace operation,
             // we traverse upwards until we find a non-inplace operation.
             for source in t.op().srcs() {
-                let true_source = Self::traverse_upwards_for_inplace(source);
+                let true_source = Self::determine_tensor_source(source, execution_order);
                 assignments.entry(true_source.id()).or_insert_with(|| {
                     self.graph_allocate(
                         BufferDescriptor::new(
@@ -194,7 +200,7 @@ impl BufferAllocator {
         //We know we need an allocation for the output.
         //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
         let output = execution_order.last().unwrap();
-        let output_source = Self::traverse_upwards_for_inplace(output);
+        let output_source = Self::determine_tensor_source(output, execution_order);
 
         //If output source is allocated, we can use it's buffer
         //Otherwise, we need to allocate a new buffer

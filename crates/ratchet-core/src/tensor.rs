@@ -337,7 +337,6 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
-        println!("EXECUTION ORDER: \n{:#?}", execution_order);
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
@@ -364,7 +363,7 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        let executable = Executable::new(compiled_ops, uniform.into_gpu(device));
+        let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(())
