@@ -414,10 +414,10 @@ impl Tensor {
     /// If the tensor is already on the specified device, it will be returned as-is,
     /// and the underlying storage will not be copied.
     /// If the tensor is on a different device, it will be copied to the specified device.
-    pub fn to(&self, device: Device) -> Result<Tensor, TensorError> {
-        match (self.device(), &device) {
+    pub fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
             (Device::GPU(_), Device::CPU) => self.to_cpu(),
-            (Device::CPU, Device::GPU(_)) => self.to_gpu(&device),
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
             _ => Ok(self.clone()),
         }
     }

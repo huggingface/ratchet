@@ -129,10 +129,10 @@ def softmax(a):
         let a = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
         let ground = ground_truth(&a)?;
 
-        let a_gpu = a.to(gpu_device.clone())?;
+        let a_gpu = a.to(&gpu_device)?;
         let b = a_gpu.softmax(1)?;
         b.resolve()?;
-        let ours = b.to(Device::CPU)?;
+        let ours = b.to(&Device::CPU)?;
         println!("GROUND: \n{:?}", ground);
         println!("OURS: \n{:?}", ours);
         ground.all_close(&ours, 1e-6, 1e-6)?;
