@@ -136,7 +136,6 @@ def softmax(a):
         println!("GROUND: \n{:?}", ground);
         println!("OURS: \n{:?}", ours);
         ground.all_close(&ours, 1e-6, 1e-6)?;
-
         Ok(())
     }
 }
