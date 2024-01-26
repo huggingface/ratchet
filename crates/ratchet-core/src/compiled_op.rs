@@ -20,7 +20,6 @@ pub struct CompiledOp {
 impl CompiledOp {
     const MAX_BINDINGS_PER_GROUP: usize = 4;
 
-    //TODO: Should return a Result
     pub fn create_storage_bind_groups(
         srcs: &[&Tensor],
         dst: &Tensor,
@@ -44,9 +43,8 @@ impl CompiledOp {
             let entries = bind_group_entries[group_range].into();
             let layout = *bind_group_layout;
 
-            let bind_group =
-                device.get_or_create_bind_group(&BindGroupDescriptor { entries, layout })?;
-            storage_groups.push(bind_group);
+            let bg = device.get_or_create_bind_group(&BindGroupDescriptor { entries, layout })?;
+            storage_groups.push(bg);
         }
         Ok(storage_groups)
     }

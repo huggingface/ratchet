@@ -7,6 +7,7 @@ use crate::gpu::{CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
 use crate::{rvec, Binary, CompiledOp, InvariantError, Matmul, RVec, Softmax, StorageView, Tensor};
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum LazyOp {
     Matmul(Matmul),
     Binary(Binary),
