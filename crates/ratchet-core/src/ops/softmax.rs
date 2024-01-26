@@ -87,7 +87,7 @@ impl Operation for Softmax {
             rvec![storage_layout],
             device,
             can_inplace,
-        );
+        )?;
 
         Ok(CompiledOp::new(
             pipeline_handle,
