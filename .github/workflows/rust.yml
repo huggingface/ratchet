@@ -84,7 +84,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          cargo nextest run --features pyo3 --no-fail-fast 
+          cargo nextest run -j 1 --features pyo3 --no-fail-fast 
 
           # - name: Install wasm-pack 
           #   run: |
