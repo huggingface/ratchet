@@ -1,6 +1,6 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, shape, strides, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    ops::*, rvec, shape, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
     GPUBuffer, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType,
     TensorId,
 };
@@ -53,15 +53,6 @@ impl Tensor {
 
     fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
         Self::new(op, meta, None, device)
-    }
-
-    pub fn dummy(src: Tensor) -> Self {
-        Self::new(
-            LazyOp::Dummy(src),
-            StorageView::new(shape![], DType::F32, Strides::default()),
-            None,
-            Device::CPU,
-        )
     }
 
     fn update_storage(&self, storage: Storage) {
@@ -270,12 +261,12 @@ impl Tensor {
         let handle = gpu_buf.inner().handle;
         let segments = self.dt().segments(gpu_buf.inner().size() as usize);
         segments.iter().fold(rvec![], |mut entries, segment| {
-            let entry = BindGroupEntry {
+            let (offset, size) = (segment.offset, segment.size);
+            entries.push(BindGroupEntry {
                 handle,
-                offset: segment.offset,
-                size: segment.size,
-            };
-            entries.push(entry);
+                offset,
+                size,
+            });
             entries
         })
     }
@@ -298,19 +289,14 @@ impl Tensor {
             if visited.contains(&tensor) {
                 continue;
             }
-            match &tensor.inner.op {
-                LazyOp::Const => {}
-                LazyOp::Binary(b) => {
-                    stack.extend(b.srcs().into_iter().cloned());
-                }
-                LazyOp::Matmul(m) => {
-                    stack.extend(m.srcs().into_iter().cloned());
-                }
-                LazyOp::Softmax(s) => {
-                    stack.extend(s.srcs().into_iter().cloned());
-                }
+            let srcs = match &tensor.inner.op {
+                LazyOp::Const => rvec![],
+                LazyOp::Binary(b) => b.srcs(),
+                LazyOp::Matmul(m) => m.srcs(),
+                LazyOp::Softmax(s) => s.srcs(),
                 _ => unimplemented!(),
-            }
+            };
+            stack.extend(srcs.into_iter().cloned());
             visited.push(tensor);
         }
         visited.reverse();
@@ -337,7 +323,6 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
-        println!("EXECUTION ORDER: \n{:#?}", execution_order);
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
@@ -353,6 +338,7 @@ impl Tensor {
                 t.update_storage(Storage::GPU(storage));
             }
 
+            //Can inplace && only 1 consumer
             let can_inplace = t.op().supports_inplace()
                 && execution_order[tix + 1..]
                     .iter()
@@ -364,7 +350,7 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        let executable = Executable::new(compiled_ops, uniform.into_gpu(device));
+        let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(())
@@ -470,6 +456,7 @@ impl Tensor {
     }
 }
 
+#[derive(Default)]
 struct CloseStats {
     total_error: f32,
     max_abs_error: f32,
@@ -483,13 +470,9 @@ struct CloseStats {
 impl CloseStats {
     fn new(atol: f32, rtol: f32) -> Self {
         Self {
-            total_error: 0.0,
-            max_abs_error: 0.0,
-            max_abs_error_idxs: None,
-            element_count: 0,
-            fail_count: 0,
             atol,
             rtol,
+            ..Default::default()
         }
     }
 

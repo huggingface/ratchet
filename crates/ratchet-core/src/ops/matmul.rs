@@ -179,6 +179,8 @@ pub struct Matmul {
     rhs: Tensor,
 }
 
+impl Matmul {}
+
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType)]
 pub struct MatmulMeta {
@@ -297,7 +299,7 @@ impl Operation for Matmul {
             rvec![storage_layout],
             device,
             false,
-        );
+        )?;
 
         Ok(CompiledOp::new(
             pipeline_handle,
@@ -308,6 +310,9 @@ impl Operation for Matmul {
     }
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
+        let (_a, _b) = (srcs[0], srcs[1]);
+        //let c_shape = Matmul::compute_output_shape(a.clone(), b.clone()).unwrap();
+
         //TODO: THIS IS WRONG 🚨
         Ok(srcs[0].view().clone())
     }
