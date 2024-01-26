@@ -261,12 +261,12 @@ impl Tensor {
         let handle = gpu_buf.inner().handle;
         let segments = self.dt().segments(gpu_buf.inner().size() as usize);
         segments.iter().fold(rvec![], |mut entries, segment| {
-            let entry = BindGroupEntry {
+            let (offset, size) = (segment.offset, segment.size);
+            entries.push(BindGroupEntry {
                 handle,
-                offset: segment.offset,
-                size: segment.size,
-            };
-            entries.push(entry);
+                offset,
+                size,
+            });
             entries
         })
     }
