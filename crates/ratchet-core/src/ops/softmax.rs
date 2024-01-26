@@ -87,7 +87,7 @@ impl Operation for Softmax {
             rvec![storage_layout],
             device,
             can_inplace,
-        );
+        )?;
 
         Ok(CompiledOp::new(
             pipeline_handle,
@@ -98,7 +98,6 @@ impl Operation for Softmax {
     }
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        //TODO: FIX
         Ok(srcs[0].view().clone())
     }
 

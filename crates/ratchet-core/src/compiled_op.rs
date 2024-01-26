@@ -2,7 +2,7 @@ use crate::gpu::{
     BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle, GpuBindGroup, WgpuDevice,
     WorkgroupCount,
 };
-use crate::{drvec, rvec, RVec, Tensor};
+use crate::{drvec, rvec, OperationError, RVec, Tensor};
 use derive_new::new;
 use wgpu::DynamicOffset;
 
@@ -20,14 +20,13 @@ pub struct CompiledOp {
 impl CompiledOp {
     const MAX_BINDINGS_PER_GROUP: usize = 4;
 
-    //TODO: Should return a Result
     pub fn create_storage_bind_groups(
         srcs: &[&Tensor],
         dst: &Tensor,
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
         inplace: bool,
-    ) -> RVec<GpuBindGroup> {
+    ) -> Result<RVec<GpuBindGroup>, OperationError> {
         let mut bind_group_entries = drvec![];
 
         for tensor in srcs.iter() {
@@ -44,12 +43,10 @@ impl CompiledOp {
             let entries = bind_group_entries[group_range].into();
             let layout = *bind_group_layout;
 
-            let bind_group = device
-                .get_or_create_bind_group(&BindGroupDescriptor { entries, layout })
-                .unwrap();
-            storage_groups.push(bind_group);
+            let bg = device.get_or_create_bind_group(&BindGroupDescriptor { entries, layout })?;
+            storage_groups.push(bg);
         }
-        storage_groups
+        Ok(storage_groups)
     }
 
     /// Determines which bindings belong to which bind group
