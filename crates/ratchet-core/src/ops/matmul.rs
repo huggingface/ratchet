@@ -297,7 +297,7 @@ impl Operation for Matmul {
             rvec![storage_layout],
             device,
             false,
-        );
+        )?;
 
         Ok(CompiledOp::new(
             pipeline_handle,
