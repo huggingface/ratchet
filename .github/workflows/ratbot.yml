@@ -23,18 +23,18 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
+            const sccOutput = \`${{ steps.scc.outputs.scc }}\`;
             const codeReport = `
               <details>
-              \`\`\`\n
-              ```
-              ${{ steps.scc.outputs.scc }}
-              ```
-              \`\`\`
+              <pre>
+              ${sccOutput}
+              </pre>
               </details>
             `;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `${codeReport}`
-            })
+              body: codeReport
+            });
+
