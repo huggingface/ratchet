@@ -5,10 +5,9 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{
-        BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-        WgpuDevice, WorkgroupCount,
+        BindGroupLayoutDescriptor, WorkgroupCount,
     },
-    rvec, wgc, CompiledOp, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError,
+    rvec, wgc, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError,
     RVec, Shape, StorageView, Tensor,
 };
 
@@ -268,7 +267,7 @@ impl Operation for Matmul {
 
     fn storage_bind_group_layout(
         &self,
-        inplace: bool,
+        _inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         let (A, B) = (&self.lhs, &self.rhs);
         let layout = match (A.dt(), B.dt()) {
@@ -289,9 +288,9 @@ impl Operation for Matmul {
         let N = spec.n() as u32;
         let K = spec.k() as u32;
 
-        let a_offset = MatmulSpec::batch_offset(spec.a_stack() as _, M, K, &kernel_element);
-        let b_offset = MatmulSpec::batch_offset(spec.b_stack() as _, K, N, &kernel_element);
-        let c_offset = MatmulSpec::batch_offset(spec.c_stack() as _, M, N, &kernel_element);
+        let a_offset = MatmulSpec::batch_offset(spec.a_stack() as _, M, K, kernel_element);
+        let b_offset = MatmulSpec::batch_offset(spec.b_stack() as _, K, N, kernel_element);
+        let c_offset = MatmulSpec::batch_offset(spec.c_stack() as _, M, N, kernel_element);
 
         Ok(MatmulMeta::new(M, N, K, a_offset, b_offset, c_offset))
     }
