@@ -46,4 +46,6 @@ pyo3 = { version = "0.20.2", features=["auto-initialize"] }
 numpy = { version = "0.20.0" }
 ndarray = { version = "0.15.6" }
 regex = "1.10.3"
+test-strategy = "0.3.1"
+proptest = "1.4.0"
 

@@ -17,6 +17,7 @@ pub struct Softmax {
 pub struct SoftmaxMeta {
     M: u32,
     N: u32,
+    ND2: u32,
     ND4: u32,
 }
 
@@ -84,13 +85,16 @@ impl Operation for Softmax {
         let input = &self.input;
         let M = input.shape()[self.dim - 1] as u32;
         let N = input.shape()[self.dim] as u32;
+        let ND2 = N / 2;
         let ND4 = N / 4;
-        Ok(SoftmaxMeta { M, N, ND4 })
+        Ok(SoftmaxMeta { M, N, ND2, ND4 })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use test_strategy::{proptest, Arbitrary};
+
     use crate::test_util::run_py_prg;
     use crate::{shape, Device, DeviceRequest, Tensor};
 
@@ -104,19 +108,34 @@ def softmax(a):
         run_py_prg(prg.to_string(), &[a])
     }
 
-    #[test]
-    pub fn softmax() -> anyhow::Result<()> {
-        let gpu_device = Device::request_device(DeviceRequest::GPU)?;
-        let a = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
-        let ground = ground_truth(&a)?;
+    fn run_softmax_trial(device: &Device, problem: SoftmaxProblem) {
+        let SoftmaxProblem { B, M, N } = problem;
+        let a = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
+        let ground = ground_truth(&a).unwrap();
 
-        let a_gpu = a.to(&gpu_device)?;
-        let b = a_gpu.softmax(1)?;
-        b.resolve()?;
-        let ours = b.to(&Device::CPU)?;
-        println!("GROUND: \n{:?}", ground);
-        println!("OURS: \n{:?}", ours);
-        ground.all_close(&ours, 1e-6, 1e-6)?;
-        Ok(())
+        let a_gpu = a.to(device).unwrap();
+        let b = a_gpu.softmax(2).unwrap();
+        b.resolve().unwrap();
+
+        let ours = b.to(&Device::CPU).unwrap();
+        ground.all_close(&ours, 1e-6, 1e-6).unwrap();
+    }
+
+    #[derive(Arbitrary, Debug)]
+    struct SoftmaxProblem {
+        #[strategy(1..=4usize)]
+        B: usize,
+        #[strategy(1..=1024usize)]
+        M: usize,
+        #[strategy(1..=1024usize)]
+        N: usize,
+    }
+
+    #[proptest(cases = 8)]
+    fn test_softmax(prob: SoftmaxProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let SoftmaxProblem { B, M, N } = prob;
+        println!("B = {}, M = {}, N = {}", B, M, N);
+        run_softmax_trial(&device, prob);
     }
 }
