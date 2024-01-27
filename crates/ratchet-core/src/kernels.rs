@@ -29,6 +29,12 @@ lazy_static! {
             ),
         );
         m.insert(
+            "softmax_vec2",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/softmax_vec2.wgsl"
+            ),
+        );
+        m.insert(
             "sgemm_vec4",
             include_str!(
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/sgemm_vec4.wgsl"

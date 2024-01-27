@@ -1,6 +1,6 @@
 //https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
 @group(0) @binding(0)
-var<storage, read_write> X: array<vec4<f32>>;
+var<storage, read_write> X: array<vec2<f32>>;
 
 struct Meta {
     M: u32,
@@ -12,7 +12,7 @@ struct Meta {
 @group(1) @binding(0)
 var<uniform> metadata: Meta;
 
-var<workgroup> smem: array<vec4<f32>, 128>; // max size is 16kb
+var<workgroup> smem: array<vec2<f32>, 128>; // max size is 16kb
 var<workgroup> maximum: f32;
 var<workgroup> sum: f32;
 
@@ -38,12 +38,12 @@ fn main(
         @builtin(local_invocation_id) local_id: vec3<u32>,
         @builtin(workgroup_id) group_id: vec3<u32>,
 ) {
-    let batch_stride = group_id.y * metadata.M * metadata.ND4;
-    let row_start = batch_stride + group_id.x * metadata.ND4; 
+    let batch_stride = group_id.y * metadata.M * metadata.ND2;
+    let row_start = batch_stride + group_id.x * metadata.ND2; 
     let index = local_id.x;
 
-    smem[index] = vec4<f32>(minFloat);
-    for (var i: u32 = index; i < metadata.ND4; i += BLOCK_SIZE) {
+    smem[index] = vec2<f32>(minFloat);
+    for (var i: u32 = index; i < metadata.ND2; i += BLOCK_SIZE) {
         smem[index] = max(smem[index], X[row_start + i]); 
     }
     workgroupBarrier();
@@ -57,12 +57,12 @@ fn main(
     block_max(index, 1u);
 
     if index == 0u{
-        maximum = max(smem[0].x, max(smem[0].y, max(smem[0].z, smem[0].w)));
+        maximum = max(smem[0].x, smem[0].y);
     }
     workgroupBarrier();
 
-    smem[index] = vec4<f32>(0.0);
-    for (var i: u32 = index; i < metadata.ND4; i += BLOCK_SIZE) {
+    smem[index] = vec2<f32>(0.0);
+    for (var i: u32 = index; i < metadata.ND2; i += BLOCK_SIZE) {
         smem[index] += exp(X[row_start + i] - maximum);
     }
     
@@ -76,11 +76,11 @@ fn main(
     block_sum(index, 1u);
 
     if index == 0u {
-        sum = dot(smem[0], vec4<f32>(1.0)); 
+        sum = dot(smem[0], vec2<f32>(1.0)); 
     }
     workgroupBarrier();
 
-    for(var i: u32 = index; i < metadata.ND4; i += BLOCK_SIZE) {
+    for(var i: u32 = index; i < metadata.ND2; i += BLOCK_SIZE) {
         var val = X[row_start + i];
         X[row_start + i] = exp(val - maximum) / sum;
     }
