@@ -1,4 +1,4 @@
-use crate::RVec;
+use crate::{shape, RVec};
 use encase::impl_wrapper;
 use std::ops::RangeTo;
 
@@ -44,6 +44,10 @@ impl Shape {
         self.len()
     }
 
+    pub fn push(&mut self, dim: usize) {
+        self.0.push(dim);
+    }
+
     #[inline]
     pub fn left_pad_to(&mut self, scalar: usize, rank: usize) {
         while self.0.len() < rank {
@@ -67,6 +71,26 @@ impl Shape {
 
     pub fn slice(&self, range: std::ops::Range<usize>) -> Self {
         Shape(self.0[range].to_vec().into())
+    }
+
+    pub fn multi_broadcast(shapes: &[Shape]) -> Option<Shape> {
+        let max_rank = shapes.iter().map(|shape| shape.rank()).max()?;
+        let mut shape: Shape = shape![];
+        for i in 0..max_rank {
+            let mut current_dim_size = 1;
+            for shape in shapes {
+                let len = shape.rank();
+                let dim = if i < len { &shape[len - i - 1] } else { &1 };
+                if dim != &1 {
+                    if current_dim_size != 1 && dim != &current_dim_size {
+                        return None;
+                    }
+                    current_dim_size = *dim;
+                }
+            }
+            shape.0.insert(0, current_dim_size)
+        }
+        Some(shape)
     }
 }
 
@@ -117,5 +141,11 @@ impl From<Vec<usize>> for Shape {
 impl From<Vec<u32>> for Shape {
     fn from(shape: Vec<u32>) -> Self {
         Self(shape.into_iter().map(|x| x as usize).collect())
+    }
+}
+
+impl From<&[usize]> for Shape {
+    fn from(slice: &[usize]) -> Self {
+        Shape(slice.into())
     }
 }
