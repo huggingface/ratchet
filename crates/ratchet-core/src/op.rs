@@ -138,6 +138,7 @@ pub trait Operation: Debug + 'static {
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
+        //Not sure i like this call here
         let storage_bind_groups = CompiledOp::create_storage_bind_groups(
             &self.srcs(),
             dst,
@@ -153,6 +154,8 @@ pub trait Operation: Debug + 'static {
             offset as _,
         ))
     }
+
+    //These 2 methods below are a bit unrelated, should maybe be in a different trait
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
 
