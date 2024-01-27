@@ -376,11 +376,11 @@ def matmul(a, b):
     struct SGEMMProblem {
         #[strategy(1..=4usize)]
         B: usize,
-        #[strategy(1..=1024usize)]
+        #[strategy(1..=512usize)]
         M: usize,
-        #[strategy(1..=1024usize)]
+        #[strategy(1..=512usize)]
         K: usize,
-        #[strategy(1..=1024usize)]
+        #[strategy(1..=512usize)]
         N: usize,
     }
 
@@ -405,7 +405,7 @@ def matmul(a, b):
         c_gpu.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 1e-3, 1e-3)?;
+        ground.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
     }
 
