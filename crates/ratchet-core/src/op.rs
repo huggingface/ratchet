@@ -3,8 +3,14 @@ use std::fmt::Debug;
 use encase::internal::WriteInto;
 use encase::ShaderType;
 
-use crate::gpu::{CpuUniform, PoolError, WgpuDevice, UNIFORM_ALIGN};
-use crate::{rvec, Binary, CompiledOp, InvariantError, Matmul, RVec, Softmax, StorageView, Tensor};
+use crate::gpu::{
+    BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
+    PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
+};
+use crate::{
+    rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, RVec, Softmax, StorageView,
+    Tensor,
+};
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -66,12 +72,14 @@ pub trait OpMetadata: Sized + ShaderType + WriteInto {
 }
 
 //Every Operation in the CFG should implement this trait
+//This should be renamed to Kernel
 pub trait Operation: Debug + 'static {
     ///Meta is a struct containing all data written into our uniform buffer.
     ///Typically contains shapes or strides.
     type Meta: OpMetadata;
 
-    fn name(&self) -> &'static str;
+    /// Return the file stem of the kernel source file.
+    fn kernel_name(&self) -> &'static str;
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -79,14 +87,77 @@ pub trait Operation: Debug + 'static {
         false
     }
 
+    /// # Kernel Element
+    ///
+    /// Determine the largest possible unit data type that can be used (e.g f32, vec2<f32>, vec4<f32>)
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement;
+
+    /// # Calculate Dispatch
+    ///
+    /// Determine required amount of workgroups to execute the operation.
+    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError>;
+
+    /// # Storage Bind Group Layout
+    ///
+    /// Determine the layout of the storage bind group.
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError>;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Meta, OperationError>;
+
     fn compile(
         &self,
         dst: &Tensor,
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
         can_inplace: bool,
-    ) -> Result<CompiledOp, OperationError>;
+    ) -> Result<CompiledOp, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        let meta = self.metadata(dst, &kernel_element)?;
+        let offset = uniform.write(&meta)?;
 
+        let workgroup_count = self.calculate_dispatch()?;
+
+        let storage_layout = device
+            .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
+        let uniform_layout =
+            device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
+        let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
+            entries: rvec![storage_layout, uniform_layout],
+        })?;
+
+        let pipeline_descriptor = ComputePipelineDescriptor {
+            pipeline_layout,
+            kernel_name: self.kernel_name(),
+            kernel_element,
+        };
+        let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
+
+        //Not sure i like this call here
+        let storage_bind_groups = CompiledOp::create_storage_bind_groups(
+            &self.srcs(),
+            dst,
+            rvec![storage_layout],
+            device,
+            can_inplace,
+        )?;
+
+        Ok(CompiledOp::new(
+            pipeline_handle,
+            workgroup_count,
+            storage_bind_groups,
+            offset as _,
+        ))
+    }
+
+    //These 2 methods below should be moved to another trait
+    //They're unrelated
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
 
     /// # Output Inference

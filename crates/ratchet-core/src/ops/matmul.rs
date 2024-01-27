@@ -4,12 +4,9 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{
-        BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-        WgpuDevice, WorkgroupCount,
-    },
-    rvec, wgc, CompiledOp, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError,
-    RVec, Shape, StorageView, Tensor,
+    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    rvec, wgc, DType, Enforcer, InvariantError, KernelElement, OpMetadata, Operation,
+    OperationError, RVec, Shape, StorageView, Tensor,
 };
 
 // Defines a matrix multiplication operation.
@@ -171,6 +168,15 @@ impl MatmulSpec {
         c_shape.insert(0, self.stacks());
         (a_shape, b_shape, c_shape)
     }
+
+    //If the stack is 1, we don't want to offset the data
+    fn batch_offset(stack: u32, dim1: u32, dim2: u32, kernel_elem: &KernelElement) -> u32 {
+        if stack == 1 {
+            0
+        } else {
+            (dim1 * dim2) / kernel_elem.as_size() as u32
+        }
+    }
 }
 
 #[derive(new, Debug, Clone)]
@@ -178,8 +184,6 @@ pub struct Matmul {
     lhs: Tensor,
     rhs: Tensor,
 }
-
-impl Matmul {}
 
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType)]
@@ -222,91 +226,16 @@ impl OpMetadata for MatmulMeta {}
 impl Operation for Matmul {
     type Meta = MatmulMeta;
 
-    fn name(&self) -> &'static str {
-        "Matmul"
+    fn kernel_name(&self) -> &'static str {
+        match (self.lhs.dt(), self.rhs.dt()) {
+            (DType::F32, DType::F32) => "sgemm",
+            (DType::F32, DType::WQ8) => "qgemm",
+            _ => panic!("Unsupported dtypes"),
+        }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.lhs, &self.rhs]
-    }
-
-    fn compile(
-        &self,
-        dst: &Tensor,
-        uniform: &mut CpuUniform,
-        device: &WgpuDevice,
-        _can_inplace: bool,
-    ) -> Result<CompiledOp, OperationError> {
-        let A = &self.lhs;
-        let B = &self.rhs;
-        let C = dst;
-        let spec = MatmulSpec::new(A, B, C);
-
-        let kernel_element = spec.select_kernel_element();
-
-        let M = spec.m() as u32;
-        let N = spec.n() as u32;
-        let K = spec.k() as u32;
-
-        //If the stack is 1, we don't want to offset the data
-        fn calculate_offset(stack: u32, dim1: u32, dim2: u32, kernel_elem: &KernelElement) -> u32 {
-            if stack == 1 {
-                0
-            } else {
-                (dim1 * dim2) / kernel_elem.as_size() as u32
-            }
-        }
-
-        let a_offset = calculate_offset(spec.a_stack() as _, M, K, &kernel_element);
-        let b_offset = calculate_offset(spec.b_stack() as _, K, N, &kernel_element);
-        let c_offset = calculate_offset(spec.c_stack() as _, M, N, &kernel_element);
-
-        let metadata = MatmulMeta::new(M, N, K, a_offset, b_offset, c_offset);
-        let offset = uniform.write(&metadata)?;
-
-        let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
-        let group_y = WorkgroupCount::div_ceil(spec.n(), 8 * kernel_element.as_size()) as u32;
-
-        let storage_layout_descriptor = match (A.dt(), B.dt()) {
-            (DType::F32, DType::F32) => BindGroupLayoutDescriptor::binary(),
-            (DType::F32, DType::WQ8) => BindGroupLayoutDescriptor::ternary(),
-            _ => panic!("Unsupported dtypes"),
-        };
-        let storage_layout = device.get_or_create_bind_group_layout(&storage_layout_descriptor)?;
-
-        let uniform_layout =
-            device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
-        let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
-            entries: rvec![storage_layout, uniform_layout],
-        })?;
-
-        let kernel_name = match (A.dt(), B.dt()) {
-            (DType::F32, DType::F32) => "sgemm",
-            (DType::F32, DType::WQ8) => "qgemm",
-            _ => panic!("Unsupported dtypes"),
-        };
-
-        let pipeline_handle =
-            device.get_or_create_compute_pipeline(&ComputePipelineDescriptor {
-                pipeline_layout,
-                kernel_name,
-                kernel_element,
-            })?;
-
-        let storage_bind_groups = CompiledOp::create_storage_bind_groups(
-            &self.srcs(),
-            dst,
-            rvec![storage_layout],
-            device,
-            false,
-        )?;
-
-        Ok(CompiledOp::new(
-            pipeline_handle,
-            wgc![group_x, group_y, spec.stacks() as _],
-            storage_bind_groups,
-            offset as _,
-        ))
     }
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
@@ -325,6 +254,51 @@ impl Operation for Matmul {
             panic!("Failed to validate DTypes")
         }
         Ok(())
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst);
+        spec.select_kernel_element()
+    }
+
+    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError> {
+        let spec = MatmulSpec::new(&self.lhs, &self.rhs, &self.lhs);
+        let kernel_element = spec.select_kernel_element();
+
+        let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
+        let group_y = WorkgroupCount::div_ceil(spec.n(), 8 * kernel_element.as_size()) as _;
+
+        Ok(wgc![group_x, group_y, spec.stacks() as _])
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        _inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        let (A, B) = (&self.lhs, &self.rhs);
+        let layout = match (A.dt(), B.dt()) {
+            (DType::F32, DType::F32) => BindGroupLayoutDescriptor::binary(),
+            (DType::F32, DType::WQ8) => BindGroupLayoutDescriptor::ternary(),
+            _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
+        };
+        Ok(layout)
+    }
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Meta, OperationError> {
+        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst);
+        let M = spec.m() as u32;
+        let N = spec.n() as u32;
+        let K = spec.k() as u32;
+
+        let a_offset = MatmulSpec::batch_offset(spec.a_stack() as _, M, K, kernel_element);
+        let b_offset = MatmulSpec::batch_offset(spec.b_stack() as _, K, N, kernel_element);
+        let c_offset = MatmulSpec::batch_offset(spec.c_stack() as _, M, N, kernel_element);
+
+        Ok(MatmulMeta::new(M, N, K, a_offset, b_offset, c_offset))
     }
 }
 
