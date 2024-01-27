@@ -80,6 +80,7 @@ mod gguf {
     use crate::BytesStream;
     use winnow::binary::{u32, u64, u8, Endianness};
 
+    use anyhow::anyhow;
     use winnow::combinator::fail;
     use winnow::error::Needed;
     use winnow::error::{AddContext, ContextError, ErrMode, StrContext};
@@ -99,6 +100,14 @@ mod gguf {
         pub tensor_count: u64,
         pub metadata_kv: Vec<MetadataKv>,
     }
+
+    pub struct TensorInfo {
+        pub name: String,
+        pub dimensions: Vec<u64>,
+        pub ggml_type: GgmlType,
+        pub offset: u64,
+    }
+
     #[derive(Clone, Debug)]
     pub enum MetadataValueType {
         GgufMetadataValueTypeUint8,
@@ -131,6 +140,29 @@ mod gguf {
         GgufMetadataValueUint64(u64),
         GgufMetadataValueInt64(i64),
         GgufMetadataValueFloat64(f64),
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum GgmlType {
+        GgmlTypeF32,
+        GgmlTypeF16,
+        GgmlTypeQ4_0,
+        GgmlTypeQ4_1,
+        GgmlTypeQ5_0,
+        GgmlTypeQ5_1,
+        GgmlTypeQ8_0,
+        GgmlTypeQ8_1,
+        // k-quantizations
+        GgmlTypeQ2K,
+        GgmlTypeQ3K,
+        GgmlTypeQ4K,
+        GgmlTypeQ5K,
+        GgmlTypeQ6K,
+        GgmlTypeQ8K,
+        GgmlTypeI8,
+        GgmlTypeI16,
+        GgmlTypeI32,
+        GgmlTypeCount,
     }
 
     #[inline]
@@ -275,6 +307,52 @@ mod gguf {
             })
     }
 
+    fn parse_ggml_type(input: &mut BytesStream) -> winnow::PResult<GgmlType> {
+        u32(Endianness::Little)
+            .parse_next(input)
+            .and_then(|metadata_value_type| match metadata_value_type {
+                0 => Ok(GgmlType::GgmlTypeF32),
+                1 => Ok(GgmlType::GgmlTypeF16),
+                2 => Ok(GgmlType::GgmlTypeQ4_0),
+                3 => Ok(GgmlType::GgmlTypeQ4_1),
+                // 4 & 5 have been removed
+                6 => Ok(GgmlType::GgmlTypeQ5_0),
+                7 => Ok(GgmlType::GgmlTypeQ5_1),
+                8 => Ok(GgmlType::GgmlTypeQ8_0),
+                9 => Ok(GgmlType::GgmlTypeQ8_1),
+                // k-quantizations
+                10 => Ok(GgmlType::GgmlTypeQ2K),
+                11 => Ok(GgmlType::GgmlTypeQ3K),
+                12 => Ok(GgmlType::GgmlTypeQ4K),
+                13 => Ok(GgmlType::GgmlTypeQ5K),
+                14 => Ok(GgmlType::GgmlTypeQ6K),
+                15 => Ok(GgmlType::GgmlTypeQ8K),
+                16 => Ok(GgmlType::GgmlTypeI8),
+                17 => Ok(GgmlType::GgmlTypeI16),
+                18 => Ok(GgmlType::GgmlTypeI32),
+                19 => Ok(GgmlType::GgmlTypeCount),
+                other => Err(cut_error(input, "Unknown metadata value type.")),
+            })
+    }
+
+    fn parse_tensor_info(input: &mut BytesStream) -> winnow::PResult<TensorInfo> {
+        (parse_string, u32(Endianness::Little))
+            .flat_map(|(name, n_dimensions)| {
+                let dimensions_parser =
+                    winnow::combinator::repeat(n_dimensions as usize, u64(Endianness::Little));
+
+                (dimensions_parser, parse_ggml_type, u64(Endianness::Little)).map(
+                    move |(dimensions, ggml_type, offset)| TensorInfo {
+                        name: name.clone(),
+                        dimensions,
+                        ggml_type,
+                        offset,
+                    },
+                )
+            })
+            .parse_next(input)
+    }
+
     fn cut_error(
         input: &mut winnow::Partial<&winnow::Bytes>,
         error_msg: &'static str,
@@ -304,7 +382,7 @@ mod gguf {
             parse_tensor_count,
             parse_metadata_kv_count,
         )
-            .flat_map(|(gguf, version, tensor_count, metadata_kv_count)| {
+            .flat_map(|(_gguf, version, tensor_count, metadata_kv_count)| {
                 winnow::combinator::repeat(
                     metadata_kv_count as usize,
                     parse_metadata_kv(metadata_kv_count),
@@ -318,16 +396,31 @@ mod gguf {
             .parse_next(input)
     }
 
-    pub fn load_gguf(mut file: std::fs::File) -> Result<Option<Header>, anyhow::Error> {
-        use std::io::Read;
+    pub fn load_gguf(mut file: std::fs::File) -> anyhow::Result<Header> {
         let buffer_size = 1_000_000;
         let min_buffer_growth = 1_000_000;
         let buffer_growth_factor = 2;
         let mut buffer = circular::Buffer::with_capacity(buffer_size);
 
-        let mut maybe_header: Option<Header> = None;
+        let mut parser = parse_header;
+
+        let res = parse_with_buffer(file, buffer, parser, buffer_growth_factor)?;
+        res
+    }
+
+    fn parse_with_buffer(
+        mut file: std::fs::File,
+        mut buffer: circular::Buffer,
+        mut parser: fn(
+            &mut winnow::Partial<&winnow::Bytes>,
+        ) -> Result<Header, ErrMode<ContextError>>,
+        buffer_growth_factor: usize,
+    ) -> Result<Result<Header, anyhow::Error>, anyhow::Error> {
+        use std::io::Read;
+        let mut result: anyhow::Result<Header> = Err(anyhow!(
+            "An unknown error occurred while parsing the header.",
+        ));
         'outer: loop {
-            println!("Reading new buffer space");
             let read = file.read(buffer.space())?;
 
             if read == 0 {
@@ -344,60 +437,35 @@ mod gguf {
             }
             buffer.fill(read);
 
-            println!("buffer position: {}", buffer.position());
             'inner: loop {
                 let mut input = BytesStream::new(winnow::Bytes::new(buffer.data()));
 
-                println!("stream length: {}", input.len());
-                let result = parse_header.parse_peek(input);
-                match result {
-                    Ok((remainder, header)) => {
+                let parser_result = parser.parse_peek(input);
+                match parser_result {
+                    Ok((remainder, parser_output)) => {
                         // Tell the buffer how much we read
-                        println!("Read header!");
                         let consumed = remainder.offset_from(&input);
                         buffer.consume(consumed);
-                        maybe_header = Some(header);
+                        result = Ok(parser_output);
                         break 'outer;
                     }
                     Err(ErrMode::Backtrack(e)) => {
                         let pos = buffer.position();
-                        println!("Backtrack, position={}, error={}", pos, e);
                         return Err(anyhow::format_err!(e.to_string()));
                     }
                     Err(ErrMode::Cut(e)) => {
-                        println!("Cut: {:#?}", e);
                         return Err(anyhow::format_err!(e.to_string()));
                     }
-                    Err(ErrMode::Incomplete(Needed::Size(size))) => {
-                        // Without the format telling us how much space is required, we really should
-                        // treat this the same as `Unknown` but are doing this to demonstrate how to
-                        // handle `Size`.
-                        //
-                        // Even when the format has a header to tell us `Size`, we could hit incidental
-                        // `Size(1)`s, so make sure we buffer more space than that to avoid reading
-                        // one byte at a time
-                        let head_room = size.get().max(min_buffer_growth);
-                        let new_capacity = buffer.available_data() + head_room;
-                        println!("growing buffer to {}", new_capacity);
-                        buffer.grow(new_capacity);
-                        if buffer.available_space() < head_room {
-                            println!("buffer shift");
-                            buffer.shift();
-                        }
-                        println!("breaking inner");
-                        break 'inner;
-                    }
-                    Err(ErrMode::Incomplete(Needed::Unknown)) => {
+                    Err(ErrMode::Incomplete(_)) => {
                         let new_capacity = buffer_growth_factor * buffer.capacity();
-                        println!("growing buffer to {}", new_capacity);
                         buffer.grow(new_capacity);
-                        println!("breaking inner - unknown");
                         break 'inner;
                     }
                 }
             }
         }
-        Ok(maybe_header)
+        let res = result;
+        Ok(res)
     }
 
     pub fn to_std_error(
@@ -423,9 +491,8 @@ mod tests {
         let result = gguf::load_gguf(file);
 
         match result {
-            Ok(None) => println!("Header was None"),
-            Ok(Some(header)) => {
-                println!("{:#?}", header.metadata_kv);
+            Ok(header) => {
+                // println!("{:#?}", header.metadata_kv);
                 assert_eq!(header.version, 3);
                 assert_eq!(header.tensor_count, 201)
             }
