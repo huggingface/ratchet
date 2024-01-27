@@ -4,11 +4,9 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{
-        BindGroupLayoutDescriptor, WorkgroupCount,
-    },
-    rvec, wgc, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError,
-    RVec, Shape, StorageView, Tensor,
+    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    rvec, wgc, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec, Shape,
+    StorageView, Tensor,
 };
 
 // Defines a matrix multiplication operation.
