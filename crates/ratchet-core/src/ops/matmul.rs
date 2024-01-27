@@ -5,8 +5,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, DType, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec, Shape,
-    StorageView, Tensor,
+    rvec, wgc, DType, Enforcer, InvariantError, KernelElement, OpMetadata, Operation,
+    OperationError, RVec, Shape, StorageView, Tensor,
 };
 
 // Defines a matrix multiplication operation.
@@ -226,6 +226,14 @@ impl OpMetadata for MatmulMeta {}
 impl Operation for Matmul {
     type Meta = MatmulMeta;
 
+    fn kernel_name(&self) -> &'static str {
+        match (self.lhs.dt(), self.rhs.dt()) {
+            (DType::F32, DType::F32) => "sgemm",
+            (DType::F32, DType::WQ8) => "qgemm",
+            _ => panic!("Unsupported dtypes"),
+        }
+    }
+
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.lhs, &self.rhs]
     }
@@ -271,7 +279,7 @@ impl Operation for Matmul {
         let layout = match (A.dt(), B.dt()) {
             (DType::F32, DType::F32) => BindGroupLayoutDescriptor::binary(),
             (DType::F32, DType::WQ8) => BindGroupLayoutDescriptor::ternary(),
-            _ => panic!("Unsupported dtypes"),
+            _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
         };
         Ok(layout)
     }
@@ -291,15 +299,6 @@ impl Operation for Matmul {
         let c_offset = MatmulSpec::batch_offset(spec.c_stack() as _, M, N, kernel_element);
 
         Ok(MatmulMeta::new(M, N, K, a_offset, b_offset, c_offset))
-    }
-
-    fn kernel_name(&self) -> &'static str {
-        let (A, B) = (&self.lhs, &self.rhs);
-        match (A.dt(), B.dt()) {
-            (DType::F32, DType::F32) => "sgemm",
-            (DType::F32, DType::WQ8) => "qgemm",
-            _ => panic!("Unsupported dtypes"),
-        }
     }
 }
 
