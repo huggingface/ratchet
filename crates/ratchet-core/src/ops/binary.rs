@@ -3,10 +3,9 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{
-        BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-        WgpuDevice, WorkgroupCount,
+        BindGroupLayoutDescriptor, WorkgroupCount,
     },
-    rvec, wgc, CompiledOp, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec,
+    rvec, wgc, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec,
     StorageView, Tensor,
 };
 
