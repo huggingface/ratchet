@@ -23,13 +23,10 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const codeReport = "\\`\\`\\`\\n" +
-            ${{ steps.scc.outputs.scc }} +
-            "\\n\\`\\`\\`";
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `${codeReport}`
+              body: `${{ steps.scc.outputs.scc }}`
             })
 
