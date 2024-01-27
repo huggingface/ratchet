@@ -77,13 +77,14 @@ pub trait Operation: Debug + 'static {
     ///Typically contains shapes or strides.
     type Meta: OpMetadata;
 
+    /// Return the file stem of the kernel source file.
+    fn kernel_name(&self) -> &'static str;
+
     fn srcs(&self) -> RVec<&Tensor>;
 
     fn supports_inplace(&self) -> bool {
         false
     }
-
-    fn kernel_name(&self) -> &'static str;
 
     /// # Kernel Element
     ///
@@ -130,12 +131,12 @@ pub trait Operation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let pipeline_handle =
-            device.get_or_create_compute_pipeline(&ComputePipelineDescriptor {
-                pipeline_layout,
-                kernel_name: self.kernel_name(),
-                kernel_element,
-            })?;
+        let pipeline_descriptor = ComputePipelineDescriptor {
+            pipeline_layout,
+            kernel_name: self.kernel_name(),
+            kernel_element,
+        };
+        let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
         let storage_bind_groups = CompiledOp::create_storage_bind_groups(
             &self.srcs(),
