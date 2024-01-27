@@ -72,6 +72,7 @@ pub trait OpMetadata: Sized + ShaderType + WriteInto {
 }
 
 //Every Operation in the CFG should implement this trait
+//This should be renamed to Kernel
 pub trait Operation: Debug + 'static {
     ///Meta is a struct containing all data written into our uniform buffer.
     ///Typically contains shapes or strides.
@@ -155,8 +156,8 @@ pub trait Operation: Debug + 'static {
         ))
     }
 
-    //These 2 methods below are a bit unrelated, should maybe be in a different trait
-
+    //These 2 methods below should be moved to another trait
+    //They're unrelated
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
 
     /// # Output Inference
