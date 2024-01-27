@@ -5,6 +5,7 @@ var<storage, read_write> X: array<f32>;
 struct Meta {
     M: u32,
     N: u32,
+    ND2: u32,
     ND4: u32,
 }
 

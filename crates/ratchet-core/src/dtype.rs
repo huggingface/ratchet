@@ -37,15 +37,16 @@ impl DType {
             DType::WQ8 => {
                 let weights_size = total_bytes / 5 * 4;
                 assert!(weights_size % 256 == 0); //storage buffer alignment
-                let weights = BufferSegment::new(0, Some(weights_size as u64));
+                let weights = BufferSegment::new(0, Some(weights_size as u64), true);
 
                 let absmax_size = total_bytes - weights_size;
                 assert!(absmax_size % 256 == 0); //storage buffer alignment
-                let absmax = BufferSegment::new(weights_size as u64, Some(absmax_size as u64));
+                let absmax =
+                    BufferSegment::new(weights_size as u64, Some(absmax_size as u64), true);
                 rvec![weights, absmax]
             }
             _ => {
-                rvec![BufferSegment::new(0, Some(total_bytes as u64))]
+                rvec![BufferSegment::new(0, Some(total_bytes as u64), false)]
             }
         }
     }
@@ -58,9 +59,11 @@ pub struct BufferSegment {
 }
 
 impl BufferSegment {
-    pub fn new(offset: BufferAddress, size: Option<u64>) -> Self {
+    pub fn new(offset: BufferAddress, size: Option<u64>, aligned: bool) -> Self {
         if let Some(size) = size {
-            assert!(size % 256 == 0); //storage buffer alignment
+            if aligned {
+                assert!(size % 256 == 0); //storage buffer alignment
+            }
         }
         let size = size.map(NonZeroU64::new).unwrap();
         Self { offset, size }
