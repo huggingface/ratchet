@@ -126,6 +126,7 @@ impl BufferAllocator {
         let mut true_source = source;
         loop {
             let cant_inplace = !true_source.op().supports_inplace();
+            //TODO: This condition isn't correct, binary can be inplace
             let multiple_sources = true_source.op().srcs().len() > 1;
             let ts_index = execution_order
                 .iter()
