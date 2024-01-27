@@ -1,4 +1,3 @@
-#![feature(seek_stream_len)]
 use js_sys::Uint8Array;
 #[cfg(test)]
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
@@ -13,9 +12,6 @@ use web_sys::{console, ReadableStreamGetReaderOptions, ReadableStreamReaderMode}
 use winnow::{binary::bits::bytes, prelude::*, stream::Stream, Bytes, Partial};
 use winnow::{binary::u32, binary::u64, combinator::preceded, Parser};
 
-use std::io::Read;
-
-use anyhow::Error;
 mod fetch;
 pub mod huggingface;
 
@@ -379,6 +375,14 @@ mod gguf {
         }
     }
 
+    fn parse_padding<'i>(padding: u64) -> impl Parser<BytesStream<'i>, (), ContextError> {
+        move |input: &mut BytesStream| {
+            winnow::combinator::repeat(padding as usize, u8)
+                .parse_next(input)
+                .map(|_: Vec<u8>| ())
+        }
+    }
+
     pub fn parse_header(input: &mut BytesStream) -> winnow::PResult<Header> {
         (
             parse_magic_number,
@@ -398,6 +402,10 @@ mod gguf {
                 })
             })
             .parse_next(input)
+    }
+
+    fn align_offset(alignment: u64, offset: u64) -> u64 {
+        return offset + (alignment - (offset % alignment)) % alignment;
     }
 
     pub fn load_gguf(mut file: std::fs::File) -> anyhow::Result<(Header, Vec<TensorInfo>)> {
@@ -430,6 +438,12 @@ mod gguf {
             )?;
             tensor_infos.push(tensor_info);
         }
+
+        let position = file.stream_position()?;
+        let padding = align_offset(alignment as u64, position) - position;
+        println!("calculated padding: {}", padding);
+        let padding_parser = parse_padding(padding);
+        let _ = parse_with_buffer(&mut file, &mut buffer, padding_parser, buffer_growth_factor)?;
         Ok((header, tensor_infos))
     }
 
@@ -437,6 +451,7 @@ mod gguf {
         file: &mut std::fs::File,
         buffer: &mut circular::Buffer,
         mut parser: fn(&mut winnow::Partial<&winnow::Bytes>) -> Result<O, ErrMode<ContextError>>,
+        // mut parser: impl Parser<BytesStream<'i>, O, ContextError>
         buffer_growth_factor: usize,
     ) -> anyhow::Result<O> {
         use std::io::Read;
@@ -462,7 +477,7 @@ mod gguf {
             buffer.fill(read);
 
             'inner: loop {
-                let mut input = BytesStream::new(winnow::Bytes::new(buffer.data()));
+                let input = BytesStream::new(winnow::Bytes::new(buffer.data()));
 
                 let parser_result = parser.parse_peek(input);
                 match parser_result {
@@ -495,9 +510,9 @@ mod gguf {
         error: winnow::error::ErrMode<winnow::error::ContextError>,
     ) -> std::io::Error {
         match error {
-            ErrMode::Backtrack(err) => std::io::Error::new(std::io::ErrorKind::Other, "Backtrack"),
-            ErrMode::Cut(err) => std::io::Error::new(std::io::ErrorKind::Other, "Cut"),
-            ErrMode::Incomplete(needed) => std::io::Error::new(std::io::ErrorKind::Other, "Needed"),
+            ErrMode::Backtrack(_) => std::io::Error::new(std::io::ErrorKind::Other, "Backtrack"),
+            ErrMode::Cut(_) => std::io::Error::new(std::io::ErrorKind::Other, "Cut"),
+            ErrMode::Incomplete(_) => std::io::Error::new(std::io::ErrorKind::Other, "Needed"),
         }
     }
 }
@@ -509,7 +524,7 @@ mod tests {
 
     #[test]
     fn test_load_gguf() -> anyhow::Result<()> {
-        let mut file = std::fs::File::open("./test-data/TheBloke_TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")?;
+        let file = std::fs::File::open("./test-data/TheBloke_TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")?;
 
         let result = gguf::load_gguf(file);
 
