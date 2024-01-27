@@ -406,6 +406,20 @@ mod gguf {
         let mut buffer = circular::Buffer::with_capacity(buffer_size);
 
         let header = parse_with_buffer(&mut file, &mut buffer, parse_header, buffer_growth_factor)?;
+
+        let alignment = header
+            .metadata_kv
+            .iter()
+            .find_map(|metadata_kv| match metadata_kv {
+                MetadataKv {
+                    key,
+                    metadata_value: MetadataValue::GgufMetadataValueUint32(v),
+                } if key.eq("general.alignment") => Some(v.clone()),
+                _ => None,
+            })
+            // As per spec assume 32 if general.alignment is not present
+            .unwrap_or(32);
+
         let mut tensor_infos: Vec<TensorInfo> = vec![];
         for i in 0..header.tensor_count {
             let tensor_info = parse_with_buffer(
@@ -501,7 +515,6 @@ mod tests {
 
         match result {
             Ok((header, tensor_info)) => {
-                println!("{:#?}", tensor_info);
                 assert_eq!(header.version, 3);
                 assert_eq!(header.tensor_count, 201)
             }
