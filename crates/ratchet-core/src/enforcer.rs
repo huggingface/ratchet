@@ -28,6 +28,8 @@ pub enum InvariantError {
     },
     #[error("DType mismatch, expected {expected:?}, got {actual:?}.")]
     DTypeMismatch { expected: DType, actual: DType },
+    #[error("Unsupported DType {0:?}.")]
+    UnsupportedDType(DType),
 }
 
 /// # Enforcer
