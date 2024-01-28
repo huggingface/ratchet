@@ -14,6 +14,8 @@ tera = "1.19.0"
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 globwalk = "0.8.1"
+strum = "0.25"
+strum_macros = "0.25"
 
 [dependencies]
 wgpu = { workspace = true }

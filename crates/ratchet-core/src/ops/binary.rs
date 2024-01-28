@@ -114,3 +114,83 @@ impl Operation for Binary {
         Ok(BinaryMeta { M, N })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use test_strategy::{proptest, Arbitrary};
+
+    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+
+    #[derive(Arbitrary, Debug)]
+    enum TestBinOp {
+        Add,
+        Sub,
+        Mul,
+        Div,
+    }
+
+    impl TestBinOp {
+        fn to_str(&self) -> &'static str {
+            match self {
+                TestBinOp::Add => "add",
+                TestBinOp::Sub => "sub",
+                TestBinOp::Mul => "mul",
+                TestBinOp::Div => "div",
+            }
+        }
+    }
+
+    #[derive(Arbitrary, Debug)]
+    struct BinaryProblem {
+        op: TestBinOp,
+        #[strategy(1..=4usize)]
+        B: usize,
+        #[strategy(1..=512usize)]
+        M: usize,
+        //#[strategy(1..=512usize)]
+        //N: usize,
+        //TODO: add N support
+    }
+
+    fn ground_truth(a: &Tensor, b: &Tensor, op: &TestBinOp) -> anyhow::Result<Tensor> {
+        let prg = format!(
+            r#"
+import torch
+def {}(a, b):
+    return torch.{}(torch.from_numpy(a), torch.from_numpy(b)).numpy()
+"#,
+            op.to_str(),
+            op.to_str()
+        );
+        run_py_prg(prg.to_string(), &[a, b])
+    }
+
+    fn run_binary_trial(device: &Device, prob: BinaryProblem) -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let BinaryProblem { op, B, M } = prob;
+        println!("op: {:?}, B: {}, M: {}", op, B, M);
+        let a = Tensor::randn::<f32>(shape![B, M], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1], cpu_device.clone());
+        let ground = ground_truth(&a, &b, &op)?;
+
+        let a_gpu = a.to(&device)?;
+        let b_gpu = b.to(&device)?;
+        let c_gpu = match op {
+            TestBinOp::Add => a_gpu.add(&b_gpu)?,
+            TestBinOp::Sub => a_gpu.sub(&b_gpu)?,
+            TestBinOp::Mul => a_gpu.mul(&b_gpu)?,
+            TestBinOp::Div => a_gpu.div(&b_gpu)?,
+        };
+        c_gpu.resolve()?;
+
+        let d_gpu = c_gpu.to(&Device::CPU)?;
+        ground.all_close(&d_gpu, 1e-4, 1e-4)?;
+        Ok(())
+    }
+
+    #[proptest(cases = 8)]
+    fn test_sgemm(prob: BinaryProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_binary_trial(&device, prob).unwrap();
+    }
+}

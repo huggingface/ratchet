@@ -1,9 +1,77 @@
-use anyhow::Context;
+use anyhow::Context as anyhowCtx;
+use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use strum::IntoEnumIterator;
+use tera::{Context, Tera};
 
-use tera::Tera;
+#[derive(strum_macros::EnumIter, Debug)]
+pub enum KernelElement {
+    Scalar,
+    Vec2,
+    Vec4,
+}
+
+impl std::fmt::Display for KernelElement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            KernelElement::Scalar => "scalar",
+            KernelElement::Vec2 => "vec2",
+            KernelElement::Vec4 => "vec4",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+pub enum WgslDType {
+    F32,
+}
+
+impl std::fmt::Display for WgslDType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WgslDType::F32 => write!(f, "f32"),
+        }
+    }
+}
+
+impl KernelElement {
+    pub fn as_wgsl(&self, dtype: WgslDType) -> String {
+        match self {
+            KernelElement::Scalar => dtype.to_string(),
+            KernelElement::Vec2 => format!("vec2<{}>", dtype),
+            KernelElement::Vec4 => format!("vec4<{}>", dtype),
+        }
+    }
+
+    pub fn as_size(&self) -> usize {
+        match self {
+            KernelElement::Scalar => 1,
+            KernelElement::Vec2 => 2,
+            KernelElement::Vec4 => 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone, strum_macros::EnumIter)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+impl BinaryOp {
+    pub fn mapping(&self) -> (&'static str, &'static str) {
+        match self {
+            BinaryOp::Add => ("add", "+"),
+            BinaryOp::Sub => ("sub", "-"),
+            BinaryOp::Mul => ("mul", "*"),
+            BinaryOp::Div => ("div", "/"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct KernelGenerator {
@@ -14,17 +82,39 @@ pub struct KernelGenerator {
 
 impl Default for KernelGenerator {
     fn default() -> Self {
-        let base_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("kernels");
+        let base_path = Path::new(env!("CARGO_MANIFEST_DIR"));
+        println!("BASE PATH: {}", base_path.display());
         KernelGenerator {
             tera: Tera::default(),
-            dest_path: base_path.join("generated"),
-            templates_path: base_path.join("templates"),
+            dest_path: base_path.join("kernels").join("generated"),
+            templates_path: base_path.join("kernel-templates"),
         }
     }
 }
 
 impl KernelGenerator {
     fn generate(&mut self) -> anyhow::Result<()> {
+        let pairs = BinaryOp::iter().fold(Vec::new(), |mut acc, op| {
+            acc.push(op.mapping());
+            acc
+        });
+
+        for (op_name, op) in &pairs {
+            for ke in KernelElement::iter() {
+                let path = self.templates_path.join("binary.wgsl");
+                self.tera.add_template_file(path, Some("binary"))?;
+
+                let mut context = Context::new();
+                context.insert("op", op);
+                context.insert("elem", &ke.as_wgsl(WgslDType::F32));
+                context.insert("elem_size", &ke.as_size());
+                let rendered = self.tera.render("binary", &context)?;
+
+                let kernel_fname = format!("{}_{}.wgsl", op_name, ke);
+                let mut file = File::create(self.dest_path.join(kernel_fname))?;
+                file.write_all(rendered.as_bytes())?;
+            }
+        }
         Ok(())
     }
 }
