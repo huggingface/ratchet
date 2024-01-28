@@ -5,6 +5,58 @@ lazy_static! {
     pub static ref KERNELS: HashMap<&'static str, &'static str> = {
         let mut m = HashMap::new();
         m.insert(
+            "sub_vec4",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/sub_vec4.wgsl"
+            ),
+        );
+        m.insert("mul_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/mul_scalar.wgsl"));
+        m.insert(
+            "mul_vec2",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/mul_vec2.wgsl"
+            ),
+        );
+        m.insert("sub_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/sub_scalar.wgsl"));
+        m.insert(
+            "sub_vec2",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/sub_vec2.wgsl"
+            ),
+        );
+        m.insert(
+            "mul_vec4",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/mul_vec4.wgsl"
+            ),
+        );
+        m.insert("add_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/add_scalar.wgsl"));
+        m.insert("div_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/div_scalar.wgsl"));
+        m.insert(
+            "div_vec4",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/div_vec4.wgsl"
+            ),
+        );
+        m.insert(
+            "add_vec2",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/add_vec2.wgsl"
+            ),
+        );
+        m.insert(
+            "add_vec4",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/add_vec4.wgsl"
+            ),
+        );
+        m.insert(
+            "div_vec2",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/div_vec2.wgsl"
+            ),
+        );
+        m.insert(
             "qgemm_vec4",
             include_str!(
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/qgemm_vec4.wgsl"
