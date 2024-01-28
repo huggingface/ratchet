@@ -93,6 +93,7 @@ pub mod test_util {
     };
 
     /// It's a bit of a hack, but it's useful for testing.
+    /// if a function name is not provided, looks for the first function in the program.
     #[cfg(feature = "pyo3")]
     pub fn run_py_prg(prg: String, args: &[&Tensor]) -> anyhow::Result<Tensor> {
         let re = Regex::new(r"def\s+(\w+)\s*\(").unwrap();

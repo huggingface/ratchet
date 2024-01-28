@@ -168,18 +168,27 @@ impl Tensor {
     }
 }
 
-impl Tensor {
-    pub fn add(&self, other: &Tensor) -> anyhow::Result<Tensor> {
-        Binary::check_invariants(&[self, other])?;
+macro_rules! impl_binary_op {
+    ($method_name:ident, $op:expr) => {
+        pub fn $method_name(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+            Binary::check_invariants(&[self, other])?;
 
-        let binary = Binary::new(self.clone(), other.clone(), BinaryOp::Add);
-        let new_view = binary.infer_output(&[self, other])?;
-        Ok(Tensor::lazy(
-            LazyOp::Binary(binary),
-            new_view,
-            self.device.clone(),
-        ))
-    }
+            let binary = Binary::new(self.clone(), other.clone(), $op);
+            let new_view = binary.infer_output(&[self, other])?;
+            Ok(Tensor::lazy(
+                LazyOp::Binary(binary),
+                new_view,
+                self.device.clone(),
+            ))
+        }
+    };
+}
+
+impl Tensor {
+    impl_binary_op!(add, BinaryOp::Add);
+    impl_binary_op!(sub, BinaryOp::Sub);
+    impl_binary_op!(mul, BinaryOp::Mul);
+    impl_binary_op!(div, BinaryOp::Div);
 
     //TODO: switch dim to isize and allow negative indexing
     pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
