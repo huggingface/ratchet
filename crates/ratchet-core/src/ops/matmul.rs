@@ -6,7 +6,7 @@ use encase::ShaderType;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
     rvec, wgc, DType, Enforcer, InvariantError, KernelElement, OpMetadata, Operation,
-    OperationError, RVec, Shape, StorageView, Tensor,
+    OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 
 // Defines a matrix multiplication operation.
@@ -185,6 +185,52 @@ pub struct Matmul {
     rhs: Tensor,
 }
 
+impl Matmul {
+    pub fn compute_c_shape(a: &Tensor, b: &Tensor) -> anyhow::Result<Shape> {
+        let (mut ashape, mut bshape) = (a.shape().clone(), b.shape().clone());
+
+        let insert_one_if = |shape: &mut Shape, index: usize, condition: bool| {
+            if condition {
+                shape.insert(index, 1);
+            }
+        };
+        let arank = ashape.rank();
+        let brank = bshape.rank();
+        insert_one_if(&mut ashape, 0, arank < 2);
+        insert_one_if(&mut bshape, 1, brank < 2);
+
+        let equalize_rank = |shape: &mut Shape, target_rank: usize| {
+            while shape.rank() < target_rank {
+                shape.insert(0, 1);
+            }
+        };
+        equalize_rank(&mut ashape, bshape.rank());
+        equalize_rank(&mut bshape, ashape.rank());
+
+        let arank = ashape.rank();
+        let brank = bshape.rank();
+        let (a_prefix, b_prefix) = (&ashape[..arank - 2], &bshape[..brank - 2]);
+        let c_broadcasted_prefix =
+            Shape::multi_broadcast(&[a_prefix.into(), b_prefix.into()]).unwrap();
+
+        let (m, ka) = (ashape[arank - 2], ashape[arank - 1]);
+        let (kb, n) = (bshape[brank - 2], bshape[brank - 1]);
+        if ka != kb {
+            anyhow::bail!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape);
+        }
+
+        let mut c_shape_final = c_broadcasted_prefix;
+        if ashape.rank() >= 2 {
+            c_shape_final.push(m);
+        }
+        if bshape.rank() >= 2 {
+            c_shape_final.push(n);
+        }
+
+        Ok(c_shape_final)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType)]
 pub struct MatmulMeta {
@@ -239,11 +285,10 @@ impl Operation for Matmul {
     }
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let (_a, _b) = (srcs[0], srcs[1]);
-        //let c_shape = Matmul::compute_output_shape(a.clone(), b.clone()).unwrap();
-
-        //TODO: THIS IS WRONG 🚨
-        Ok(srcs[0].view().clone())
+        let (a, b) = (srcs[0], srcs[1]);
+        let c_shape = Matmul::compute_c_shape(a, b).unwrap();
+        let c_strides = Strides::from(&c_shape);
+        Ok(StorageView::new(c_shape, a.dt(), c_strides))
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
@@ -304,6 +349,8 @@ impl Operation for Matmul {
 
 #[cfg(test)]
 mod tests {
+    use test_strategy::{proptest, Arbitrary};
+
     use crate::test_util::run_py_prg;
 
     use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
@@ -325,12 +372,33 @@ def matmul(a, b):
         run_py_prg(prg.to_string(), &[a, b])
     }
 
-    #[test]
-    fn test_sgemm() -> anyhow::Result<()> {
-        let (a, b) = matmul_harness()?;
+    #[derive(Arbitrary, Debug)]
+    struct SGEMMProblem {
+        #[strategy(1..=4usize)]
+        B: usize,
+        #[strategy(1..=512usize)]
+        M: usize,
+        #[strategy(1..=512usize)]
+        K: usize,
+        #[strategy(1..=512usize)]
+        N: usize,
+    }
+
+    #[proptest(cases = 8)]
+    fn test_sgemm(prob: SGEMMProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let SGEMMProblem { B, M, K, N } = prob;
+        println!("Running sgemm: B={} M={} K={} N={}", B, M, K, N);
+        run_matmul_trial(&device, prob).unwrap();
+    }
+
+    fn run_matmul_trial(device: &Device, prob: SGEMMProblem) -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let SGEMMProblem { B, M, K, N } = prob;
+        let a = Tensor::randn::<f32>(shape![B, M, K], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![B, K, N], cpu_device.clone());
         let ground = ground_truth(&a, &b)?;
 
-        let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(&b_gpu)?;
