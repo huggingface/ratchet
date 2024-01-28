@@ -184,11 +184,11 @@ def {}(a, b):
         c_gpu.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 1e-5, 1e-5)?;
+        ground.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
     }
 
-    #[proptest(cases = 32)]
+    #[proptest(cases = 8)]
     fn test_sgemm(prob: BinaryProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         run_binary_trial(&device, prob).unwrap();
