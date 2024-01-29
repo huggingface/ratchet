@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec, StorageView,
-    Tensor,
+    rvec, wgc, Enforcer, Kernel, KernelElement, OpMetadata, Operation, OperationError, RVec,
+    StorageView, Tensor,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -51,12 +51,6 @@ pub struct BinaryMeta {
 impl OpMetadata for BinaryMeta {}
 
 impl Operation for Binary {
-    type Meta = BinaryMeta;
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.lhs, &self.rhs]
-    }
-
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
         Ok(srcs[0].view().clone())
     }
@@ -65,6 +59,14 @@ impl Operation for Binary {
         Enforcer::check_input_arity(srcs, 2)?;
         Enforcer::check_dtype_match(srcs)?;
         Ok(())
+    }
+}
+
+impl Kernel for Binary {
+    type Meta = BinaryMeta;
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.lhs, &self.rhs]
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
