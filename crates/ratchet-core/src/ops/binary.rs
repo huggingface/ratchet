@@ -6,7 +6,10 @@ use crate::{
     rvec, wgc, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec, StorageView,
     Tensor,
 };
+#[cfg(test)]
+use test_strategy::Arbitrary;
 
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Clone)]
 pub enum BinaryOp {
     Add,
@@ -119,30 +122,11 @@ impl Operation for Binary {
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 
-    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
-
-    #[derive(Arbitrary, Debug)]
-    enum TestBinOp {
-        Add,
-        Sub,
-        Mul,
-        Div,
-    }
-
-    impl TestBinOp {
-        fn to_str(&self) -> &'static str {
-            match self {
-                TestBinOp::Add => "add",
-                TestBinOp::Sub => "sub",
-                TestBinOp::Mul => "mul",
-                TestBinOp::Div => "div",
-            }
-        }
-    }
+    use crate::{shape, test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Tensor};
 
     #[derive(Arbitrary, Debug)]
     struct BinaryProblem {
-        op: TestBinOp,
+        op: BinaryOp,
         #[strategy(1..=4usize)]
         B: usize,
         #[strategy(1..=512usize)]
@@ -152,15 +136,15 @@ mod tests {
         //TODO: add N support
     }
 
-    fn ground_truth(a: &Tensor, b: &Tensor, op: &TestBinOp) -> anyhow::Result<Tensor> {
+    fn ground_truth(a: &Tensor, b: &Tensor, op: &BinaryOp) -> anyhow::Result<Tensor> {
+        let kn = op.kernel_name();
         let prg = format!(
             r#"
 import torch
 def {}(a, b):
     return torch.{}(torch.from_numpy(a), torch.from_numpy(b)).numpy()
 "#,
-            op.to_str(),
-            op.to_str()
+            kn, kn
         );
         run_py_prg(prg.to_string(), &[a, b])
     }
@@ -176,10 +160,10 @@ def {}(a, b):
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = match op {
-            TestBinOp::Add => a_gpu.add(&b_gpu)?,
-            TestBinOp::Sub => a_gpu.sub(&b_gpu)?,
-            TestBinOp::Mul => a_gpu.mul(&b_gpu)?,
-            TestBinOp::Div => a_gpu.div(&b_gpu)?,
+            BinaryOp::Add => a_gpu.add(&b_gpu)?,
+            BinaryOp::Sub => a_gpu.sub(&b_gpu)?,
+            BinaryOp::Mul => a_gpu.mul(&b_gpu)?,
+            BinaryOp::Div => a_gpu.div(&b_gpu)?,
         };
         c_gpu.resolve()?;
 
