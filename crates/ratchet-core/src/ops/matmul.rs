@@ -5,8 +5,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, DType, Enforcer, InvariantError, Kernel, KernelElement, OpMetadata, Operation,
-    OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    rvec, wgc, DType, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata,
+    Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 
 // Defines a matrix multiplication operation.
@@ -288,7 +288,7 @@ impl Operation for Matmul {
     }
 }
 
-impl Kernel for Matmul {
+impl MetaOperation for Matmul {
     type Meta = MatmulMeta;
 
     fn kernel_name(&self) -> &'static str {

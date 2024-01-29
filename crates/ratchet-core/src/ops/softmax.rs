@@ -4,7 +4,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, Kernel, KernelElement, OpMetadata, Operation, OperationError, RVec,
+    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
     StorageView, Tensor,
 };
 
@@ -35,7 +35,7 @@ impl Operation for Softmax {
     }
 }
 
-impl Kernel for Softmax {
+impl MetaOperation for Softmax {
     type Meta = SoftmaxMeta;
 
     fn supports_inplace(&self) -> bool {

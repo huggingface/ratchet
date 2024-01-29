@@ -76,12 +76,12 @@ pub trait OpMetadata: Sized + ShaderType + WriteInto {
     }
 }
 
-/// # Kernel
+/// # MetaOperation
 ///
-/// Kernel is a family of operations that can be compiled into relatively similar shaders.
-/// Some types may implement both Operation and Kernel, if there is no variance
+/// Meta Operation is a family of operations that can be compiled into relatively similar shaders.
+/// Some types may implement both Operation and MetaOperation, if there is no variance
 /// in output shape or invariants between the members of the family.
-pub trait Kernel: Debug + 'static {
+pub trait MetaOperation: Debug + 'static {
     ///Meta is a struct containing all data written into our uniform buffer.
     ///Typically contains shapes or strides.
     type Meta: OpMetadata;
@@ -170,9 +170,10 @@ pub trait Kernel: Debug + 'static {
 /// An operation is a user facing type that represents a computation.
 /// It checks the invariants that must be true before this operation can be executed.
 ///
-/// There is a MANY -> ONE relationship between operations and kernels.
+/// An Operation is a member of a family of operations, called a MetaOperation, it may be the only
+/// member.
 ///
-/// Some types may implement both Operation and Kernel, if there is no variance
+/// Some types may implement both Operation and MetaOperation, if there is no variance
 /// in output shape or invariants between the members of the family.
 pub trait Operation: Debug + 'static {
     //These 2 methods below should be moved to another trait

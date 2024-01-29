@@ -6,7 +6,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, InvariantError, Kernel, KernelElement, OpMetadata, Operation,
+    rvec, wgc, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 
@@ -51,7 +51,7 @@ pub struct ReindexMeta {
 
 impl OpMetadata for ReindexMeta {}
 
-impl Kernel for Reindex {
+impl MetaOperation for Reindex {
     type Meta = ReindexMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -84,9 +84,22 @@ impl Kernel for Reindex {
         _dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        let a = &self.input;
-        let numel = a.shape().numel() as u32;
-        Ok(ReindexMeta { numel })
+        //TODO: this is garbage
+        let src_stride = self.input.strides().try_into().unwrap();
+        let dst_stride = self.input.strides().try_into().unwrap();
+        let src_numel = self.input.shape().numel() as u32;
+        let dst_numel = self.input.shape().numel() as u32;
+        let permute = match &self.op {
+            ReindexOp::Permute(p) => p.dims.iter().map(|&d| d as u32).collect::<Vec<_>>(),
+        };
+        let pp = permute.as_slice().try_into().unwrap();
+        Ok(ReindexMeta {
+            src_stride,
+            dst_stride,
+            src_numel,
+            dst_numel,
+            permute: pp,
+        })
     }
 }
 
