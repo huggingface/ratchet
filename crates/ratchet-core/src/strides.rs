@@ -35,6 +35,19 @@ impl From<&Shape> for Strides {
     }
 }
 
+impl TryInto<[u32; 4]> for &Strides {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<[u32; 4], Self::Error> {
+        assert!(self.0.len() <= 4);
+        let mut strides = [0; 4];
+        for (i, stride) in self.0.iter().enumerate() {
+            strides[i] = *stride as u32;
+        }
+        Ok(strides)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::shape;

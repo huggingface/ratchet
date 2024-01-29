@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    Kernel, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType,
-    TensorId,
+    MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides,
+    TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
@@ -147,6 +147,10 @@ impl Tensor {
 
     pub fn shape(&self) -> &Shape {
         &self.view.shape
+    }
+
+    pub fn strides(&self) -> &Strides {
+        &self.view.strides
     }
 
     pub fn num_bytes(&self) -> usize {

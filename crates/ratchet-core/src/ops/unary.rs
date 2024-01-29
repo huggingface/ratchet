@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, Kernel, KernelElement, OpMetadata, Operation, OperationError, RVec,
+    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
     StorageView, Tensor,
 };
 
@@ -74,7 +74,7 @@ impl Operation for Unary {
     }
 }
 
-impl Kernel for Unary {
+impl MetaOperation for Unary {
     type Meta = UnaryMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
