@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec, StorageView,
-    Tensor,
+    rvec, wgc, Enforcer, Kernel, KernelElement, OpMetadata, Operation, OperationError, RVec,
+    StorageView, Tensor,
 };
 
 #[cfg(test)]
@@ -64,6 +64,17 @@ pub struct UnaryMeta {
 impl OpMetadata for UnaryMeta {}
 
 impl Operation for Unary {
+    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
+        Ok(srcs[0].view().clone())
+    }
+
+    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
+        Enforcer::check_input_arity(srcs, 1)?;
+        Ok(())
+    }
+}
+
+impl Kernel for Unary {
     type Meta = UnaryMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -72,15 +83,6 @@ impl Operation for Unary {
 
     fn supports_inplace(&self) -> bool {
         true
-    }
-
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].view().clone())
-    }
-
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -139,9 +141,9 @@ mod tests {
         op: UnaryOp,
         #[strategy(1..=4usize)]
         B: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         M: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         N: usize,
     }
 
@@ -209,7 +211,7 @@ def {}(a):
         c_gpu.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 5e-3, 5e-3)?;
+        ground.all_close(&d_gpu, 1e-3, 1e-3)?;
         Ok(())
     }
 

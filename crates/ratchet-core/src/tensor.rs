@@ -1,7 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    Kernel, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType,
+    TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 
@@ -218,6 +219,23 @@ impl Tensor {
     impl_unary_op!(relu, UnaryOp::Relu);
     impl_unary_op!(floor, UnaryOp::Floor);
     impl_unary_op!(ceil, UnaryOp::Ceil);
+
+    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
+        todo!()
+    }
+
+    pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
+        let permute = Permute::new(dims.to_vec());
+        let view = permute.infer_output(&[self])?;
+
+        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
+
+        Ok(Tensor::lazy(
+            lazy_op,
+            self.view.clone(),
+            self.device.clone(),
+        ))
+    }
 
     //TODO: switch dim to isize and allow negative indexing
     pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
@@ -468,8 +486,8 @@ impl Tensor {
 
         let self_nd = self.to_ndarray_view::<f32>();
         let other_nd = other.to_ndarray_view::<f32>();
-        let mut stats = CloseStats::new(atol, rtol);
 
+        let mut stats = CloseStats::new(atol, rtol);
         ndarray::indices_of(&self_nd).into_iter().for_each(|idx| {
             let (a, b) = (self_nd[&idx], other_nd[&idx]);
             stats.update(&a, &b, idx);

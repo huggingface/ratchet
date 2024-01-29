@@ -5,7 +5,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, DType, Enforcer, InvariantError, KernelElement, OpMetadata, Operation,
+    rvec, wgc, DType, Enforcer, InvariantError, Kernel, KernelElement, OpMetadata, Operation,
     OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 
@@ -270,20 +270,6 @@ impl MatmulMeta {
 impl OpMetadata for MatmulMeta {}
 
 impl Operation for Matmul {
-    type Meta = MatmulMeta;
-
-    fn kernel_name(&self) -> &'static str {
-        match (self.lhs.dt(), self.rhs.dt()) {
-            (DType::F32, DType::F32) => "sgemm",
-            (DType::F32, DType::WQ8) => "qgemm",
-            _ => panic!("Unsupported dtypes"),
-        }
-    }
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.lhs, &self.rhs]
-    }
-
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
         let (a, b) = (srcs[0], srcs[1]);
         let c_shape = Matmul::compute_c_shape(a, b).unwrap();
@@ -299,6 +285,22 @@ impl Operation for Matmul {
             panic!("Failed to validate DTypes")
         }
         Ok(())
+    }
+}
+
+impl Kernel for Matmul {
+    type Meta = MatmulMeta;
+
+    fn kernel_name(&self) -> &'static str {
+        match (self.lhs.dt(), self.rhs.dt()) {
+            (DType::F32, DType::F32) => "sgemm",
+            (DType::F32, DType::WQ8) => "qgemm",
+            _ => panic!("Unsupported dtypes"),
+        }
+    }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.lhs, &self.rhs]
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {

@@ -1,10 +1,11 @@
+//TODO: move this to a custom operation
 use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec, StorageView,
-    Tensor,
+    rvec, wgc, Enforcer, Kernel, KernelElement, OpMetadata, Operation, OperationError, RVec,
+    StorageView, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
@@ -24,6 +25,17 @@ pub struct SoftmaxMeta {
 impl OpMetadata for SoftmaxMeta {}
 
 impl Operation for Softmax {
+    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
+        Ok(srcs[0].view().clone())
+    }
+
+    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
+        Enforcer::check_input_arity(srcs, 1)?;
+        Ok(())
+    }
+}
+
+impl Kernel for Softmax {
     type Meta = SoftmaxMeta;
 
     fn supports_inplace(&self) -> bool {
@@ -32,15 +44,6 @@ impl Operation for Softmax {
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
-    }
-
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].view().clone())
-    }
-
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
     }
 
     fn kernel_name(&self) -> &'static str {

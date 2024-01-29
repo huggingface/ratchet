@@ -8,8 +8,8 @@ use crate::gpu::{
     PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
 };
 use crate::{
-    rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, RVec, Softmax, StorageView,
-    Tensor, Unary,
+    rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, RVec, Reindex, Softmax,
+    StorageView, Tensor, Unary,
 };
 
 #[derive(Clone, Debug)]
@@ -19,6 +19,7 @@ pub enum LazyOp {
     Binary(Binary),
     Softmax(Softmax), //Should be custom
     Unary(Unary),
+    Reindex(Reindex),
     Const,
 }
 
@@ -29,6 +30,7 @@ impl LazyOp {
             LazyOp::Matmul(m) => m.srcs(),
             LazyOp::Softmax(s) => s.srcs(),
             LazyOp::Unary(u) => u.srcs(),
+            LazyOp::Reindex(r) => r.srcs(),
             LazyOp::Const => rvec![], //end of the line kid
             _ => unimplemented!(),
         }
@@ -74,9 +76,12 @@ pub trait OpMetadata: Sized + ShaderType + WriteInto {
     }
 }
 
-//Every Operation in the CFG should implement this trait
-//This should be renamed to Kernel
-pub trait Operation: Debug + 'static {
+/// # Kernel
+///
+/// Kernel is a family of operations that can be compiled into relatively similar shaders.
+/// Some types may implement both Operation and Kernel, if there is no variance
+/// in output shape or invariants between the members of the family.
+pub trait Kernel: Debug + 'static {
     ///Meta is a struct containing all data written into our uniform buffer.
     ///Typically contains shapes or strides.
     type Meta: OpMetadata;
@@ -158,7 +163,18 @@ pub trait Operation: Debug + 'static {
             offset as _,
         ))
     }
+}
 
+/// # Operation
+///
+/// An operation is a user facing type that represents a computation.
+/// It checks the invariants that must be true before this operation can be executed.
+///
+/// There is a MANY -> ONE relationship between operations and kernels.
+///
+/// Some types may implement both Operation and Kernel, if there is no variance
+/// in output shape or invariants between the members of the family.
+pub trait Operation: Debug + 'static {
     //These 2 methods below should be moved to another trait
     //They're unrelated
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
