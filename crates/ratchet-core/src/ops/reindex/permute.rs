@@ -7,10 +7,6 @@ use crate::{
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 
-#[cfg(test)]
-use test_strategy::Arbitrary;
-
-#[cfg_attr(test, derive(Arbitrary))]
 #[derive(new, Debug, Clone)]
 pub struct Permute {
     pub dims: Vec<usize>,
@@ -37,5 +33,38 @@ impl Operation for Permute {
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
         Enforcer::check_input_arity(srcs, 1)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Permute;
+    use {
+        proptest::{
+            arbitrary::any,
+            collection::size_range,
+            prelude::Arbitrary,
+            strategy::{BoxedStrategy, Strategy},
+        },
+        test_strategy::proptest,
+    };
+
+    impl Arbitrary for Permute {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (1..=4usize)
+                .prop_flat_map(|rank| {
+                    let dims = (0..rank).collect::<Vec<_>>();
+                    let dims = proptest::collection::vec(
+                        proptest::sample::select(dims),
+                        size_range(1..=rank),
+                    );
+                    dims
+                })
+                .prop_map(|dims| Permute::new(dims))
+                .boxed()
+        }
     }
 }

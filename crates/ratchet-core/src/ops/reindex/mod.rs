@@ -104,4 +104,63 @@ impl MetaOperation for Reindex {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use test_strategy::{proptest, Arbitrary};
+
+    use crate::{shape, test_util::run_py_prg, BinaryOp, Device, DeviceRequest, ReindexOp, Tensor};
+
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
+    #[derive(Arbitrary, Debug)]
+    struct ReindexProblem {
+        op: ReindexOp,
+        #[strategy(1..=4usize)]
+        B: usize,
+        #[strategy(1..=512usize)]
+        M: usize,
+        #[strategy(1..=512usize)]
+        N: usize,
+    }
+
+    fn ground_truth(a: &Tensor, op: &ReindexOp, args: &str) -> anyhow::Result<Tensor> {
+        let kn = op.kernel_name();
+        let prg = format!(
+            r#"
+import torch
+def {}(a):
+    return torch.{}(torch.from_numpy(a), {}).numpy()
+"#,
+            kn, kn, args
+        );
+        run_py_prg(prg.to_string(), &[a])
+    }
+
+    fn run_reindex_trial(prob: ReindexProblem) -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let ReindexProblem { op, B, M, N } = prob;
+        println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
+        let a = Tensor::randn::<f32>(shape![B, M, N], cpu_device.clone());
+        let device = GPU_DEVICE.with(|d| d.clone());
+
+        let a_gpu = a.to(&device)?;
+        let (ours, ground) = match op {
+            ReindexOp::Permute(ref p) => {
+                let arg_str = format!("{:?}", p.dims);
+                println!("arg_str: {}", arg_str);
+                let ground = ground_truth(&a, &op, arg_str.as_str())?;
+                (a.permute(&p.dims)?, ground)
+            }
+        };
+        ours.resolve()?;
+        let d_gpu = ours.to(&Device::CPU)?;
+        ground.all_close(&d_gpu, 1e-4, 1e-4)?;
+        Ok(())
+    }
+
+    #[proptest(cases = 1)]
+    fn test_reindex(prob: ReindexProblem) {
+        run_reindex_trial(prob).unwrap();
+    }
+}
