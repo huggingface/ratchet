@@ -6,6 +6,7 @@ use crate::{
 use crate::{BinaryOp, LazyOp};
 
 use derive_new::new;
+use ndarray::Dimension;
 use parking_lot::{RwLock, RwLockReadGuard};
 
 use std::sync::Arc;
@@ -474,20 +475,21 @@ impl Tensor {
             stats.update(&a, &b, idx);
         });
 
+        let idx_fmt = stats.max_abs_error_idxs.as_ref().map(|idx| idx.slice());
         if stats.fail_count > 0 {
             anyhow::bail!(
-                "{} samples not close - AVGE={} MAE={} at {:?}",
+                "\x1b[1;31m{} samples not close \x1b[0m - AVGE={} MAE={} at {:?}",
                 stats.fail_count,
                 stats.avg_error(),
                 stats.max_abs_error,
-                stats.max_abs_error_idxs,
+                idx_fmt
             );
         } else {
             println!(
-                "All close - AVGE={} MAE={} at {:?}",
+                "\x1b[1;32mAll close \x1b[0m - AVGE={} MAE={} at {:?}",
                 stats.avg_error(),
                 stats.max_abs_error,
-                stats.max_abs_error_idxs
+                idx_fmt
             );
             Ok(())
         }
