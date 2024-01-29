@@ -92,7 +92,7 @@ impl std::fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             UnaryOp::Gelu => "gelu",
-            UnaryOp::Tanh => "safe_tanh", //tanh is borked on MSL
+            UnaryOp::Tanh => "tanh",
             UnaryOp::Exp => "exp",
             UnaryOp::Log => "log",
             UnaryOp::Sin => "sin",
@@ -140,7 +140,11 @@ impl KernelGenerator {
                 self.tera.add_template_file(path, Some("unary"))?;
 
                 let mut context = Context::new();
-                context.insert("func", &func.to_string());
+                let tera_func = match func {
+                    UnaryOp::Tanh => String::from("safe_tanh"),
+                    _ => func.to_string(),
+                };
+                context.insert("func", &tera_func);
                 context.insert("elem", &ke.as_wgsl(WgslDType::F32));
                 context.insert("elem_size", &ke.as_size());
                 let rendered = self.tera.render("unary", &context)?;
