@@ -73,6 +73,40 @@ impl BinaryOp {
     }
 }
 
+#[derive(Debug, Clone, strum_macros::EnumIter)]
+pub enum UnaryOp {
+    Gelu,
+    Tanh,
+    Exp,
+    Log,
+    Sin,
+    Cos,
+    Abs,
+    Sqrt,
+    Relu,
+    Floor,
+    Ceil,
+}
+
+impl std::fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            UnaryOp::Gelu => "gelu",
+            UnaryOp::Tanh => "safe_tanh", //tanh is borked on MSL
+            UnaryOp::Exp => "exp",
+            UnaryOp::Log => "log",
+            UnaryOp::Sin => "sin",
+            UnaryOp::Cos => "cos",
+            UnaryOp::Abs => "abs",
+            UnaryOp::Sqrt => "sqrt",
+            UnaryOp::Relu => "relu",
+            UnaryOp::Floor => "floor",
+            UnaryOp::Ceil => "ceil",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Debug)]
 pub struct KernelGenerator {
     tera: Tera,
@@ -94,6 +128,32 @@ impl Default for KernelGenerator {
 
 impl KernelGenerator {
     fn generate(&mut self) -> anyhow::Result<()> {
+        self.generate_unary()?;
+        self.generate_binary()?;
+        Ok(())
+    }
+
+    fn generate_unary(&mut self) -> anyhow::Result<()> {
+        for func in UnaryOp::iter() {
+            for ke in KernelElement::iter() {
+                let path = self.templates_path.join("unary.wgsl");
+                self.tera.add_template_file(path, Some("unary"))?;
+
+                let mut context = Context::new();
+                context.insert("func", &func.to_string());
+                context.insert("elem", &ke.as_wgsl(WgslDType::F32));
+                context.insert("elem_size", &ke.as_size());
+                let rendered = self.tera.render("unary", &context)?;
+
+                let kernel_fname = format!("{}_{}.wgsl", func, ke);
+                let mut file = File::create(self.dest_path.join(kernel_fname))?;
+                file.write_all(rendered.as_bytes())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_binary(&mut self) -> anyhow::Result<()> {
         let pairs = BinaryOp::iter().fold(Vec::new(), |mut acc, op| {
             acc.push(op.mapping());
             acc
