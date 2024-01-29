@@ -176,11 +176,15 @@ def {}(a):
         run_py_prg(prg.to_string(), &[a])
     }
 
-    fn run_unary_trial(device: &Device, prob: UnaryProblem) -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
+    fn run_unary_trial(prob: UnaryProblem) -> anyhow::Result<()> {
+        let device = GPU_DEVICE.with(|d| d.clone());
         let UnaryProblem { op, B, M, N } = prob;
         println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
-        let a = Tensor::randn::<f32>(shape![B, M], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![B, M], Device::CPU);
 
         let args = match op {
             UnaryOp::Gelu => "approximate=\"tanh\"",
@@ -211,7 +215,6 @@ def {}(a):
 
     #[proptest(cases = 128)]
     fn test_unary(prob: UnaryProblem) {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        run_unary_trial(&device, prob).unwrap();
+        run_unary_trial(prob).unwrap();
     }
 }
