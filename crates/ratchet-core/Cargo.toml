@@ -16,6 +16,7 @@ anyhow = { workspace = true }
 globwalk = "0.8.1"
 strum = "0.25"
 strum_macros = "0.25"
+serde = { version = "1.0.130", features = ["derive"] }
 
 [dependencies]
 wgpu = { workspace = true }

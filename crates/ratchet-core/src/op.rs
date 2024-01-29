@@ -9,7 +9,7 @@ use crate::gpu::{
 };
 use crate::{
     rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, RVec, Softmax, StorageView,
-    Tensor,
+    Tensor, Unary,
 };
 
 #[derive(Clone, Debug)]
@@ -17,7 +17,8 @@ use crate::{
 pub enum LazyOp {
     Matmul(Matmul),
     Binary(Binary),
-    Softmax(Softmax),
+    Softmax(Softmax), //Should be custom
+    Unary(Unary),
     Const,
 }
 
@@ -27,6 +28,7 @@ impl LazyOp {
             LazyOp::Binary(b) => b.srcs(),
             LazyOp::Matmul(m) => m.srcs(),
             LazyOp::Softmax(s) => s.srcs(),
+            LazyOp::Unary(u) => u.srcs(),
             LazyOp::Const => rvec![], //end of the line kid
             _ => unimplemented!(),
         }
@@ -37,6 +39,7 @@ impl LazyOp {
             LazyOp::Binary(b) => b.supports_inplace(),
             LazyOp::Matmul(m) => m.supports_inplace(),
             LazyOp::Softmax(s) => s.supports_inplace(),
+            LazyOp::Unary(u) => u.supports_inplace(),
             LazyOp::Const => false,
             _ => false,
         }

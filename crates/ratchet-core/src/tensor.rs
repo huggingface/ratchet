@@ -6,6 +6,7 @@ use crate::{
 use crate::{BinaryOp, LazyOp};
 
 use derive_new::new;
+use ndarray::Dimension;
 use parking_lot::{RwLock, RwLockReadGuard};
 
 use std::sync::Arc;
@@ -184,11 +185,39 @@ macro_rules! impl_binary_op {
     };
 }
 
+macro_rules! impl_unary_op {
+    ($method_name:ident, $op:expr) => {
+        pub fn $method_name(&self) -> anyhow::Result<Tensor> {
+            Unary::check_invariants(&[self])?;
+
+            let unary = Unary::new(self.clone(), $op);
+            let new_view = unary.infer_output(&[self])?;
+            Ok(Tensor::lazy(
+                LazyOp::Unary(unary),
+                new_view,
+                self.device.clone(),
+            ))
+        }
+    };
+}
+
 impl Tensor {
     impl_binary_op!(add, BinaryOp::Add);
     impl_binary_op!(sub, BinaryOp::Sub);
     impl_binary_op!(mul, BinaryOp::Mul);
     impl_binary_op!(div, BinaryOp::Div);
+
+    impl_unary_op!(gelu, UnaryOp::Gelu);
+    impl_unary_op!(tanh, UnaryOp::Tanh);
+    impl_unary_op!(exp, UnaryOp::Exp);
+    impl_unary_op!(log, UnaryOp::Log);
+    impl_unary_op!(sin, UnaryOp::Sin);
+    impl_unary_op!(cos, UnaryOp::Cos);
+    impl_unary_op!(abs, UnaryOp::Abs);
+    impl_unary_op!(sqrt, UnaryOp::Sqrt);
+    impl_unary_op!(relu, UnaryOp::Relu);
+    impl_unary_op!(floor, UnaryOp::Floor);
+    impl_unary_op!(ceil, UnaryOp::Ceil);
 
     //TODO: switch dim to isize and allow negative indexing
     pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
@@ -302,6 +331,7 @@ impl Tensor {
                 LazyOp::Binary(b) => b.srcs(),
                 LazyOp::Matmul(m) => m.srcs(),
                 LazyOp::Softmax(s) => s.srcs(),
+                LazyOp::Unary(u) => u.srcs(),
                 _ => unimplemented!(),
             };
             stack.extend(srcs.into_iter().cloned());
@@ -321,6 +351,7 @@ impl Tensor {
             LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -444,20 +475,21 @@ impl Tensor {
             stats.update(&a, &b, idx);
         });
 
+        let idx_fmt = stats.max_abs_error_idxs.as_ref().map(|idx| idx.slice());
         if stats.fail_count > 0 {
             anyhow::bail!(
-                "{} samples not close - AVGE={} MAE={} at {:?}",
+                "\x1b[1;31m{} samples not close \x1b[0m - AVGE={} MAE={} at {:?}",
                 stats.fail_count,
                 stats.avg_error(),
                 stats.max_abs_error,
-                stats.max_abs_error_idxs,
+                idx_fmt
             );
         } else {
             println!(
-                "All close - AVGE={} MAE={} at {:?}",
+                "\x1b[1;32mAll close \x1b[0m - AVGE={} MAE={} at {:?}",
                 stats.avg_error(),
                 stats.max_abs_error,
-                stats.max_abs_error_idxs
+                idx_fmt
             );
             Ok(())
         }
