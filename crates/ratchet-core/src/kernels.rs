@@ -12,7 +12,6 @@ lazy_static! {
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/sub_vec4.wgsl"
             ),
         );
-        m.insert("safe_tanh_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/safe_tanh_scalar.wgsl"));
         m.insert("tanh_vec2", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/tanh_vec2.wgsl"));
         m.insert(
             "sin_vec4",
@@ -48,7 +47,6 @@ lazy_static! {
             ),
         );
         m.insert("sub_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/sub_scalar.wgsl"));
-        m.insert("neg_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/neg_scalar.wgsl"));
         m.insert("tanh_vec4", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/tanh_vec4.wgsl"));
         m.insert(
             "sin_vec2",
@@ -92,31 +90,17 @@ lazy_static! {
         );
         m.insert("relu_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/relu_scalar.wgsl"));
         m.insert("add_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/add_scalar.wgsl"));
-        m.insert(
-            "neg_vec2",
-            include_str!(
-                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/neg_vec2.wgsl"
-            ),
-        );
         m.insert("floor_vec2", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/floor_vec2.wgsl"));
         m.insert("div_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/div_scalar.wgsl"));
         m.insert("exp_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/exp_scalar.wgsl"));
         m.insert("floor_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/floor_scalar.wgsl"));
-        m.insert("recip_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/recip_scalar.wgsl"));
         m.insert("ceil_vec4", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/ceil_vec4.wgsl"));
-        m.insert(
-            "erf_vec2",
-            include_str!(
-                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/erf_vec2.wgsl"
-            ),
-        );
         m.insert(
             "div_vec4",
             include_str!(
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/div_vec4.wgsl"
             ),
         );
-        m.insert("safe_tanh_vec2", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/safe_tanh_vec2.wgsl"));
         m.insert("cos_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/cos_scalar.wgsl"));
         m.insert("sqrt_vec2", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/sqrt_vec2.wgsl"));
         m.insert(
@@ -126,7 +110,6 @@ lazy_static! {
             ),
         );
         m.insert("sin_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/sin_scalar.wgsl"));
-        m.insert("recip_vec2", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/recip_vec2.wgsl"));
         m.insert("gelu_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/gelu_scalar.wgsl"));
         m.insert(
             "abs_vec4",
@@ -135,18 +118,6 @@ lazy_static! {
             ),
         );
         m.insert("ceil_vec2", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/ceil_vec2.wgsl"));
-        m.insert(
-            "erf_vec4",
-            include_str!(
-                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/erf_vec4.wgsl"
-            ),
-        );
-        m.insert(
-            "neg_vec4",
-            include_str!(
-                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/neg_vec4.wgsl"
-            ),
-        );
         m.insert("floor_vec4", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/floor_vec4.wgsl"));
         m.insert("sqrt_vec4", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/sqrt_vec4.wgsl"));
         m.insert(
@@ -155,14 +126,12 @@ lazy_static! {
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/add_vec4.wgsl"
             ),
         );
-        m.insert("recip_vec4", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/recip_vec4.wgsl"));
         m.insert(
             "abs_vec2",
             include_str!(
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/abs_vec2.wgsl"
             ),
         );
-        m.insert("erf_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/erf_scalar.wgsl"));
         m.insert("log_scalar", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/log_scalar.wgsl"));
         m.insert(
             "div_vec2",
@@ -170,7 +139,6 @@ lazy_static! {
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/div_vec2.wgsl"
             ),
         );
-        m.insert("safe_tanh_vec4", include_str!(r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/generated/safe_tanh_vec4.wgsl"));
         m.insert(
             "qgemm_vec4",
             include_str!(
