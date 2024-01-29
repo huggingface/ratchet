@@ -176,6 +176,12 @@ lazy_static! {
             ),
         );
         m.insert(
+            "permute_scalar",
+            include_str!(
+                r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/permute_scalar.wgsl"
+            ),
+        );
+        m.insert(
             "softmax_scalar",
             include_str!(
                 r"/Users/fleetwood/Code/ratchet/crates/ratchet-core/kernels/softmax_scalar.wgsl"
