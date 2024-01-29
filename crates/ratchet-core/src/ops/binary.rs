@@ -189,7 +189,7 @@ def {}(a, b):
     }
 
     #[proptest(cases = 8)]
-    fn test_sgemm(prob: BinaryProblem) {
+    fn test_binary(prob: BinaryProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         run_binary_trial(&device, prob).unwrap();
     }
