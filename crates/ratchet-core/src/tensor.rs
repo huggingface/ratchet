@@ -230,15 +230,10 @@ impl Tensor {
 
     pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
         let permute = Permute::new(dims.to_vec());
-        let view = permute.infer_output(&[self])?;
+        let out_view = permute.infer_output(&[self])?;
 
         let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
-
-        Ok(Tensor::lazy(
-            lazy_op,
-            self.view.clone(),
-            self.device.clone(),
-        ))
+        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
     }
 
     //TODO: switch dim to isize and allow negative indexing
@@ -354,6 +349,7 @@ impl Tensor {
                 LazyOp::Matmul(m) => m.srcs(),
                 LazyOp::Softmax(s) => s.srcs(),
                 LazyOp::Unary(u) => u.srcs(),
+                LazyOp::Reindex(r) => r.srcs(),
                 _ => unimplemented!(),
             };
             stack.extend(srcs.into_iter().cloned());
@@ -374,6 +370,7 @@ impl Tensor {
             LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }

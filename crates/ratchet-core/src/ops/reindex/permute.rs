@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use derive_new::new;
 use encase::ShaderType;
 
@@ -21,6 +23,10 @@ impl Operation for Permute {
                 actual: self.dims.len(),
             })?;
         }
+        let dup_set: HashSet<usize> = HashSet::from_iter(self.dims.iter().cloned());
+        if dup_set.len() != self.dims.len() {
+            return Err(InvariantError::DuplicateDims)?;
+        }
 
         let mut output_shape = input_shape.clone();
         for i in 0..input_shape.rank() {
@@ -39,30 +45,15 @@ impl Operation for Permute {
 #[cfg(test)]
 mod tests {
     use crate::Permute;
-    use {
-        proptest::{
-            arbitrary::any,
-            collection::size_range,
-            prelude::Arbitrary,
-            strategy::{BoxedStrategy, Strategy},
-        },
-        test_strategy::proptest,
-    };
+    use proptest::prelude::*;
 
     impl Arbitrary for Permute {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (1..=4usize)
-                .prop_flat_map(|rank| {
-                    let dims = (0..rank).collect::<Vec<_>>();
-                    let dims = proptest::collection::vec(
-                        proptest::sample::select(dims),
-                        size_range(1..=rank),
-                    );
-                    dims
-                })
+            Just(vec![0, 1, 2, 3])
+                .prop_shuffle()
                 .prop_map(|dims| Permute::new(dims))
                 .boxed()
         }

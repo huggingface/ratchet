@@ -35,16 +35,21 @@ impl From<&Shape> for Strides {
     }
 }
 
-impl TryInto<[u32; 4]> for &Strides {
-    type Error = anyhow::Error;
-
-    fn try_into(self) -> Result<[u32; 4], Self::Error> {
-        assert!(self.0.len() <= 4);
-        let mut strides = [0; 4];
-        for (i, stride) in self.0.iter().enumerate() {
-            strides[i] = *stride as u32;
+impl From<&Strides> for [u32; 4] {
+    fn from(strides: &Strides) -> Self {
+        assert!(strides.0.len() <= 4);
+        let mut array = [0; 4];
+        for (i, &stride) in strides.0.iter().enumerate() {
+            array[i] = stride as u32;
         }
-        Ok(strides)
+        array
+    }
+}
+
+impl From<&Strides> for glam::UVec4 {
+    fn from(strides: &Strides) -> Self {
+        let array: [u32; 4] = strides.into();
+        glam::UVec4::from(array)
     }
 }
 
