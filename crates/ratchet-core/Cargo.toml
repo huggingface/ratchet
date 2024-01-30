@@ -17,6 +17,7 @@ globwalk = "0.8.1"
 strum = "0.25"
 strum_macros = "0.25"
 serde = { version = "1.0.130", features = ["derive"] }
+pathdiff = "0.2.1"
 
 [dependencies]
 wgpu = { workspace = true }
