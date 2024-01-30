@@ -47,6 +47,10 @@ impl Executable {
                 cpass.set_bind_group(uniform_group_index, uniform_group, &[step.offset()]);
 
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
+                println!(
+                    "DISPATCHING: x: {}, y: {}, z: {}",
+                    x_count, y_count, z_count
+                );
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
             }
         }

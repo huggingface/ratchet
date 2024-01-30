@@ -66,7 +66,7 @@ pub enum OperationError {
 
 ///A trait for types that are written into uniform buffers, these
 ///hold the metadata for a shader.
-pub trait OpMetadata: Sized + ShaderType + WriteInto {
+pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
     const __IS_VALID_META: () = {
         assert!(std::mem::size_of::<Self>() <= UNIFORM_ALIGN);
     };
@@ -128,6 +128,7 @@ pub trait MetaOperation: Debug + 'static {
     ) -> Result<CompiledOp, OperationError> {
         let kernel_element = self.kernel_element(dst);
         let meta = self.metadata(dst, &kernel_element)?;
+        println!("META: {:?}", meta);
         let offset = uniform.write(&meta)?;
 
         let workgroup_count = self.calculate_dispatch()?;
