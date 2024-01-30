@@ -59,6 +59,7 @@ impl MetaOperation for Reindex {
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
+        //TODO: add support for Vec4
         KernelElement::Scalar
     }
 
