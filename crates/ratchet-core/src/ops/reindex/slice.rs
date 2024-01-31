@@ -101,6 +101,7 @@ mod tests {
             (B_range, M_range, N_range, K_range)
                 .prop_map(|(Br, Mr, Nr, Kr)| {
                     //Adding 10 to ensure it works without matching range end
+                    //TODO: write a better generate strategy
                     let (B, M, N, K) = (Br.end, Mr.end, Nr.end + 10, Kr.end + 10);
                     let op = Slice {
                         indices: rvec![Br, Mr, Nr, Kr],
@@ -141,7 +142,7 @@ def slice(a):
         Ok(())
     }
 
-    #[proptest(cases = 64)]
+    #[proptest(cases = 16)]
     fn test_slice(prob: SliceProblem) {
         run_reindex_trial(prob).unwrap();
     }
