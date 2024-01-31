@@ -401,8 +401,8 @@ def matmul(a, b):
         let b = Tensor::randn::<f32>(shape![B, K, N], cpu_device.clone());
         let ground = ground_truth(&a, &b)?;
 
-        let a_gpu = a.to(&device)?;
-        let b_gpu = b.to(&device)?;
+        let a_gpu = a.to(device)?;
+        let b_gpu = b.to(device)?;
         let c_gpu = a_gpu.matmul(&b_gpu)?;
         c_gpu.resolve()?;
 

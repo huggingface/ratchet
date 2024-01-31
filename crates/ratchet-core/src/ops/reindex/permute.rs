@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 
 use derive_new::new;
-use encase::ShaderType;
+
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata, Operation,
-    OperationError, RVec, StorageView, Strides, Tensor,
+    Enforcer, InvariantError, Operation,
+    OperationError, StorageView, Strides, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
@@ -30,7 +29,7 @@ impl Operation for Permute {
 
         let mut output_shape = input_shape.clone();
         for i in 0..input_shape.rank() {
-            output_shape[i] = input_shape[self.dims[i]].clone();
+            output_shape[i] = input_shape[self.dims[i]];
         }
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, srcs[0].dt(), strides))
@@ -54,7 +53,7 @@ mod tests {
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             Just(vec![0, 1, 2, 3])
                 .prop_shuffle()
-                .prop_map(|dims| Permute::new(dims))
+                .prop_map(Permute::new)
                 .boxed()
         }
     }

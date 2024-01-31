@@ -224,7 +224,7 @@ impl Tensor {
     impl_unary_op!(floor, UnaryOp::Floor);
     impl_unary_op!(ceil, UnaryOp::Ceil);
 
-    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
+    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, _ranges: &[D]) -> anyhow::Result<Tensor> {
         todo!()
     }
 
