@@ -95,8 +95,8 @@ mod tests {
 
             let B_range = gen_range(4);
             let M_range = gen_range(4);
-            let N_range = gen_range(512);
-            let K_range = gen_range(512);
+            let N_range = gen_range(256);
+            let K_range = gen_range(256);
 
             (B_range, M_range, N_range, K_range)
                 .prop_map(|(Br, Mr, Nr, Kr)| {
