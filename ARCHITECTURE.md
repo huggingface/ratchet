@@ -75,3 +75,11 @@ I think the fastest way to achieve that is to use a custom quantization scheme f
 6. Custom - user provided custom operation.
 
 Whats the minimal set of operations required to express all DL models? Unsure but this is a decent start.
+
+#### Reindex
+Reindex is a family of operations that can all be modelled as `reindex(I, SO, f) → O`, where I is the input, SO is the shape of the output, and f is the function that maps the output index to the input index. We dispatch |So| threads.
+
+Inside the Reindex family you have:
+1. Permute: rearranges elements, 1:1 mapping between input & output indices.
+2. Slice: slices a tensor, 1:<=1 mapping between input & output indices.
+3. Broadcast: broadcasts a tensor, 1:>=1 mapping between input & output indices.
