@@ -62,7 +62,7 @@ impl MetaOperation for Softmax {
         }
     }
 
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let input = &self.input;
         let stacks = input.shape().slice(0..self.dim - 1).numel();
         let M = input.shape()[self.dim - 1] as u32;

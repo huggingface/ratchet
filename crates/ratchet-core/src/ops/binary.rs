@@ -82,7 +82,7 @@ impl MetaOperation for Binary {
         }
     }
 
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let a = &self.lhs;
         let a_rank = a.shape().rank();
         let M = a.shape()[a_rank - 2];

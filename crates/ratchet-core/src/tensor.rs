@@ -5,11 +5,10 @@ use crate::{
     TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
-
 use derive_new::new;
 use ndarray::Dimension;
 use parking_lot::{RwLock, RwLockReadGuard};
-
+use std::ops::Bound;
 use std::sync::Arc;
 
 #[cfg(feature = "rand")]
@@ -224,8 +223,34 @@ impl Tensor {
     impl_unary_op!(floor, UnaryOp::Floor);
     impl_unary_op!(ceil, UnaryOp::Ceil);
 
-    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, _ranges: &[D]) -> anyhow::Result<Tensor> {
-        todo!()
+    /// # Slice
+    ///
+    /// Current slice implementation requires specification of all dimensions.
+    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
+        let mut resolved_ranges = rvec![];
+
+        for (ridx, r) in ranges.iter().enumerate() {
+            let start = match r.start_bound() {
+                Bound::Included(&s) => s,
+                Bound::Excluded(&s) => s + 1,
+                Bound::Unbounded => 0,
+            };
+
+            let end = match r.end_bound() {
+                Bound::Included(&e) => e + 1,
+                Bound::Excluded(&e) => e,
+                Bound::Unbounded => self.shape()[ridx],
+            };
+
+            resolved_ranges.push(start..end);
+        }
+
+        let slice = Slice::new(resolved_ranges);
+        println!("SLICING: {:?}", slice);
+        let out_view = slice.infer_output(&[self])?;
+
+        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
+        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
     }
 
     pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {

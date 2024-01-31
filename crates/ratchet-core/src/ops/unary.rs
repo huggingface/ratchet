@@ -98,7 +98,7 @@ impl MetaOperation for Unary {
         }
     }
 
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let numel = self.input.shape().numel();
         let wgcx = WorkgroupCount::div_ceil(numel as _, 64);
         Ok(wgc![wgcx as _, 1, 1])
