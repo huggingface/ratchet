@@ -1,4 +1,5 @@
 use anyhow::Context as anyhowCtx;
+use pathdiff;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -206,11 +207,14 @@ fn embed_kernels() -> anyhow::Result<()> {
         let path = entry.path();
         let name = path.file_stem().unwrap().to_str().unwrap();
 
+        let diff = pathdiff::diff_paths(path, Path::new(out_dir.as_str()))
+            .ok_or(anyhow::format_err!("Failed to get path diff"))?;
+
         writeln!(
             &mut file,
             "    m.insert(\"{}\", include_str!(r\"{}\"));",
             name,
-            path.display()
+            diff.display()
         )?;
     }
     writeln!(&mut file, "    m")?;
