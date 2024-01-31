@@ -1,10 +1,12 @@
 mod binary;
 mod matmul;
+mod reindex;
 mod softmax;
 mod unary;
 
 pub use binary::*;
 pub use matmul::*;
+pub use reindex::*;
 pub use softmax::*;
 pub use unary::*;
 

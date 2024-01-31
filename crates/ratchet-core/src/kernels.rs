@@ -133,6 +133,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/div_vec4.wgsl"),
         );
         m.insert(
+            "slice_scalar",
+            include_str!(r"../kernels/generated/slice_scalar.wgsl"),
+        );
+        m.insert(
             "cos_scalar",
             include_str!(r"../kernels/generated/cos_scalar.wgsl"),
         );
@@ -163,6 +167,10 @@ lazy_static! {
         m.insert(
             "floor_vec4",
             include_str!(r"../kernels/generated/floor_vec4.wgsl"),
+        );
+        m.insert(
+            "permute_scalar",
+            include_str!(r"../kernels/generated/permute_scalar.wgsl"),
         );
         m.insert(
             "sqrt_vec4",

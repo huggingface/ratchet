@@ -82,6 +82,10 @@ macro_rules! shape {
     });
 }
 
+pub mod prelude {
+    pub use crate::{rvec, shape, Device, Tensor};
+}
+
 #[cfg(test)]
 pub mod test_util {
     use crate::Tensor;
@@ -94,7 +98,6 @@ pub mod test_util {
     };
 
     /// It's a bit of a hack, but it's useful for testing.
-    /// if a function name is not provided, looks for the first function in the program.
     #[cfg(feature = "pyo3")]
     #[cfg(not(target_arch = "wasm32"))]
     pub fn run_py_prg(prg: String, args: &[&Tensor]) -> anyhow::Result<Tensor> {

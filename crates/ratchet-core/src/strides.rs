@@ -35,6 +35,24 @@ impl From<&Shape> for Strides {
     }
 }
 
+impl From<&Strides> for [u32; 4] {
+    fn from(strides: &Strides) -> Self {
+        assert!(strides.0.len() <= 4);
+        let mut array = [0; 4];
+        for (i, &stride) in strides.0.iter().enumerate() {
+            array[i] = stride as u32;
+        }
+        array
+    }
+}
+
+impl From<&Strides> for glam::UVec4 {
+    fn from(strides: &Strides) -> Self {
+        let array: [u32; 4] = strides.into();
+        glam::UVec4::from(array)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::shape;

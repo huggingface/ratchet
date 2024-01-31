@@ -15,6 +15,12 @@ pub struct WorkgroupCount {
 }
 
 impl WorkgroupCount {
+    pub const MAX_WORKGROUP_SIZE_X: usize = 256;
+    pub const MAX_WORKGROUP_SIZE_Y: usize = 256;
+    pub const MAX_WORKGROUP_SIZE_Z: usize = 64;
+    pub const MAX_WGS_PER_DIM: usize = 65535;
+    pub const MAX_THREADS_PER_WG: usize = 256;
+
     pub fn x(&self) -> u32 {
         self.x
     }

@@ -64,3 +64,22 @@ I think to summarize the hard requirements of this:
 3. The API should be invisible, the user should just call `.matmul()` with Tensor B of datatype Q4_XYZ, and it should just work.
 
 I think the fastest way to achieve that is to use a custom quantization scheme for now. We can revisit this.
+
+## Operations
+
+1. Matmul - family of operations for matrix multiplication, e.g `SGEMM`, `HGEMM`, `QGEMM`, `QGEMV` etc.
+2. Reindex - family of operations that can be distilled to reindex(I, SO, f) → O, where I is the input, SO is the shape of the output, and f is the function that maps the output index to the input index. This is a very powerful operation, and can be used to implement many other operations.
+3. Reduce - family of operations that can be distilled down to a reduction over a dimension, e.g `sum` or `mean`. 
+4. Unary - family of operations that applies a function to each element of the input, peformed in place by default (unless not possible), e.g `relu` or `sigmoid`.
+5. Binary - family of operations that performs an elementwise operation between 2 tensors, e.g `add` or `sub`.
+6. Custom - user provided custom operation.
+
+Whats the minimal set of operations required to express all DL models? Unsure but this is a decent start.
+
+#### Reindex
+Reindex is a family of operations that can all be modelled as `reindex(I, SO, f) → O`, where I is the input, SO is the shape of the output, and f is the function that maps the output index to the input index. We dispatch |So| threads.
+
+Inside the Reindex family you have:
+1. Permute: rearranges elements, 1:1 mapping between input & output indices.
+2. Slice: slices a tensor, 1:<=1 mapping between input & output indices.
+3. Broadcast: broadcasts a tensor, 1:>=1 mapping between input & output indices.

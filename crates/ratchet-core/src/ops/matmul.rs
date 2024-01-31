@@ -5,8 +5,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, DType, Enforcer, InvariantError, KernelElement, OpMetadata, Operation,
-    OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    rvec, wgc, DType, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata,
+    Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 
 // Defines a matrix multiplication operation.
@@ -270,20 +270,6 @@ impl MatmulMeta {
 impl OpMetadata for MatmulMeta {}
 
 impl Operation for Matmul {
-    type Meta = MatmulMeta;
-
-    fn kernel_name(&self) -> &'static str {
-        match (self.lhs.dt(), self.rhs.dt()) {
-            (DType::F32, DType::F32) => "sgemm",
-            (DType::F32, DType::WQ8) => "qgemm",
-            _ => panic!("Unsupported dtypes"),
-        }
-    }
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.lhs, &self.rhs]
-    }
-
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
         let (a, b) = (srcs[0], srcs[1]);
         let c_shape = Matmul::compute_c_shape(a, b).unwrap();
@@ -300,13 +286,29 @@ impl Operation for Matmul {
         }
         Ok(())
     }
+}
+
+impl MetaOperation for Matmul {
+    type Meta = MatmulMeta;
+
+    fn kernel_name(&self) -> &'static str {
+        match (self.lhs.dt(), self.rhs.dt()) {
+            (DType::F32, DType::F32) => "sgemm",
+            (DType::F32, DType::WQ8) => "qgemm",
+            _ => panic!("Unsupported dtypes"),
+        }
+    }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.lhs, &self.rhs]
+    }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst);
         spec.select_kernel_element()
     }
 
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let spec = MatmulSpec::new(&self.lhs, &self.rhs, &self.lhs);
         let kernel_element = spec.select_kernel_element();
 
@@ -399,8 +401,8 @@ def matmul(a, b):
         let b = Tensor::randn::<f32>(shape![B, K, N], cpu_device.clone());
         let ground = ground_truth(&a, &b)?;
 
-        let a_gpu = a.to(&device)?;
-        let b_gpu = b.to(&device)?;
+        let a_gpu = a.to(device)?;
+        let b_gpu = b.to(device)?;
         let c_gpu = a_gpu.matmul(&b_gpu)?;
         c_gpu.resolve()?;
 
