@@ -308,7 +308,7 @@ impl MetaOperation for Matmul {
         spec.select_kernel_element()
     }
 
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let spec = MatmulSpec::new(&self.lhs, &self.rhs, &self.lhs);
         let kernel_element = spec.select_kernel_element();
 

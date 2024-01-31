@@ -103,7 +103,7 @@ pub trait MetaOperation: Debug + 'static {
     /// # Calculate Dispatch
     ///
     /// Determine required amount of workgroups to execute the operation.
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError>;
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError>;
 
     /// # Storage Bind Group Layout
     ///
@@ -131,7 +131,7 @@ pub trait MetaOperation: Debug + 'static {
         println!("META: {:?}", meta);
         let offset = uniform.write(&meta)?;
 
-        let workgroup_count = self.calculate_dispatch()?;
+        let workgroup_count = self.calculate_dispatch(dst)?;
 
         let storage_layout = device
             .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;

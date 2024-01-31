@@ -2,11 +2,7 @@ use std::collections::HashSet;
 
 use derive_new::new;
 
-
-use crate::{
-    Enforcer, InvariantError, Operation,
-    OperationError, StorageView, Strides, Tensor,
-};
+use crate::{Enforcer, InvariantError, Operation, OperationError, StorageView, Strides, Tensor};
 
 #[derive(new, Debug, Clone)]
 pub struct Permute {
@@ -43,8 +39,9 @@ impl Operation for Permute {
 
 #[cfg(test)]
 mod tests {
-    use crate::Permute;
+    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Permute, Tensor};
     use proptest::prelude::*;
+    use test_strategy::{proptest, Arbitrary};
 
     impl Arbitrary for Permute {
         type Parameters = ();
@@ -56,5 +53,56 @@ mod tests {
                 .prop_map(Permute::new)
                 .boxed()
         }
+    }
+
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
+    #[derive(Arbitrary, Debug)]
+    struct PermuteProblem {
+        op: Permute,
+        #[strategy(1..=2usize)]
+        B: usize,
+        #[strategy(1..=4usize)]
+        M: usize,
+        #[strategy(1..=512usize)]
+        N: usize,
+        #[strategy(1..=512usize)]
+        K: usize,
+    }
+
+    fn ground_truth(a: &Tensor, args: &str) -> anyhow::Result<Tensor> {
+        let prg = format!(
+            r#"
+import torch
+import numpy as np
+def permute(a):
+    return np.ascontiguousarray(torch.permute(torch.from_numpy(a), {}).numpy())
+"#,
+            args
+        );
+        run_py_prg(prg.to_string(), &[a])
+    }
+
+    fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let PermuteProblem { op, B, M, N, K } = prob;
+        println!("Permute: {:?}, B: {}, M: {}, N: {}, K: {}", op, B, M, N, K);
+        let a = Tensor::randn::<f32>(shape![B, M, N, K], cpu_device.clone());
+        let device = GPU_DEVICE.with(|d| d.clone());
+
+        let a_gpu = a.to(&device)?;
+        let ground = ground_truth(&a, format!("{:?}", op.dims).as_str())?;
+        let ours = a_gpu.permute(&op.dims)?;
+        ours.resolve()?;
+        let d_gpu = ours.to(&Device::CPU)?;
+        ground.all_close(&d_gpu, 1e-5, 1e-5)?;
+        Ok(())
+    }
+
+    #[proptest(cases = 16)]
+    fn test_reindex(prob: PermuteProblem) {
+        run_reindex_trial(prob).unwrap();
     }
 }
