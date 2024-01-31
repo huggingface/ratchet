@@ -91,6 +91,7 @@ pub mod test_util {
     use crate::Tensor;
     use regex::Regex;
     #[cfg(feature = "pyo3")]
+    #[cfg(not(target_arch = "wasm32"))]
     use {
         numpy::PyArrayDyn,
         pyo3::{prelude::*, types::PyTuple},
@@ -98,6 +99,7 @@ pub mod test_util {
 
     /// It's a bit of a hack, but it's useful for testing.
     #[cfg(feature = "pyo3")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn run_py_prg(prg: String, args: &[&Tensor]) -> anyhow::Result<Tensor> {
         let re = Regex::new(r"def\s+(\w+)\s*\(").unwrap();
         let func = match re.captures(&prg) {

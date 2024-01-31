@@ -6,7 +6,6 @@ use crate::{
 };
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
-use ndarray::Dimension;
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::ops::Bound;
 use std::sync::Arc;
@@ -15,8 +14,9 @@ use std::sync::Arc;
 use {rand::prelude::*, rand_distr::StandardNormal};
 
 #[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
 use {
-    ndarray::{ArrayD, ArrayViewD},
+    ndarray::{ArrayD, ArrayViewD, Dimension},
     numpy::PyArrayDyn,
 };
 
@@ -503,6 +503,7 @@ impl Tensor {
 }
 
 impl Tensor {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
         if self.shape() != other.shape() {
             anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
@@ -542,6 +543,7 @@ impl Tensor {
 struct CloseStats {
     total_error: f32,
     max_abs_error: f32,
+    #[cfg(not(target_arch = "wasm32"))]
     max_abs_error_idxs: Option<ndarray::IxDyn>,
     element_count: usize,
     fail_count: usize,
@@ -557,7 +559,7 @@ impl CloseStats {
             ..Default::default()
         }
     }
-
+    #[cfg(not(target_arch = "wasm32"))]
     fn update(&mut self, a: &f32, b: &f32, index: ndarray::IxDyn) {
         let abs_diff = (a - b).abs();
         self.total_error += abs_diff;
@@ -587,6 +589,7 @@ impl CloseStats {
 /// Conversion to and from numpy arrays
 impl Tensor {
     #[cfg(feature = "pyo3")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
@@ -601,6 +604,7 @@ impl Tensor {
     }
 
     #[cfg(feature = "pyo3")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn to_ndarray_view<T: TensorDType>(&self) -> ArrayViewD<T> {
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
@@ -615,6 +619,7 @@ impl Tensor {
     }
 
     #[cfg(feature = "pyo3")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
         &'s self,
         py: &'p pyo3::Python<'p>,
@@ -629,6 +634,7 @@ impl Tensor {
 }
 
 #[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType> From<ArrayD<T>> for Tensor {
     fn from(it: ArrayD<T>) -> Self {
         if it.as_slice().is_some() {
@@ -657,6 +663,7 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
 }
 
 #[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
     fn from(array: &PyArrayDyn<T>) -> Self {
         Self::from(array.to_owned_array())
