@@ -128,7 +128,6 @@ pub trait MetaOperation: Debug + 'static {
     ) -> Result<CompiledOp, OperationError> {
         let kernel_element = self.kernel_element(dst);
         let meta = self.metadata(dst, &kernel_element)?;
-        println!("META: {:?}", meta);
         let offset = uniform.write(&meta)?;
 
         let workgroup_count = self.calculate_dispatch(dst)?;

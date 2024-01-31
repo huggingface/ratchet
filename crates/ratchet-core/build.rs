@@ -118,7 +118,6 @@ pub struct KernelGenerator {
 impl Default for KernelGenerator {
     fn default() -> Self {
         let base_path = Path::new(env!("CARGO_MANIFEST_DIR"));
-        println!("BASE PATH: {}", base_path.display());
         KernelGenerator {
             tera: Tera::default(),
             dest_path: base_path.join("kernels").join("generated"),
