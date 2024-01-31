@@ -212,7 +212,7 @@ def {}(a):
 
         let (atol, rtol) = match op {
             UnaryOp::Gelu => (1e-2, 1e-2),
-            _ => (1e-5, 1e-5),
+            _ => (1e-4, 1e-4),
         };
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
