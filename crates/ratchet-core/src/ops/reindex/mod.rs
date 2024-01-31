@@ -119,13 +119,15 @@ impl MetaOperation for Reindex {
             src_offsets[2],
             src_offsets[3],
         );
-        Ok(ReindexMeta {
+        let meta = ReindexMeta {
             src_stride,
             dst_stride,
             src_numel,
             dst_numel,
             permute,
             src_offsets,
-        })
+        };
+        println!("meta: {:?}", meta);
+        Ok(meta)
     }
 }
