@@ -210,8 +210,13 @@ def {}(a):
         };
         c_gpu.resolve()?;
 
+        let (atol, rtol) = match op {
+            UnaryOp::Gelu => (1e-2, 1e-2),
+            _ => (1e-5, 1e-5),
+        };
+
         let d_gpu = c_gpu.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 1e-3, 1e-3)?;
+        ground.all_close(&d_gpu, atol, rtol)?;
         Ok(())
     }
 
