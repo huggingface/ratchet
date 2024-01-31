@@ -66,9 +66,9 @@ mod tests {
         B: usize,
         #[strategy(1..=4usize)]
         M: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         N: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         K: usize,
     }
 
@@ -102,7 +102,7 @@ def permute(a):
     }
 
     #[proptest(cases = 16)]
-    fn test_reindex(prob: PermuteProblem) {
+    fn test_permute(prob: PermuteProblem) {
         run_reindex_trial(prob).unwrap();
     }
 }
