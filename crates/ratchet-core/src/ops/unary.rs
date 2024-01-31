@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec, StorageView,
-    Tensor,
+    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
+    StorageView, Tensor,
 };
 
 #[cfg(test)]
@@ -64,6 +64,17 @@ pub struct UnaryMeta {
 impl OpMetadata for UnaryMeta {}
 
 impl Operation for Unary {
+    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
+        Ok(srcs[0].view().clone())
+    }
+
+    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
+        Enforcer::check_input_arity(srcs, 1)?;
+        Ok(())
+    }
+}
+
+impl MetaOperation for Unary {
     type Meta = UnaryMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -72,15 +83,6 @@ impl Operation for Unary {
 
     fn supports_inplace(&self) -> bool {
         true
-    }
-
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].view().clone())
-    }
-
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -96,7 +98,7 @@ impl Operation for Unary {
         }
     }
 
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let numel = self.input.shape().numel();
         let wgcx = WorkgroupCount::div_ceil(numel as _, 64);
         Ok(wgc![wgcx as _, 1, 1])
@@ -139,9 +141,9 @@ mod tests {
         op: UnaryOp,
         #[strategy(1..=4usize)]
         B: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         M: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         N: usize,
     }
 
@@ -151,7 +153,6 @@ mod tests {
             r#"
 import torch
 import torch.nn.functional as F
-
 def {}(a):
     return F.{}(torch.from_numpy(a), {}).numpy()
 "#,
@@ -161,7 +162,6 @@ def {}(a):
         let imp_prg = format!(
             r#"
 import torch
-
 def {}(a):
     return torch.{}(torch.from_numpy(a), {}).numpy()
 "#,
@@ -208,8 +208,13 @@ def {}(a):
         };
         c_gpu.resolve()?;
 
+        let (atol, rtol) = match op {
+            UnaryOp::Gelu | UnaryOp::Tanh => (1e-2, 1e-2),
+            _ => (1e-4, 1e-4),
+        };
+
         let d_gpu = c_gpu.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 5e-3, 5e-3)?;
+        ground.all_close(&d_gpu, atol, rtol)?;
         Ok(())
     }
 

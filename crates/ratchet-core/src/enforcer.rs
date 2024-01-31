@@ -30,6 +30,8 @@ pub enum InvariantError {
     DTypeMismatch { expected: DType, actual: DType },
     #[error("Unsupported DType {0:?}.")]
     UnsupportedDType(DType),
+    #[error("Duplicate dims in permutation.")]
+    DuplicateDims,
 }
 
 /// # Enforcer

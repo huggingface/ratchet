@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, OpMetadata, Operation, OperationError, RVec, StorageView,
-    Tensor,
+    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
+    StorageView, Tensor,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -51,12 +51,6 @@ pub struct BinaryMeta {
 impl OpMetadata for BinaryMeta {}
 
 impl Operation for Binary {
-    type Meta = BinaryMeta;
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.lhs, &self.rhs]
-    }
-
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
         Ok(srcs[0].view().clone())
     }
@@ -65,6 +59,14 @@ impl Operation for Binary {
         Enforcer::check_input_arity(srcs, 2)?;
         Enforcer::check_dtype_match(srcs)?;
         Ok(())
+    }
+}
+
+impl MetaOperation for Binary {
+    type Meta = BinaryMeta;
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.lhs, &self.rhs]
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -80,7 +82,7 @@ impl Operation for Binary {
         }
     }
 
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let a = &self.lhs;
         let a_rank = a.shape().rank();
         let M = a.shape()[a_rank - 2];
@@ -124,6 +126,10 @@ mod tests {
 
     use crate::{shape, test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Tensor};
 
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
     #[derive(Arbitrary, Debug)]
     struct BinaryProblem {
         op: BinaryOp,
@@ -149,13 +155,14 @@ def {}(a, b):
         run_py_prg(prg.to_string(), &[a, b])
     }
 
-    fn run_binary_trial(device: &Device, prob: BinaryProblem) -> anyhow::Result<()> {
+    fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let BinaryProblem { op, B, M } = prob;
         println!("op: {:?}, B: {}, M: {}", op, B, M);
         let a = Tensor::randn::<f32>(shape![B, M], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![1], cpu_device.clone());
         let ground = ground_truth(&a, &b, &op)?;
+        let device = GPU_DEVICE.with(|d| d.clone());
 
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
@@ -174,7 +181,6 @@ def {}(a, b):
 
     #[proptest(cases = 8)]
     fn test_binary(prob: BinaryProblem) {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        run_binary_trial(&device, prob).unwrap();
+        run_binary_trial(prob).unwrap();
     }
 }

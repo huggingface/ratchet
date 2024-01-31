@@ -31,7 +31,7 @@ rustc-hash = "1.1.0"
 slotmap = "1.0.7"
 parking_lot = "0.12.1"
 smallvec = "1.11.2"
-encase = "0.7.0"
+encase = { version = "0.7.0", features = ["smallvec", "glam"] }
 pollster = "0.3.0"
 anyhow = "1.0.79"
 getrandom = { version = "0.2", features = ["js"] } # Needed for wasm support in `num` trait
@@ -39,6 +39,7 @@ num = "0.4.1"
 rand_distr = { version = "0.4.3", optional = true }
 rand = { version = "0.8.4", optional = true }
 lazy_static = "1.4.0"
+glam = { version = "0.25.0" }
 
 # Python bindings
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

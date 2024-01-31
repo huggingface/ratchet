@@ -8,8 +8,8 @@ use crate::gpu::{
     PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
 };
 use crate::{
-    rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, RVec, Softmax, StorageView,
-    Tensor, Unary,
+    rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, RVec, Reindex, Softmax,
+    StorageView, Tensor, Unary,
 };
 
 #[derive(Clone, Debug)]
@@ -19,6 +19,7 @@ pub enum LazyOp {
     Binary(Binary),
     Softmax(Softmax), //Should be custom
     Unary(Unary),
+    Reindex(Reindex),
     Const,
 }
 
@@ -29,6 +30,7 @@ impl LazyOp {
             LazyOp::Matmul(m) => m.srcs(),
             LazyOp::Softmax(s) => s.srcs(),
             LazyOp::Unary(u) => u.srcs(),
+            LazyOp::Reindex(r) => r.srcs(),
             LazyOp::Const => rvec![], //end of the line kid
             _ => unimplemented!(),
         }
@@ -64,7 +66,7 @@ pub enum OperationError {
 
 ///A trait for types that are written into uniform buffers, these
 ///hold the metadata for a shader.
-pub trait OpMetadata: Sized + ShaderType + WriteInto {
+pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
     const __IS_VALID_META: () = {
         assert!(std::mem::size_of::<Self>() <= UNIFORM_ALIGN);
     };
@@ -74,9 +76,12 @@ pub trait OpMetadata: Sized + ShaderType + WriteInto {
     }
 }
 
-//Every Operation in the CFG should implement this trait
-//This should be renamed to Kernel
-pub trait Operation: Debug + 'static {
+/// # MetaOperation
+///
+/// Meta Operation is a family of operations that can be compiled into relatively similar shaders.
+/// Some types may implement both Operation and MetaOperation, if there is no variance
+/// in output shape or invariants between the members of the family.
+pub trait MetaOperation: Debug + 'static {
     ///Meta is a struct containing all data written into our uniform buffer.
     ///Typically contains shapes or strides.
     type Meta: OpMetadata;
@@ -98,7 +103,7 @@ pub trait Operation: Debug + 'static {
     /// # Calculate Dispatch
     ///
     /// Determine required amount of workgroups to execute the operation.
-    fn calculate_dispatch(&self) -> Result<WorkgroupCount, OperationError>;
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError>;
 
     /// # Storage Bind Group Layout
     ///
@@ -125,7 +130,7 @@ pub trait Operation: Debug + 'static {
         let meta = self.metadata(dst, &kernel_element)?;
         let offset = uniform.write(&meta)?;
 
-        let workgroup_count = self.calculate_dispatch()?;
+        let workgroup_count = self.calculate_dispatch(dst)?;
 
         let storage_layout = device
             .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
@@ -158,7 +163,19 @@ pub trait Operation: Debug + 'static {
             offset as _,
         ))
     }
+}
 
+/// # Operation
+///
+/// An operation is a user facing type that represents a computation.
+/// It checks the invariants that must be true before this operation can be executed.
+///
+/// An Operation is a member of a family of operations, called a MetaOperation, it may be the only
+/// member.
+///
+/// Some types may implement both Operation and MetaOperation, if there is no variance
+/// in output shape or invariants between the members of the family.
+pub trait Operation: Debug + 'static {
     //These 2 methods below should be moved to another trait
     //They're unrelated
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;

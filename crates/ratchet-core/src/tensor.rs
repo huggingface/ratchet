@@ -1,13 +1,13 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides,
+    TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
-
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
-
+use std::ops::Bound;
 use std::sync::Arc;
 
 #[cfg(feature = "rand")]
@@ -148,6 +148,10 @@ impl Tensor {
         &self.view.shape
     }
 
+    pub fn strides(&self) -> &Strides {
+        &self.view.strides
+    }
+
     pub fn num_bytes(&self) -> usize {
         self.view.shape.numel() * self.view.dt.size_of()
     }
@@ -218,6 +222,42 @@ impl Tensor {
     impl_unary_op!(relu, UnaryOp::Relu);
     impl_unary_op!(floor, UnaryOp::Floor);
     impl_unary_op!(ceil, UnaryOp::Ceil);
+
+    /// # Slice
+    ///
+    /// Current slice implementation requires specification of all dimensions.
+    /// Currently very user hostile, but will be improved.
+    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
+        let mut resolved_ranges = rvec![];
+
+        for (ridx, r) in ranges.iter().enumerate() {
+            let start = match r.start_bound() {
+                Bound::Included(&s) => s,
+                Bound::Excluded(&s) => s + 1,
+                Bound::Unbounded => 0,
+            };
+            let end = match r.end_bound() {
+                Bound::Included(&e) => e + 1,
+                Bound::Excluded(&e) => e,
+                Bound::Unbounded => self.shape()[ridx],
+            };
+            resolved_ranges.push(start..end);
+        }
+
+        let slice = Slice::new(resolved_ranges);
+        let out_view = slice.infer_output(&[self])?;
+
+        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
+        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
+    }
+
+    pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
+        let permute = Permute::new(dims.to_vec());
+        let out_view = permute.infer_output(&[self])?;
+
+        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
+        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
+    }
 
     //TODO: switch dim to isize and allow negative indexing
     pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
@@ -332,6 +372,7 @@ impl Tensor {
                 LazyOp::Matmul(m) => m.srcs(),
                 LazyOp::Softmax(s) => s.srcs(),
                 LazyOp::Unary(u) => u.srcs(),
+                LazyOp::Reindex(r) => r.srcs(),
                 _ => unimplemented!(),
             };
             stack.extend(srcs.into_iter().cloned());
@@ -352,6 +393,7 @@ impl Tensor {
             LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -469,8 +511,8 @@ impl Tensor {
 
         let self_nd = self.to_ndarray_view::<f32>();
         let other_nd = other.to_ndarray_view::<f32>();
-        let mut stats = CloseStats::new(atol, rtol);
 
+        let mut stats = CloseStats::new(atol, rtol);
         ndarray::indices_of(&self_nd).into_iter().for_each(|idx| {
             let (a, b) = (self_nd[&idx], other_nd[&idx]);
             stats.update(&a, &b, idx);
