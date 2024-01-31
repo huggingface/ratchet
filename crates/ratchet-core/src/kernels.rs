@@ -133,6 +133,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/div_vec4.wgsl"),
         );
         m.insert(
+            "slice_scalar",
+            include_str!(r"../kernels/generated/slice_scalar.wgsl"),
+        );
+        m.insert(
             "cos_scalar",
             include_str!(r"../kernels/generated/cos_scalar.wgsl"),
         );
@@ -165,6 +169,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/floor_vec4.wgsl"),
         );
         m.insert(
+            "permute_scalar",
+            include_str!(r"../kernels/generated/permute_scalar.wgsl"),
+        );
+        m.insert(
             "sqrt_vec4",
             include_str!(r"../kernels/generated/sqrt_vec4.wgsl"),
         );
@@ -195,15 +203,7 @@ lazy_static! {
             "softmax_vec2",
             include_str!(r"../kernels/softmax_vec2.wgsl"),
         );
-        m.insert(
-            "slice_scalar",
-            include_str!(r"../kernels/slice_scalar.wgsl"),
-        );
         m.insert("sgemm_vec4", include_str!(r"../kernels/sgemm_vec4.wgsl"));
-        m.insert(
-            "permute_scalar",
-            include_str!(r"../kernels/permute_scalar.wgsl"),
-        );
         m.insert(
             "softmax_scalar",
             include_str!(r"../kernels/softmax_scalar.wgsl"),

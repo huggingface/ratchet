@@ -108,6 +108,43 @@ impl std::fmt::Display for UnaryOp {
     }
 }
 
+#[derive(Debug, Clone, strum_macros::EnumIter)]
+pub enum ReindexOp {
+    Permute,
+    Slice,
+}
+
+impl std::fmt::Display for ReindexOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ReindexOp::Permute => "permute",
+            ReindexOp::Slice => "slice",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl ReindexOp {
+    pub fn func_body(&self) -> String {
+        match self {
+            ReindexOp::Permute => format!(
+                r#"
+    var src_index = vec4<u32>(0u);
+    src_index[metadata.perm[0]] = dst_index[0]; 
+    src_index[metadata.perm[1]] = dst_index[1];
+    src_index[metadata.perm[2]] = dst_index[2];
+    src_index[metadata.perm[3]] = dst_index[3];
+                "#,
+            ),
+            ReindexOp::Slice => format!(
+                r#"
+    var src_index = dst_index;
+                "#,
+            ),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct KernelGenerator {
     tera: Tera,
@@ -130,6 +167,23 @@ impl KernelGenerator {
     fn generate(&mut self) -> anyhow::Result<()> {
         self.generate_unary()?;
         self.generate_binary()?;
+        self.generate_reindex()?;
+        Ok(())
+    }
+
+    fn generate_reindex(&mut self) -> anyhow::Result<()> {
+        for op in ReindexOp::iter() {
+            let path = self.templates_path.join("reindex.wgsl");
+            self.tera.add_template_file(path, Some("reindex"))?;
+
+            let mut context = Context::new();
+            context.insert("func_body", &op.func_body());
+            let rendered = self.tera.render("reindex", &context)?;
+
+            let kernel_fname = format!("{}_{}.wgsl", op, KernelElement::Scalar);
+            let mut file = File::create(self.dest_path.join(kernel_fname))?;
+            file.write_all(rendered.as_bytes())?;
+        }
         Ok(())
     }
 
