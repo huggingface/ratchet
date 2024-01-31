@@ -153,7 +153,6 @@ mod tests {
             r#"
 import torch
 import torch.nn.functional as F
-
 def {}(a):
     return F.{}(torch.from_numpy(a), {}).numpy()
 "#,
@@ -163,7 +162,6 @@ def {}(a):
         let imp_prg = format!(
             r#"
 import torch
-
 def {}(a):
     return torch.{}(torch.from_numpy(a), {}).numpy()
 "#,

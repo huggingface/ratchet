@@ -77,7 +77,7 @@ impl MetaOperation for Reindex {
 
     fn storage_bind_group_layout(
         &self,
-        inplace: bool,
+        _inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         Ok(BindGroupLayoutDescriptor::unary())
     }
@@ -114,9 +114,7 @@ impl MetaOperation for Reindex {
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 
-    use crate::{
-        shape, test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Permute, ReindexOp, Tensor,
-    };
+    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, ReindexOp, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
