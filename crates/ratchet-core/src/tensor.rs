@@ -226,6 +226,7 @@ impl Tensor {
     /// # Slice
     ///
     /// Current slice implementation requires specification of all dimensions.
+    /// Currently very user hostile, but will be improved.
     pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
         let mut resolved_ranges = rvec![];
 
@@ -235,18 +236,15 @@ impl Tensor {
                 Bound::Excluded(&s) => s + 1,
                 Bound::Unbounded => 0,
             };
-
             let end = match r.end_bound() {
                 Bound::Included(&e) => e + 1,
                 Bound::Excluded(&e) => e,
                 Bound::Unbounded => self.shape()[ridx],
             };
-
             resolved_ranges.push(start..end);
         }
 
         let slice = Slice::new(resolved_ranges);
-        println!("SLICING: {:?}", slice);
         let out_view = slice.infer_output(&[self])?;
 
         let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
