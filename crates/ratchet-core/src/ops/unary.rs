@@ -51,6 +51,10 @@ pub struct Unary {
 }
 
 impl Unary {
+    pub fn name(&self) -> &'static str {
+        self.op.kernel_name()
+    }
+
     pub fn op(&self) -> &UnaryOp {
         &self.op
     }

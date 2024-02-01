@@ -38,6 +38,10 @@ pub struct Reindex {
 }
 
 impl Reindex {
+    pub fn name(&self) -> &'static str {
+        self.op.kernel_name()
+    }
+
     pub fn op(&self) -> &ReindexOp {
         &self.op
     }

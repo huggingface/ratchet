@@ -37,6 +37,10 @@ pub struct Binary {
 }
 
 impl Binary {
+    pub fn name(&self) -> &'static str {
+        self.op.kernel_name()
+    }
+
     pub fn op(&self) -> &BinaryOp {
         &self.op
     }

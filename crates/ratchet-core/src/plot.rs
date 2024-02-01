@@ -77,7 +77,7 @@ impl RenderableGraph {
         let mut graph_index_map = HashMap::new();
         let execution_order = leaf.execution_order();
         for t in execution_order.iter() {
-            let renderable_node = g.create_node(t.id(), Cow::Borrowed("testing"));
+            let renderable_node = g.create_node(t.id(), Cow::Borrowed(t.op().name()));
 
             let node_graph_id = renderable_node.plot_id;
             graph_index_map.insert(t.id(), renderable_node.plot_id);
@@ -85,7 +85,7 @@ impl RenderableGraph {
 
             t.op().srcs().iter().for_each(|src_t| {
                 if let Some(src_id) = graph_index_map.get(&src_t.id()) {
-                    g.create_edge(Cow::Owned(format!("{:?}", src_t)), *src_id, node_graph_id);
+                    g.create_edge(Cow::Owned(src_t.plot_fmt()), *src_id, node_graph_id);
                 }
             });
         }

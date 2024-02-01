@@ -171,6 +171,19 @@ impl Tensor {
     pub(crate) fn op(&self) -> &LazyOp {
         &self.inner.op
     }
+
+    #[cfg(feature = "plotting")]
+    pub fn plot_fmt(&self) -> String {
+        let shape = self.shape();
+        let dt = self.dt();
+        let storage = self.storage();
+        let storage_fmt = self
+            .storage()
+            .as_ref()
+            .map(|s| s.plot_fmt())
+            .unwrap_or_else(|| "Unresolved".to_string());
+        format!("#{:?}-{:?}-{:?}\n{}", self.id(), dt, shape, storage_fmt)
+    }
 }
 
 macro_rules! impl_binary_op {
@@ -672,7 +685,7 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{prelude::*, DeviceRequest};
+    use crate::{plot::render_to_file, prelude::*, DeviceRequest};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -695,6 +708,7 @@ mod tests {
         let logits = logits.softmax(2)?;
 
         let out = logits.matmul(&v_proj)?;
+        render_to_file(&out, "testing.svg")?;
         out.resolve()?;
         Ok(out)
     }

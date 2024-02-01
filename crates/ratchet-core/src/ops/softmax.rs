@@ -14,6 +14,12 @@ pub struct Softmax {
     dim: usize,
 }
 
+impl Softmax {
+    pub fn name(&self) -> &'static str {
+        "softmax"
+    }
+}
+
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct SoftmaxMeta {
     M: u32,
