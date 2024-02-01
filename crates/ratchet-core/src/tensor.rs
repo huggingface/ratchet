@@ -669,3 +669,49 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
         Self::from(array.to_owned_array())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{prelude::*, DeviceRequest};
+
+    #[derive(Debug, derive_new::new)]
+    struct AttentionTest {
+        input: Tensor,
+        qw: Tensor,
+        kw: Tensor,
+        vw: Tensor,
+    }
+
+    fn sdpa_cfg(case: AttentionTest, device: Device) -> anyhow::Result<Tensor> {
+        let q_proj = case.input.matmul(&case.qw)?;
+        let k_proj = case.input.matmul(&case.kw)?;
+        let v_proj = case.input.matmul(&case.vw)?;
+
+        let d_k = (q_proj.shape()[2] as f32).sqrt();
+        let kt = k_proj.permute(&[0, 2, 1])?;
+
+        let logits = q_proj.matmul(&kt)?;
+        let logits = logits.div(&Tensor::from_data(&[d_k], shape![1], device))?;
+        let logits = logits.softmax(2)?;
+
+        let out = logits.matmul(&v_proj)?;
+        out.resolve()?;
+        Ok(out)
+    }
+
+    #[test]
+    pub fn test_sdpa() -> anyhow::Result<()> {
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let input = Tensor::randn::<f32>(shape![1, 128, 384], device.clone());
+        let qw = Tensor::randn::<f32>(shape![384, 384], device.clone());
+        let kw = Tensor::randn::<f32>(shape![384, 384], device.clone());
+        let vw = Tensor::randn::<f32>(shape![384, 384], device.clone());
+
+        let test_case = AttentionTest::new(input, qw, kw, vw);
+
+        let out = sdpa_cfg(test_case, device.clone())?;
+        let out_cpu = out.to(&Device::CPU)?;
+        println!("{:?}", out_cpu);
+        Ok(())
+    }
+}

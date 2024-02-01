@@ -9,6 +9,19 @@ pub struct Permute {
     pub dims: Vec<usize>,
 }
 
+impl Permute {
+    pub fn promote(&self) -> Vec<usize> {
+        let pad_len = 4 - self.dims.len();
+
+        let mut perm = self.dims.clone();
+        for i in 0..perm.len() {
+            perm[i] += pad_len;
+        }
+        (0..pad_len).for_each(|x| perm.insert(0, x));
+        perm
+    }
+}
+
 impl Operation for Permute {
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
         let input_shape = srcs[0].shape();
