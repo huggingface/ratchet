@@ -83,6 +83,23 @@ impl GPUBuffer {
             alignment: self.alignment,
         }
     }
+
+    #[cfg(feature = "plotting")]
+    pub fn trim_id(id: wgpu::Id<wgpu::Buffer>) -> Option<String> {
+        let id = format!("{:?}", id);
+        let trimmed = id.trim_start_matches("Id(").trim_end_matches(")");
+        if trimmed.len() > 12 && trimmed.chars().all(|c| c.is_numeric()) {
+            Some(trimmed[12..].to_string())
+        } else {
+            None
+        }
+    }
+
+    #[cfg(feature = "plotting")]
+    pub fn plot_fmt(&self) -> String {
+        let id_string = Self::trim_id(self.inner().global_id()).unwrap_or_default();
+        format!("GPU:#{}\n{} bytes", id_string, self.inner.size())
+    }
 }
 
 impl DeviceStorage for GPUBuffer {

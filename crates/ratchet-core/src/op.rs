@@ -24,6 +24,17 @@ pub enum LazyOp {
 }
 
 impl LazyOp {
+    pub fn name(&self) -> &'static str {
+        match self {
+            LazyOp::Binary(b) => b.name(),
+            LazyOp::Matmul(m) => m.name(),
+            LazyOp::Softmax(s) => s.name(),
+            LazyOp::Unary(u) => u.name(),
+            LazyOp::Reindex(r) => r.name(),
+            LazyOp::Const => "Const",
+        }
+    }
+
     pub fn srcs(&self) -> RVec<&Tensor> {
         match self {
             LazyOp::Binary(b) => b.srcs(),
