@@ -37,6 +37,7 @@ impl GPUBuffer {
         } else {
             bytes
         };
+
         let inner = device
             .get_or_create_buffer_init(
                 &BufferDescriptor::new(bytes.len() as _, BufferUsages::standard(), false),

@@ -26,6 +26,7 @@ impl CompiledOp {
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
         inplace: bool,
+        kernel_name: &str,
     ) -> Result<RVec<GpuBindGroup>, OperationError> {
         let mut bind_group_entries = drvec![];
 
@@ -43,7 +44,9 @@ impl CompiledOp {
             let entries = bind_group_entries[group_range].into();
             let layout = *bind_group_layout;
 
-            let bg = device.get_or_create_bind_group(&BindGroupDescriptor { entries, layout })?;
+            let desc = &BindGroupDescriptor { entries, layout };
+            println!("Creating descriptor: {:#?}\n", desc);
+            let bg = device.get_or_create_bind_group(desc)?;
             storage_groups.push(bg);
         }
         Ok(storage_groups)

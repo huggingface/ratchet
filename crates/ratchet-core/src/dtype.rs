@@ -3,7 +3,7 @@ use std::num::NonZeroU64;
 use half::{bf16, f16};
 use wgpu::{BufferAddress, BufferSize};
 
-use crate::{rvec, RVec};
+use crate::{gpu::MIN_STORAGE_BUFFER_SIZE, rvec, RVec};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -31,8 +31,14 @@ impl DType {
         }
     }
 
-    //TODO: use a different method, total_bytes won't work with 256 byte padding
+    //TODO: use a different method, total_bytes won't work with padding
     pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
+        let total_bytes = if total_bytes < MIN_STORAGE_BUFFER_SIZE {
+            MIN_STORAGE_BUFFER_SIZE
+        } else {
+            total_bytes
+        };
+
         match self {
             DType::WQ8 => {
                 let weights_size = total_bytes / 5 * 4;

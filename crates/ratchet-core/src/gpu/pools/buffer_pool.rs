@@ -1,6 +1,9 @@
 // Adapted from https://github.com/rerun-io/rerun MIT licensed
 use super::{DynamicResource, DynamicResourcePool, DynamicResourcesDesc, PoolError};
-use crate::{gpu::WgpuDevice, RawGPUBuffer};
+use crate::{
+    gpu::{WgpuDevice, MIN_STORAGE_BUFFER_SIZE},
+    RawGPUBuffer,
+};
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, derive_new::new)]
 pub struct BufferDescriptor {
@@ -49,8 +52,17 @@ impl BufferPool {
     }
 
     pub fn get_or_create(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> PooledGPUBuffer {
-        self.inner.get_or_create(desc, |desc| {
-            let (size, usage, mapped_at_creation) = desc.fields();
+        let descriptor = if (desc.size as usize) < MIN_STORAGE_BUFFER_SIZE {
+            BufferDescriptor {
+                size: MIN_STORAGE_BUFFER_SIZE as _,
+                usage: desc.usage,
+                mapped_at_creation: desc.mapped_at_creation,
+            }
+        } else {
+            desc.clone()
+        };
+        self.inner.get_or_create(&descriptor, |descriptor| {
+            let (size, usage, mapped_at_creation) = descriptor.fields();
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size,

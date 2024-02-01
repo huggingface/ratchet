@@ -40,7 +40,7 @@ impl CpuUniform {
             entries: rvec![BindGroupEntry {
                 handle: buf.handle,
                 offset: 0,
-                size: NonZeroU64::new(buf.size()),
+                size: NonZeroU64::new(UNIFORM_ALIGN as u64),
             }],
             layout,
         })?;

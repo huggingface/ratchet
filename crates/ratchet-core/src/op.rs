@@ -158,13 +158,14 @@ pub trait MetaOperation: Debug + 'static {
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
-        //Not sure i like this call here
+        //TODO: Not sure i like this call here
         let storage_bind_groups = CompiledOp::create_storage_bind_groups(
             &self.srcs(),
             dst,
             rvec![storage_layout],
             device,
             can_inplace,
+            self.kernel_name(),
         )?;
 
         Ok(CompiledOp::new(

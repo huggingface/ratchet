@@ -10,6 +10,8 @@ pub use pools::*;
 pub use uniform::*;
 pub use workload::*;
 
+pub const MIN_STORAGE_BUFFER_SIZE: usize = 16;
+
 /// Usages we use everywhere
 pub trait BufferUsagesExt {
     fn standard() -> Self;
