@@ -101,11 +101,14 @@ impl MetaOperation for Binary {
         &self,
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        /*
         if inplace {
             Ok(BindGroupLayoutDescriptor::binary_inplace())
         } else {
             Ok(BindGroupLayoutDescriptor::binary())
         }
+        */
+        Ok(BindGroupLayoutDescriptor::binary())
     }
 
     fn kernel_name(&self) -> &'static str {
