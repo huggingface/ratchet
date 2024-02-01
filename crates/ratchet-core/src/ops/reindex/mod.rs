@@ -8,7 +8,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpMetadata, OperationError, RVec, Tensor,
+    rvec, wgc, KernelElement, MetaOperation, OpMetadata, OperationError, RVec, Shape, Strides,
+    Tensor,
 };
 
 #[cfg(test)]
@@ -95,22 +96,36 @@ impl MetaOperation for Reindex {
         dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        //TODO: this is garbage
-        let src_stride = glam::UVec4::try_from(self.input.strides()).unwrap();
-        let dst_stride = glam::UVec4::try_from(dst.strides()).unwrap();
-        let src_numel = self.input.shape().numel() as u32;
-        let dst_numel = self.input.shape().numel() as u32;
+        let padder = |mut shape: Shape| {
+            shape.left_pad_to(1, 4);
+            let strides = Strides::from(&shape);
+            (shape, strides)
+        };
+        let (input_shape, input_strides) = padder(self.input.shape().clone());
+        let (dst_shape, dst_strides) = padder(dst.shape().clone());
+
+        let src_stride = glam::UVec4::try_from(&input_strides).unwrap();
+        let dst_stride = glam::UVec4::try_from(&dst_strides).unwrap();
+        let src_numel = input_shape.numel() as u32;
+        let dst_numel = dst_shape.numel() as u32;
+
         let permute = match &self.op {
-            ReindexOp::Permute(p) => p.dims.iter().map(|&d| d as u32).collect::<Vec<_>>(),
+            ReindexOp::Permute(p) => {
+                let dims = p.promote();
+                dims.iter().map(|&d| d as u32).collect::<Vec<_>>()
+            }
             _ => vec![0, 0, 0, 0],
         };
         let src_offsets = match &self.op {
-            ReindexOp::Slice(s) => s
-                .indices()
-                .iter()
-                .map(|r| r.start as u32)
-                .collect::<Vec<_>>(),
-            _ => vec![0, 0, 0, 0],
+            ReindexOp::Slice(s) => {
+                let starts: [u32; 4] = (0..4)
+                    .map(|i| (s.indices().get(i).map(|index| index.start).unwrap_or(0)) as u32)
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap();
+                starts
+            }
+            _ => [0, 0, 0, 0],
         };
         let permute = glam::UVec4::new(permute[0], permute[1], permute[2], permute[3]);
         let src_offsets = glam::UVec4::new(
