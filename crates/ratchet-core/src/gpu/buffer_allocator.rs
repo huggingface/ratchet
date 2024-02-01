@@ -5,7 +5,10 @@ use crate::{
     gpu::{BufferDescriptor, BufferPool, GpuBufferHandle, PooledGPUBuffer},
     DeviceError, Tensor, TensorId,
 };
-use std::cell::{Ref, RefCell, RefMut};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    sync::Arc,
+};
 
 use super::{BufferUsagesExt, CpuUniform, WgpuDevice, UNIFORM_ALIGN};
 
@@ -85,14 +88,14 @@ impl BufferAllocator {
     fn graph_allocate(
         &self,
         descriptor: BufferDescriptor,
-        free: &mut Vec<PooledGPUBuffer>,
+        free: &mut Vec<GraphBuffer>,
         device: &WgpuDevice,
-    ) -> PooledGPUBuffer {
+    ) -> GraphBuffer {
         let required_size = descriptor.size as _;
         let mut closest_index = None;
         let mut closest_size_diff: Option<usize> = None;
         for (idx, buffer) in free.iter().enumerate() {
-            let current_size = buffer.descriptor.size as _;
+            let current_size = buffer.0.descriptor.size as _;
             if current_size >= required_size {
                 let size_diff = usize::abs_diff(current_size, required_size);
 
@@ -104,13 +107,14 @@ impl BufferAllocator {
         }
 
         if std::env::var("RATCHET_DEBUG").is_ok() {
-            return self.create_buffer(&descriptor, device);
+            return GraphBuffer::from(self.create_buffer(&descriptor, device));
         }
 
-        match closest_index {
+        let result = match closest_index {
             Some(idx) => free.remove(idx),
-            None => self.create_buffer(&descriptor, device),
-        }
+            None => GraphBuffer::from(self.create_buffer(&descriptor, device)),
+        };
+        result
     }
 
     /// # Inplace operations
@@ -121,7 +125,7 @@ impl BufferAllocator {
     /// On what conditions do we terminate the upward traversal?
     /// 1. We reach an operation that does not support inplace
     /// 2. We reach an operation that has more than one consumer
-    /// 3. We reach an operation that has more than one source
+    /// 3. We reach an operation that has more than one source (this condition is wrong)
     fn determine_tensor_source<'a>(source: &'a Tensor, execution_order: &[Tensor]) -> &'a Tensor {
         let mut true_source = source;
         loop {
@@ -137,46 +141,63 @@ impl BufferAllocator {
                 .filter(|t| t.op().srcs().contains(&true_source))
                 .count()
                 > 1;
+            log::debug!(
+                "Conditions: {:?} {:?} {:?}",
+                cant_inplace,
+                multiple_sources,
+                multiple_consumers
+            );
             if cant_inplace || multiple_sources || multiple_consumers {
                 break;
             }
 
             true_source = true_source.op().srcs()[0];
         }
+        log::debug!("Traversed to true source: {:?}", true_source.id());
         true_source
     }
 
     /// # Graph memory allocation
     ///
     /// Simple greedy algorithm
-    /// 1. Iterate over all tensors in reverse order
-    /// 2. For each tensor, loop through it's sources
-    /// 3. Each source is inserted into the assignments.
-    /// 4. Release my output buffer (because we traverse in reverse order, when I arrive at myself,
-    ///    my output buffer is no longer needed)
+    /// 1. Iterate over all tensors in reverse order (leaf -> root)
+    /// 2. For each tensor, loop through it's input values.
+    ///     a. Assign a buffer for each input value, if it is not already assigned
+    ///     b. If the input value is an inplace operation, traverse upwards until we find
+    ///        the "true" buffer source (i.e the first non-inplace operation).
+    /// 3. We release our **output** buffer, because the value is no longer needed,
+    ///    and earlier tensors can use it.
     pub fn allocate_cfg(
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
-    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
+    ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
+        //Assignments already needs all of the constants in it.
+        for t in execution_order.iter().rev() {
+            if t.resolved() {
+                //Consts are immediately resolved
+                let pooled = t.storage().as_ref().unwrap().try_gpu()?.inner.clone();
+                assignments.insert(t.id(), GraphBuffer::from(pooled));
+            }
+        }
 
         for t in execution_order.iter().rev() {
             if t.resolved() {
-                assignments.insert(
-                    t.id(),
-                    t.storage().as_ref().unwrap().try_gpu()?.inner.clone(),
-                );
+                //Never release Consts
                 continue;
             }
+            log::debug!("Leasing sources for t: {:?}", t.id());
 
             // I need all of my sources to be allocated in order to compute my output value.
             // We "lease" the buffer, and it is released when we reach it in the execution order.
             // If the current tensor is an inplace operation,
             // we traverse upwards until we find a non-inplace operation.
             for source in t.op().srcs() {
+                log::debug!("Processing source: {:?}", source.id());
                 let true_source = Self::determine_tensor_source(source, execution_order);
+                log::debug!("Inserting assingment: {:?}", true_source.id());
                 assignments.entry(true_source.id()).or_insert_with(|| {
                     self.graph_allocate(
                         BufferDescriptor::new(
@@ -188,13 +209,36 @@ impl BufferAllocator {
                         device,
                     )
                 });
-                assignments.insert(t.id(), assignments[&true_source.id()].clone());
+                let just_allocated = &assignments[&true_source.id()];
+                log::debug!(
+                    "Assigned: {:?} -> {:?}",
+                    true_source.id(),
+                    just_allocated.inner().global_id(),
+                );
+
+                if true_source.id() != source.id() {
+                    log::debug!(
+                        "Double Assignment: {:?} -> {:?}",
+                        source.id(),
+                        just_allocated.inner().global_id(),
+                    );
+                    assignments.insert(source.id(), GraphBuffer::from(just_allocated.clone()));
+                }
             }
 
             //My buffer is no longer needed, since we traverse in reverse order
             //Earlier tensors can use my buffer
             if let Some(buf) = assignments.get(&t.id()) {
-                free.push(buf.clone());
+                log::debug!(
+                    "Tensor: {:?} refcount: {}",
+                    t.id(),
+                    Arc::strong_count(buf.inner())
+                );
+                //if value == 1, he's the last one and we can release
+                if Arc::strong_count(buf.inner()) == 1 {
+                    log::debug!("Releasing buffer: {:?}", buf.inner().global_id());
+                    free.push(buf.clone());
+                }
             }
         }
 
@@ -223,5 +267,22 @@ impl BufferAllocator {
         assignments.insert(output.id(), output_buffer);
 
         Ok(assignments)
+    }
+}
+
+// We currently use a 2nd arc on top of the pool
+// to track graph allocations
+#[derive(Clone)]
+pub struct GraphBuffer(Arc<PooledGPUBuffer>);
+
+impl GraphBuffer {
+    pub fn inner(&self) -> &Arc<PooledGPUBuffer> {
+        &self.0
+    }
+}
+
+impl From<PooledGPUBuffer> for GraphBuffer {
+    fn from(buf: PooledGPUBuffer) -> Self {
+        Self(buf.into())
     }
 }

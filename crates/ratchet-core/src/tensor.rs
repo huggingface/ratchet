@@ -299,7 +299,12 @@ impl Tensor {
 
     #[cfg(feature = "rand")]
     pub fn randn<T: TensorDType + num_traits::Float>(shape: Shape, device: Device) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = if let Some(seed) = std::env::var("RATCHET_SEED").ok() {
+            let seed = seed.parse::<u64>().unwrap();
+            StdRng::seed_from_u64(seed)
+        } else {
+            StdRng::from_entropy()
+        };
         //TODO: fix copy on CPU
         let data = (0..shape.numel())
             .map(|_| {
@@ -416,6 +421,7 @@ impl Tensor {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
 
+        //1 owner per Arc at this line
         let execution_order = self.execution_order();
         let id_order = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
 
@@ -425,10 +431,10 @@ impl Tensor {
         for (tix, t) in execution_order.iter().enumerate() {
             if !t.resolved() {
                 let id = t.id();
-                let pooled_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+                let graph_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
                 assert!(t.device().is_gpu());
                 let storage = GPUBuffer {
-                    inner: pooled_buffer.clone(),
+                    inner: (**graph_buffer.inner()).clone(),
                     alignment: t.dt().size_of(),
                 };
                 t.update_storage(Storage::GPU(storage));
@@ -446,7 +452,7 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        println!("ALLOCATIONS: {:#?}", allocations);
+        //println!("ALLOCATIONS: {:#?}", allocations);
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
@@ -698,23 +704,40 @@ mod tests {
         vw: Tensor,
     }
 
-    /*
-        fn ground_truth(query: &Tensor, key: &Tensor, value: &Tensor) -> anyhow::Result<Tensor> {
-            let prg = r#"
-    import torch
-    import numpy as np
-    def scaled_dot_product_attention(query, key, value) -> torch.Tensor:
-        L, S = query.size(-2), key.size(-2)
-        scale_factor = 1 / math.sqrt(query.size(-1))
-        kt = key.transpose(-2, -1)
-        return kt
-        #attn_weight = query @ key.transpose(-2, -1) * scale_factor
-        #attn_weight = torch.softmax(attn_weight, dim=-1)
-        #return attn_weight @ value
-    "#;
-            run_py_prg(prg.to_string(), &[query, key, value])
+    impl AttentionTest {
+        fn to_gpu(&self, device: Device) -> Self {
+            Self {
+                input: self.input.to(&device).unwrap(),
+                qw: self.qw.to(&device).unwrap(),
+                kw: self.kw.to(&device).unwrap(),
+                vw: self.vw.to(&device).unwrap(),
+            }
         }
-        */
+    }
+
+    fn ground_truth(case: &AttentionTest) -> anyhow::Result<Tensor> {
+        let prg = r#"
+import torch
+import torch.nn.functional as F
+import numpy as np
+def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
+    input = torch.from_numpy(input)
+    qw = torch.from_numpy(qw)
+    kw = torch.from_numpy(kw)
+    vw = torch.from_numpy(vw)
+
+    q_proj = torch.matmul(input, qw)
+    k_proj = torch.matmul(input, kw)
+    v_proj = torch.matmul(input, vw)
+
+    out = F.scaled_dot_product_attention(q_proj, k_proj, v_proj).numpy()
+    return out
+"#;
+        run_py_prg(
+            prg.to_string(),
+            &[&case.input, &case.qw, &case.kw, &case.vw],
+        )
+    }
 
     fn sdpa_cfg(case: &AttentionTest, device: Device) -> anyhow::Result<Tensor> {
         let q_proj = case.input.matmul(&case.qw)?;
@@ -725,35 +748,31 @@ mod tests {
         let kt = k_proj.permute(&[0, 2, 1])?;
 
         let logits = q_proj.matmul(&kt)?;
-        //render_to_file(&logits, "sdpa_resolved.svg")?;
-        //logits.resolve()?;
         let logits = logits.div(&Tensor::from_data(&[d_k], shape![1], device))?;
-        logits.resolve()?;
-        Ok(logits)
-        /*
         let logits = logits.softmax(2)?;
         let out = logits.matmul(&v_proj)?;
+        out.resolve()?;
+        render_to_file(&out, "full_sdpa.svg")?;
         Ok(out)
-        */
     }
 
     #[test]
     pub fn test_sdpa() -> anyhow::Result<()> {
-        let device = Device::request_device(DeviceRequest::GPU)?;
         let input = Tensor::randn::<f32>(shape![1, 128, 384], Device::CPU);
-        let qw = Tensor::randn::<f32>(shape![384, 384], device.clone());
-        let kw = Tensor::randn::<f32>(shape![384, 384], device.clone());
-        let vw = Tensor::randn::<f32>(shape![384, 384], device.clone());
+        let qw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let kw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let vw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let cpu_test_case = AttentionTest::new(input, qw, kw, vw);
+        let ground = ground_truth(&cpu_test_case)?;
 
-        let input = input.to(&device)?;
-
-        let test_case = AttentionTest::new(input, qw, kw, vw);
-
-        let out = sdpa_cfg(&test_case, device.clone())?;
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let gpu_test_case = cpu_test_case.to_gpu(device.clone());
+        let out = sdpa_cfg(&gpu_test_case, device.clone())?;
         let out_cpu = out.to(&Device::CPU)?;
-        println!("OUT: {:?}", out_cpu);
-        //let ground = ground_truth(&input)?;
-        //ground.all_close(&out_cpu, 1e-4, 1e-4)?;
+        println!("OURS: {:?}\n", out_cpu);
+        println!("GROUND: {:?}", ground);
+        println!("Output shape: {:?}", out_cpu.shape());
+        ground.all_close(&out_cpu, 1e-4, 1e-4)?;
 
         Ok(())
     }
