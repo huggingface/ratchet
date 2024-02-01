@@ -35,7 +35,6 @@ impl Executable {
                 label: None,
                 timestamp_writes: None,
             });
-            let mut step_idx = 0;
             for step in self.steps.iter() {
                 cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle())?);
 
@@ -49,7 +48,6 @@ impl Executable {
 
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
-                step_idx += 1;
             }
         }
         Ok(device.queue().submit(Some(encoder.finish())))
