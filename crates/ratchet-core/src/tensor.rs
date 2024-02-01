@@ -359,7 +359,7 @@ impl Tensor {
         Ok(slice.to_vec())
     }
 
-    fn execution_order(&self) -> Vec<Tensor> {
+    pub(crate) fn execution_order(&self) -> Vec<Tensor> {
         let mut stack = vec![self.clone()];
         let mut visited = vec![];
         while let Some(tensor) = stack.pop() {
