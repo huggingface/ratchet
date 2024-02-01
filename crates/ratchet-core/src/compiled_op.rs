@@ -44,9 +44,7 @@ impl CompiledOp {
             let entries = bind_group_entries[group_range].into();
             let layout = *bind_group_layout;
 
-            let desc = &BindGroupDescriptor { entries, layout };
-            println!("Creating descriptor: {:#?}\n", desc);
-            let bg = device.get_or_create_bind_group(desc)?;
+            let bg = device.get_or_create_bind_group(&BindGroupDescriptor { entries, layout })?;
             storage_groups.push(bg);
         }
         Ok(storage_groups)

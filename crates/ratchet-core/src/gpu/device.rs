@@ -56,7 +56,7 @@ impl WgpuDevice {
         let adapter = Self::select_adapter()?;
 
         #[allow(unused_mut)]
-        let mut required_features = wgpu::Features::default();
+        let mut features = wgpu::Features::default();
         #[cfg(feature = "gpu-profiling")]
         {
             features |= wgpu::Features::TIMESTAMP_QUERY;
@@ -64,8 +64,8 @@ impl WgpuDevice {
 
         let mut device_descriptor = wgpu::DeviceDescriptor {
             label: Some("ratchet"),
-            required_features,
-            required_limits: Limits {
+            features,
+            limits: Limits {
                 max_buffer_size: MAX_BUFFER_SIZE,
                 max_storage_buffer_binding_size: MAX_BUFFER_SIZE as u32,
                 ..Default::default()
@@ -77,7 +77,7 @@ impl WgpuDevice {
                 "Failed to acq. device, trying again with reduced limits: {:?}",
                 e
             );
-            device_descriptor.required_limits = adapter.limits();
+            device_descriptor.limits = adapter.limits();
             adapter.request_device(&device_descriptor, None).await
         } else {
             device_request
@@ -224,7 +224,7 @@ impl WgpuDevice {
         &self,
         execution_order: &[Tensor],
         device: &WgpuDevice,
-    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
+    ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
         self.buffer_allocator.allocate_cfg(execution_order, device)
     }
 }
