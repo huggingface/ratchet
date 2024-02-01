@@ -137,11 +137,16 @@ impl BufferAllocator {
                 .filter(|t| t.op().srcs().contains(&true_source))
                 .count()
                 > 1;
+            println!(
+                "Cant inplace: {} Multiple sources: {} Multiple consumers: {}",
+                cant_inplace, multiple_sources, multiple_consumers
+            );
             if cant_inplace || multiple_sources || multiple_consumers {
                 break;
             }
 
             true_source = true_source.op().srcs()[0];
+            println!("Traversing upwards to {:?}", true_source.id());
         }
         true_source
     }
@@ -188,6 +193,7 @@ impl BufferAllocator {
                         device,
                     )
                 });
+                assignments.insert(t.id(), assignments[&true_source.id()].clone());
             }
 
             //My buffer is no longer needed, since we traverse in reverse order
