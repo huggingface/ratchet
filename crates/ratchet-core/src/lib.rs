@@ -8,6 +8,7 @@ mod gpu;
 mod kernels;
 mod op;
 mod ops;
+mod plot;
 mod quant;
 mod shape;
 mod storage;
