@@ -694,7 +694,7 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{plot::render_to_file, prelude::*, test_util::run_py_prg, DeviceRequest};
+    use crate::{prelude::*, test_util::run_py_prg, DeviceRequest};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -752,7 +752,6 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let logits = logits.softmax(2)?;
         let out = logits.matmul(&v_proj)?;
         out.resolve()?;
-        render_to_file(&out, "full_sdpa.svg")?;
         Ok(out)
     }
 
