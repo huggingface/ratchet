@@ -417,6 +417,8 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
+        let id_order = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
+
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
@@ -444,6 +446,7 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
+        println!("ALLOCATIONS: {:#?}", allocations);
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
@@ -685,7 +688,7 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{plot::render_to_file, prelude::*, DeviceRequest};
+    use crate::{plot::render_to_file, prelude::*, test_util::run_py_prg, DeviceRequest};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -695,7 +698,25 @@ mod tests {
         vw: Tensor,
     }
 
-    fn sdpa_cfg(case: AttentionTest, device: Device) -> anyhow::Result<Tensor> {
+    /*
+        fn ground_truth(query: &Tensor, key: &Tensor, value: &Tensor) -> anyhow::Result<Tensor> {
+            let prg = r#"
+    import torch
+    import numpy as np
+    def scaled_dot_product_attention(query, key, value) -> torch.Tensor:
+        L, S = query.size(-2), key.size(-2)
+        scale_factor = 1 / math.sqrt(query.size(-1))
+        kt = key.transpose(-2, -1)
+        return kt
+        #attn_weight = query @ key.transpose(-2, -1) * scale_factor
+        #attn_weight = torch.softmax(attn_weight, dim=-1)
+        #return attn_weight @ value
+    "#;
+            run_py_prg(prg.to_string(), &[query, key, value])
+        }
+        */
+
+    fn sdpa_cfg(case: &AttentionTest, device: Device) -> anyhow::Result<Tensor> {
         let q_proj = case.input.matmul(&case.qw)?;
         let k_proj = case.input.matmul(&case.kw)?;
         let v_proj = case.input.matmul(&case.vw)?;
@@ -704,28 +725,36 @@ mod tests {
         let kt = k_proj.permute(&[0, 2, 1])?;
 
         let logits = q_proj.matmul(&kt)?;
+        //render_to_file(&logits, "sdpa_resolved.svg")?;
+        //logits.resolve()?;
         let logits = logits.div(&Tensor::from_data(&[d_k], shape![1], device))?;
+        logits.resolve()?;
+        Ok(logits)
+        /*
         let logits = logits.softmax(2)?;
-
         let out = logits.matmul(&v_proj)?;
-        render_to_file(&out, "testing.svg")?;
-        out.resolve()?;
         Ok(out)
+        */
     }
 
     #[test]
     pub fn test_sdpa() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let input = Tensor::randn::<f32>(shape![1, 128, 384], device.clone());
+        let input = Tensor::randn::<f32>(shape![1, 128, 384], Device::CPU);
         let qw = Tensor::randn::<f32>(shape![384, 384], device.clone());
         let kw = Tensor::randn::<f32>(shape![384, 384], device.clone());
         let vw = Tensor::randn::<f32>(shape![384, 384], device.clone());
 
+        let input = input.to(&device)?;
+
         let test_case = AttentionTest::new(input, qw, kw, vw);
 
-        let out = sdpa_cfg(test_case, device.clone())?;
+        let out = sdpa_cfg(&test_case, device.clone())?;
         let out_cpu = out.to(&Device::CPU)?;
-        println!("{:?}", out_cpu);
+        println!("OUT: {:?}", out_cpu);
+        //let ground = ground_truth(&input)?;
+        //ground.all_close(&out_cpu, 1e-4, 1e-4)?;
+
         Ok(())
     }
 }
