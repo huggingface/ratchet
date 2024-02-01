@@ -178,7 +178,13 @@ impl BufferAllocator {
         for t in execution_order.iter().rev() {
             if t.resolved() {
                 //Consts are immediately resolved
-                let pooled = t.storage().as_ref().unwrap().try_gpu()?.inner.clone();
+                let storage_guard = t.storage();
+                let pooled = storage_guard
+                    .as_ref()
+                    .ok_or(AllocatorError::BufferNotFound)?
+                    .try_gpu()?
+                    .inner
+                    .clone();
                 assignments.insert(t.id(), GraphBuffer::from(pooled));
             }
         }
