@@ -193,14 +193,22 @@ impl BufferAllocator {
         //We know we need an allocation for the output.
         //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
         let output = execution_order.last().unwrap();
-        assignments.insert(
-            output.id(),
-            self.graph_allocate(
-                BufferDescriptor::new(output.num_bytes() as _, BufferUsages::standard(), false),
-                &mut free,
-                device,
-            ),
-        );
+        let output_source = Self::determine_tensor_source(output, execution_order);
+        let output_buffer = assignments
+            .get(&output_source.id())
+            .cloned()
+            .unwrap_or_else(|| {
+                self.graph_allocate(
+                    BufferDescriptor::new(
+                        output_source.num_bytes() as _,
+                        BufferUsages::standard(),
+                        false,
+                    ),
+                    &mut free,
+                    device,
+                )
+            });
+        assignments.insert(output.id(), output_buffer);
 
         for t in execution_order.iter().rev() {
             if t.resolved() {
@@ -260,6 +268,7 @@ impl BufferAllocator {
                 }
             }
         }
+        println!("Assignments: {:#?}", assignments);
 
         Ok(assignments)
     }
