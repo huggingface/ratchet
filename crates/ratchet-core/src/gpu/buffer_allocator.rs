@@ -58,6 +58,8 @@ impl BufferAllocator {
     ) -> PooledGPUBuffer {
         let buf = self.pool.borrow_mut().get_or_create(desc, device);
         device.queue().write_buffer(&buf.inner, 0, contents);
+        device.queue().submit(None);
+        device.poll(wgpu::Maintain::Wait);
         buf
     }
 
