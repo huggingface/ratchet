@@ -110,11 +110,10 @@ impl BufferAllocator {
             return GraphBuffer::from(self.create_buffer(&descriptor, device));
         }
 
-        let result = match closest_index {
+        match closest_index {
             Some(idx) => free.remove(idx),
             None => GraphBuffer::from(self.create_buffer(&descriptor, device)),
-        };
-        result
+        }
     }
 
     /// # Inplace operations
@@ -249,7 +248,7 @@ impl BufferAllocator {
                         source.id(),
                         just_allocated.inner().global_id(),
                     );
-                    assignments.insert(source.id(), GraphBuffer::from(just_allocated.clone()));
+                    assignments.insert(source.id(), just_allocated.clone());
                 }
             }
 

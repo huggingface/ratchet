@@ -1,4 +1,4 @@
-use ratchet::{DType, Tensor};
+use ratchet::Tensor;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LayerNormConfig {
@@ -45,19 +45,5 @@ impl LayerNorm {
 impl crate::Module for LayerNorm {
     fn forward(&self, x: &Tensor) -> anyhow::Result<Tensor> {
         x.layer_norm(&self.weight, self.bias.as_ref(), self.eps)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct RmsNorm(LayerNorm);
-
-impl RmsNorm {
-    pub fn new(weight: Tensor, eps: f32) -> Self {
-        Self(LayerNorm {
-            weight,
-            bias: None,
-            remove_mean: false,
-            eps,
-        })
     }
 }
