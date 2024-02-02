@@ -63,12 +63,15 @@ impl BufferPool {
         };
         self.inner.get_or_create(&descriptor, |descriptor| {
             let (size, usage, mapped_at_creation) = descriptor.fields();
-            device.create_buffer(&wgpu::BufferDescriptor {
+            let buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size,
                 usage,
                 mapped_at_creation,
-            })
+            });
+            device.queue().submit(None);
+            device.poll(wgpu::Maintain::Wait);
+            buf
         })
     }
 
