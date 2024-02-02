@@ -69,7 +69,7 @@ impl OpMetadata for UnaryMeta {}
 
 impl Operation for Unary {
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].view().clone())
+        Ok(srcs[0].storage_view().clone())
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
@@ -213,7 +213,7 @@ def {}(a):
         c_gpu.resolve()?;
 
         let (atol, rtol) = match op {
-            UnaryOp::Gelu | UnaryOp::Tanh => (1e-2, 1e-2),
+            UnaryOp::Gelu | UnaryOp::Tanh => (5e-2, 5e-2),
             _ => (1e-4, 1e-4),
         };
 

@@ -108,7 +108,7 @@ impl BufferAllocator {
             }
         }
 
-        if std::env::var("RATCHET_DEBUG").is_ok() {
+        if std::env::var("RATCHET_error").is_ok() {
             return GraphBuffer::from(self.create_buffer(&descriptor, device));
         }
 
@@ -263,6 +263,7 @@ impl BufferAllocator {
                     Arc::strong_count(buf.inner())
                 );
                 //if value == 1, he's the last one and we can release
+                //TODO: this won't work for inplace operations, count never reaches 1
                 if Arc::strong_count(buf.inner()) == 1 {
                     log::debug!("Releasing buffer: {:?}", buf.inner().global_id());
                     free.push(buf.clone());

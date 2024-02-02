@@ -9,7 +9,7 @@ use crate::gpu::{
 };
 use crate::{
     rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, Norm, RVec, Reindex, Softmax,
-    StorageView, Tensor, Unary,
+    StorageView, Tensor, Unary, View,
 };
 
 #[derive(Clone, Debug)]
@@ -21,6 +21,7 @@ pub enum LazyOp {
     Unary(Unary),
     Reindex(Reindex),
     Norm(Norm),
+    View(View),
     Const,
 }
 
@@ -33,6 +34,7 @@ impl LazyOp {
             LazyOp::Unary(u) => u.name(),
             LazyOp::Reindex(r) => r.name(),
             LazyOp::Norm(n) => n.name(),
+            LazyOp::View(v) => "View",
             LazyOp::Const => "Const",
         }
     }
@@ -45,6 +47,7 @@ impl LazyOp {
             LazyOp::Unary(u) => u.srcs(),
             LazyOp::Reindex(r) => r.srcs(),
             LazyOp::Norm(n) => n.srcs(),
+            LazyOp::View(v) => rvec![v.input()],
             LazyOp::Const => rvec![], //end of the line kid
             _ => unimplemented!(),
         }
@@ -57,8 +60,10 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.supports_inplace(),
             LazyOp::Unary(u) => u.supports_inplace(),
             LazyOp::Reindex(r) => r.supports_inplace(),
+            LazyOp::Norm(n) => n.supports_inplace(),
+            LazyOp::View(v) => true,
             LazyOp::Const => false,
-            _ => false,
+            _ => unimplemented!(),
         }
     }
 
