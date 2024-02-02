@@ -58,6 +58,8 @@ impl BufferAllocator {
     ) -> PooledGPUBuffer {
         let buf = self.pool.borrow_mut().get_or_create(desc, device);
         device.queue().write_buffer(&buf.inner, 0, contents);
+        device.queue().submit(None);
+        device.poll(wgpu::Maintain::Wait);
         buf
     }
 
@@ -110,11 +112,10 @@ impl BufferAllocator {
             return GraphBuffer::from(self.create_buffer(&descriptor, device));
         }
 
-        let result = match closest_index {
+        match closest_index {
             Some(idx) => free.remove(idx),
             None => GraphBuffer::from(self.create_buffer(&descriptor, device)),
-        };
-        result
+        }
     }
 
     /// # Inplace operations
@@ -249,7 +250,7 @@ impl BufferAllocator {
                         source.id(),
                         just_allocated.inner().global_id(),
                     );
-                    assignments.insert(source.id(), GraphBuffer::from(just_allocated.clone()));
+                    assignments.insert(source.id(), just_allocated.clone());
                 }
             }
 

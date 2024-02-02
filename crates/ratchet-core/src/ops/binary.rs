@@ -99,7 +99,7 @@ impl MetaOperation for Binary {
 
     fn storage_bind_group_layout(
         &self,
-        inplace: bool,
+        _inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         /*
         if inplace {
