@@ -32,7 +32,7 @@ impl OpMetadata for SoftmaxMeta {}
 
 impl Operation for Softmax {
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].view().clone())
+        Ok(srcs[0].storage_view().clone())
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {

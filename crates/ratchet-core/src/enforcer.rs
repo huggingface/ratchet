@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use crate::{DType, RVec, Tensor};
+use crate::{DType, RVec, Shape, Tensor};
 
 #[derive(Debug, thiserror::Error)]
 pub enum InvariantError {
@@ -140,5 +140,15 @@ impl Enforcer {
             }
         }
         Ok(dtype)
+    }
+
+    pub fn assert_equal_numel(shapes: &[&Shape]) -> Result<usize, InvariantError> {
+        let numel = shapes[0].numel();
+        for shape in shapes.iter().skip(1) {
+            if numel != shape.numel() {
+                panic!("Numel mismatch: {:?} != {:?}", numel, shape.numel());
+            }
+        }
+        Ok(numel)
     }
 }
