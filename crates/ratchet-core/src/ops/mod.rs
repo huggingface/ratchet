@@ -12,6 +12,8 @@ pub use reindex::*;
 pub use softmax::*;
 pub use unary::*;
 
+use crate::{Enforcer, Operation, Shape, StorageView, Strides, Tensor};
+
 /// # KernelElement
 ///
 /// Used to select the largest possible data type for a kernel.
@@ -44,5 +46,34 @@ impl From<&KernelElement> for usize {
             KernelElement::Vec2 => 2,
             KernelElement::Scalar => 1,
         }
+    }
+}
+
+#[derive(Debug, derive_new::new, Clone)]
+pub struct View {
+    input: Tensor,
+    shape: Shape,
+}
+
+impl View {
+    pub fn input(&self) -> &Tensor {
+        &self.input
+    }
+}
+
+impl Operation for View {
+    fn check_invariants(srcs: &[&crate::Tensor]) -> Result<(), crate::OperationError> {
+        Enforcer::check_input_arity(srcs, 1)?;
+        Ok(())
+    }
+
+    fn infer_output(
+        &self,
+        srcs: &[&crate::Tensor],
+    ) -> Result<crate::StorageView, crate::OperationError> {
+        Enforcer::assert_equal_numel(&[srcs[0].shape(), &self.shape])?;
+        //TODO: check if view is valid
+        let strides = Strides::from(&self.shape);
+        Ok(StorageView::new(self.shape.clone(), srcs[0].dt(), strides))
     }
 }

@@ -55,6 +55,17 @@ impl Tensor {
         Self::new(op, meta, None, device)
     }
 
+    fn from_shallow(
+        op: LazyOp,
+        meta: StorageView,
+        storage: Arc<RwLock<Option<Storage>>>,
+        device: Device,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Inner::from_shallow(op, meta, storage, device)),
+        }
+    }
+
     fn update_storage(&self, storage: Storage) {
         *self.inner.storage.write() = Some(storage);
     }
@@ -125,6 +136,21 @@ impl Inner {
             storage: Arc::new(RwLock::new(storage)),
         }
     }
+
+    fn from_shallow(
+        op: LazyOp,
+        meta: StorageView,
+        storage: Arc<RwLock<Option<Storage>>>,
+        device: Device,
+    ) -> Self {
+        Self {
+            id: TensorId::new(),
+            view: meta,
+            op,
+            device,
+            storage,
+        }
+    }
 }
 
 impl Tensor {
@@ -132,7 +158,7 @@ impl Tensor {
         self.inner.id
     }
 
-    pub fn view(&self) -> &StorageView {
+    pub fn storage_view(&self) -> &StorageView {
         &self.view
     }
 
@@ -262,6 +288,20 @@ impl Tensor {
 
         let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
         Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
+    }
+
+    pub fn view(&self, shape: Shape) -> anyhow::Result<Tensor> {
+        let view = View::new(self.clone(), shape);
+        let out_view = view.infer_output(&[self])?;
+
+        let storage = self.storage.clone();
+
+        Ok(Tensor::from_shallow(
+            LazyOp::View(view),
+            out_view,
+            storage,
+            self.device.clone(),
+        ))
     }
 
     pub fn layer_norm(
@@ -775,10 +815,10 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
     #[test]
     pub fn test_sdpa() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
-        let input = Tensor::randn::<f32>(shape![1, 128, 384], Device::CPU);
-        let qw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
-        let kw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
-        let vw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let input = Tensor::randn::<f32>(shape![1, 128, 256], Device::CPU);
+        let qw = Tensor::randn::<f32>(shape![256, 256], Device::CPU);
+        let kw = Tensor::randn::<f32>(shape![256, 256], Device::CPU);
+        let vw = Tensor::randn::<f32>(shape![256, 256], Device::CPU);
         let cpu_test_case = AttentionTest::new(input, qw, kw, vw);
         let ground = ground_truth(&cpu_test_case)?;
 
@@ -789,7 +829,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
         println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 5e-2, 5e-2)?;
+        ground.all_close(&out_cpu, 1e-4, 1e-4)?;
 
         Ok(())
     }
