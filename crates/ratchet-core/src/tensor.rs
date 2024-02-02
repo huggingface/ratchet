@@ -833,4 +833,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
 
         Ok(())
     }
+
+    #[test]
+    pub fn test_mha() -> anyhow::Result<()> {}
 }
