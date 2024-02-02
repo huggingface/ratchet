@@ -37,6 +37,10 @@ pub struct Binary {
 }
 
 impl Binary {
+    pub fn name(&self) -> &'static str {
+        self.op.kernel_name()
+    }
+
     pub fn op(&self) -> &BinaryOp {
         &self.op
     }
@@ -97,11 +101,14 @@ impl MetaOperation for Binary {
         &self,
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        /*
         if inplace {
             Ok(BindGroupLayoutDescriptor::binary_inplace())
         } else {
             Ok(BindGroupLayoutDescriptor::binary())
         }
+        */
+        Ok(BindGroupLayoutDescriptor::binary())
     }
 
     fn kernel_name(&self) -> &'static str {

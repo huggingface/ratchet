@@ -171,6 +171,19 @@ impl Tensor {
     pub(crate) fn op(&self) -> &LazyOp {
         &self.inner.op
     }
+
+    #[cfg(feature = "plotting")]
+    pub fn plot_fmt(&self) -> String {
+        let shape = self.shape();
+        let dt = self.dt();
+        let storage = self.storage();
+        let storage_fmt = self
+            .storage()
+            .as_ref()
+            .map(|s| s.plot_fmt())
+            .unwrap_or_else(|| "Unresolved".to_string());
+        format!("#{:?}-{:?}-{:?}\n{}", self.id(), dt, shape, storage_fmt)
+    }
 }
 
 macro_rules! impl_binary_op {
@@ -286,7 +299,12 @@ impl Tensor {
 
     #[cfg(feature = "rand")]
     pub fn randn<T: TensorDType + num_traits::Float>(shape: Shape, device: Device) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = if let Some(seed) = std::env::var("RATCHET_SEED").ok() {
+            let seed = seed.parse::<u64>().unwrap();
+            StdRng::seed_from_u64(seed)
+        } else {
+            StdRng::from_entropy()
+        };
         //TODO: fix copy on CPU
         let data = (0..shape.numel())
             .map(|_| {
@@ -359,7 +377,7 @@ impl Tensor {
         Ok(slice.to_vec())
     }
 
-    fn execution_order(&self) -> Vec<Tensor> {
+    pub(crate) fn execution_order(&self) -> Vec<Tensor> {
         let mut stack = vec![self.clone()];
         let mut visited = vec![];
         while let Some(tensor) = stack.pop() {
@@ -403,17 +421,20 @@ impl Tensor {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
 
+        //1 owner per Arc at this line
         let execution_order = self.execution_order();
+        let id_order = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
+
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
         for (tix, t) in execution_order.iter().enumerate() {
             if !t.resolved() {
                 let id = t.id();
-                let pooled_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+                let graph_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
                 assert!(t.device().is_gpu());
                 let storage = GPUBuffer {
-                    inner: pooled_buffer.clone(),
+                    inner: (**graph_buffer.inner()).clone(),
                     alignment: t.dt().size_of(),
                 };
                 t.update_storage(Storage::GPU(storage));
@@ -431,6 +452,7 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
+        //println!("ALLOCATIONS: {:#?}", allocations);
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
@@ -667,5 +689,88 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
 impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
     fn from(array: &PyArrayDyn<T>) -> Self {
         Self::from(array.to_owned_array())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{prelude::*, test_util::run_py_prg, DeviceRequest};
+
+    #[derive(Debug, derive_new::new)]
+    struct AttentionTest {
+        input: Tensor,
+        qw: Tensor,
+        kw: Tensor,
+        vw: Tensor,
+    }
+
+    impl AttentionTest {
+        fn to_gpu(&self, device: Device) -> Self {
+            Self {
+                input: self.input.to(&device).unwrap(),
+                qw: self.qw.to(&device).unwrap(),
+                kw: self.kw.to(&device).unwrap(),
+                vw: self.vw.to(&device).unwrap(),
+            }
+        }
+    }
+
+    fn ground_truth(case: &AttentionTest) -> anyhow::Result<Tensor> {
+        let prg = r#"
+import torch
+import math
+def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
+    input = torch.from_numpy(input)
+    query = input @ torch.from_numpy(qw) 
+    key = input @ torch.from_numpy(kw)
+    value = input @ torch.from_numpy(vw)
+    L, S = query.size(-2), key.size(-2)
+    scale_factor = 1 / math.sqrt(query.size(-1)) 
+    attn_weight = query @ key.transpose(-2, -1) * scale_factor
+    attn_weight = torch.softmax(attn_weight, dim=-1)
+    return (attn_weight @ value).numpy()
+"#;
+        run_py_prg(
+            prg.to_string(),
+            &[&case.input, &case.qw, &case.kw, &case.vw],
+        )
+    }
+
+    fn sdpa_cfg(case: &AttentionTest, device: Device) -> anyhow::Result<Tensor> {
+        let q_proj = case.input.matmul(&case.qw)?;
+        let k_proj = case.input.matmul(&case.kw)?;
+        let v_proj = case.input.matmul(&case.vw)?;
+
+        let scale_factor = 1f64 / (q_proj.shape()[2] as f64).sqrt();
+        let scale_factor = Tensor::from_data(&[scale_factor as f32], shape![1], device);
+        let kt = k_proj.permute(&[0, 2, 1])?;
+
+        let logits = q_proj.matmul(&kt)?.mul(&scale_factor)?;
+        let logits = logits.softmax(2)?;
+        let out = logits.matmul(&v_proj)?;
+        out.resolve()?;
+        Ok(out)
+    }
+
+    #[test]
+    pub fn test_sdpa() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let input = Tensor::randn::<f32>(shape![1, 128, 384], Device::CPU);
+        let qw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let kw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let vw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let cpu_test_case = AttentionTest::new(input, qw, kw, vw);
+        let ground = ground_truth(&cpu_test_case)?;
+
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let gpu_test_case = cpu_test_case.to_gpu(device.clone());
+        let out = sdpa_cfg(&gpu_test_case, device.clone())?;
+        let out_cpu = out.to(&Device::CPU)?;
+        println!("OURS: {:?}\n", out_cpu);
+        println!("GROUND: {:?}", ground);
+        println!("Output shape: {:?}", out_cpu.shape());
+        ground.all_close(&out_cpu, 1e-3, 1e-3)?;
+
+        Ok(())
     }
 }
