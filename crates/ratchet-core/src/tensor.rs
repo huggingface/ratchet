@@ -694,7 +694,7 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{prelude::*, test_util::run_py_prg, DeviceRequest};
+    use crate::{plot::render_to_file, prelude::*, test_util::run_py_prg, DeviceRequest};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -739,16 +739,48 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         )
     }
 
+    fn ground_debug(case: &AttentionTest) -> anyhow::Result<Tensor> {
+        let prg = r#"
+import torch
+import math
+import numpy as np
+import torch.nn.functional as F
+def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
+    input = torch.from_numpy(input)
+    qw = torch.from_numpy(qw)
+    kw = torch.from_numpy(kw)
+    vw = torch.from_numpy(vw)
+
+    query = input @ qw
+    key = input @ kw
+    value = input @ vw
+
+    L, S = query.size(-2), key.size(-2)
+    scale_factor = 1 / math.sqrt(query.size(-1)) 
+
+    attn_weight = query @ key.transpose(-2, -1) * scale_factor
+    attn_weight = torch.softmax(attn_weight, dim=-1)
+    return (attn_weight @ value).numpy()
+"#;
+        run_py_prg(
+            prg.to_string(),
+            &[&case.input, &case.qw, &case.kw, &case.vw],
+        )
+    }
+
     fn sdpa_cfg(case: &AttentionTest, device: Device) -> anyhow::Result<Tensor> {
         let q_proj = case.input.matmul(&case.qw)?;
         let k_proj = case.input.matmul(&case.kw)?;
         let v_proj = case.input.matmul(&case.vw)?;
 
-        let d_k = (q_proj.shape()[2] as f32).sqrt();
+        let scale_factor = 1f64 / (q_proj.shape()[2] as f64).sqrt();
         let kt = k_proj.permute(&[0, 2, 1])?;
 
-        let logits = q_proj.matmul(&kt)?;
-        let logits = logits.div(&Tensor::from_data(&[d_k], shape![1], device))?;
+        let logits = q_proj.matmul(&kt)?.mul(&Tensor::from_data(
+            &[scale_factor as f32],
+            shape![1],
+            device,
+        ))?;
         let logits = logits.softmax(2)?;
         let out = logits.matmul(&v_proj)?;
         out.resolve()?;
@@ -757,12 +789,13 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
 
     #[test]
     pub fn test_sdpa() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
         let input = Tensor::randn::<f32>(shape![1, 128, 384], Device::CPU);
         let qw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
         let kw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
         let vw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
         let cpu_test_case = AttentionTest::new(input, qw, kw, vw);
-        let ground = ground_truth(&cpu_test_case)?;
+        let ground = ground_debug(&cpu_test_case)?;
 
         let device = Device::request_device(DeviceRequest::GPU)?;
         let gpu_test_case = cpu_test_case.to_gpu(device.clone());

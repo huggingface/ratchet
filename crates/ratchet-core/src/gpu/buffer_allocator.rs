@@ -189,6 +189,19 @@ impl BufferAllocator {
             }
         }
 
+        //The output never gets allocated in the below loop, because it is not a source.
+        //We know we need an allocation for the output.
+        //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
+        let output = execution_order.last().unwrap();
+        assignments.insert(
+            output.id(),
+            self.graph_allocate(
+                BufferDescriptor::new(output.num_bytes() as _, BufferUsages::standard(), false),
+                &mut free,
+                device,
+            ),
+        );
+
         for t in execution_order.iter().rev() {
             if t.resolved() {
                 //Never release Consts
@@ -248,37 +261,13 @@ impl BufferAllocator {
             }
         }
 
-        //The output never gets allocated in the above loop, because it is not a source.
-        //We know we need an allocation for the output.
-        //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
-        let output = execution_order.last().unwrap();
-        let output_source = Self::determine_tensor_source(output, execution_order);
-
-        //If output source is allocated, we can use it's buffer
-        //Otherwise, we need to allocate a new buffer
-        let output_buffer = assignments
-            .get(&output_source.id())
-            .cloned()
-            .unwrap_or_else(|| {
-                self.graph_allocate(
-                    BufferDescriptor::new(
-                        output_source.num_bytes() as _,
-                        BufferUsages::standard(),
-                        false,
-                    ),
-                    &mut free,
-                    device,
-                )
-            });
-        assignments.insert(output.id(), output_buffer);
-
         Ok(assignments)
     }
 }
 
 // We currently use a 2nd arc on top of the pool
 // to track graph allocations
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GraphBuffer(Arc<PooledGPUBuffer>);
 
 impl GraphBuffer {
