@@ -108,7 +108,7 @@ impl BufferAllocator {
             }
         }
 
-        if std::env::var("RATCHET_DEBUG").is_ok() {
+        if std::env::var("RATCHET_error").is_ok() {
             return GraphBuffer::from(self.create_buffer(&descriptor, device));
         }
 
@@ -142,7 +142,7 @@ impl BufferAllocator {
                 .filter(|t| t.op().srcs().contains(&true_source))
                 .count()
                 > 1;
-            log::debug!(
+            log::error!(
                 "Conditions: {:?} {:?} {:?}",
                 cant_inplace,
                 multiple_sources,
@@ -154,7 +154,7 @@ impl BufferAllocator {
 
             true_source = true_source.op().srcs()[0];
         }
-        log::debug!("Traversed to true source: {:?}", true_source.id());
+        log::error!("Traversed to true source: {:?}", true_source.id());
         true_source
     }
 
@@ -216,16 +216,16 @@ impl BufferAllocator {
                 //Never release Consts
                 continue;
             }
-            log::debug!("Leasing sources for t: {:?}", t.id());
+            log::error!("Leasing sources for t: {:?}", t.id());
 
             // I need all of my sources to be allocated in order to compute my output value.
             // We "lease" the buffer, and it is released when we reach it in the execution order.
             // If the current tensor is an inplace operation,
             // we traverse upwards until we find a non-inplace operation.
             for source in t.op().srcs() {
-                log::debug!("Processing source: {:?}", source.id());
+                log::error!("Processing source: {:?}", source.id());
                 let true_source = Self::determine_tensor_source(source, execution_order);
-                log::debug!("Inserting assingment: {:?}", true_source.id());
+                log::error!("Inserting assingment: {:?}", true_source.id());
                 assignments.entry(true_source.id()).or_insert_with(|| {
                     self.graph_allocate(
                         BufferDescriptor::new(
@@ -238,14 +238,14 @@ impl BufferAllocator {
                     )
                 });
                 let just_allocated = &assignments[&true_source.id()];
-                log::debug!(
+                log::error!(
                     "Assigned: {:?} -> {:?}",
                     true_source.id(),
                     just_allocated.inner().global_id(),
                 );
 
                 if true_source.id() != source.id() {
-                    log::debug!(
+                    log::error!(
                         "Double Assignment: {:?} -> {:?}",
                         source.id(),
                         just_allocated.inner().global_id(),
@@ -257,18 +257,19 @@ impl BufferAllocator {
             //My buffer is no longer needed, since we traverse in reverse order
             //Earlier tensors can use my buffer
             if let Some(buf) = assignments.get(&t.id()) {
-                log::debug!(
+                log::error!(
                     "Tensor: {:?} refcount: {}",
                     t.id(),
                     Arc::strong_count(buf.inner())
                 );
                 //if value == 1, he's the last one and we can release
                 if Arc::strong_count(buf.inner()) == 1 {
-                    log::debug!("Releasing buffer: {:?}", buf.inner().global_id());
+                    log::error!("Releasing buffer: {:?}", buf.inner().global_id());
                     free.push(buf.clone());
                 }
             }
         }
+        log::error!("ALLOCATIONS: {:#?}", assignments);
 
         Ok(assignments)
     }
