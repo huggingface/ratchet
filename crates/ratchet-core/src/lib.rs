@@ -87,7 +87,7 @@ pub mod prelude {
     pub use crate::{rvec, shape, Device, Tensor};
 }
 
-#[cfg(test)]
+#[cfg(feature = "pyo3")]
 pub mod test_util {
     use crate::Tensor;
     use regex::Regex;
