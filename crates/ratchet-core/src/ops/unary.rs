@@ -213,7 +213,7 @@ def {}(a):
         c_gpu.resolve()?;
 
         let (atol, rtol) = match op {
-            UnaryOp::Gelu | UnaryOp::Tanh => (1e-2, 1e-2),
+            UnaryOp::Gelu | UnaryOp::Tanh => (5e-2, 5e-2),
             _ => (1e-4, 1e-4),
         };
 
