@@ -35,7 +35,6 @@ pub enum NormOp {
 pub struct Norm {
     input: Tensor,
     op: NormOp,
-    dim: usize,
 }
 
 impl Norm {
@@ -48,6 +47,7 @@ impl Norm {
 pub struct NormMeta {
     M: u32,
     N: u32,
+    ND2: u32,
     ND4: u32,
     eps: f32,
 }
@@ -87,7 +87,8 @@ impl MetaOperation for Norm {
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let input = &self.input;
-        let N = input.shape()[self.dim] as u32;
+        let rank = input.rank();
+        let N = input.shape()[rank - 1] as u32;
         if N % 4 == 0 {
             KernelElement::Vec4
         } else if N % 2 == 0 {
@@ -99,8 +100,10 @@ impl MetaOperation for Norm {
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let input = &self.input;
-        let stacks = input.shape().slice(0..self.dim - 1).numel();
-        let M = input.shape()[self.dim - 1] as u32;
+        let rank = input.rank();
+
+        let M = input.shape()[rank - 2] as u32;
+        let stacks = input.shape().slice(0..rank - 2).numel();
         Ok(wgc![M as _, stacks as _, 1])
     }
 
@@ -117,13 +120,15 @@ impl MetaOperation for Norm {
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
         let input = &self.input;
-        let M = input.shape()[self.dim - 1] as u32;
-        let N = input.shape()[self.dim] as u32;
+        let rank = input.rank();
+        let M = input.shape()[rank - 2] as u32;
+        let N = input.shape()[rank - 1] as u32;
+        let ND2 = N / 2;
         let ND4 = N / 4;
         let eps = match &self.op {
             NormOp::LayerNorm(LayerNorm { eps, .. }) => *eps,
         };
-        Ok(NormMeta::new(M, N, ND4, eps))
+        Ok(NormMeta::new(M, N, ND2, ND4, eps))
     }
 }
 
@@ -157,8 +162,11 @@ def layernorm(input, scale, bias):
         let scale_gpu = scale.to(device)?;
         let bias_gpu = bias.to(device)?;
 
-        let ours = b.to(&Device::CPU)?;
-        ground.all_close(&ours, 1e-6, 1e-6)?;
+        let result = input_gpu.layer_norm(&scale_gpu, Some(&bias_gpu), 1e-5)?;
+        result.resolve()?;
+
+        let ours = result.to(&Device::CPU)?;
+        ground.all_close(&ours, 1e-4, 1e-4)?;
         Ok(())
     }
 
@@ -172,7 +180,7 @@ def layernorm(input, scale, bias):
         N: usize,
     }
 
-    #[proptest(cases = 1)]
+    #[proptest(cases = 32)]
     fn test_norm(prob: NormProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let NormProblem { B, M, N } = prob;

@@ -43,7 +43,9 @@ impl LayerNorm {
 }
 
 impl crate::Module for LayerNorm {
-    fn forward(&self, x: &Tensor) -> anyhow::Result<Tensor> {}
+    fn forward(&self, x: &Tensor) -> anyhow::Result<Tensor> {
+        x.layer_norm(&self.weight, self.bias.as_ref(), self.eps)
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -37,6 +37,7 @@ fn mu(local_id: vec3<u32>, anchor: u32) -> f32 {
     for (var i: u32 = local_id.x; i < {{ reduction_len }}; i += BLOCK_SIZE) {
         threadSum += X[anchor + i];
     }
+    workgroupBarrier();
     smem[local_id.x] = threadSum;
     workgroupBarrier();
     
@@ -48,7 +49,11 @@ fn mu(local_id: vec3<u32>, anchor: u32) -> f32 {
     block_sum(local_id.x, 2u);
     block_sum(local_id.x, 1u);
 
-    return dot(smem[0], {{ elem }}(1.0)) / f32(metadata.N); 
+    {% if elem == "f32" -%}
+        return smem[0] / f32(metadata.N);
+    {% else -%}
+        return dot(smem[0], {{ elem }}(1.0)) / f32(metadata.N); 
+    {% endif %}
 }
 
 fn sigma(local_id: vec3<u32>, anchor: u32, mu: f32) -> f32 {
@@ -58,6 +63,8 @@ fn sigma(local_id: vec3<u32>, anchor: u32, mu: f32) -> f32 {
         let val = X[anchor + i] - mu;
         threadSum = fma(val, val, threadSum);
     }
+
+    workgroupBarrier();
     smem[local_id.x] = threadSum;
     workgroupBarrier();
     
@@ -69,7 +76,11 @@ fn sigma(local_id: vec3<u32>, anchor: u32, mu: f32) -> f32 {
     block_sum(local_id.x, 2u);
     block_sum(local_id.x, 1u);
 
-    return dot(smem[0], {{ elem }}(1.0)) / (f32(metadata.N));
+    {% if elem == "f32" -%}
+        return smem[0] / f32(metadata.N);
+    {% else -%}
+        return dot(smem[0], {{ elem }}(1.0)) / f32(metadata.N); 
+    {% endif %}
 }
 
 @compute @workgroup_size(128, 1, 1)
