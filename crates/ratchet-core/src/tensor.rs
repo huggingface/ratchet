@@ -264,6 +264,28 @@ impl Tensor {
         Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
     }
 
+    pub fn layer_norm(
+        &self,
+        dim: usize,
+        weight: &Tensor,
+        bias: Option<&Tensor>,
+        eps: f32,
+    ) -> anyhow::Result<Tensor> {
+        let srcs = match bias {
+            Some(b) => rvec![self, weight, b],
+            None => rvec![self, weight],
+        };
+        LayerNorm::check_invariants(&srcs)?;
+        let layer_norm = LayerNorm::new(weight.clone(), bias.cloned(), eps);
+        let new_view = layer_norm.infer_output(&[self])?;
+        let norm = Norm::new(self.clone(), NormOp::LayerNorm(layer_norm), dim);
+        Ok(Tensor::lazy(
+            LazyOp::Norm(norm),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
     pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
         let permute = Permute::new(dims.to_vec());
         let out_view = permute.infer_output(&[self])?;
@@ -421,7 +443,6 @@ impl Tensor {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
 
-        //1 owner per Arc at this line
         let execution_order = self.execution_order();
         let id_order = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
 
@@ -452,7 +473,6 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        //println!("ALLOCATIONS: {:#?}", allocations);
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));

@@ -53,6 +53,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/cos_vec2.wgsl"),
         );
         m.insert(
+            "layernorm_vec4",
+            include_str!(r"../kernels/generated/layernorm_vec4.wgsl"),
+        );
+        m.insert(
             "sub_scalar",
             include_str!(r"../kernels/generated/sub_scalar.wgsl"),
         );
@@ -93,6 +97,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/cos_vec4.wgsl"),
         );
         m.insert(
+            "layernorm_vec2",
+            include_str!(r"../kernels/generated/layernorm_vec2.wgsl"),
+        );
+        m.insert(
             "tanh_scalar",
             include_str!(r"../kernels/generated/tanh_scalar.wgsl"),
         );
@@ -111,6 +119,10 @@ lazy_static! {
         m.insert(
             "floor_vec2",
             include_str!(r"../kernels/generated/floor_vec2.wgsl"),
+        );
+        m.insert(
+            "layernorm_scalar",
+            include_str!(r"../kernels/generated/layernorm_scalar.wgsl"),
         );
         m.insert(
             "div_scalar",

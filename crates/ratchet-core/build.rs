@@ -145,6 +145,20 @@ impl ReindexOp {
     }
 }
 
+#[derive(Debug, Clone, strum_macros::EnumIter)]
+pub enum NormOp {
+    LayerNorm,
+}
+
+impl std::fmt::Display for NormOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            NormOp::LayerNorm => "layernorm",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Debug)]
 pub struct KernelGenerator {
     tera: Tera,
@@ -168,6 +182,7 @@ impl KernelGenerator {
         self.generate_unary()?;
         self.generate_binary()?;
         self.generate_reindex()?;
+        self.generate_norm()?;
         Ok(())
     }
 
@@ -183,6 +198,31 @@ impl KernelGenerator {
             let kernel_fname = format!("{}_{}.wgsl", op, KernelElement::Scalar);
             let mut file = File::create(self.dest_path.join(kernel_fname))?;
             file.write_all(rendered.as_bytes())?;
+        }
+        Ok(())
+    }
+
+    fn generate_norm(&mut self) -> anyhow::Result<()> {
+        for op in NormOp::iter() {
+            for ke in KernelElement::iter() {
+                let path = self.templates_path.join("layernorm.wgsl");
+                self.tera.add_template_file(path, Some("layernorm"))?;
+
+                let mut context = Context::new();
+                context.insert("elem", &ke.as_wgsl(WgslDType::F32));
+                context.insert("elem_size", &ke.as_size());
+                let reduction_len = match ke {
+                    KernelElement::Scalar => "metadata.N",
+                    KernelElement::Vec2 => "metadata.ND2",
+                    KernelElement::Vec4 => "metadata.ND4",
+                };
+                context.insert("reduction_len", reduction_len);
+                let rendered = self.tera.render("layernorm", &context)?;
+
+                let kernel_fname = format!("{}_{}.wgsl", op, ke);
+                let mut file = File::create(self.dest_path.join(kernel_fname))?;
+                file.write_all(rendered.as_bytes())?;
+            }
         }
         Ok(())
     }
