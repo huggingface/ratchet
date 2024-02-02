@@ -8,7 +8,7 @@ use crate::gpu::{
     PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
 };
 use crate::{
-    rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, RVec, Reindex, Softmax,
+    rvec, Binary, CompiledOp, InvariantError, KernelElement, Matmul, Norm, RVec, Reindex, Softmax,
     StorageView, Tensor, Unary,
 };
 
@@ -20,6 +20,7 @@ pub enum LazyOp {
     Softmax(Softmax), //Should be custom
     Unary(Unary),
     Reindex(Reindex),
+    Norm(Norm),
     Const,
 }
 
@@ -31,6 +32,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.name(),
             LazyOp::Unary(u) => u.name(),
             LazyOp::Reindex(r) => r.name(),
+            LazyOp::Norm(n) => n.name(),
             LazyOp::Const => "Const",
         }
     }
@@ -42,6 +44,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.srcs(),
             LazyOp::Unary(u) => u.srcs(),
             LazyOp::Reindex(r) => r.srcs(),
+            LazyOp::Norm(n) => n.srcs(),
             LazyOp::Const => rvec![], //end of the line kid
             _ => unimplemented!(),
         }
@@ -53,6 +56,7 @@ impl LazyOp {
             LazyOp::Matmul(m) => m.supports_inplace(),
             LazyOp::Softmax(s) => s.supports_inplace(),
             LazyOp::Unary(u) => u.supports_inplace(),
+            LazyOp::Reindex(r) => r.supports_inplace(),
             LazyOp::Const => false,
             _ => false,
         }
