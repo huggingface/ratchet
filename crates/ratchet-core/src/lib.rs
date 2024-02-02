@@ -24,6 +24,7 @@ pub use executable::*;
 pub use kernels::*;
 pub use op::*;
 pub use ops::*;
+pub use plot::render_to_file;
 pub use quant::*;
 pub use shape::*;
 pub use storage::*;

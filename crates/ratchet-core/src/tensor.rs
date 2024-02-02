@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides,
-    TensorDType, TensorId,
+    ops::*, render_to_file, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    GPUBuffer, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage,
+    Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
@@ -515,6 +515,8 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
+        let last = execution_order.last().unwrap();
+        render_to_file(last, "allocated.svg");
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));

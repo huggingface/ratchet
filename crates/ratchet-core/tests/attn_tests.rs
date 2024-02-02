@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use ratchet::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use ratchet::{render_to_file, shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -142,6 +142,7 @@ def qkv_attention(input, qw, kw, vw, n_heads):
             .matmul(&v)?
             .permute(&[0, 2, 1, 3])?
             .view(shape![1, hdim, qdim])?;
+        render_to_file(&w, "mha.svg")?;
         w.resolve()?;
         Ok(w)
     }

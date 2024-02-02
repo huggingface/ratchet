@@ -60,8 +60,10 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.supports_inplace(),
             LazyOp::Unary(u) => u.supports_inplace(),
             LazyOp::Reindex(r) => r.supports_inplace(),
+            LazyOp::Norm(n) => n.supports_inplace(),
+            LazyOp::View(v) => true,
             LazyOp::Const => false,
-            _ => false,
+            _ => unimplemented!(),
         }
     }
 
