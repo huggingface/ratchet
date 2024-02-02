@@ -3,7 +3,8 @@ members = [
     "crates/ratchet-core",
     "crates/ratchet-integration-tests",
     "crates/ratchet-loader", 
-    "crates/ratchet-models", "crates/ratchet-nn",
+    "crates/ratchet-models", 
+    "crates/ratchet-nn",
 ]
 resolver = "2"
 
