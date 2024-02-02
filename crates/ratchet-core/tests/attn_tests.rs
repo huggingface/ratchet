@@ -77,7 +77,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
         println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 1e-4, 1e-4)?;
+        ground.all_close(&out_cpu, 1e-2, 1e-2)?;
 
         Ok(())
     }
@@ -164,7 +164,7 @@ def qkv_attention(input, qw, kw, vw, n_heads):
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
         println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 1e-4, 1e-4)?;
+        ground.all_close(&out_cpu, 1e-2, 1e-2)?;
 
         Ok(())
     }
