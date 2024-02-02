@@ -24,13 +24,15 @@ pub use executable::*;
 pub use kernels::*;
 pub use op::*;
 pub use ops::*;
-pub use plot::render_to_file;
 pub use quant::*;
 pub use shape::*;
 pub use storage::*;
 pub use strides::*;
 pub use tensor::*;
 pub use tensor_id::*;
+
+#[cfg(feature = "plotting")]
+pub use plot::render_to_file;
 
 use smallvec::SmallVec;
 pub type RVec<T> = SmallVec<[T; 4]>;
