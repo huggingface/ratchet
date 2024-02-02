@@ -694,7 +694,7 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{prelude::*, test_util::run_py_prg, DeviceRequest};
+    use crate::{prelude::*, test_util::run_py_prg, DeviceRequest, Quantization, Quantizer};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -719,6 +719,7 @@ mod tests {
         let prg = r#"
 import torch
 import math
+import numpy as np
 def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
     input = torch.from_numpy(input)
     query = input @ torch.from_numpy(qw) 
@@ -728,7 +729,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
     scale_factor = 1 / math.sqrt(query.size(-1)) 
     attn_weight = query @ key.transpose(-2, -1) * scale_factor
     attn_weight = torch.softmax(attn_weight, dim=-1)
-    return (attn_weight @ value).numpy()
+    return np.ascontiguousarray((attn_weight @ value).numpy())
 "#;
         run_py_prg(
             prg.to_string(),
@@ -745,7 +746,8 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let scale_factor = Tensor::from_data(&[scale_factor as f32], shape![1], device);
         let kt = k_proj.permute(&[0, 2, 1])?;
 
-        let logits = q_proj.matmul(&kt)?.mul(&scale_factor)?;
+        let logits = q_proj.matmul(&kt)?;
+        let logits = logits.mul(&scale_factor)?;
         let logits = logits.softmax(2)?;
         let out = logits.matmul(&v_proj)?;
         out.resolve()?;
@@ -773,4 +775,45 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
 
         Ok(())
     }
+
+    /*
+    #[test]
+    pub fn test_qsdpa() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let input = Tensor::randn::<f32>(shape![1, 128, 384], Device::CPU);
+        let qw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let kw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let vw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let cpu_test_case = AttentionTest::new(
+            input.deep_clone(),
+            qw.deep_clone(),
+            kw.deep_clone(),
+            vw.deep_clone(),
+        );
+        let ground = ground_truth(&cpu_test_case)?;
+
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let quant_qw = quantizer.sint8_quantize(qw);
+        let quant_kw = quantizer.sint8_quantize(kw);
+        let quant_vw = quantizer.sint8_quantize(vw);
+
+        let device = Device::request_device(DeviceRequest::GPU)?;
+
+        let gpu_test_case = AttentionTest::new(
+            input.to(&device)?,
+            quant_qw.to(&device)?,
+            quant_kw.to(&device)?,
+            quant_vw.to(&device)?,
+        );
+
+        let out = sdpa_cfg(&gpu_test_case, device.clone())?;
+        let out_cpu = out.to(&Device::CPU)?;
+        println!("OURS: {:?}\n", out_cpu);
+        println!("GROUND: {:?}", ground);
+        println!("Output shape: {:?}", out_cpu.shape());
+        ground.all_close(&out_cpu, 5e-1, 5e-1)?;
+
+        Ok(())
+    }
+    */
 }
