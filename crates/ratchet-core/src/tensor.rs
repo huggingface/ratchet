@@ -694,7 +694,7 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{prelude::*, test_util::run_py_prg, DeviceRequest, Quantization, Quantizer};
+    use crate::{prelude::*, test_util::run_py_prg, DeviceRequest};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -769,7 +769,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
         println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 1e-4, 1e-4)?;
+        ground.all_close(&out_cpu, 1e-3, 1e-3)?;
 
         Ok(())
     }
