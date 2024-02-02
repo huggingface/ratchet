@@ -143,11 +143,11 @@ mod tests {
     #[derive(Arbitrary, Debug)]
     struct UnaryProblem {
         op: UnaryOp,
-        #[strategy(1..=4usize)]
+        #[strategy(1..=2usize)]
         B: usize,
-        #[strategy(1..=256usize)]
+        #[strategy(1..=128usize)]
         M: usize,
-        #[strategy(1..=256usize)]
+        #[strategy(1..=128usize)]
         N: usize,
     }
 

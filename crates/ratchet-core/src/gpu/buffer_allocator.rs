@@ -268,7 +268,6 @@ impl BufferAllocator {
                 }
             }
         }
-        println!("Assignments: {:#?}", assignments);
 
         Ok(assignments)
     }
