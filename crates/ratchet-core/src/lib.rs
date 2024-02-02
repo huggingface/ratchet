@@ -31,6 +31,9 @@ pub use strides::*;
 pub use tensor::*;
 pub use tensor_id::*;
 
+#[cfg(feature = "plotting")]
+pub use plot::render_to_file;
+
 use smallvec::SmallVec;
 pub type RVec<T> = SmallVec<[T; 4]>;
 pub type DRVec<T> = SmallVec<[T; 8]>; //Double RVec
@@ -87,7 +90,7 @@ pub mod prelude {
     pub use crate::{rvec, shape, Device, Tensor};
 }
 
-#[cfg(test)]
+#[cfg(feature = "pyo3")]
 pub mod test_util {
     use crate::Tensor;
     use regex::Regex;
