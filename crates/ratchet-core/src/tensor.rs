@@ -694,10 +694,7 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        plot::render_to_file, prelude::*, test_util::run_py_prg, DeviceRequest, Quantization,
-        Quantizer,
-    };
+    use crate::{prelude::*, test_util::run_py_prg, DeviceRequest, Quantization, Quantizer};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -776,33 +773,4 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
 
         Ok(())
     }
-
-    /*
-    #[test]
-    pub fn test_qsdpa() -> anyhow::Result<()> {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let input = Tensor::randn::<f32>(shape![1, 128, 384], Device::CPU);
-        let qw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
-        let kw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
-        let vw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
-        let cpu_test_case =
-            AttentionTest::new(input, qw.deep_clone(), kw.deep_clone(), vw.deep_clone());
-        let ground = ground_debug(&cpu_test_case)?;
-
-        let quantizer = Quantizer::new(Quantization::SInt8);
-        let quant_qw = quantizer.sint8_quantize(qw);
-        let quant_kw = quantizer.sint8_quantize(kw);
-        let quant_vw = quantizer.sint8_quantize(vw);
-
-        let device = Device::request_device(DeviceRequest::GPU)?;
-        let out = sdpa_cfg(&gpu_test_case, device.clone())?;
-        let out_cpu = out.to(&Device::CPU)?;
-        println!("OURS: {:?}\n", out_cpu);
-        println!("GROUND: {:?}", ground);
-        println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 1e-4, 1e-4)?;
-
-        Ok(())
-    }
-    */
 }
