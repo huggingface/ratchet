@@ -475,7 +475,8 @@ impl Tensor {
         }
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
-        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
+        let x = device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
+        println!("Resolved {:?}", x);
         Ok(())
     }
 
