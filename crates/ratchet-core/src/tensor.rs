@@ -320,7 +320,7 @@ impl Tensor {
 
     #[cfg(feature = "rand")]
     pub fn randn<T: TensorDType + num_traits::Float>(shape: Shape, device: Device) -> Self {
-        let mut rng = if let Some(seed) = std::env::var("RATCHET_SEED").ok() {
+        let mut rng = if let Ok(seed) = std::env::var("RATCHET_SEED") {
             let seed = seed.parse::<u64>().unwrap();
             StdRng::seed_from_u64(seed)
         } else {
@@ -762,7 +762,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let v_proj = case.input.matmul(&case.vw)?;
 
         let scale_factor = 1f64 / (q_proj.shape()[2] as f64).sqrt();
-        let scale_factor = Tensor::from_data(&[scale_factor as f32], shape![1], device);
+        let scale_factor = Tensor::from_data([scale_factor as f32], shape![1], device);
         let kt = k_proj.permute(&[0, 2, 1])?;
 
         let logits = q_proj.matmul(&kt)?.mul(&scale_factor)?;

@@ -1,5 +1,5 @@
 use anyhow::Context as anyhowCtx;
-use pathdiff;
+
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -127,20 +127,18 @@ impl std::fmt::Display for ReindexOp {
 impl ReindexOp {
     pub fn func_body(&self) -> String {
         match self {
-            ReindexOp::Permute => format!(
-                r#"
+            ReindexOp::Permute => r#"
     var src_index = vec4<u32>(0u);
     src_index[metadata.perm[0]] = dst_index[0]; 
     src_index[metadata.perm[1]] = dst_index[1];
     src_index[metadata.perm[2]] = dst_index[2];
     src_index[metadata.perm[3]] = dst_index[3];
-                "#,
-            ),
-            ReindexOp::Slice => format!(
-                r#"
+                "#
+            .to_string(),
+            ReindexOp::Slice => r#"
     var src_index = dst_index;
-                "#,
-            ),
+                "#
+            .to_string(),
         }
     }
 }
