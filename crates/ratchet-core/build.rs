@@ -1,5 +1,5 @@
 use anyhow::Context as anyhowCtx;
-use pathdiff;
+
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -127,21 +127,33 @@ impl std::fmt::Display for ReindexOp {
 impl ReindexOp {
     pub fn func_body(&self) -> String {
         match self {
-            ReindexOp::Permute => format!(
-                r#"
+            ReindexOp::Permute => r#"
     var src_index = vec4<u32>(0u);
     src_index[metadata.perm[0]] = dst_index[0]; 
     src_index[metadata.perm[1]] = dst_index[1];
     src_index[metadata.perm[2]] = dst_index[2];
     src_index[metadata.perm[3]] = dst_index[3];
-                "#,
-            ),
-            ReindexOp::Slice => format!(
-                r#"
+                "#
+            .to_string(),
+            ReindexOp::Slice => r#"
     var src_index = dst_index;
-                "#,
-            ),
+                "#
+            .to_string(),
         }
+    }
+}
+
+#[derive(Debug, Clone, strum_macros::EnumIter)]
+pub enum NormOp {
+    LayerNorm,
+}
+
+impl std::fmt::Display for NormOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            NormOp::LayerNorm => "layernorm",
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -168,6 +180,7 @@ impl KernelGenerator {
         self.generate_unary()?;
         self.generate_binary()?;
         self.generate_reindex()?;
+        self.generate_norm()?;
         Ok(())
     }
 
@@ -183,6 +196,31 @@ impl KernelGenerator {
             let kernel_fname = format!("{}_{}.wgsl", op, KernelElement::Scalar);
             let mut file = File::create(self.dest_path.join(kernel_fname))?;
             file.write_all(rendered.as_bytes())?;
+        }
+        Ok(())
+    }
+
+    fn generate_norm(&mut self) -> anyhow::Result<()> {
+        for op in NormOp::iter() {
+            for ke in KernelElement::iter() {
+                let path = self.templates_path.join("layernorm.wgsl");
+                self.tera.add_template_file(path, Some("layernorm"))?;
+
+                let mut context = Context::new();
+                context.insert("elem", &ke.as_wgsl(WgslDType::F32));
+                context.insert("elem_size", &ke.as_size());
+                let reduction_len = match ke {
+                    KernelElement::Scalar => "metadata.N",
+                    KernelElement::Vec2 => "metadata.ND2",
+                    KernelElement::Vec4 => "metadata.ND4",
+                };
+                context.insert("reduction_len", reduction_len);
+                let rendered = self.tera.render("layernorm", &context)?;
+
+                let kernel_fname = format!("{}_{}.wgsl", op, ke);
+                let mut file = File::create(self.dest_path.join(kernel_fname))?;
+                file.write_all(rendered.as_bytes())?;
+            }
         }
         Ok(())
     }

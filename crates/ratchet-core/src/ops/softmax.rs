@@ -136,20 +136,13 @@ def softmax(a):
     struct SoftmaxProblem {
         #[strategy(1..=4usize)]
         B: usize,
-        #[strategy(1..=1024usize)]
+        #[strategy(1..=512usize)]
         M: usize,
-        #[strategy(1..=1024usize)]
+        #[strategy(1..=512usize)]
         N: usize,
     }
 
-    #[test]
-    fn test_single_softmax() {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let prob = SoftmaxProblem { B: 2, M: 32, N: 32 };
-        run_softmax_trial(&device, prob);
-    }
-
-    #[proptest(cases = 1)]
+    #[proptest(cases = 16)]
     fn test_softmax(prob: SoftmaxProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let SoftmaxProblem { B, M, N } = prob;

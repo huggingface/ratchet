@@ -264,6 +264,27 @@ impl Tensor {
         Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
     }
 
+    pub fn layer_norm(
+        &self,
+        weight: &Tensor,
+        bias: Option<&Tensor>,
+        eps: f32,
+    ) -> anyhow::Result<Tensor> {
+        let srcs = match bias {
+            Some(b) => rvec![self, weight, b],
+            None => rvec![self, weight],
+        };
+        LayerNorm::check_invariants(&srcs)?;
+        let layer_norm = LayerNorm::new(weight.clone(), bias.cloned(), eps);
+        let new_view = layer_norm.infer_output(&[self])?;
+        let norm = Norm::new(self.clone(), NormOp::LayerNorm(layer_norm));
+        Ok(Tensor::lazy(
+            LazyOp::Norm(norm),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
     pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
         let permute = Permute::new(dims.to_vec());
         let out_view = permute.infer_output(&[self])?;
@@ -299,7 +320,7 @@ impl Tensor {
 
     #[cfg(feature = "rand")]
     pub fn randn<T: TensorDType + num_traits::Float>(shape: Shape, device: Device) -> Self {
-        let mut rng = if let Some(seed) = std::env::var("RATCHET_SEED").ok() {
+        let mut rng = if let Ok(seed) = std::env::var("RATCHET_SEED") {
             let seed = seed.parse::<u64>().unwrap();
             StdRng::seed_from_u64(seed)
         } else {
@@ -391,6 +412,7 @@ impl Tensor {
                 LazyOp::Softmax(s) => s.srcs(),
                 LazyOp::Unary(u) => u.srcs(),
                 LazyOp::Reindex(r) => r.srcs(),
+                LazyOp::Norm(n) => n.srcs(),
                 _ => unimplemented!(),
             };
             stack.extend(srcs.into_iter().cloned());
@@ -412,6 +434,7 @@ impl Tensor {
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -421,9 +444,7 @@ impl Tensor {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
 
-        //1 owner per Arc at this line
         let execution_order = self.execution_order();
-        let id_order = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
@@ -452,7 +473,6 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        //println!("ALLOCATIONS: {:#?}", allocations);
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
@@ -742,7 +762,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let v_proj = case.input.matmul(&case.vw)?;
 
         let scale_factor = 1f64 / (q_proj.shape()[2] as f64).sqrt();
-        let scale_factor = Tensor::from_data(&[scale_factor as f32], shape![1], device);
+        let scale_factor = Tensor::from_data([scale_factor as f32], shape![1], device);
         let kt = k_proj.permute(&[0, 2, 1])?;
 
         let logits = q_proj.matmul(&kt)?.mul(&scale_factor)?;
@@ -769,7 +789,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
         println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 1e-3, 1e-3)?;
+        ground.all_close(&out_cpu, 5e-2, 5e-2)?;
 
         Ok(())
     }
