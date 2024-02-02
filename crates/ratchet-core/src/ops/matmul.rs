@@ -186,6 +186,14 @@ pub struct Matmul {
 }
 
 impl Matmul {
+    pub fn name(&self) -> &'static str {
+        match (self.lhs.dt(), self.rhs.dt()) {
+            (DType::F32, DType::F32) => "sgemm",
+            (DType::F32, DType::WQ8) => "qgemm",
+            _ => panic!("Unsupported dtypes"),
+        }
+    }
+
     pub fn compute_c_shape(a: &Tensor, b: &Tensor) -> anyhow::Result<Shape> {
         let (mut ashape, mut bshape) = (a.shape().clone(), b.shape().clone());
 

@@ -104,6 +104,11 @@ impl CPUBuffer {
     pub fn deep_clone(&self) -> Result<Self, DeviceError> {
         Ok(Self::new((*self.inner()).clone()))
     }
+
+    #[cfg(feature = "plotting")]
+    pub fn plot_fmt(&self) -> String {
+        format!("CPU: {} bytes", self.n_bytes())
+    }
 }
 
 impl DeviceStorage for CPUBuffer {

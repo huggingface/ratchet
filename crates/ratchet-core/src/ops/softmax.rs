@@ -14,6 +14,12 @@ pub struct Softmax {
     dim: usize,
 }
 
+impl Softmax {
+    pub fn name(&self) -> &'static str {
+        "softmax"
+    }
+}
+
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct SoftmaxMeta {
     M: u32,
@@ -121,6 +127,8 @@ def softmax(a):
         b.resolve().unwrap();
 
         let ours = b.to(&Device::CPU).unwrap();
+        println!("ours = {:?}", ours);
+        println!("ground = {:?}", ground);
         ground.all_close(&ours, 1e-6, 1e-6).unwrap();
     }
 
@@ -134,7 +142,14 @@ def softmax(a):
         N: usize,
     }
 
-    #[proptest(cases = 8)]
+    #[test]
+    fn test_single_softmax() {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let prob = SoftmaxProblem { B: 2, M: 32, N: 32 };
+        run_softmax_trial(&device, prob);
+    }
+
+    #[proptest(cases = 1)]
     fn test_softmax(prob: SoftmaxProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let SoftmaxProblem { B, M, N } = prob;

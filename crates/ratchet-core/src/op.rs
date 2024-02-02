@@ -24,6 +24,17 @@ pub enum LazyOp {
 }
 
 impl LazyOp {
+    pub fn name(&self) -> &'static str {
+        match self {
+            LazyOp::Binary(b) => b.name(),
+            LazyOp::Matmul(m) => m.name(),
+            LazyOp::Softmax(s) => s.name(),
+            LazyOp::Unary(u) => u.name(),
+            LazyOp::Reindex(r) => r.name(),
+            LazyOp::Const => "Const",
+        }
+    }
+
     pub fn srcs(&self) -> RVec<&Tensor> {
         match self {
             LazyOp::Binary(b) => b.srcs(),
@@ -147,13 +158,14 @@ pub trait MetaOperation: Debug + 'static {
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
-        //Not sure i like this call here
+        //TODO: Not sure i like this call here
         let storage_bind_groups = CompiledOp::create_storage_bind_groups(
             &self.srcs(),
             dst,
             rvec![storage_layout],
             device,
             can_inplace,
+            self.kernel_name(),
         )?;
 
         Ok(CompiledOp::new(

@@ -63,6 +63,14 @@ impl Storage {
             }
         }
     }
+
+    #[cfg(feature = "plotting")]
+    pub fn plot_fmt(&self) -> String {
+        match self {
+            Storage::CPU(c) => c.plot_fmt(),
+            Storage::GPU(g) => g.plot_fmt(),
+        }
+    }
 }
 
 pub trait DeviceStorage: std::fmt::Debug + Clone + 'static {
