@@ -694,7 +694,10 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{plot::render_to_file, prelude::*, test_util::run_py_prg, DeviceRequest};
+    use crate::{
+        plot::render_to_file, prelude::*, test_util::run_py_prg, DeviceRequest, Quantization,
+        Quantizer,
+    };
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -718,46 +721,14 @@ mod tests {
     fn ground_truth(case: &AttentionTest) -> anyhow::Result<Tensor> {
         let prg = r#"
 import torch
-import torch.nn.functional as F
-import numpy as np
-def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
-    input = torch.from_numpy(input)
-    qw = torch.from_numpy(qw)
-    kw = torch.from_numpy(kw)
-    vw = torch.from_numpy(vw)
-
-    q_proj = torch.matmul(input, qw)
-    k_proj = torch.matmul(input, kw)
-    v_proj = torch.matmul(input, vw)
-
-    out = F.scaled_dot_product_attention(q_proj, k_proj, v_proj).numpy()
-    return out
-"#;
-        run_py_prg(
-            prg.to_string(),
-            &[&case.input, &case.qw, &case.kw, &case.vw],
-        )
-    }
-
-    fn ground_debug(case: &AttentionTest) -> anyhow::Result<Tensor> {
-        let prg = r#"
-import torch
 import math
-import numpy as np
-import torch.nn.functional as F
 def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
     input = torch.from_numpy(input)
-    qw = torch.from_numpy(qw)
-    kw = torch.from_numpy(kw)
-    vw = torch.from_numpy(vw)
-
-    query = input @ qw
-    key = input @ kw
-    value = input @ vw
-
+    query = input @ torch.from_numpy(qw) 
+    key = input @ torch.from_numpy(kw)
+    value = input @ torch.from_numpy(vw)
     L, S = query.size(-2), key.size(-2)
     scale_factor = 1 / math.sqrt(query.size(-1)) 
-
     attn_weight = query @ key.transpose(-2, -1) * scale_factor
     attn_weight = torch.softmax(attn_weight, dim=-1)
     return (attn_weight @ value).numpy()
@@ -774,13 +745,10 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let v_proj = case.input.matmul(&case.vw)?;
 
         let scale_factor = 1f64 / (q_proj.shape()[2] as f64).sqrt();
+        let scale_factor = Tensor::from_data(&[scale_factor as f32], shape![1], device);
         let kt = k_proj.permute(&[0, 2, 1])?;
 
-        let logits = q_proj.matmul(&kt)?.mul(&Tensor::from_data(
-            &[scale_factor as f32],
-            shape![1],
-            device,
-        ))?;
+        let logits = q_proj.matmul(&kt)?.mul(&scale_factor)?;
         let logits = logits.softmax(2)?;
         let out = logits.matmul(&v_proj)?;
         out.resolve()?;
@@ -795,7 +763,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let kw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
         let vw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
         let cpu_test_case = AttentionTest::new(input, qw, kw, vw);
-        let ground = ground_debug(&cpu_test_case)?;
+        let ground = ground_truth(&cpu_test_case)?;
 
         let device = Device::request_device(DeviceRequest::GPU)?;
         let gpu_test_case = cpu_test_case.to_gpu(device.clone());
@@ -808,4 +776,33 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
 
         Ok(())
     }
+
+    /*
+    #[test]
+    pub fn test_qsdpa() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let input = Tensor::randn::<f32>(shape![1, 128, 384], Device::CPU);
+        let qw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let kw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let vw = Tensor::randn::<f32>(shape![384, 384], Device::CPU);
+        let cpu_test_case =
+            AttentionTest::new(input, qw.deep_clone(), kw.deep_clone(), vw.deep_clone());
+        let ground = ground_debug(&cpu_test_case)?;
+
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let quant_qw = quantizer.sint8_quantize(qw);
+        let quant_kw = quantizer.sint8_quantize(kw);
+        let quant_vw = quantizer.sint8_quantize(vw);
+
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let out = sdpa_cfg(&gpu_test_case, device.clone())?;
+        let out_cpu = out.to(&Device::CPU)?;
+        println!("OURS: {:?}\n", out_cpu);
+        println!("GROUND: {:?}", ground);
+        println!("Output shape: {:?}", out_cpu.shape());
+        ground.all_close(&out_cpu, 1e-4, 1e-4)?;
+
+        Ok(())
+    }
+    */
 }
