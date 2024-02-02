@@ -266,7 +266,6 @@ impl Tensor {
 
     pub fn layer_norm(
         &self,
-        dim: usize,
         weight: &Tensor,
         bias: Option<&Tensor>,
         eps: f32,
@@ -278,7 +277,7 @@ impl Tensor {
         LayerNorm::check_invariants(&srcs)?;
         let layer_norm = LayerNorm::new(weight.clone(), bias.cloned(), eps);
         let new_view = layer_norm.infer_output(&[self])?;
-        let norm = Norm::new(self.clone(), NormOp::LayerNorm(layer_norm), dim);
+        let norm = Norm::new(self.clone(), NormOp::LayerNorm(layer_norm));
         Ok(Tensor::lazy(
             LazyOp::Norm(norm),
             new_view,
@@ -413,6 +412,7 @@ impl Tensor {
                 LazyOp::Softmax(s) => s.srcs(),
                 LazyOp::Unary(u) => u.srcs(),
                 LazyOp::Reindex(r) => r.srcs(),
+                LazyOp::Norm(n) => n.srcs(),
                 _ => unimplemented!(),
             };
             stack.extend(srcs.into_iter().cloned());
@@ -434,6 +434,7 @@ impl Tensor {
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             _ => unimplemented!(),
         }
@@ -444,7 +445,6 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
-        let id_order = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
