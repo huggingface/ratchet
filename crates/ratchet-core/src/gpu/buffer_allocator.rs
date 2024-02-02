@@ -263,6 +263,7 @@ impl BufferAllocator {
                     Arc::strong_count(buf.inner())
                 );
                 //if value == 1, he's the last one and we can release
+                //TODO: this won't work for inplace operations
                 if Arc::strong_count(buf.inner()) == 1 {
                     log::error!("Releasing buffer: {:?}", buf.inner().global_id());
                     free.push(buf.clone());
