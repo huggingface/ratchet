@@ -112,4 +112,5 @@ jobs:
       - name: Run wasm-bindgen-test integration tests
         run: |
           pnpm install -r
+          just wasm ratchet-client
           just wasm-it-headless
