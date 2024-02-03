@@ -100,12 +100,12 @@ jobs:
           set -e
           cargo nextest run -j 1 --features pyo3 --no-fail-fast
 
-      - name: run integration tests
-        shell: bash
+      - name: Install integration test dependencies
         run: |
-          - name: Install wasm-pack
-            run: |
-              curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          npm install -g pnpm
 
-          - name: Run wasm-bindgen-test integration tests
-            run: just wasm-it-headless
+      - name: Run wasm-bindgen-test integration tests
+        run: |
+          pnpm install -r
+          just wasm-it-headless
