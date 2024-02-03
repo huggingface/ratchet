@@ -103,6 +103,7 @@ jobs:
       - name: Install integration test dependencies
         run: |
           curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to DEST
           npm install -g pnpm
 
       - name: Run wasm-bindgen-test integration tests
