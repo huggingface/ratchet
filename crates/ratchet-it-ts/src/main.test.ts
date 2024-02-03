@@ -7,7 +7,7 @@ beforeAll(async () => {
 });
 
 describe("The ApiBuilder", () => {
-  it("should download the full model model ", async () => {
+  it("should download a model from HF hub", async () => {
     const api: Api = ApiBuilder.from_hf(`jantxu/ratchet-test`).build();
     const modelStream = await api.get("model.safetensors");
 
