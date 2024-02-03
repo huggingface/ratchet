@@ -40,6 +40,10 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      - name: Install just
+        uses: extractions/setup-just@v1
+        with:
+          just-version: 1.5.0 # optional semver specification, otherwise latest
 
       - name: (linux) install lavapipe, vulkan sdk, alsa
         if: matrix.os == 'ubuntu-latest'
@@ -103,7 +107,6 @@ jobs:
       - name: Install integration test dependencies
         run: |
           curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to DEST
           npm install -g pnpm
 
       - name: Run wasm-bindgen-test integration tests
