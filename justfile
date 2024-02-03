@@ -3,9 +3,13 @@ line-count:
 install-pyo3:
     env PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install --verbose 3.10.6
     echo "Please PYO3_PYTHON to your .bashrc or .zshrc"
+wasm-all:
+    wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/ --release
 wasm CRATE:
-    RUSTFLAGS=--cfg=web_sys_unstable_apis wasm-pack build --scope ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --release
+    wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --release
 wasm-test CRATE:
-  RUSTFLAGS="--cfg=web_sys_unstable_apis -Z threads=8" wasm-pack test --chrome `pwd`/crates/{{CRATE}}
+    wasm-pack test --chrome `pwd`/crates/{{CRATE}}
 wasm-test-headless CRATE:
-  RUSTFLAGS="--cfg=web_sys_unstable_apis -Z threads=8" wasm-pack test --chrome --headless `pwd`/crates/{{CRATE}}
+    wasm-pack test --chrome --headless `pwd`/crates/{{CRATE}}
+wasm-it-headless:
+    pnpm run -r test
