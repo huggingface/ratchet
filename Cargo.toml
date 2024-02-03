@@ -1,16 +1,16 @@
 [workspace]
 members = [
     "crates/ratchet-core",
-    "crates/ratchet-downloader",
-    "crates/ratchet-integration-tests",
-    "crates/ratchet-loader", 
-    "crates/ratchet-models", 
+    "crates/ratchet-client",
+    "crates/ratchet-it-rust",
+    "crates/ratchet-loader",
+    "crates/ratchet-models",
     "crates/ratchet-nn",
 ]
 resolver = "2"
 
 [profile.test]
-debug = 2 
+debug = 2
 debug-assertions = true
 
 [profile.release]

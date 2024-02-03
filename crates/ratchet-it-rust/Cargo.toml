@@ -1,5 +1,5 @@
 [package]
-name = "ratchet-integration-tests"
+name = "ratchet-it-rust"
 version = "0.0.0" # Not to be published
 edition = "2021"
 

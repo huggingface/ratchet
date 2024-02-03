@@ -19,39 +19,46 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 pub type ProgressBar = dyn Fn(u32) -> ();
 
+#[wasm_bindgen]
 pub struct ApiBuilder {
     endpoint: String,
     cached: bool,
 }
 
+#[wasm_bindgen]
 impl ApiBuilder {
-    fn from_hf(repo_id: &str) -> Self {
+    #[wasm_bindgen]
+    pub fn from_hf(repo_id: &str) -> Self {
         Self {
             cached: true,
             endpoint: format!("https://huggingface.co/{repo_id}/resolve/main"),
         }
     }
 
-    fn from_hf_with_revision(repo_id: String, revision: String) -> Self {
+    #[wasm_bindgen]
+    pub fn from_hf_with_revision(repo_id: String, revision: String) -> Self {
         Self {
             cached: true,
             endpoint: format!("https://huggingface.co/{repo_id}/resolve/{revision}"),
         }
     }
 
-    fn from_custom(endpoint: String) -> Self {
+    #[wasm_bindgen]
+    pub fn from_custom(endpoint: String) -> Self {
         Self {
             cached: true,
             endpoint,
         }
     }
 
-    fn uncached(mut self) -> Self {
+    #[wasm_bindgen]
+    pub fn uncached(mut self) -> Self {
         self.cached = false;
         self
     }
 
-    fn build(&self) -> Api {
+    #[wasm_bindgen]
+    pub fn build(&self) -> Api {
         Api {
             endpoint: self.endpoint.clone(),
             cached: self.cached,
@@ -59,12 +66,15 @@ impl ApiBuilder {
     }
 }
 
+#[wasm_bindgen]
 pub struct Api {
     endpoint: String,
     cached: bool,
 }
 
+#[wasm_bindgen]
 impl Api {
+    #[wasm_bindgen]
     pub async fn get(&self, file_name: &str) -> Result<ApiResponse, JsError> {
         let file_url = format!("{}/{}", self.endpoint, file_name);
         let raw = util::fetch(file_url.as_str()).await?;
@@ -81,21 +91,39 @@ impl Api {
     }
 }
 
+#[wasm_bindgen]
 pub struct ApiResponse {
     raw: Response,
 }
 
+trait ToBytes {
+    fn to_bytes(self) -> Bytes;
+}
+
+impl ToBytes for Uint8Array {
+    fn to_bytes(self) -> Bytes {
+        let mut bytes = vec![0; self.length() as usize];
+        self.copy_to(&mut bytes);
+        bytes.into()
+    }
+}
+
+#[wasm_bindgen]
 impl ApiResponse {
     /// Get the response as bytes
-    pub async fn bytes(self) -> Result<Bytes, JsError> {
+    #[wasm_bindgen]
+    pub async fn bytes(self) -> Result<Uint8Array, JsError> {
         let promise = self.raw.array_buffer().map_err(to_error)?;
 
         let buf_js = util::to_future::<wasm_bindgen::JsValue>(promise).await?;
 
         let buffer = Uint8Array::new(&buf_js);
-        let mut bytes = vec![0; buffer.length() as usize];
-        buffer.copy_to(&mut bytes);
-        Ok(bytes.into())
+        // let mut bytes = vec![0; buffer.length() as usize];
+        // buffer.copy_to(&mut bytes);
+        // Ok(BytesWrapper {
+        //     bytes: bytes.into(),
+        // })
+        Ok(buffer)
     }
 
     // fn to_async_read(self) -> Result<impl AsyncRead, JsError> {
@@ -120,7 +148,7 @@ async fn pass() -> Result<(), JsValue> {
 
     let bytes = model.bytes().await?;
 
-    let length = bytes.len();
+    let length = bytes.to_bytes().len();
     assert!(length == 8388776, "Length was {length}");
     // let model_repo = ApiBuilder::from_hf("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF")
     //     .cached()
