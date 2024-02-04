@@ -30,6 +30,7 @@ pub struct ApiBuilder {
 
 #[wasm_bindgen]
 impl ApiBuilder {
+    /// Build an Api from a HF hub repository.
     #[wasm_bindgen]
     pub fn from_hf(repo_id: &str) -> Self {
         Self {
@@ -38,6 +39,7 @@ impl ApiBuilder {
         }
     }
 
+    /// Build an Api from a HF hub repository at a specific revision.
     #[wasm_bindgen]
     pub fn from_hf_with_revision(repo_id: String, revision: String) -> Self {
         Self {
@@ -46,6 +48,7 @@ impl ApiBuilder {
         }
     }
 
+    /// Build an Api from a custom URL.
     #[wasm_bindgen]
     pub fn from_custom(endpoint: String) -> Self {
         Self {
@@ -54,12 +57,14 @@ impl ApiBuilder {
         }
     }
 
+    /// Disable caching
     #[wasm_bindgen]
     pub fn uncached(mut self) -> Self {
         self.cached = false;
         self
     }
 
+    /// Build the Api.
     #[wasm_bindgen]
     pub fn build(&self) -> Api {
         Api {
@@ -77,6 +82,7 @@ pub struct Api {
 
 #[wasm_bindgen]
 impl Api {
+    /// Get a file from the repository
     #[wasm_bindgen]
     pub async fn get(&self, file_name: &str) -> Result<ApiResponse, JsError> {
         self.get_internal(file_name).await.map_err(js_to_js_error)
@@ -139,6 +145,7 @@ impl ApiResponse {
     pub fn is_cached(&self) -> bool {
         self.cached
     }
+
     // #[wasm_bindgen]
     // pub async fn stream(&self) -> Result<ApiStream, JsError> {
     //     let raw_body = self.raw.body().ok_or(js_error("Failed to open body"))?;
@@ -176,19 +183,6 @@ async fn pass() -> Result<(), JsValue> {
     let length = bytes.to_bytes().len();
 
     assert!(length == 8388776, "Length was {length}");
-    // let model_repo = ApiBuilder::from_hf("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF")
-    //     .cached()
-    //     .build();
-
-    // let model = model_repo.get("tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
-
-    // let tokenizer_repo = ApiBuilder::from_hf("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
-    //     .cached()
-    //     .build();
-    // let tokenizer = tokenizer_repo.get("tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
-
-    // let repo = ApiBuilder::from_url("http://localhost:8080").build();
-    // let model = repo.get("tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
 
     Ok(())
 }
