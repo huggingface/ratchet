@@ -1,4 +1,7 @@
+mod linear;
 mod norm;
+
+pub use linear::*;
 pub use norm::*;
 
 use ratchet::Tensor;

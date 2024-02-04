@@ -161,7 +161,7 @@ impl DeviceStorage for CPUBuffer {
             DType::I32 => dump_inner(bytemuck::cast_slice::<u8, i32>(bytes), full),
             DType::U32 => dump_inner(bytemuck::cast_slice::<u8, u32>(bytes), full),
             DType::F16 => dump_inner(bytemuck::cast_slice::<u8, f16>(bytes), full),
-            _ => unimplemented!("Unable to print quantized datatype"),
+            _ => unimplemented!("Unable to dump {:?}", dtype),
         }
     }
 }
