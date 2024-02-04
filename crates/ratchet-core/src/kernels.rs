@@ -204,6 +204,7 @@ lazy_static! {
             "div_vec2",
             include_str!(r"../kernels/generated/div_vec2.wgsl"),
         );
+        m.insert("conv_scalar", include_str!(r"../kernels/conv_scalar.wgsl"));
         m.insert("qgemm_vec4", include_str!(r"../kernels/qgemm_vec4.wgsl"));
         m.insert(
             "sgemm_scalar",
@@ -211,10 +212,6 @@ lazy_static! {
         );
         m.insert("add_scalar", include_str!(r"../kernels/add_scalar.wgsl"));
         m.insert("sgemm_vec2", include_str!(r"../kernels/sgemm_vec2.wgsl"));
-        m.insert(
-            "1d_conv3_scalar",
-            include_str!(r"../kernels/1d_conv3_scalar.wgsl"),
-        );
         m.insert(
             "softmax_vec2",
             include_str!(r"../kernels/softmax_vec2.wgsl"),

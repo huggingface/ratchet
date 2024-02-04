@@ -474,6 +474,7 @@ impl Tensor {
                 LazyOp::Unary(u) => u.srcs(),
                 LazyOp::Reindex(r) => r.srcs(),
                 LazyOp::Norm(n) => n.srcs(),
+                LazyOp::Conv(c) => c.srcs(),
                 LazyOp::View(v) => rvec![v.input()],
                 _ => unimplemented!(),
             };
@@ -497,6 +498,7 @@ impl Tensor {
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
             _ => unimplemented!(),
