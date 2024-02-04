@@ -46,7 +46,7 @@ impl Operation for Conv {
             ((i_size + (2 * pad) - dil * (k_size - 1) - 1) / stride) + 1 //TODO: Missing floor
         };
         let [N, C_in, L_in]: [usize; 3] = input_shape.try_into()?;
-        let [C_out, _, KS] = weight_shape.try_into()?;
+        let [C_out, _, KS]: [usize; 3] = weight_shape.try_into()?;
         assert!(KS == 3, "Only 3 kernel size is supported");
 
         let L_out = calc_dim(L_in, KS, self.padding, 1, self.stride);
@@ -81,7 +81,7 @@ impl MetaOperation for Conv {
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let input = &self.input;
         let [N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
-        let [Cout, _, KS] = self.weight.shape().try_into()?;
+        let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
         let F_numel = Cin * KS;
         let padded_strided_Lin = (Lin + 2 * self.padding) / self.stride;
         let wgcx = WorkgroupCount::div_ceil(padded_strided_Lin, 256);
@@ -101,8 +101,8 @@ impl MetaOperation for Conv {
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
         let [N, Cin, Lin]: [usize; 3] = self.input.shape().try_into()?;
-        let [Cout, _, KS] = self.weight.shape().try_into()?;
-        let [_, _, Lout] = dst.shape().try_into()?;
+        let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
+        let [_, _, Lout]: [usize; 3] = dst.shape().try_into()?;
         let F_numel = Cin * KS;
         let Fperthread = WorkgroupCount::div_ceil(F_numel, 256);
 
