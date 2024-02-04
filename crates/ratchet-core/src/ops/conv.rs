@@ -45,7 +45,7 @@ impl Operation for Conv {
         let calc_dim = |i_size, k_size, pad, dil, stride| {
             ((i_size + (2 * pad) - dil * (k_size - 1) - 1) / stride) + 1 //TODO: Missing floor
         };
-        let [N, C_in, L_in] = input_shape.try_into()?;
+        let [N, C_in, L_in]: [usize; 3] = input_shape.try_into()?;
         let [C_out, _, KS] = weight_shape.try_into()?;
         assert!(KS == 3, "Only 3 kernel size is supported");
 
@@ -80,7 +80,7 @@ impl MetaOperation for Conv {
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let input = &self.input;
-        let [N, Cin, Lin] = input.shape().try_into()?;
+        let [N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
         let [Cout, _, KS] = self.weight.shape().try_into()?;
         let F_numel = Cin * KS;
         let padded_strided_Lin = (Lin + 2 * self.padding) / self.stride;
@@ -100,7 +100,7 @@ impl MetaOperation for Conv {
         dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        let [N, Cin, Lin] = self.input.shape().try_into()?;
+        let [N, Cin, Lin]: [usize; 3] = self.input.shape().try_into()?;
         let [Cout, _, KS] = self.weight.shape().try_into()?;
         let [_, _, Lout] = dst.shape().try_into()?;
         let F_numel = Cin * KS;
