@@ -1,4 +1,5 @@
 mod binary;
+mod conv;
 mod matmul;
 mod norm;
 mod reindex;
@@ -6,6 +7,7 @@ mod softmax;
 mod unary;
 
 pub use binary::*;
+pub use conv::*;
 pub use matmul::*;
 pub use norm::*;
 pub use reindex::*;

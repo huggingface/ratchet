@@ -325,6 +325,27 @@ impl Tensor {
         ))
     }
 
+    pub fn conv1d(
+        &self,
+        weight: &Tensor,
+        bias: Option<&Tensor>,
+        stride: usize,
+        padding: usize,
+    ) -> anyhow::Result<Tensor> {
+        let srcs = match bias {
+            Some(b) => rvec![self, weight, b],
+            None => rvec![self, weight],
+        };
+        Conv::check_invariants(&srcs)?;
+        let conv = Conv::new(self.clone(), weight.clone(), bias.cloned(), stride, padding);
+        let new_view = conv.infer_output(&[self, weight])?;
+        Ok(Tensor::lazy(
+            LazyOp::Conv(conv),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
     pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
         let permute = Permute::new(dims.to_vec());
         let out_view = permute.infer_output(&[self])?;
