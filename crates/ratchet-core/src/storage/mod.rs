@@ -45,6 +45,13 @@ impl Storage {
         }
     }
 
+    pub fn from_bytes(data: &[u8], alignment: usize, device: &Device) -> Self {
+        match device {
+            Device::CPU => Storage::CPU(CPUBuffer::from_bytes(data, alignment)),
+            Device::GPU(g) => Storage::GPU(GPUBuffer::from_bytes(data, alignment, g)),
+        }
+    }
+
     pub fn dump(&self, dt: DType, full: bool) -> String {
         match self {
             Storage::CPU(c) => c.dump(dt, full),

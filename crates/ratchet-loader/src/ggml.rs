@@ -1,6 +1,6 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use derive_new::new;
-use ratchet::Shape;
+use ratchet::{Device, Shape, Tensor};
 use std::{
     collections::HashMap,
     io::{BufRead, Seek, SeekFrom},
@@ -121,6 +121,26 @@ impl TensorHeader {
 pub struct GGMLModel<M: GGMLCompatible> {
     pub header: M::ModelHeader,
     pub tensors: HashMap<String, TensorHeader>,
+}
+
+impl<M: GGMLCompatible> GGMLModel<M> {
+    pub fn load_tensor<R: BufRead + Seek>(
+        &self,
+        key: &str,
+        reader: &mut R,
+    ) -> Result<Tensor, LoadError> {
+        let header = self.tensors.get(key).ok_or(LoadError::MissingTensor {
+            name: key.to_string(),
+        })?;
+        let data = header.read_data(reader)?;
+        Ok(Tensor::from_bytes(
+            &data,
+            header.dtype.into(),
+            header.shape.clone(),
+            Device::CPU,
+        )
+        .unwrap())
+    }
 }
 
 struct GGMLLoader;
