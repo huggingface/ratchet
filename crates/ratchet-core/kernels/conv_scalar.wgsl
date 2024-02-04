@@ -29,7 +29,7 @@ struct Meta {
 @group(1) @binding(0)
 var<uniform> metadata: Meta;
 
-const MAX_FILTER_ELEM: u32 = 8192u;
+const MAX_FILTER_ELEM: u32 = 4096u;
 var<workgroup> F: array<f32, MAX_FILTER_ELEM>;
 
 fn inner(input_index: u32, filter_index: u32, output_index: u32, bias_index: u32, start: u32, end: u32) {
