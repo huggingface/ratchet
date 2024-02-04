@@ -31,6 +31,8 @@ impl DType {
         }
     }
 
+    //TODO: alignof?
+
     //TODO: use a different method, total_bytes won't work with padding
     pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
         let total_bytes = if total_bytes < MIN_STORAGE_BUFFER_SIZE {

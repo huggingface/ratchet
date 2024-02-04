@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ratchet = { path = "../ratchet-core" }
+ratchet-nn = { path = "../ratchet-nn" }
 ratchet-loader = { path = "../ratchet-loader" }
 byteorder.workspace = true
 anyhow.workspace = true
