@@ -2,7 +2,7 @@ use bytemuck::{NoUninit, Pod};
 
 use crate::{storage::DeviceStorage, Device, DeviceError, GPUBuffer, Shape, TensorDType};
 
-use std::{alloc::Layout, fmt::Debug, sync::Arc};
+use std::{alloc::Layout, fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use crate::DType;
 
@@ -89,6 +89,23 @@ impl CPUBuffer {
     pub fn to_slice<T: NoUninit + Pod>(&self, shape: &Shape) -> &[T] {
         assert_eq!(self.n_bytes(), shape.numel() * std::mem::size_of::<T>());
         bytemuck::cast_slice(self.inner().as_bytes())
+    }
+
+    pub fn from_disk<T: TensorDType, R: std::io::BufRead + std::io::Seek>(
+        reader: &mut R,
+        shape: &Shape,
+    ) -> Result<Self, DeviceError> {
+        let dt = T::dt();
+        let n_bytes = shape.numel() * dt.size_of();
+        let mut buf: Vec<MaybeUninit<u8>> = Vec::with_capacity(n_bytes);
+        unsafe {
+            buf.set_len(n_bytes);
+        }
+        let buf_slice =
+            unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u8, n_bytes) };
+        reader.read_exact(buf_slice).unwrap();
+        let buf = unsafe { std::mem::transmute::<_, Vec<u8>>(buf) };
+        Ok(Self::from_bytes(&buf, dt.size_of()))
     }
 
     pub fn inner(&self) -> &RawCPUBuffer {

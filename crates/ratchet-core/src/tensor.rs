@@ -7,6 +7,7 @@ use crate::{
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
+use std::io::{BufRead, Seek};
 use std::ops::Bound;
 use std::sync::Arc;
 
@@ -422,6 +423,17 @@ impl Tensor {
         let strides = Strides::from(&shape);
         let meta = StorageView::new(shape, dt, strides);
         Tensor::new(LazyOp::Const, meta, Some(storage), device)
+    }
+
+    pub fn from_disk<T: TensorDType, R: BufRead + Seek>(
+        reader: &mut R,
+        shape: Shape,
+        device: Device,
+    ) -> anyhow::Result<Tensor> {
+        let storage = Storage::from_disk::<T, R>(reader, &shape, &device)?;
+        let strides = Strides::from(&shape);
+        let meta = StorageView::new(shape, T::dt(), strides);
+        Ok(Tensor::new(LazyOp::Const, meta, Some(storage), device))
     }
 
     /// # Bindings

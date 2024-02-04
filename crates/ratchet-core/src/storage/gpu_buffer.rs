@@ -2,7 +2,7 @@ use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
     gpu::{BufferUsagesExt, PooledGPUBuffer},
     storage::{CPUBuffer, DeviceStorage},
-    Device, DeviceError, Shape,
+    Device, DeviceError, Shape, TensorDType,
 };
 
 use bytemuck::NoUninit;
@@ -83,6 +83,15 @@ impl GPUBuffer {
             inner: clone,
             alignment: self.alignment,
         }
+    }
+
+    pub fn from_disk<T: TensorDType, R: std::io::BufRead + std::io::Seek>(
+        reader: &mut R,
+        shape: &Shape,
+        device: &Device,
+    ) -> Result<Self, DeviceError> {
+        //There is no faster way to do this
+        CPUBuffer::from_disk::<T, R>(reader, shape)?.to_device(device)
     }
 
     #[cfg(feature = "plotting")]
