@@ -175,18 +175,18 @@ def conv(input, filters, bias, stride, padding):
 
     #[derive(Arbitrary, Debug)]
     struct ConvProblem {
-        #[strategy(16..=2048usize)]
+        #[strategy(16..=1024usize)]
         Cin: usize,
-        #[strategy(16..=2048usize)]
+        #[strategy(16..=1024usize)]
         #[filter(#Lin % 3 == 0)]
         Lin: usize,
-        #[strategy(16..=2048usize)]
+        #[strategy(16..=1024usize)]
         Cout: usize,
         #[strategy(1..=2usize)]
         stride: usize,
     }
 
-    #[proptest(cases = 1)]
+    #[proptest(cases = 8)]
     fn test_conv(prob: ConvProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let ConvProblem {
