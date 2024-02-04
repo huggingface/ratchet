@@ -212,6 +212,10 @@ lazy_static! {
         m.insert("add_scalar", include_str!(r"../kernels/add_scalar.wgsl"));
         m.insert("sgemm_vec2", include_str!(r"../kernels/sgemm_vec2.wgsl"));
         m.insert(
+            "1d_conv3_scalar",
+            include_str!(r"../kernels/1d_conv3_scalar.wgsl"),
+        );
+        m.insert(
             "softmax_vec2",
             include_str!(r"../kernels/softmax_vec2.wgsl"),
         );

@@ -153,3 +153,27 @@ impl From<&[usize]> for Shape {
         Shape(slice.into())
     }
 }
+
+macro_rules! impl_try_into_for_shape {
+    ($($N:expr),*) => {
+        $(
+            impl TryInto<[usize; $N]> for &Shape {
+                type Error = anyhow::Error;
+
+                fn try_into(self) -> Result<[usize; $N], Self::Error> {
+                    if self.0.len() == $N {
+                        let mut arr = [0; $N];
+                        for (i, &item) in self.0.iter().enumerate().take($N) {
+                            arr[i] = item;
+                        }
+                        Ok(arr)
+                    } else {
+                        Err(anyhow::anyhow!("Shape has length {} but expected {}", self.0.len(), $N))
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_try_into_for_shape!(0, 1, 2, 3, 4);
