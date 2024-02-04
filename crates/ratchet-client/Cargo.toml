@@ -18,6 +18,8 @@ futures-util = { version = "^0.3.28", features = ["io", "sink"] }
 anyhow.workspace = true
 bytes = "1.5.0"
 serde-wasm-bindgen = "0.4"
+byteorder.workspace = true
+thiserror.workspace = true
 
 [dependencies.web-sys]
 features = [

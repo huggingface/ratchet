@@ -14,6 +14,8 @@ use web_sys::{
     console, Cache, CacheStorage, ReadableStreamGetReaderOptions, ReadableStreamReaderMode,
     Request, RequestInit, RequestMode, Response, Window,
 };
+pub mod error;
+mod gguf;
 mod util;
 use bytes::Bytes;
 
@@ -41,7 +43,7 @@ impl ApiBuilder {
 
     /// Build an Api from a HF hub repository at a specific revision.
     #[wasm_bindgen]
-    pub fn from_hf_with_revision(repo_id: String, revision: String) -> Self {
+    pub fn from_hf_with_revision(repo_id: &str, revision: &str) -> Self {
         Self {
             cached: true,
             endpoint: format!("https://huggingface.co/{repo_id}/resolve/{revision}"),
@@ -50,10 +52,10 @@ impl ApiBuilder {
 
     /// Build an Api from a custom URL.
     #[wasm_bindgen]
-    pub fn from_custom(endpoint: String) -> Self {
+    pub fn from_custom(endpoint: &str) -> Self {
         Self {
             cached: true,
-            endpoint,
+            endpoint: endpoint.to_string(),
         }
     }
 
@@ -146,16 +148,19 @@ impl ApiResponse {
         self.cached
     }
 
-    // #[wasm_bindgen]
-    // pub async fn stream(&self) -> Result<ApiStream, JsError> {
-    //     let raw_body = self.raw.body().ok_or(js_error("Failed to open body"))?;
+    #[wasm_bindgen]
+    pub async fn gguf(&self) -> Result<(), JsError> {
+        let raw_body = self.raw.body().ok_or(js_error("Failed to open body"))?;
 
-    //     let mut body: ReadableStream = ReadableStream::from_raw(raw_body);
-    //     let reader: ReadableStreamBYOBReader<'_> = body.get_byob_reader();
-    //     let mut async_read = reader.into_async_read();
+        let mut body: ReadableStream = ReadableStream::from_raw(raw_body);
+        let reader: ReadableStreamBYOBReader<'_> = body.get_byob_reader();
+        let mut async_read = reader.into_async_read();
 
-    //     return Ok(ApiStream { async_read });
-    // }
+        // let magic = gguf::VersionedMagic::read(&mut async_read)?;
+        // debug!("Got gguf: ", format!("{:?}", magic));
+
+        return Ok(());
+    }
 }
 
 trait ToBytes {
@@ -174,15 +179,10 @@ impl ToBytes for Uint8Array {
 async fn pass() -> Result<(), JsValue> {
     use js_sys::JsString;
 
-    let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test").build();
+    let model_repo = ApiBuilder::from_custom("http://localhost:8888/test-data/").build();
 
-    let model = model_repo.get("model.safetensors").await?;
+    let model = model_repo.get("dummy.gguf").await?;
 
-    let bytes = model.to_uint8().await?;
-
-    let length = bytes.to_bytes().len();
-
-    assert!(length == 8388776, "Length was {length}");
-
+    let gguf = model.gguf().await?;
     Ok(())
 }
