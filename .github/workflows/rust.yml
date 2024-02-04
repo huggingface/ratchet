@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install rust toolchain
-        uses: dtolnay/rust-toolchain@1.71
+        uses: dtolnay/rust-toolchain@1.72
 
       - name: Install cargo-nextest 
         uses: taiki-e/install-action@v2
@@ -98,7 +98,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          cargo nextest run -j 1 --features pyo3 --no-fail-fast 
+          cargo nextest run --features pyo3 --no-fail-fast --no-capture
 
           # - name: Install wasm-pack 
           #   run: |
