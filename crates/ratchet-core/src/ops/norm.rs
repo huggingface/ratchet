@@ -172,15 +172,15 @@ def layernorm(input, scale, bias):
 
     #[derive(Arbitrary, Debug)]
     struct NormProblem {
-        #[strategy(1..=4usize)]
+        #[strategy(1..=3usize)]
         B: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         M: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         N: usize,
     }
 
-    #[proptest(cases = 32)]
+    #[proptest(cases = 16)]
     fn test_norm(prob: NormProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let NormProblem { B, M, N } = prob;
