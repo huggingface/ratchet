@@ -5,9 +5,9 @@ use std::{
 
 use ratchet::{Device, Tensor};
 use ratchet_loader::{GGMLModel, TensorHeader};
-use ratchet_nn::Module;
+use ratchet_nn::{LayerNorm, Module};
 
-use crate::Whisper;
+use crate::{MultiHeadAttention, Whisper, MLP};
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {
@@ -56,4 +56,13 @@ impl EncoderStem {
             pos_embed: lt("positional_embedding")?,
         })
     }
+}
+
+pub struct ResidualAttentionBlock {
+    attn_ln: LayerNorm,
+    attn: MultiHeadAttention,
+    x_attn_ln: Option<LayerNorm>,
+    x_attn: Option<MultiHeadAttention>,
+    mlp_ln: LayerNorm,
+    mlp: MLP,
 }
