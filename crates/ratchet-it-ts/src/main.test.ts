@@ -7,7 +7,7 @@ beforeAll(async () => {
 });
 
 describe("The ApiBuilder", () => {
-  it("should download a model from HF hub", async () => {
+  it("should download a model from HF hub with caching", async () => {
     const api: Api = ApiBuilder.from_hf(`jantxu/ratchet-test`).build();
 
     console.log(`Getting model first time.`);
