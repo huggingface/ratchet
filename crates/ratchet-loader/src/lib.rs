@@ -19,6 +19,8 @@ pub enum LoadError {
     InvariantBroken(String),
     #[error("invalid data type {0}")]
     InvalidDType(u32),
+    #[error("Missing tensor {name}")]
+    MissingTensor { name: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

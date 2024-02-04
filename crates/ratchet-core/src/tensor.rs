@@ -413,6 +413,18 @@ impl Tensor {
         Tensor::new(LazyOp::Const, meta, Some(storage), device)
     }
 
+    pub fn from_bytes(
+        data: &[u8],
+        dt: DType,
+        shape: Shape,
+        device: Device,
+    ) -> anyhow::Result<Tensor> {
+        let storage = Storage::from_bytes(data, dt.size_of(), &device);
+        let strides = Strides::from(&shape);
+        let meta = StorageView::new(shape, dt, strides);
+        Ok(Tensor::new(LazyOp::Const, meta, Some(storage), device))
+    }
+
     pub(crate) unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
         data: U,
         shape: Shape,
