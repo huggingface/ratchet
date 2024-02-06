@@ -18,8 +18,11 @@ struct ConvBlock {
 }
 
 impl Module for ConvBlock {
-    fn forward(&self, x: &Tensor) -> anyhow::Result<Tensor> {
-        x.conv1d(&self.w, Some(&self.b), self.stride, self.padding)?
+    type Input = Tensor;
+
+    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+        input
+            .conv1d(&self.w, Some(&self.b), self.stride, self.padding)?
             .gelu()
     }
 }
@@ -32,10 +35,11 @@ pub(crate) struct EncoderStem {
 }
 
 impl Module for EncoderStem {
-    fn forward(&self, x: &Tensor) -> anyhow::Result<Tensor> {
-        let x = self.conv1.forward(x)?;
-        let x = self.conv2.forward(&x)?;
-        x.permute(&[0, 2, 1])?.add(&self.pos_embed)
+    type Input = Tensor;
+
+    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+        let convolved = self.conv2.forward(&self.conv1.forward(input)?)?;
+        convolved.permute(&[0, 2, 1])?.add(&self.pos_embed)
     }
 }
 
@@ -65,4 +69,17 @@ pub struct ResidualAttentionBlock {
     x_attn: Option<MultiHeadAttention>,
     mlp_ln: LayerNorm,
     mlp: MLP,
+}
+
+pub struct ResidualAttentionBlockInputs {
+    x: Tensor,
+    xa: Option<Tensor>,
+    mask: Option<Tensor>,
+}
+
+impl Module for ResidualAttentionBlock {
+    type Input = ResidualAttentionBlockInputs;
+    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+        todo!()
+    }
 }
