@@ -22,6 +22,7 @@ byteorder.workspace = true
 thiserror.workspace = true
 tokio = { version="1.36.0", features = ["sync", "macros", "io-util", "rt", "time"]}
 tokio-util = {version="0.7.10", features = ["compat"]}
+ratchet = { path = "../ratchet-core" }
 
 [dependencies.web-sys]
 features = [
