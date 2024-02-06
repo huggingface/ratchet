@@ -71,12 +71,6 @@ pub struct ResidualAttentionBlock {
     mlp: MLP,
 }
 
-pub struct ResidualAttentionBlockInputs {
-    x: Tensor,
-    xa: Option<Tensor>,
-    mask: Option<Tensor>,
-}
-
 impl Module for ResidualAttentionBlock {
     type Input = ResidualAttentionBlockInputs;
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
