@@ -20,6 +20,8 @@ bytes = "1.5.0"
 serde-wasm-bindgen = "0.4"
 byteorder.workspace = true
 thiserror.workspace = true
+tokio = { version="1.36.0", features = ["sync", "macros", "io-util", "rt", "time"]}
+tokio-util = {version="0.7.10", features = ["compat"]}
 
 [dependencies.web-sys]
 features = [

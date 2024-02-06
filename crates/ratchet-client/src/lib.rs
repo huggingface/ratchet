@@ -18,6 +18,7 @@ pub mod error;
 mod gguf;
 mod util;
 use bytes::Bytes;
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 #[cfg(test)]
 wasm_bindgen_test_configure!(run_in_browser);
@@ -154,10 +155,11 @@ impl ApiResponse {
 
         let mut body: ReadableStream = ReadableStream::from_raw(raw_body);
         let reader: ReadableStreamBYOBReader<'_> = body.get_byob_reader();
-        let mut async_read = reader.into_async_read();
 
-        // let magic = gguf::VersionedMagic::read(&mut async_read)?;
-        // debug!("Got gguf: ", format!("{:?}", magic));
+        let mut async_read = reader.into_async_read().compat();
+
+        let magic = gguf::VersionedMagic::read(&mut async_read).await?;
+        debug!("Got gguf: ", format!("{:?}", magic));
 
         return Ok(());
     }

@@ -3,8 +3,8 @@
 
 use crate::error::Result;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use futures_util::AsyncRead;
 use std::collections::HashMap;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -32,10 +32,10 @@ pub enum VersionedMagic {
 }
 
 impl VersionedMagic {
-    pub fn read<R: std::io::Read>(reader: &mut R) -> Result<Self> {
-        let magic = reader.read_u32::<LittleEndian>()?;
+    pub async fn read<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Self> {
+        let magic = reader.read_u32_le().await?;
         let magic = Magic::try_from(magic)?;
-        let version = reader.read_u32::<LittleEndian>()?;
+        let version = reader.read_u32_le().await?;
         let versioned_magic = match (magic, version) {
             (Magic::Gguf, 1) => Self::GgufV1,
             (Magic::Gguf, 2) => Self::GgufV2,
