@@ -8,8 +8,8 @@ pub struct MLP {
 }
 
 impl Module for MLP {
-    fn forward(&self, x: &Tensor) -> anyhow::Result<Tensor> {
-        let x = self.l1.forward(x)?;
-        self.l2.forward(&x.gelu()?)
+    type Input = Tensor;
+    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+        self.l2.forward(&self.l1.forward(input)?.gelu()?)
     }
 }
