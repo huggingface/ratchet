@@ -1,9 +1,7 @@
-use std::{
-    io::{BufRead, Seek},
-};
+use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
-use ratchet_loader::{GGMLModel};
+use ratchet_loader::GGMLModel;
 use ratchet_nn::{LayerNorm, Linear, Module};
 
 use crate::{HyperParameters, MHAInputs, MultiHeadAttention, Whisper, MLP};
@@ -61,6 +59,7 @@ impl EncoderStem {
     }
 }
 
+#[derive(Debug)]
 pub struct ResidualAttentionBlock {
     attn_ln: LayerNorm,
     attn: MultiHeadAttention,
@@ -167,6 +166,7 @@ impl ResidualAttentionBlock {
     }
 }
 
+#[derive(Debug)]
 pub struct WhisperEncoder {
     stem: EncoderStem,
     blocks: Vec<ResidualAttentionBlock>,
@@ -193,8 +193,8 @@ impl WhisperEncoder {
     pub fn load<R: BufRead + Seek>(
         disk_model: &GGMLModel<Whisper>,
         reader: &mut R,
-        device: &Device,
         hparams: &HyperParameters,
+        device: &Device,
     ) -> anyhow::Result<Self> {
         let stem = EncoderStem::load(disk_model, reader, device)?;
         let (n_layers, n_heads) = (hparams.n_audio_layer, hparams.n_audio_head);
@@ -229,13 +229,13 @@ impl WhisperEncoder {
 
 #[cfg(test)]
 mod tests {
-    use crate::{EncoderStem, Whisper};
+    use crate::{Whisper, WhisperEncoder};
     use hf_hub::api::sync::Api;
     use ratchet::Device;
     use ratchet_loader::GGMLCompatible;
 
     #[test]
-    fn load_ggml() {
+    fn encoder_matches() -> anyhow::Result<()> {
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
         let path = model.get("ggml-tiny.bin").unwrap();
@@ -244,7 +244,10 @@ mod tests {
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
         assert_eq!(gg_disk.tensors.len(), 167);
 
-        let stem = EncoderStem::load(&gg_disk, &mut reader, &Device::CPU).unwrap();
-        println!("{:?}", stem);
+        let hparams = &gg_disk.header.hparams;
+        let encoder = WhisperEncoder::load(&gg_disk, &mut reader, hparams, &Device::CPU)?;
+        println!("{:#?}", encoder);
+
+        Ok(())
     }
 }
