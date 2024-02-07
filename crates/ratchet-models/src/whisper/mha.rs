@@ -9,6 +9,7 @@ pub struct MultiHeadAttention {
     n_heads: usize,
 }
 
+#[derive(Debug, derive_new::new)]
 pub struct MHAInputs {
     x: Tensor,
     xa: Option<Tensor>,
