@@ -7,7 +7,7 @@ use ratchet::{Device, Tensor};
 use ratchet_loader::{GGMLModel, TensorHeader};
 use ratchet_nn::{LayerNorm, Module};
 
-use crate::{MultiHeadAttention, Whisper, MLP};
+use crate::{MHAInputs, MultiHeadAttention, Whisper, MLP};
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {
@@ -71,9 +71,35 @@ pub struct ResidualAttentionBlock {
     mlp: MLP,
 }
 
+pub struct ResidualAttentionBlockInputs {
+    x: Tensor,
+    xa: Option<Tensor>,
+    mask: Option<Tensor>,
+}
+
 impl Module for ResidualAttentionBlock {
     type Input = ResidualAttentionBlockInputs;
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
-        todo!()
+        let ResidualAttentionBlockInputs { x, xa, mask } = input;
+
+        let attn_ln = self.attn_ln.forward(&x)?;
+        let self_attn = self
+            .attn
+            .forward(&MHAInputs::new(attn_ln, None, mask.clone(), true))?;
+
+        let mut attn = self_attn.add(&x)?;
+
+        if let Some(ref xa_blck) = self.x_attn {
+            if let Some(xa_ln) = &self.x_attn_ln {
+                let x_attn_ln = xa_ln.forward(&attn)?;
+                let x_attn =
+                    xa_blck.forward(&MHAInputs::new(x_attn_ln, xa.clone(), mask.clone(), false))?;
+                attn = attn.add(&x_attn)?;
+            }
+        }
+
+        let mlp_ln = self.mlp_ln.forward(&attn)?;
+        let mlp = self.mlp.forward(&mlp_ln)?;
+        mlp.add(&attn)
     }
 }
