@@ -9,6 +9,7 @@ use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
+use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(feature = "rand")]
@@ -721,9 +722,9 @@ impl CloseStats {
 }
 
 /// Conversion to and from numpy arrays
+#[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
 impl Tensor {
-    #[cfg(feature = "pyo3")]
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
@@ -737,8 +738,6 @@ impl Tensor {
         }
     }
 
-    #[cfg(feature = "pyo3")]
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn to_ndarray_view<T: TensorDType>(&self) -> ArrayViewD<T> {
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
@@ -752,8 +751,6 @@ impl Tensor {
         }
     }
 
-    #[cfg(feature = "pyo3")]
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
         &'s self,
         py: &'p pyo3::Python<'p>,
@@ -764,6 +761,24 @@ impl Tensor {
             "Cannot convert non-CPU tensor to numpy array"
         );
         PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+
+    pub fn from_npy<T: TensorDType + npyz::Deserialize, P: AsRef<Path>>(
+        path: P,
+    ) -> anyhow::Result<Tensor> {
+        let bytes = std::fs::read(path)?;
+        let reader = npyz::NpyFile::new(&bytes[..])?;
+        let shape = reader
+            .shape()
+            .iter()
+            .map(|&x| x as usize)
+            .collect::<Vec<_>>()
+            .into();
+        Ok(Tensor::from_data(
+            &reader.into_vec::<T>()?,
+            shape,
+            Device::CPU,
+        ))
     }
 }
 
