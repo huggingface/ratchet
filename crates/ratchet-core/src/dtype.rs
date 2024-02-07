@@ -60,6 +60,33 @@ impl DType {
     }
 }
 
+#[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
+impl DType {
+    fn handle_type_str(ts: npyz::TypeStr) -> DType {
+        match ts.endianness() {
+            npyz::Endianness::Little => match (ts.type_char(), ts.size_field()) {
+                (npyz::TypeChar::Float, 4) => DType::F32,
+                (npyz::TypeChar::Int, 4) => DType::I32,
+                (npyz::TypeChar::Uint, 4) => DType::U32,
+                (t, s) => unimplemented!("{} {}", t, s),
+            },
+            _ => unimplemented!(),
+        }
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
+impl From<npyz::DType> for DType {
+    fn from(dtype: npyz::DType) -> Self {
+        match dtype {
+            npyz::DType::Plain(ts) => Self::handle_type_str(ts),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct BufferSegment {
     pub offset: BufferAddress,
