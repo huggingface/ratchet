@@ -16,3 +16,4 @@ Cargo.lock
 
 crates/ratchet-core/kernels/generated/**
 **/*.svg
+fixtures/

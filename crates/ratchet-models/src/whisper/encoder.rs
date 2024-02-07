@@ -231,7 +231,7 @@ impl WhisperEncoder {
 mod tests {
     use crate::{Whisper, WhisperEncoder};
     use hf_hub::api::sync::Api;
-    use ratchet::Device;
+    use ratchet::{Device, DeviceRequest};
     use ratchet_loader::GGMLCompatible;
 
     #[test]
@@ -244,8 +244,9 @@ mod tests {
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
         assert_eq!(gg_disk.tensors.len(), 167);
 
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let hparams = &gg_disk.header.hparams;
-        let encoder = WhisperEncoder::load(&gg_disk, &mut reader, hparams, &Device::CPU)?;
+        let encoder = WhisperEncoder::load(&gg_disk, &mut reader, hparams, &device)?;
         println!("{:#?}", encoder);
 
         Ok(())
