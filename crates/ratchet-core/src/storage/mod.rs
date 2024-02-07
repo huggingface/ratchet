@@ -62,7 +62,7 @@ impl Storage {
     pub fn try_cpu(&self) -> Result<&CPUBuffer, DeviceError> {
         match self {
             Storage::CPU(c) => Ok(c),
-            Storage::GPU(g) => Err(DeviceError::DeviceMismatch(
+            Storage::GPU(_g) => Err(DeviceError::DeviceMismatch(
                 "CPU".to_string(),
                 "GPU".to_string(),
             )),
@@ -72,7 +72,7 @@ impl Storage {
     pub fn try_gpu(&self) -> Result<&GPUBuffer, DeviceError> {
         match self {
             Storage::GPU(g) => Ok(g),
-            Storage::CPU(c) => Err(DeviceError::DeviceMismatch(
+            Storage::CPU(_c) => Err(DeviceError::DeviceMismatch(
                 "GPU".to_string(),
                 "CPU".to_string(),
             )),

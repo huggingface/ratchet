@@ -1,10 +1,9 @@
 use std::{
-    collections::HashMap,
     io::{BufRead, Seek},
 };
 
 use ratchet::{Device, Tensor};
-use ratchet_loader::{GGMLModel, TensorHeader};
+use ratchet_loader::{GGMLModel};
 use ratchet_nn::{LayerNorm, Linear, Module};
 
 use crate::{HyperParameters, MHAInputs, MultiHeadAttention, Whisper, MLP};
@@ -82,12 +81,12 @@ impl Module for ResidualAttentionBlock {
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
         let ResidualAttentionBlockInputs { x, xa, mask } = input;
 
-        let attn_ln = self.attn_ln.forward(&x)?;
+        let attn_ln = self.attn_ln.forward(x)?;
         let self_attn = self
             .attn
             .forward(&MHAInputs::new(attn_ln, None, mask.clone(), true))?;
 
-        let mut attn = self_attn.add(&x)?;
+        let mut attn = self_attn.add(x)?;
 
         if let Some(ref xa_blck) = self.x_attn {
             if let Some(xa_ln) = &self.x_attn_ln {
