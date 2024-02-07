@@ -1,6 +1,7 @@
 use ratchet::{shape, Tensor};
 use ratchet_nn::{Linear, Module};
 
+#[derive(Debug, derive_new::new)]
 pub struct MultiHeadAttention {
     q: Linear,
     k: Linear,

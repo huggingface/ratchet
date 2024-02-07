@@ -128,18 +128,14 @@ impl<M: GGMLCompatible> GGMLModel<M> {
         &self,
         key: &str,
         reader: &mut R,
+        device: &Device,
     ) -> Result<Tensor, LoadError> {
         let header = self.tensors.get(key).ok_or(LoadError::MissingTensor {
             name: key.to_string(),
         })?;
         let data = header.read_data(reader)?;
-        Ok(Tensor::from_bytes(
-            &data,
-            header.dtype.into(),
-            header.shape.clone(),
-            Device::CPU,
-        )
-        .unwrap())
+        let shape = header.shape.clone();
+        Ok(Tensor::from_bytes(&data, header.dtype.into(), shape, device.clone()).unwrap())
     }
 }
 
