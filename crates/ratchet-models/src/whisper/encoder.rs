@@ -229,10 +229,25 @@ impl WhisperEncoder {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::{Whisper, WhisperEncoder};
     use hf_hub::api::sync::Api;
-    use ratchet::{Device, DeviceRequest};
+    use ratchet::{Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
+
+    pub fn local_dir(folder: &'static str) -> PathBuf {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        for _ in 0..2 {
+            d.pop();
+        }
+        d.push(folder);
+        d
+    }
+
+    fn fixture_dir() -> PathBuf {
+        local_dir("fixtures")
+    }
 
     #[test]
     fn encoder_matches() -> anyhow::Result<()> {
@@ -247,7 +262,9 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let hparams = &gg_disk.header.hparams;
         let encoder = WhisperEncoder::load(&gg_disk, &mut reader, hparams, &device)?;
-        println!("{:#?}", encoder);
+        let input = Tensor::from_npy::<f32, _>(fixture_dir().join("jfk_encoder_input.npy"))?;
+        println!("{:#?}", input);
+        //println!("{:#?}", encoder);
 
         Ok(())
     }
