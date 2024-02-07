@@ -235,6 +235,7 @@ mod tests {
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
+    use ratchet_nn::Module;
 
     pub fn local_dir(folder: &'static str) -> PathBuf {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -262,9 +263,12 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let hparams = &gg_disk.header.hparams;
         let encoder = WhisperEncoder::load(&gg_disk, &mut reader, hparams, &device)?;
-        let input = Tensor::from_npy::<f32, _>(fixture_dir().join("jfk_encoder_input.npy"))?;
-        println!("{:#?}", input);
-        //println!("{:#?}", encoder);
+        let input =
+            Tensor::from_npy::<f32, _>(fixture_dir().join("jfk_encoder_input.npy"), &device)?;
+
+        let ours = encoder.forward(&input)?;
+        ours.resolve()?;
+        println!("{:?}", ours);
 
         Ok(())
     }

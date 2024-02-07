@@ -766,8 +766,8 @@ impl Tensor {
 
     pub fn from_npy<T: TensorDType + npyz::Deserialize, P: AsRef<Path>>(
         path: P,
+        device: &Device,
     ) -> anyhow::Result<Tensor> {
-        println!("LOADING FROM {:?}", path.as_ref());
         let bytes = std::fs::read(path)?;
         let reader = npyz::NpyFile::new(&bytes[..])?;
         let shape = reader
@@ -776,11 +776,8 @@ impl Tensor {
             .map(|&x| x as usize)
             .collect::<Vec<_>>()
             .into();
-        Ok(Tensor::from_data(
-            &reader.into_vec::<T>()?,
-            shape,
-            Device::CPU,
-        ))
+        let data = reader.into_vec::<T>()?;
+        Ok(Tensor::from_data(&data, shape, device.clone()))
     }
 }
 
