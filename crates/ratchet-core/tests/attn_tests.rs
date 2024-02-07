@@ -122,7 +122,7 @@ def qkv_attention(input, qw, kw, vw, n_heads):
         let n_heads = case.n_heads.unwrap();
         let qdim = q_proj.shape()[2];
         let scale = ((qdim / n_heads) as f32).powf(-0.25);
-        let scale = Tensor::from_data([scale as f32], shape![1], device);
+        let scale = Tensor::from_data([scale], shape![1], device);
 
         let hdim = qdim / n_heads;
         let q = q_proj

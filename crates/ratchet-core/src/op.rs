@@ -33,7 +33,7 @@ impl LazyOp {
             LazyOp::Reindex(r) => r.name(),
             LazyOp::Norm(n) => n.name(),
             LazyOp::Conv(c) => c.name(),
-            LazyOp::View(v) => "View",
+            LazyOp::View(_v) => "View",
             LazyOp::Const => "Const",
         }
     }
@@ -62,7 +62,7 @@ impl LazyOp {
             LazyOp::Reindex(r) => r.supports_inplace(),
             LazyOp::Norm(n) => n.supports_inplace(),
             LazyOp::Conv(c) => c.supports_inplace(),
-            LazyOp::View(v) => true,
+            LazyOp::View(_v) => true,
             LazyOp::Const => false,
             _ => unimplemented!(),
         }

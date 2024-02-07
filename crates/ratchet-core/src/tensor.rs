@@ -562,7 +562,7 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        let last = execution_order.last().unwrap();
+        let _last = execution_order.last().unwrap();
         //render_to_file(last, "allocated.svg");
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();

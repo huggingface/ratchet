@@ -31,7 +31,7 @@ impl Module for MultiHeadAttention {
 
         let q = self.q.forward(x)?;
 
-        let to_project = xa.as_ref().unwrap_or(&x);
+        let to_project = xa.as_ref().unwrap_or(x);
         let k = self.k.forward(to_project)?;
         let v = self.v.forward(to_project)?;
 

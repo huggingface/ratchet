@@ -45,7 +45,7 @@ impl Operation for Conv {
         let calc_dim = |i_size, k_size, pad, dil, stride| {
             ((i_size + (2 * pad) - dil * (k_size - 1) - 1) / stride) + 1 //TODO: Missing floor
         };
-        let [N, C_in, L_in]: [usize; 3] = input_shape.try_into()?;
+        let [N, _C_in, L_in]: [usize; 3] = input_shape.try_into()?;
         let [C_out, _, KS]: [usize; 3] = weight_shape.try_into()?;
         assert!(KS == 3, "Only 3 kernel size is supported");
 
@@ -80,9 +80,9 @@ impl MetaOperation for Conv {
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let input = &self.input;
-        let [N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
+        let [_N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
         let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
-        let F_numel = Cin * KS;
+        let _F_numel = Cin * KS;
         let padded_strided_Lin = (Lin + 2 * self.padding) / self.stride;
         let wgcx = WorkgroupCount::div_ceil(padded_strided_Lin, 256);
         Ok(wgc![wgcx as _, Cout as _, 1])
@@ -100,8 +100,8 @@ impl MetaOperation for Conv {
         dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        let [N, Cin, Lin]: [usize; 3] = self.input.shape().try_into()?;
-        let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
+        let [_N, Cin, Lin]: [usize; 3] = self.input.shape().try_into()?;
+        let [_Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
         let [_, _, Lout]: [usize; 3] = dst.shape().try_into()?;
         let F_numel = Cin * KS;
         let Fperthread = WorkgroupCount::div_ceil(F_numel, 256);
@@ -124,7 +124,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
-    use crate::{shape, Conv, Device, DeviceRequest, Tensor};
+    use crate::{shape, Device, DeviceRequest, Tensor};
 
     fn ground_truth(
         input: &Tensor,
@@ -144,8 +144,8 @@ def conv(input, filters, bias, stride, padding):
     padding = int(padding.item())
     return F.conv1d(input, filters, bias, stride=stride, padding=padding).numpy()
 "#;
-        let stride = Tensor::from_data(&[stride as f32], shape![1], Device::CPU);
-        let padding = Tensor::from_data(&[padding as f32], shape![1], Device::CPU);
+        let stride = Tensor::from_data([stride as f32], shape![1], Device::CPU);
+        let padding = Tensor::from_data([padding as f32], shape![1], Device::CPU);
         run_py_prg(prg.to_string(), &[input, filters, bias, &stride, &padding])
     }
 
