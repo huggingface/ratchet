@@ -153,7 +153,11 @@ impl DeviceStorage for CPUBuffer {
             if full {
                 format!("{:?}", data)
             } else {
-                format!("{:?}...{:?}", &data[..length], &data[data.len() - length..])
+                format!(
+                    "{:?} ... {:?}",
+                    &data[..length],
+                    &data[data.len() - length..]
+                )
             }
         }
         match dtype {

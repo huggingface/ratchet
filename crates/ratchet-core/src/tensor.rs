@@ -78,6 +78,7 @@ impl std::fmt::Debug for Tensor {
         let (id, op) = (self.id(), self.op());
         f.debug_struct("Tensor")
             .field("id", &id)
+            .field("dt", &self.dt())
             .field("op", &op)
             .field("storage", &storage_fmt)
             .finish()
