@@ -79,6 +79,7 @@ impl std::fmt::Debug for Tensor {
         let (id, op) = (self.id(), self.op());
         f.debug_struct("Tensor")
             .field("id", &id)
+            .field("shape", &self.shape())
             .field("dt", &self.dt())
             .field("op", &op)
             .field("storage", &storage_fmt)
@@ -766,6 +767,7 @@ impl Tensor {
     pub fn from_npy<T: TensorDType + npyz::Deserialize, P: AsRef<Path>>(
         path: P,
     ) -> anyhow::Result<Tensor> {
+        println!("LOADING FROM {:?}", path.as_ref());
         let bytes = std::fs::read(path)?;
         let reader = npyz::NpyFile::new(&bytes[..])?;
         let shape = reader
