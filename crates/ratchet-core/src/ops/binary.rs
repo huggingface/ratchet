@@ -56,6 +56,13 @@ impl OpMetadata for BinaryMeta {}
 
 impl Operation for Binary {
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
+        //TODO: THIS IS WRONG
+        if srcs.len() != 2 {
+            panic!("Binary operation expects 2 inputs");
+        }
+        if srcs[0].shape() != srcs[1].shape() {
+            panic!("Binary operation expects inputs of the same shape");
+        }
         Ok(srcs[0].storage_view().clone())
     }
 
