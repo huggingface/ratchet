@@ -1,6 +1,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use derive_new::new;
-use ratchet::{Device, Shape, Tensor};
+use half::f16;
+use ratchet::{DType, Device, Shape, Tensor};
 use std::{
     collections::HashMap,
     io::{BufRead, Seek, SeekFrom},
@@ -133,9 +134,17 @@ impl<M: GGMLCompatible> GGMLModel<M> {
         let header = self.tensors.get(key).ok_or(LoadError::MissingTensor {
             name: key.to_string(),
         })?;
-        let data = header.read_data(reader)?;
+        let mut data = header.read_data(reader)?;
         let shape = header.shape.clone();
-        Ok(Tensor::from_bytes(&data, header.dtype.into(), shape, device.clone()).unwrap())
+        let mut dt: DType = header.dtype.into();
+        if dt == DType::F16 {
+            //TODO: terrible cast whilst wgpu doesn't support F16
+            let f16_data = bytemuck::cast_slice::<u8, f16>(&data);
+            let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
+            data = bytemuck::cast_slice::<f32, u8>(&f32_data).to_vec();
+            dt = DType::F32;
+        }
+        Ok(Tensor::from_bytes(&data, dt, shape, device.clone()).unwrap())
     }
 }
 

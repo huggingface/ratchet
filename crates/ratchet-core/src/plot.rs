@@ -82,13 +82,15 @@ impl RenderableGraph {
             let node_graph_id = renderable_node.plot_id;
             graph_index_map.insert(t.id(), renderable_node.plot_id);
             renderable_node.style_as_op();
-
             t.op().srcs().iter().for_each(|src_t| {
                 if let Some(src_id) = graph_index_map.get(&src_t.id()) {
                     g.create_edge(Cow::Owned(src_t.plot_fmt()), *src_id, node_graph_id);
                 }
             });
         }
+
+        g.create_node(leaf.id(), Cow::Borrowed("Output"))
+            .style_as_output();
 
         Ok(g)
     }

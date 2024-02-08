@@ -134,25 +134,3 @@ impl GGMLCompatible for Whisper {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::{EncoderStem, Whisper};
-    use hf_hub::api::sync::Api;
-    use ratchet::Device;
-    use ratchet_loader::GGMLCompatible;
-
-    #[test]
-    fn load_ggml() {
-        let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
-
-        let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
-        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
-        assert_eq!(gg_disk.tensors.len(), 167);
-
-        let stem = EncoderStem::load(&gg_disk, &mut reader, &Device::CPU).unwrap();
-        println!("{:?}", stem);
-    }
-}

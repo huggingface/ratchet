@@ -26,7 +26,7 @@ impl CompiledOp {
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
         inplace: bool,
-        _kernel_name: &str,
+        kernel_name: &str,
     ) -> Result<RVec<GpuBindGroup>, OperationError> {
         let mut bind_group_entries = drvec![];
 

@@ -8,7 +8,7 @@ pub struct Linear {
 
 impl Linear {
     pub fn forward(&self, x: &Tensor) -> anyhow::Result<Tensor> {
-        let y = x.matmul(&self.w)?;
+        let y = x.matmul(&self.w.permute(&[1, 0])?)?;
         if let Some(b) = &self.b {
             y.add(b)
         } else {
