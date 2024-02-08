@@ -555,11 +555,8 @@ impl Tensor {
     pub fn resolve(&self) -> Result<(), TensorError> {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
-        crate::plot::render_to_file(self, "graph.svg");
 
         let execution_order = self.execution_order();
-        let order_ids = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
-        println!("Execution order: {:?}", order_ids);
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
@@ -590,8 +587,8 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        let _last = execution_order.last().unwrap();
-        //render_to_file(last, "allocated.svg");
+        let last = execution_order.last().unwrap();
+        crate::plot::render_to_file(last, "allocated.svg");
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));

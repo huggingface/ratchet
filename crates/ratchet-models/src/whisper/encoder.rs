@@ -199,7 +199,6 @@ impl WhisperEncoder {
     ) -> anyhow::Result<Self> {
         let stem = EncoderStem::load(disk_model, reader, device)?;
         let (n_layers, n_heads) = (hparams.n_audio_layer, hparams.n_audio_head);
-        //let (n_layers, n_heads) = (1, hparams.n_audio_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -273,6 +272,8 @@ mod tests {
         let ours = result.to(&Device::CPU)?;
         let ground =
             Tensor::from_npy::<f32, _>(fixture_dir().join("jfk_encoder_output.npy"), &Device::CPU)?;
+        println!("OURS: {:#?}", ours);
+        println!("Ground: {:#?}", ground);
         ground.all_close(&ours, 1e-5, 1e-5)?;
 
         Ok(())
