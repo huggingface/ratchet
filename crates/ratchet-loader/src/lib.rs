@@ -2,6 +2,7 @@ mod ggml;
 mod k_quants;
 
 pub use ggml::*;
+use ratchet::DType;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {

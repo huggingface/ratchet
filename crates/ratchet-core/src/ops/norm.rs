@@ -31,6 +31,14 @@ pub enum NormOp {
     LayerNorm(LayerNorm),
 }
 
+impl NormOp {
+    pub fn kernel_name(&self) -> &'static str {
+        match self {
+            NormOp::LayerNorm(_) => "layernorm",
+        }
+    }
+}
+
 #[derive(new, Debug, Clone)]
 pub struct Norm {
     input: Tensor,
@@ -39,7 +47,11 @@ pub struct Norm {
 
 impl Norm {
     pub fn name(&self) -> &'static str {
-        "norm"
+        self.op.kernel_name()
+    }
+
+    pub fn op(&self) -> &NormOp {
+        &self.op
     }
 }
 
@@ -54,30 +66,18 @@ pub struct NormMeta {
 
 impl OpMetadata for NormMeta {}
 
-impl Operation for Norm {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].storage_view().clone())
-    }
-
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
-    }
-}
-
 impl MetaOperation for Norm {
     type Meta = NormMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
-        match &self.op {
+        let srcs = match &self.op {
             NormOp::LayerNorm(LayerNorm { scale, bias, .. }) => match bias {
                 Some(bias) => rvec![&self.input, scale, bias],
                 None => rvec![&self.input, scale],
             },
-        }
+        };
+        srcs
     }
-
-    //TODO: enable inplace here
 
     fn kernel_name(&self) -> &'static str {
         match self.op {

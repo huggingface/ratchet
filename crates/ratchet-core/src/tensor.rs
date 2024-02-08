@@ -7,6 +7,7 @@ use crate::{
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
+use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
 use std::path::Path;
@@ -320,7 +321,7 @@ impl Tensor {
         };
         LayerNorm::check_invariants(&srcs)?;
         let layer_norm = LayerNorm::new(weight.clone(), bias.cloned(), eps);
-        let new_view = layer_norm.infer_output(&[self])?;
+        let new_view = layer_norm.infer_output(&srcs)?;
         let norm = Norm::new(self.clone(), NormOp::LayerNorm(layer_norm));
         Ok(Tensor::lazy(
             LazyOp::Norm(norm),
@@ -460,7 +461,9 @@ impl Tensor {
     pub(crate) fn bindings(&self) -> RVec<BindGroupEntry> {
         assert!(self.device().is_gpu());
         let storage_guard = self.storage();
-        let storage = storage_guard.as_ref().unwrap();
+        let storage = storage_guard
+            .as_ref()
+            .expect(format!("Storage missing for {:?}", self.id()).as_str());
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
         let segments = self.dt().segments(gpu_buf.inner().size() as usize);
@@ -487,29 +490,46 @@ impl Tensor {
     }
 
     pub(crate) fn execution_order(&self) -> Vec<Tensor> {
-        let mut stack = vec![self.clone()];
-        let mut visited = vec![];
-        while let Some(tensor) = stack.pop() {
-            if visited.contains(&tensor) {
+        let mut done = HashSet::new();
+        let mut pending = HashSet::new();
+        let mut order = Vec::new();
+
+        let mut stack: Vec<(Tensor, usize)> = vec![(self.clone(), 0)];
+        while let Some((cur_t, cur_src)) = stack.pop() {
+            let all_deps_done = cur_src == cur_t.op().srcs().len();
+
+            if all_deps_done {
+                done.insert(cur_t.id());
+                pending.remove(&cur_t.id());
+                order.push(cur_t);
                 continue;
             }
-            let srcs = match &tensor.inner.op {
-                LazyOp::Const => rvec![],
-                LazyOp::Binary(b) => b.srcs(),
-                LazyOp::Matmul(m) => m.srcs(),
-                LazyOp::Softmax(s) => s.srcs(),
-                LazyOp::Unary(u) => u.srcs(),
-                LazyOp::Reindex(r) => r.srcs(),
-                LazyOp::Norm(n) => n.srcs(),
-                LazyOp::Conv(c) => c.srcs(),
-                LazyOp::View(v) => rvec![v.input()],
-                _ => unimplemented!(),
-            };
-            stack.extend(srcs.into_iter().cloned());
-            visited.push(tensor);
+
+            let (srcs_with_deps, srcs_without_deps): (Vec<_>, Vec<_>) = cur_t
+                .op()
+                .srcs()
+                .iter()
+                .partition(|s| s.op().srcs().is_empty());
+
+            let all_srcs = srcs_with_deps
+                .into_iter()
+                .chain(srcs_without_deps)
+                .collect::<RVec<_>>();
+
+            let precursor: &Tensor = all_srcs[cur_src];
+
+            if done.contains(&precursor.id()) {
+                stack.push((cur_t.clone(), cur_src + 1));
+            } else if pending.contains(&precursor.id()) {
+                panic!("CYCLE");
+            } else {
+                pending.insert(precursor.id());
+                stack.push((cur_t.clone(), cur_src));
+                stack.push((precursor.clone(), 0));
+            }
         }
-        visited.reverse();
-        visited
+
+        order
     }
 
     pub fn compile(
@@ -535,23 +555,28 @@ impl Tensor {
     pub fn resolve(&self) -> Result<(), TensorError> {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
+        crate::plot::render_to_file(self, "graph.svg");
 
         let execution_order = self.execution_order();
+        let order_ids = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
+        println!("Execution order: {:?}", order_ids);
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
         for (tix, t) in execution_order.iter().enumerate() {
-            if !t.resolved() {
-                let id = t.id();
-                let graph_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
-                assert!(t.device().is_gpu());
-                let storage = GPUBuffer {
-                    inner: (**graph_buffer.inner()).clone(),
-                    alignment: t.dt().size_of(),
-                };
-                t.update_storage(Storage::GPU(storage));
+            if t.resolved() {
+                continue;
             }
+
+            let id = t.id();
+            let graph_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+            assert!(t.device().is_gpu());
+            let storage = GPUBuffer {
+                inner: (**graph_buffer.inner()).clone(),
+                alignment: t.dt().size_of(),
+            };
+            t.update_storage(Storage::GPU(storage));
 
             //Can inplace && only 1 consumer
             let can_inplace = t.op().supports_inplace()

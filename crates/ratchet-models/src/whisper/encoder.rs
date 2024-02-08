@@ -69,6 +69,7 @@ pub struct ResidualAttentionBlock {
     mlp: MLP,
 }
 
+#[derive(Debug, derive_new::new)]
 pub struct ResidualAttentionBlockInputs {
     x: Tensor,
     xa: Option<Tensor>,
@@ -79,7 +80,6 @@ impl Module for ResidualAttentionBlock {
     type Input = ResidualAttentionBlockInputs;
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
         let ResidualAttentionBlockInputs { x, xa, mask } = input;
-
         let attn_ln = self.attn_ln.forward(x)?;
         let self_attn = self
             .attn
@@ -179,11 +179,12 @@ impl Module for WhisperEncoder {
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.stem.forward(input)?;
         for block in &self.blocks {
-            x = block.forward(&ResidualAttentionBlockInputs {
-                x,
+            let input = ResidualAttentionBlockInputs {
+                x: x.clone(),
                 xa: None,
                 mask: None,
-            })?;
+            };
+            x = block.forward(&input)?;
         }
         self.ln_post.forward(&x)
     }
@@ -198,6 +199,7 @@ impl WhisperEncoder {
     ) -> anyhow::Result<Self> {
         let stem = EncoderStem::load(disk_model, reader, device)?;
         let (n_layers, n_heads) = (hparams.n_audio_layer, hparams.n_audio_head);
+        //let (n_layers, n_heads) = (1, hparams.n_audio_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -266,9 +268,12 @@ mod tests {
         let input =
             Tensor::from_npy::<f32, _>(fixture_dir().join("jfk_encoder_input.npy"), &device)?;
 
-        let ours = encoder.forward(&input)?;
-        ours.resolve()?;
-        println!("{:?}", ours);
+        let result = encoder.forward(&input)?;
+        result.resolve()?;
+        let ours = result.to(&Device::CPU)?;
+        let ground =
+            Tensor::from_npy::<f32, _>(fixture_dir().join("jfk_encoder_output.npy"), &Device::CPU)?;
+        ground.all_close(&ours, 1e-5, 1e-5)?;
 
         Ok(())
     }

@@ -290,7 +290,11 @@ impl Operation for Matmul {
         let allowed_pairs = [(DType::F32, DType::F32), (DType::F32, DType::WQ8)];
         if !allowed_pairs.contains(&(srcs[0].dt(), srcs[1].dt())) {
             //TODO: invariantError
-            panic!("Failed to validate DTypes")
+            panic!(
+                "Failed to validate DTypes: {:?}, {:?}",
+                srcs[0].dt(),
+                srcs[1].dt()
+            );
         }
         Ok(())
     }

@@ -147,6 +147,10 @@ impl DeviceStorage for GPUBuffer {
     }
 
     fn dump(&self, _: DType, _: bool) -> String {
-        format!("{:?}", self)
+        let mut result = String::new();
+        let id_string = Self::trim_id(self.inner().global_id()).unwrap_or_default();
+        result.push_str(&format!("GPU Buffer #{}\n", id_string));
+        result.push_str(&format!("Size: {} bytes\n", self.inner.size()));
+        result
     }
 }
