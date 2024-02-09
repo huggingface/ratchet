@@ -44,7 +44,7 @@ mod tests {
     use test_strategy::proptest;
 
     use crate::{
-        rvec, shape, test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor,
+        rvec, test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor,
     };
 
     thread_local! {
