@@ -1,0 +1,4 @@
+# pnpm-workspace.yaml
+packages:
+  # executable/launchable applications
+  - "crates/ratchet-it-ts"

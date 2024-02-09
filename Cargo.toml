@@ -1,15 +1,16 @@
 [workspace]
 members = [
     "crates/ratchet-core",
-    "crates/ratchet-integration-tests",
-    "crates/ratchet-loader", 
-    "crates/ratchet-models", 
+    "crates/ratchet-client",
+    "crates/ratchet-it-rust",
+    "crates/ratchet-loader",
+    "crates/ratchet-models",
     "crates/ratchet-nn",
 ]
 resolver = "2"
 
 [profile.test]
-debug = 2 
+debug = 2
 debug-assertions = true
 
 [profile.release]
@@ -29,3 +30,7 @@ derive-new = "0.6.0"
 log = "0.4.20"
 thiserror = "1.0.56"
 byteorder = "1.5.0"
+wasm-bindgen-test = "0.3.34"
+
+[workspace.dev-dependencies]
+hf-hub = "0.3.0"
