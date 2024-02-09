@@ -89,7 +89,7 @@ impl RenderableGraph {
             });
         }
 
-        g.create_node(leaf.id(), Cow::Borrowed("Output"))
+        g.create_node(leaf.id(), Cow::Borrowed(leaf.op().name()))
             .style_as_output();
 
         Ok(g)
@@ -101,7 +101,6 @@ impl RenderableGraph {
         let mut f = NamedTempFile::new().expect("Failed to create temp file.");
         render_to(&mut f, self)?;
         Command::new("dot")
-            .arg("-Goverlap=scale")
             .arg("-Tsvg")
             .arg(f.path())
             .arg("-o")
