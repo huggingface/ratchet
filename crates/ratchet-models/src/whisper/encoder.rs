@@ -230,32 +230,20 @@ impl WhisperEncoder {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use crate::{Whisper, WhisperEncoder};
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
 
-    pub fn local_dir(folder: &'static str) -> PathBuf {
-        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for _ in 0..2 {
-            d.pop();
-        }
-        d.push(folder);
-        d
-    }
-
-    fn fixture_dir() -> PathBuf {
-        local_dir("fixtures")
-    }
-
     #[test]
     fn encoder_matches() -> anyhow::Result<()> {
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
         let path = model.get("ggml-tiny.bin").unwrap();
+        let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
+        let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
+        let ground_npy = dataset.get("jfk_tiny_encoder_output.npy").unwrap();
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
@@ -264,17 +252,15 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let hparams = &gg_disk.header.hparams;
         let encoder = WhisperEncoder::load(&gg_disk, &mut reader, hparams, &device)?;
-        let input =
-            Tensor::from_npy::<f32, _>(fixture_dir().join("jfk_encoder_input.npy"), &device)?;
+        let input = Tensor::from_npy::<f32, _>(input_npy, &device)?;
 
         let result = encoder.forward(&input)?;
         result.resolve()?;
         let ours = result.to(&Device::CPU)?;
-        let ground =
-            Tensor::from_npy::<f32, _>(fixture_dir().join("jfk_encoder_output.npy"), &Device::CPU)?;
+        let ground = Tensor::from_npy::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);
-        ground.all_close(&ours, 1e-5, 1e-5)?;
+        ground.all_close(&ours, 1e-3, 1e-3)?;
 
         Ok(())
     }

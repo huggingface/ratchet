@@ -223,21 +223,12 @@ impl Tensor {
 macro_rules! impl_binary_op {
     ($method_name:ident, $op:expr) => {
         pub fn $method_name(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+            //TODO: we can short circuit here and have a much more efficient kernel
+            //if either tensor is a scalar
             Binary::check_invariants(&[self, other])?;
 
             let (lhs, rhs) = (self, other);
             let shapes = &[lhs.shape(), rhs.shape()];
-            if lhs.is_scalar() || rhs.is_scalar() {
-                let other = if lhs.is_scalar() { rhs } else { lhs };
-                let new_view = other.view.clone();
-                let binary = Binary::new(self.clone(), other.clone(), $op);
-                return Ok(Tensor::lazy(
-                    LazyOp::Binary(binary),
-                    new_view,
-                    self.device.clone(),
-                ));
-            }
-
             let broadcasted = Shape::multi_broadcast(shapes);
             if broadcasted.is_none() {
                 return Err(InvariantError::BroadcastingFailed.into());

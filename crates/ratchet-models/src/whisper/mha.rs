@@ -89,35 +89,3 @@ impl MultiHeadAttention {
         self.o.forward(&wv)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::{ResidualAttentionBlock, ResidualAttentionBlockInputs, Whisper};
-    use hf_hub::api::sync::Api;
-    use ratchet::{shape, Device, DeviceRequest, Tensor};
-    use ratchet_loader::GGMLCompatible;
-    use ratchet_nn::Module;
-
-    #[test]
-    fn whisper_mha() -> anyhow::Result<()> {
-        let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
-
-        let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
-        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
-
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let block0 = ResidualAttentionBlock::load(&gg_disk, 0, 6, false, &mut reader, &device)?;
-
-        let x = Tensor::randn::<f32>(shape![1, 1500, 384], device.clone());
-        let inputs = ResidualAttentionBlockInputs::new(x, None, None);
-        let result = block0.forward(&inputs)?;
-        result.resolve()?;
-
-        let ours = result.to(&Device::CPU)?;
-        println!("{:?}", ours);
-
-        Ok(())
-    }
-}
