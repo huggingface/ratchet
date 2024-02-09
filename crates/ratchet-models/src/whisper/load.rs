@@ -134,23 +134,3 @@ impl GGMLCompatible for Whisper {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::Whisper;
-    use hf_hub::api::sync::Api;
-    use ratchet_loader::GGMLCompatible;
-
-    #[test]
-    fn load_ggml() {
-        let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
-
-        let stash = Whisper::load_ggml(&mut std::io::BufReader::new(
-            std::fs::File::open(path).unwrap(),
-        ))
-        .unwrap();
-        assert_eq!(stash.tensors.len(), 167);
-    }
-}

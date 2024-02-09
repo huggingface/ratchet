@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
-    StorageView, Tensor,
+    rvec, wgc, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata, Operation,
+    OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -48,15 +48,26 @@ impl Binary {
 
 #[derive(Debug, ShaderType)]
 pub struct BinaryMeta {
-    M: u32,
-    N: u32,
+    numel: u32,
 }
 
 impl OpMetadata for BinaryMeta {}
 
 impl Operation for Binary {
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].storage_view().clone())
+        let (lhs, rhs) = (srcs[0], srcs[1]);
+        let shapes = &[lhs.shape(), rhs.shape()];
+        if lhs.is_scalar() || rhs.is_scalar() {
+            let other = if lhs.is_scalar() { rhs } else { lhs };
+            return Ok(other.storage_view().clone());
+        }
+        let broadcasted = Shape::multi_broadcast(shapes);
+        if broadcasted.is_none() {
+            return Err(InvariantError::BroadcastingFailed.into());
+        }
+        let broadcasted = broadcasted.unwrap();
+        let ostrides = Strides::from(&broadcasted);
+        Ok(StorageView::new(broadcasted, lhs.dt(), ostrides))
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
@@ -73,30 +84,31 @@ impl MetaOperation for Binary {
         rvec![&self.lhs, &self.rhs]
     }
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
-        let a_rank = &self.lhs.shape().rank();
-        let N = &self.lhs.shape()[a_rank - 1];
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+        let numel = dst.shape().numel();
 
-        if N % 4 == 0 {
+        if numel % 4 == 0 {
             KernelElement::Vec4
-        } else if N % 2 == 0 {
+        } else if numel % 2 == 0 {
             KernelElement::Vec2
         } else {
             KernelElement::Scalar
         }
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let a = &self.lhs;
-        let a_rank = a.shape().rank();
-        let M = a.shape()[a_rank - 2];
-        let a_prefix = &a.shape()[..(a_rank - 2)];
-        let stacks = a_prefix.iter().product::<usize>();
-
-        let wgcx = WorkgroupCount::div_ceil(M as _, 64);
-        Ok(wgc![wgcx as _, stacks as _, 1])
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+        let numel = dst.shape().numel();
+        let x_groups = WorkgroupCount::div_ceil(numel as _, 64);
+        let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
+            let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
+            (WorkgroupCount::MAX_WGS_PER_DIM, y_groups)
+        } else {
+            (x_groups, 1)
+        };
+        Ok(wgc![x_groups as _, y_groups as _, 1])
     }
 
+    //TODO: binary inplace!
     fn storage_bind_group_layout(
         &self,
         _inplace: bool,
@@ -117,13 +129,11 @@ impl MetaOperation for Binary {
 
     fn metadata(
         &self,
-        _dst: &Tensor,
+        dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        let a = &self.lhs;
-        let a_rank = a.shape().rank();
-        let [M, N] = [a.shape()[a_rank - 2] as u32, a.shape()[a_rank - 1] as u32];
-        Ok(BinaryMeta { M, N })
+        let numel = dst.shape().numel() as _;
+        Ok(BinaryMeta { numel })
     }
 }
 
@@ -144,9 +154,8 @@ mod tests {
         B: usize,
         #[strategy(1..=512usize)]
         M: usize,
-        //#[strategy(1..=512usize)]
-        //N: usize,
-        //TODO: add N support
+        #[strategy(1..=512usize)]
+        N: usize,
     }
 
     fn ground_truth(a: &Tensor, b: &Tensor, op: &BinaryOp) -> anyhow::Result<Tensor> {
@@ -162,12 +171,13 @@ def {}(a, b):
         run_py_prg(prg.to_string(), &[a, b])
     }
 
+    //TODO: more involved test generation strategy
     fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let BinaryProblem { op, B, M } = prob;
-        println!("op: {:?}, B: {}, M: {}", op, B, M);
-        let a = Tensor::randn::<f32>(shape![B, M], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1], cpu_device.clone());
+        let BinaryProblem { op, B, M, N } = prob;
+        println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
+        let a = Tensor::randn::<f32>(shape![B, M, N], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![B, 1, N], cpu_device.clone());
         let ground = ground_truth(&a, &b, &op)?;
         let device = GPU_DEVICE.with(|d| d.clone());
 

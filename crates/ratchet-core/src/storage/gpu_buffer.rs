@@ -2,7 +2,7 @@ use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
     gpu::{BufferUsagesExt, PooledGPUBuffer},
     storage::{CPUBuffer, DeviceStorage},
-    Device, DeviceError, Shape,
+    Device, DeviceError, Shape, TensorDType,
 };
 
 use bytemuck::NoUninit;
@@ -85,10 +85,18 @@ impl GPUBuffer {
         }
     }
 
-    #[cfg(feature = "plotting")]
+    pub fn from_disk<T: TensorDType, R: std::io::BufRead + std::io::Seek>(
+        reader: &mut R,
+        shape: &Shape,
+        device: &Device,
+    ) -> Result<Self, DeviceError> {
+        //There is no faster way to do this
+        CPUBuffer::from_disk::<T, R>(reader, shape)?.to_device(device)
+    }
+
     pub fn trim_id(id: wgpu::Id<wgpu::Buffer>) -> Option<String> {
         let id = format!("{:?}", id);
-        let trimmed = id.trim_start_matches("Id(").trim_end_matches(")");
+        let trimmed = id.trim_start_matches("Id(").trim_end_matches(')');
         if trimmed.len() > 12 && trimmed.chars().all(|c| c.is_numeric()) {
             Some(trimmed[12..].to_string())
         } else {
@@ -138,6 +146,10 @@ impl DeviceStorage for GPUBuffer {
     }
 
     fn dump(&self, _: DType, _: bool) -> String {
-        format!("{:?}", self)
+        let mut result = String::new();
+        let id_string = Self::trim_id(self.inner().global_id()).unwrap_or_default();
+        result.push_str(&format!("GPU Buffer #{}\n", id_string));
+        result.push_str(&format!("Size: {} bytes\n", self.inner.size()));
+        result
     }
 }

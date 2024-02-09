@@ -31,6 +31,8 @@ impl DType {
         }
     }
 
+    //TODO: alignof?
+
     //TODO: use a different method, total_bytes won't work with padding
     pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
         let total_bytes = if total_bytes < MIN_STORAGE_BUFFER_SIZE {
@@ -54,6 +56,33 @@ impl DType {
             _ => {
                 rvec![BufferSegment::new(0, Some(total_bytes as u64), false)]
             }
+        }
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
+impl DType {
+    fn handle_type_str(ts: npyz::TypeStr) -> DType {
+        match ts.endianness() {
+            npyz::Endianness::Little => match (ts.type_char(), ts.size_field()) {
+                (npyz::TypeChar::Float, 4) => DType::F32,
+                (npyz::TypeChar::Int, 4) => DType::I32,
+                (npyz::TypeChar::Uint, 4) => DType::U32,
+                (t, s) => unimplemented!("{} {}", t, s),
+            },
+            _ => unimplemented!(),
+        }
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
+impl From<npyz::DType> for DType {
+    fn from(dtype: npyz::DType) -> Self {
+        match dtype {
+            npyz::DType::Plain(ts) => Self::handle_type_str(ts),
+            _ => unimplemented!(),
         }
     }
 }

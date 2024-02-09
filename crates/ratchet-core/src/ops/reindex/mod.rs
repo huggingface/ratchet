@@ -1,5 +1,8 @@
+mod broadcast;
 mod permute;
 mod slice;
+
+pub use broadcast::Broadcast;
 pub use permute::Permute;
 pub use slice::Slice;
 
@@ -11,15 +14,13 @@ use crate::{
     rvec, wgc, KernelElement, MetaOperation, OpMetadata, OperationError, RVec, Shape, Strides,
     Tensor,
 };
+use glam::UVec4;
 
-#[cfg(test)]
-use test_strategy::Arbitrary;
-
-#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Clone)]
 pub enum ReindexOp {
     Permute(Permute),
     Slice(Slice),
+    Broadcast(Broadcast),
 }
 
 impl ReindexOp {
@@ -27,6 +28,7 @@ impl ReindexOp {
         match self {
             ReindexOp::Permute(_) => "permute",
             ReindexOp::Slice(_) => "slice",
+            ReindexOp::Broadcast(_) => "broadcast",
         }
     }
 }
@@ -49,6 +51,8 @@ impl Reindex {
 
 #[derive(Debug, ShaderType)]
 pub struct ReindexMeta {
+    src_shape: glam::UVec4,
+    dst_shape: glam::UVec4,
     src_stride: glam::UVec4,
     dst_stride: glam::UVec4,
     src_numel: u32,
@@ -108,11 +112,16 @@ impl MetaOperation for Reindex {
         let (input_shape, input_strides) = padder(self.input.shape().clone());
         let (dst_shape, dst_strides) = padder(dst.shape().clone());
 
-        let src_stride = glam::UVec4::try_from(&input_strides).unwrap();
-        let dst_stride = glam::UVec4::try_from(&dst_strides).unwrap();
+        let src_stride = UVec4::try_from(&input_strides).unwrap();
+        let dst_stride = UVec4::try_from(&dst_strides).unwrap();
         let src_numel = input_shape.numel() as u32;
         let dst_numel = dst_shape.numel() as u32;
 
+        let src_shape = UVec4::try_from(&input_shape).unwrap();
+        let dst_shape = UVec4::try_from(&dst_shape).unwrap();
+
+        //TODO: move this to the inner ops
+        //TODO: this is incredibly bad
         let permute = match &self.op {
             ReindexOp::Permute(p) => {
                 let dims = p.promote();
@@ -139,6 +148,8 @@ impl MetaOperation for Reindex {
             src_offsets[3],
         );
         Ok(ReindexMeta {
+            src_shape,
+            dst_shape,
             src_stride,
             dst_stride,
             src_numel,

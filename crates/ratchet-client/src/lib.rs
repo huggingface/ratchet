@@ -3,16 +3,16 @@ use util::{js_error, js_to_js_error, to_future};
 #[cfg(test)]
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 
-use futures_util::{AsyncRead, AsyncReadExt, StreamExt, TryFutureExt};
-use gloo::console::{debug, error as log_error};
-use js_sys::JsString;
+use futures_util::{TryFutureExt};
+
+
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
-use wasm_bindgen_futures::JsFuture;
-use wasm_streams::readable::{IntoAsyncRead, ReadableStreamBYOBReader};
-use wasm_streams::ReadableStream;
+
+
+
 use web_sys::{
-    console, Cache, CacheStorage, ReadableStreamGetReaderOptions, ReadableStreamReaderMode,
-    Request, RequestInit, RequestMode, Response, Window,
+    Cache,
+    Request, RequestInit, RequestMode, Response,
 };
 mod util;
 use bytes::Bytes;
@@ -20,7 +20,7 @@ use bytes::Bytes;
 #[cfg(test)]
 wasm_bindgen_test_configure!(run_in_browser);
 
-pub type ProgressBar = dyn Fn(u32) -> ();
+pub type ProgressBar = dyn Fn(u32);
 
 #[wasm_bindgen]
 pub struct ApiBuilder {
@@ -116,7 +116,7 @@ impl Api {
             (raw_response, true)
         };
 
-        return Ok(ApiResponse { raw, cached });
+        Ok(ApiResponse { raw, cached })
     }
 }
 
@@ -172,7 +172,7 @@ impl ToBytes for Uint8Array {
 #[cfg(test)]
 #[wasm_bindgen_test]
 async fn pass() -> Result<(), JsValue> {
-    use js_sys::JsString;
+    
 
     let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test").build();
 

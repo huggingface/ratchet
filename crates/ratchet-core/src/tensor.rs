@@ -1,13 +1,16 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides,
-    TensorDType, TensorId,
+    InvariantError, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage,
+    Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
+use std::collections::HashSet;
+use std::io::{BufRead, Seek};
 use std::ops::Bound;
+use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(feature = "rand")]
@@ -77,6 +80,8 @@ impl std::fmt::Debug for Tensor {
         let (id, op) = (self.id(), self.op());
         f.debug_struct("Tensor")
             .field("id", &id)
+            .field("shape", &self.shape())
+            .field("dt", &self.dt())
             .field("op", &op)
             .field("storage", &storage_fmt)
             .finish()
@@ -198,13 +203,16 @@ impl Tensor {
         &self.inner.op
     }
 
+    pub fn is_scalar(&self) -> bool {
+        self.shape().is_scalar()
+    }
+
     #[cfg(feature = "plotting")]
     pub fn plot_fmt(&self) -> String {
         let shape = self.shape();
         let dt = self.dt();
         let storage = self.storage();
-        let storage_fmt = self
-            .storage()
+        let storage_fmt = storage
             .as_ref()
             .map(|s| s.plot_fmt())
             .unwrap_or_else(|| "Unresolved".to_string());
@@ -215,10 +223,30 @@ impl Tensor {
 macro_rules! impl_binary_op {
     ($method_name:ident, $op:expr) => {
         pub fn $method_name(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+            //TODO: we can short circuit here and have a much more efficient kernel
+            //if either tensor is a scalar
             Binary::check_invariants(&[self, other])?;
 
-            let binary = Binary::new(self.clone(), other.clone(), $op);
-            let new_view = binary.infer_output(&[self, other])?;
+            let (lhs, rhs) = (self, other);
+            let shapes = &[lhs.shape(), rhs.shape()];
+            let broadcasted = Shape::multi_broadcast(shapes);
+            if broadcasted.is_none() {
+                return Err(InvariantError::BroadcastingFailed.into());
+            }
+            let broadcasted = broadcasted.unwrap();
+            let left_required = self.shape() != &broadcasted;
+            let right_required = other.shape() != &broadcasted;
+
+            let (lhs, rhs) = if left_required {
+                (self.broadcast_to(broadcasted.clone())?, other.clone())
+            } else if right_required {
+                (self.clone(), other.broadcast_to(broadcasted.clone())?)
+            } else {
+                (self.clone(), other.clone())
+            };
+            let binary = Binary::new(lhs.clone(), rhs.clone(), $op);
+            let new_view = binary.infer_output(&[&lhs, &rhs])?;
+
             Ok(Tensor::lazy(
                 LazyOp::Binary(binary),
                 new_view,
@@ -316,7 +344,7 @@ impl Tensor {
         };
         LayerNorm::check_invariants(&srcs)?;
         let layer_norm = LayerNorm::new(weight.clone(), bias.cloned(), eps);
-        let new_view = layer_norm.infer_output(&[self])?;
+        let new_view = layer_norm.infer_output(&srcs)?;
         let norm = Norm::new(self.clone(), NormOp::LayerNorm(layer_norm));
         Ok(Tensor::lazy(
             LazyOp::Norm(norm),
@@ -350,8 +378,8 @@ impl Tensor {
         let permute = Permute::new(dims.to_vec());
         let out_view = permute.infer_output(&[self])?;
 
-        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
-        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
+        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
+        Ok(Tensor::lazy(op, out_view, self.device.clone()))
     }
 
     //TODO: switch dim to isize and allow negative indexing
@@ -377,6 +405,14 @@ impl Tensor {
             new_view,
             self.device.clone(),
         ))
+    }
+
+    pub fn broadcast_to(&self, shape: Shape) -> anyhow::Result<Tensor> {
+        Broadcast::check_invariants(&[self])?;
+        let broadcast = Broadcast::new(shape);
+        let new_view = broadcast.infer_output(&[self])?;
+        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Broadcast(broadcast)));
+        Ok(Tensor::lazy(op, new_view, self.device.clone()))
     }
 
     #[cfg(feature = "rand")]
@@ -412,6 +448,18 @@ impl Tensor {
         Tensor::new(LazyOp::Const, meta, Some(storage), device)
     }
 
+    pub fn from_bytes(
+        data: &[u8],
+        dt: DType,
+        shape: Shape,
+        device: Device,
+    ) -> anyhow::Result<Tensor> {
+        let storage = Storage::from_bytes(data, dt.size_of(), &device);
+        let strides = Strides::from(&shape);
+        let meta = StorageView::new(shape, dt, strides);
+        Ok(Tensor::new(LazyOp::Const, meta, Some(storage), device))
+    }
+
     pub(crate) unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
         data: U,
         shape: Shape,
@@ -424,6 +472,17 @@ impl Tensor {
         Tensor::new(LazyOp::Const, meta, Some(storage), device)
     }
 
+    pub fn from_disk<T: TensorDType, R: BufRead + Seek>(
+        reader: &mut R,
+        shape: Shape,
+        device: Device,
+    ) -> anyhow::Result<Tensor> {
+        let storage = Storage::from_disk::<T, R>(reader, &shape, &device)?;
+        let strides = Strides::from(&shape);
+        let meta = StorageView::new(shape, T::dt(), strides);
+        Ok(Tensor::new(LazyOp::Const, meta, Some(storage), device))
+    }
+
     /// # Bindings
     ///
     /// Only applicable to GPU tensors.
@@ -433,7 +492,9 @@ impl Tensor {
     pub(crate) fn bindings(&self) -> RVec<BindGroupEntry> {
         assert!(self.device().is_gpu());
         let storage_guard = self.storage();
-        let storage = storage_guard.as_ref().unwrap();
+        let storage = storage_guard
+            .as_ref()
+            .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
         let segments = self.dt().segments(gpu_buf.inner().size() as usize);
@@ -460,29 +521,46 @@ impl Tensor {
     }
 
     pub(crate) fn execution_order(&self) -> Vec<Tensor> {
-        let mut stack = vec![self.clone()];
-        let mut visited = vec![];
-        while let Some(tensor) = stack.pop() {
-            if visited.contains(&tensor) {
+        let mut done = HashSet::new();
+        let mut pending = HashSet::new();
+        let mut order = Vec::new();
+
+        let mut stack: Vec<(Tensor, usize)> = vec![(self.clone(), 0)];
+        while let Some((cur_t, cur_src)) = stack.pop() {
+            let all_deps_done = cur_src == cur_t.op().srcs().len();
+
+            if all_deps_done {
+                done.insert(cur_t.id());
+                pending.remove(&cur_t.id());
+                order.push(cur_t);
                 continue;
             }
-            let srcs = match &tensor.inner.op {
-                LazyOp::Const => rvec![],
-                LazyOp::Binary(b) => b.srcs(),
-                LazyOp::Matmul(m) => m.srcs(),
-                LazyOp::Softmax(s) => s.srcs(),
-                LazyOp::Unary(u) => u.srcs(),
-                LazyOp::Reindex(r) => r.srcs(),
-                LazyOp::Norm(n) => n.srcs(),
-                LazyOp::Conv(c) => c.srcs(),
-                LazyOp::View(v) => rvec![v.input()],
-                _ => unimplemented!(),
-            };
-            stack.extend(srcs.into_iter().cloned());
-            visited.push(tensor);
+
+            let (srcs_with_deps, srcs_without_deps): (Vec<_>, Vec<_>) = cur_t
+                .op()
+                .srcs()
+                .iter()
+                .partition(|s| s.op().srcs().is_empty());
+
+            let all_srcs = srcs_with_deps
+                .into_iter()
+                .chain(srcs_without_deps)
+                .collect::<RVec<_>>();
+
+            let precursor: &Tensor = all_srcs[cur_src];
+
+            if done.contains(&precursor.id()) {
+                stack.push((cur_t.clone(), cur_src + 1));
+            } else if pending.contains(&precursor.id()) {
+                panic!("CYCLE");
+            } else {
+                pending.insert(precursor.id());
+                stack.push((cur_t.clone(), cur_src));
+                stack.push((precursor.clone(), 0));
+            }
         }
-        visited.reverse();
-        visited
+
+        order
     }
 
     pub fn compile(
@@ -501,7 +579,6 @@ impl Tensor {
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
-            _ => unimplemented!(),
         }
     }
 
@@ -515,16 +592,18 @@ impl Tensor {
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
         for (tix, t) in execution_order.iter().enumerate() {
-            if !t.resolved() {
-                let id = t.id();
-                let graph_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
-                assert!(t.device().is_gpu());
-                let storage = GPUBuffer {
-                    inner: (**graph_buffer.inner()).clone(),
-                    alignment: t.dt().size_of(),
-                };
-                t.update_storage(Storage::GPU(storage));
+            if t.resolved() {
+                continue;
             }
+
+            let id = t.id();
+            let graph_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+            assert!(t.device().is_gpu());
+            let storage = GPUBuffer {
+                inner: (**graph_buffer.inner()).clone(),
+                alignment: t.dt().size_of(),
+            };
+            t.update_storage(Storage::GPU(storage));
 
             //Can inplace && only 1 consumer
             let can_inplace = t.op().supports_inplace()
@@ -538,8 +617,12 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        let last = execution_order.last().unwrap();
-        //render_to_file(last, "allocated.svg");
+
+        #[cfg(all(debug_assertions, feature = "plotting"))]
+        {
+            let last = execution_order.last().unwrap();
+            crate::plot::render_to_file(last, "allocations.svg").unwrap();
+        }
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
@@ -696,9 +779,9 @@ impl CloseStats {
 }
 
 /// Conversion to and from numpy arrays
+#[cfg(feature = "pyo3")]
+#[cfg(not(target_arch = "wasm32"))]
 impl Tensor {
-    #[cfg(feature = "pyo3")]
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
@@ -712,8 +795,6 @@ impl Tensor {
         }
     }
 
-    #[cfg(feature = "pyo3")]
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn to_ndarray_view<T: TensorDType>(&self) -> ArrayViewD<T> {
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
@@ -727,8 +808,6 @@ impl Tensor {
         }
     }
 
-    #[cfg(feature = "pyo3")]
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
         &'s self,
         py: &'p pyo3::Python<'p>,
@@ -739,6 +818,22 @@ impl Tensor {
             "Cannot convert non-CPU tensor to numpy array"
         );
         PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+
+    pub fn from_npy<T: TensorDType + npyz::Deserialize, P: AsRef<Path>>(
+        path: P,
+        device: &Device,
+    ) -> anyhow::Result<Tensor> {
+        let bytes = std::fs::read(path)?;
+        let reader = npyz::NpyFile::new(&bytes[..])?;
+        let shape = reader
+            .shape()
+            .iter()
+            .map(|&x| x as usize)
+            .collect::<Vec<_>>()
+            .into();
+        let data = reader.into_vec::<T>()?;
+        Ok(Tensor::from_data(data, shape, device.clone()))
     }
 }
 
