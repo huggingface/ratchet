@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["rand", "pyo3", "plotting"]
+default = ["rand", "pyo3"]
 pyo3 = ["dep:pyo3", "dep:numpy", "dep:ndarray", "dep:npyz"]
 gpu_profiling = []
 rand = ["dep:rand", "dep:rand_distr"]
