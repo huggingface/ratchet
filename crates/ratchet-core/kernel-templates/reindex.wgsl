@@ -11,6 +11,7 @@ struct Meta {
     dst_numel: u32,
     perm: vec4<u32>,
     src_offsets: vec4<u32>,
+    broadcast_to: vec4<u32>,
 }
 
 @group(1) @binding(0)

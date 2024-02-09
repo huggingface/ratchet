@@ -67,6 +67,8 @@ mod tests {
         }
     }
 
+    //TODO: instead of generating each index,
+    //just implement arbitrary for Shape and pass in 4 args
     #[derive(Debug)]
     struct SliceProblem {
         op: Slice,

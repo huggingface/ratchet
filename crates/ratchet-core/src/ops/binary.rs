@@ -59,7 +59,6 @@ impl Operation for Binary {
         let (lhs, rhs) = (srcs[0], srcs[1]);
         let shapes = &[lhs.shape(), rhs.shape()];
         if lhs.is_scalar() || rhs.is_scalar() {
-            let scalar = if lhs.is_scalar() { lhs } else { rhs };
             let other = if lhs.is_scalar() { rhs } else { lhs };
             return Ok(other.storage_view().clone());
         }

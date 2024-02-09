@@ -181,3 +181,35 @@ macro_rules! impl_try_into_for_shape {
 }
 
 impl_try_into_for_shape!(0, 1, 2, 3, 4);
+
+#[cfg(test)]
+mod tests {
+    use crate::shape;
+    use crate::Shape;
+    use proptest::prelude::*;
+    use proptest::strategy::{BoxedStrategy, Strategy};
+
+    impl Arbitrary for Shape {
+        type Parameters = (usize, usize, usize, usize);
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+            let (max1, max2, max3, max4) = args;
+
+            (1..max1, 1..max2, 1..max3, 1..max4)
+                .prop_map(|(val1, val2, val3, val4)| shape![val1, val2, val3, val4])
+                .boxed()
+        }
+    }
+
+    impl Shape {
+        pub fn as_torch(&self) -> String {
+            let mut shape = format!("({}", self[0]);
+            for dim in self.iter().skip(1) {
+                shape.push_str(&format!(", {}", dim));
+            }
+            shape.push(')');
+            shape
+        }
+    }
+}
