@@ -502,7 +502,7 @@ impl Tensor {
         let storage_guard = self.storage();
         let storage = storage_guard
             .as_ref()
-            .expect(format!("Storage missing for {:?}", self.id()).as_str());
+            .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
         let segments = self.dt().segments(gpu_buf.inner().size() as usize);
@@ -841,7 +841,7 @@ impl Tensor {
             .collect::<Vec<_>>()
             .into();
         let data = reader.into_vec::<T>()?;
-        Ok(Tensor::from_data(&data, shape, device.clone()))
+        Ok(Tensor::from_data(data, shape, device.clone()))
     }
 }
 

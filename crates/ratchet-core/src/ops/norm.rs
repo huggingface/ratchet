@@ -70,13 +70,13 @@ impl MetaOperation for Norm {
     type Meta = NormMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
-        let srcs = match &self.op {
+        
+        match &self.op {
             NormOp::LayerNorm(LayerNorm { scale, bias, .. }) => match bias {
                 Some(bias) => rvec![&self.input, scale, bias],
                 None => rvec![&self.input, scale],
             },
-        };
-        srcs
+        }
     }
 
     fn kernel_name(&self) -> &'static str {
