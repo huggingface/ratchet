@@ -140,19 +140,7 @@ impl ReindexOp {
     var src_index = dst_index;"#
                 .to_string(),
             ReindexOp::Broadcast => r#"
-    var src_index = dst_index;
-    if(metadata.broadcast_from[0] == 1u) {
-        src_index[0] = 0u; 
-    }
-    if(metadata.broadcast_from[1] == 1u) {
-        src_index[1] = 0u; 
-    }
-    if(metadata.broadcast_from[2] == 1u) {
-        src_index[2] = 0u; 
-    }
-    if(metadata.broadcast_from[3] == 1u) {
-        src_index[3] = 0u; 
-    }
+    var src_index = select(dst_index, vec4<u32>(0u), metadata.src_shape == vec4<u32>(1u));
     "#
             .to_string(),
         }

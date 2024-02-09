@@ -70,7 +70,6 @@ impl MetaOperation for Norm {
     type Meta = NormMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
-        
         match &self.op {
             NormOp::LayerNorm(LayerNorm { scale, bias, .. }) => match bias {
                 Some(bias) => rvec![&self.input, scale, bias],

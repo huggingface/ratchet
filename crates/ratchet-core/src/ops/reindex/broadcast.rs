@@ -120,15 +120,6 @@ def slice(a):
         Ok(())
     }
 
-    #[test]
-    fn test_broadcast_single() {
-        let prob = BroadcastProblem {
-            original_shape: shape![1, 2, 2],
-            op: Broadcast::new(shape![3, 2, 2]),
-        };
-        run_reindex_trial(prob).unwrap();
-    }
-
     #[proptest(cases = 16)]
     fn test_broadcast(prob: BroadcastProblem) {
         run_reindex_trial(prob).unwrap();

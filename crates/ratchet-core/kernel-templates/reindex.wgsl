@@ -5,13 +5,14 @@ var<storage, read> X: array<f32>;
 var<storage, read_write> Y: array<f32>;
 
 struct Meta {
+    src_shape: vec4<u32>,
+    dst_shape: vec4<u32>,
     src_stride: vec4<u32>,
     dst_stride: vec4<u32>,
     src_numel: u32,
     dst_numel: u32,
     perm: vec4<u32>,
     src_offsets: vec4<u32>,
-    broadcast_from: vec4<u32>,
 }
 
 @group(1) @binding(0)
