@@ -203,6 +203,10 @@ impl Tensor {
         &self.inner.op
     }
 
+    pub fn is_scalar(&self) -> bool {
+        self.shape().is_scalar()
+    }
+
     #[cfg(feature = "plotting")]
     pub fn plot_fmt(&self) -> String {
         let shape = self.shape();
@@ -548,7 +552,6 @@ impl Tensor {
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
-            _ => unimplemented!(),
         }
     }
 
@@ -587,8 +590,12 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        let last = execution_order.last().unwrap();
-        crate::plot::render_to_file(last, "allocated.svg");
+
+        #[cfg(debug_assertions)]
+        {
+            let last = execution_order.last().unwrap();
+            crate::plot::render_to_file(last, "allocations.svg").unwrap();
+        }
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
