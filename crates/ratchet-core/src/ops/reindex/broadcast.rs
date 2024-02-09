@@ -67,12 +67,13 @@ mod tests {
                             original_shape[dim]..original_shape[dim] + 1
                         }
                     };
-                    let r0 = create_broadcast_range(0);
-                    let r1 = create_broadcast_range(1);
-                    let r2 = create_broadcast_range(2);
-                    let r3 = create_broadcast_range(3);
 
-                    let to = Shape::arbitrary_with(rvec![r0, r1, r2, r3]);
+                    let to = Shape::arbitrary_with(rvec![
+                        create_broadcast_range(0),
+                        create_broadcast_range(1),
+                        create_broadcast_range(2),
+                        create_broadcast_range(3)
+                    ]);
                     (Just(original_shape), to)
                 })
                 .prop_map(|(original_shape, to)| BroadcastProblem {
