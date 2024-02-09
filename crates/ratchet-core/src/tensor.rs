@@ -618,7 +618,7 @@ impl Tensor {
             }
         }
 
-        #[cfg(debug_assertions)]
+        #[cfg(all(debug_assertions, feature = "plotting"))]
         {
             let last = execution_order.last().unwrap();
             crate::plot::render_to_file(last, "allocations.svg").unwrap();

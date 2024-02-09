@@ -94,7 +94,6 @@ impl GPUBuffer {
         CPUBuffer::from_disk::<T, R>(reader, shape)?.to_device(device)
     }
 
-    #[cfg(feature = "plotting")]
     pub fn trim_id(id: wgpu::Id<wgpu::Buffer>) -> Option<String> {
         let id = format!("{:?}", id);
         let trimmed = id.trim_start_matches("Id(").trim_end_matches(')');
