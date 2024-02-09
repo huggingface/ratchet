@@ -58,15 +58,6 @@ mod tests {
         }
     }
 
-    impl Arbitrary for Slice {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            todo!()
-        }
-    }
-
     //TODO: instead of generating each index,
     //just implement arbitrary for Shape and pass in 4 args
     #[derive(Debug)]
@@ -94,13 +85,7 @@ mod tests {
                     start..end
                 })
             };
-
-            let B_range = gen_range(4);
-            let M_range = gen_range(4);
-            let N_range = gen_range(256);
-            let K_range = gen_range(256);
-
-            (B_range, M_range, N_range, K_range)
+            (gen_range(4), gen_range(4), gen_range(256), gen_range(256))
                 .prop_map(|(Br, Mr, Nr, Kr)| {
                     //Adding 10 to ensure it works without matching range end
                     //TODO: write a better generate strategy
@@ -132,15 +117,14 @@ def slice(a):
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let SliceProblem { op, B, M, N, K } = prob;
         println!("Slice: {:?}, B: {}, M: {}, N: {}, K: {}", op, B, M, N, K);
-        let a = Tensor::randn::<f32>(shape![B, M, N, K], cpu_device.clone());
+        let input = Tensor::randn::<f32>(shape![B, M, N, K], cpu_device.clone());
         let device = GPU_DEVICE.with(|d| d.clone());
 
-        let a_gpu = a.to(&device)?;
-        let ground = ground_truth(&a, &op.as_torch())?;
-        let ours = a_gpu.slice(&op.indices)?;
+        let ground = ground_truth(&input, &op.as_torch())?;
+        let ours = input.to(&device)?.slice(&op.indices)?;
         ours.resolve()?;
-        let d_gpu = ours.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 1e-5, 1e-5)?;
+        let cpu_result = ours.to(&Device::CPU)?;
+        ground.all_close(&cpu_result, 1e-5, 1e-5)?;
         Ok(())
     }
 

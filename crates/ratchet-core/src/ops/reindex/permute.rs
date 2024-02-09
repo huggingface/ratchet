@@ -52,7 +52,9 @@ impl Operation for Permute {
 
 #[cfg(test)]
 mod tests {
-    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Permute, Tensor};
+    use crate::{
+        rvec, shape, test_util::run_py_prg, Device, DeviceRequest, Permute, Shape, Tensor,
+    };
     use proptest::prelude::*;
     use test_strategy::{proptest, Arbitrary};
 
@@ -68,21 +70,26 @@ mod tests {
         }
     }
 
+    impl Arbitrary for PermuteProblem {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            let s = Shape::arbitrary_with(rvec![1..8, 1..8, 1..512, 1..512]);
+            let p = Permute::arbitrary_with(());
+
+            todo!()
+        }
+    }
+
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
     }
 
-    #[derive(Arbitrary, Debug)]
+    #[derive(Debug)]
     struct PermuteProblem {
         op: Permute,
-        #[strategy(1..=2usize)]
-        B: usize,
-        #[strategy(1..=4usize)]
-        M: usize,
-        #[strategy(1..=256usize)]
-        N: usize,
-        #[strategy(1..=256usize)]
-        K: usize,
+        shape: Shape,
     }
 
     fn ground_truth(a: &Tensor, args: &str) -> anyhow::Result<Tensor> {
@@ -100,17 +107,16 @@ def permute(a):
 
     fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let PermuteProblem { op, B, M, N, K } = prob;
-        println!("Permute: {:?}, B: {}, M: {}, N: {}, K: {}", op, B, M, N, K);
-        let a = Tensor::randn::<f32>(shape![B, M, N, K], cpu_device.clone());
+        let PermuteProblem { op, shape } = prob;
+        println!("Permute: {:?} {:?}", op, shape);
+        let input = Tensor::randn::<f32>(shape, cpu_device.clone());
         let device = GPU_DEVICE.with(|d| d.clone());
 
-        let a_gpu = a.to(&device)?;
-        let ground = ground_truth(&a, format!("{:?}", op.dims).as_str())?;
-        let ours = a_gpu.permute(&op.dims)?;
+        let ground = ground_truth(&input, format!("{:?}", op.dims).as_str())?;
+        let ours = input.to(&device)?.permute(&op.dims)?;
         ours.resolve()?;
-        let d_gpu = ours.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 1e-5, 1e-5)?;
+        let cpu_result = ours.to(&Device::CPU)?;
+        ground.all_close(&cpu_result, 1e-5, 1e-5)?;
         Ok(())
     }
 

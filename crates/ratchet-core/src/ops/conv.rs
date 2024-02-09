@@ -80,9 +80,8 @@ impl MetaOperation for Conv {
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let input = &self.input;
-        let [_N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
-        let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
-        let _F_numel = Cin * KS;
+        let [_, _, Lin]: [usize; 3] = input.shape().try_into()?;
+        let [Cout, _, _]: [usize; 3] = self.weight.shape().try_into()?;
         let padded_strided_Lin = (Lin + 2 * self.padding) / self.stride;
         let wgcx = WorkgroupCount::div_ceil(padded_strided_Lin, 256);
         Ok(wgc![wgcx as _, Cout as _, 1])
@@ -140,16 +139,14 @@ def conv(input, filters, bias, stride, padding):
     input = torch.from_numpy(input)
     filters = torch.from_numpy(filters)
     bias = torch.from_numpy(bias)
-    stride = int(stride.item())
-    padding = int(padding.item())
-    return F.conv1d(input, filters, bias, stride=stride, padding=padding).numpy()
+    return F.conv1d(input, filters, bias, stride=int(stride.item()), padding=int(padding.item())).numpy()
 "#;
         let stride = Tensor::from_data([stride as f32], shape![1], Device::CPU);
         let padding = Tensor::from_data([padding as f32], shape![1], Device::CPU);
         run_py_prg(prg.to_string(), &[input, filters, bias, &stride, &padding])
     }
 
-    fn run_conv_trial(device: &Device, problem: ConvProblem) {
+    fn run_conv_trial(device: &Device, problem: ConvProblem) -> anyhow::Result<()> {
         let ConvProblem {
             Cin,
             Lin,
@@ -161,16 +158,14 @@ def conv(input, filters, bias, stride, padding):
         let bias = Tensor::randn::<f32>(shape![Cout], Device::CPU);
         let ground = ground_truth(&input, &weight, &bias, stride, 1).unwrap();
 
-        let input = input.to(device).unwrap();
-        let weight = weight.to(device).unwrap();
-        let bias = bias.to(device).unwrap();
-        let ours = input.conv1d(&weight, Some(&bias), stride, 1).unwrap();
-        ours.resolve().unwrap();
-        let ours = ours.to(&Device::CPU).unwrap();
-
-        println!("ours = {:?}", ours);
-        println!("ground = {:?}", ground);
-        ground.all_close(&ours, 1e-3, 1e-3).unwrap();
+        let input = input.to(device)?;
+        let weight = weight.to(device)?;
+        let bias = bias.to(device)?;
+        let ours = input.conv1d(&weight, Some(&bias), stride, 1)?;
+        ours.resolve()?;
+        let tol = 1e-3;
+        ground.all_close(&ours.to(&Device::CPU)?, tol, tol).unwrap();
+        Ok(())
     }
 
     #[derive(Arbitrary, Debug)]
@@ -199,6 +194,6 @@ def conv(input, filters, bias, stride, padding):
             "Cin = {}, Lin = {}, Cout = {}, stride = {}",
             Cin, Lin, Cout, stride
         );
-        run_conv_trial(&device, prob);
+        run_conv_trial(&device, prob).unwrap();
     }
 }

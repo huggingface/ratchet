@@ -188,41 +188,40 @@ def {}(a):
         let device = GPU_DEVICE.with(|d| d.clone());
         let UnaryProblem { op, B, M, N } = prob;
         println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
-        let a = Tensor::randn::<f32>(shape![B, M], Device::CPU);
+        let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
 
         let args = match op {
             UnaryOp::Gelu => "approximate=\"tanh\"",
             _ => "",
         };
-        let ground = ground_truth(&a, &op, args)?;
+        let ground = ground_truth(&input, &op, args)?;
 
-        let a_gpu = a.to(&device)?;
-        let c_gpu = match op {
-            UnaryOp::Gelu => a_gpu.gelu()?,
-            UnaryOp::Tanh => a_gpu.tanh()?,
-            UnaryOp::Exp => a_gpu.exp()?,
-            UnaryOp::Log => a_gpu.log()?,
-            UnaryOp::Sin => a_gpu.sin()?,
-            UnaryOp::Cos => a_gpu.cos()?,
-            UnaryOp::Abs => a_gpu.abs()?,
-            UnaryOp::Sqrt => a_gpu.sqrt()?,
-            UnaryOp::Relu => a_gpu.relu()?,
-            UnaryOp::Floor => a_gpu.floor()?,
-            UnaryOp::Ceil => a_gpu.ceil()?,
+        let input_gpu = input.to(&device)?;
+        let result_gpu = match op {
+            UnaryOp::Gelu => input_gpu.gelu()?,
+            UnaryOp::Tanh => input_gpu.tanh()?,
+            UnaryOp::Exp => input_gpu.exp()?,
+            UnaryOp::Log => input_gpu.log()?,
+            UnaryOp::Sin => input_gpu.sin()?,
+            UnaryOp::Cos => input_gpu.cos()?,
+            UnaryOp::Abs => input_gpu.abs()?,
+            UnaryOp::Sqrt => input_gpu.sqrt()?,
+            UnaryOp::Relu => input_gpu.relu()?,
+            UnaryOp::Floor => input_gpu.floor()?,
+            UnaryOp::Ceil => input_gpu.ceil()?,
         };
-        c_gpu.resolve()?;
+        result_gpu.resolve()?;
 
         let (atol, rtol) = match op {
             UnaryOp::Gelu | UnaryOp::Tanh => (5e-2, 5e-2),
             _ => (1e-4, 1e-4),
         };
 
-        let d_gpu = c_gpu.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, atol, rtol)?;
+        ground.all_close(&result_gpu.to(&Device::CPU)?, atol, rtol)?;
         Ok(())
     }
 
-    #[proptest(cases = 128)]
+    #[proptest(cases = 256)]
     fn test_unary(prob: UnaryProblem) {
         run_unary_trial(prob).unwrap();
     }
