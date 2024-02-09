@@ -97,7 +97,7 @@ impl GPUBuffer {
     #[cfg(feature = "plotting")]
     pub fn trim_id(id: wgpu::Id<wgpu::Buffer>) -> Option<String> {
         let id = format!("{:?}", id);
-        let trimmed = id.trim_start_matches("Id(").trim_end_matches(")");
+        let trimmed = id.trim_start_matches("Id(").trim_end_matches(')');
         if trimmed.len() > 12 && trimmed.chars().all(|c| c.is_numeric()) {
             Some(trimmed[12..].to_string())
         } else {
