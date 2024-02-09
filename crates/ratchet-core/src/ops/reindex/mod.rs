@@ -58,7 +58,7 @@ pub struct ReindexMeta {
     //"Optional" fields below (if not present, they are set to 0)
     permute: glam::UVec4,
     src_offsets: glam::UVec4,
-    broadcast_to: glam::UVec4,
+    broadcast_from: glam::UVec4,
 }
 
 impl OpMetadata for ReindexMeta {}
@@ -117,6 +117,7 @@ impl MetaOperation for Reindex {
         let dst_numel = dst_shape.numel() as u32;
 
         //TODO: move this to the inner ops
+        //TODO: this is incredibly bad
         let permute = match &self.op {
             ReindexOp::Permute(p) => {
                 let dims = p.promote();
@@ -135,17 +136,13 @@ impl MetaOperation for Reindex {
             }
             _ => [0, 0, 0, 0],
         };
-        let broadcast_to = match &self.op {
-            ReindexOp::Broadcast(b) => {
-                let shape = b.to().clone();
-                let shape = padder(shape).0;
-                [
-                    shape[0] as u32,
-                    shape[1] as u32,
-                    shape[2] as u32,
-                    shape[3] as u32,
-                ]
-            }
+        let broadcast_from = match &self.op {
+            ReindexOp::Broadcast(_) => [
+                input_shape[0] as u32,
+                input_shape[1] as u32,
+                input_shape[2] as u32,
+                input_shape[3] as u32,
+            ],
             _ => [0, 0, 0, 0],
         };
         let permute = glam::UVec4::new(permute[0], permute[1], permute[2], permute[3]);
@@ -155,11 +152,11 @@ impl MetaOperation for Reindex {
             src_offsets[2],
             src_offsets[3],
         );
-        let broadcast_to = glam::UVec4::new(
-            broadcast_to[0],
-            broadcast_to[1],
-            broadcast_to[2],
-            broadcast_to[3],
+        let broadcast_from = glam::UVec4::new(
+            broadcast_from[0],
+            broadcast_from[1],
+            broadcast_from[2],
+            broadcast_from[3],
         );
         Ok(ReindexMeta {
             src_stride,
@@ -168,7 +165,7 @@ impl MetaOperation for Reindex {
             dst_numel,
             permute,
             src_offsets,
-            broadcast_to,
+            broadcast_from,
         })
     }
 }

@@ -16,6 +16,10 @@ impl Shape {
         &self.0
     }
 
+    pub fn get(&self, index: usize) -> Option<&usize> {
+        self.0.get(index)
+    }
+
     pub fn insert(&mut self, index: usize, dim: usize) {
         self.0.insert(index, dim);
     }
@@ -185,18 +189,23 @@ impl_try_into_for_shape!(0, 1, 2, 3, 4);
 #[cfg(test)]
 mod tests {
     use crate::shape;
+    use crate::RVec;
     use crate::Shape;
     use proptest::prelude::*;
     use proptest::strategy::{BoxedStrategy, Strategy};
+    use std::ops::Range;
 
     impl Arbitrary for Shape {
-        type Parameters = (usize, usize, usize, usize);
+        type Parameters = RVec<Range<usize>>;
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-            let (max1, max2, max3, max4) = args;
-
-            (1..max1, 1..max2, 1..max3, 1..max4)
+        fn arbitrary_with(mut args: Self::Parameters) -> Self::Strategy {
+            let mut x = args.drain(..);
+            let range = x.next().unwrap();
+            let range2 = x.next().unwrap();
+            let range3 = x.next().unwrap();
+            let range4 = x.next().unwrap();
+            (range, range2, range3, range4)
                 .prop_map(|(val1, val2, val3, val4)| shape![val1, val2, val3, val4])
                 .boxed()
         }

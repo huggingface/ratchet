@@ -43,7 +43,9 @@ mod tests {
     };
     use test_strategy::proptest;
 
-    use crate::{test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor};
+    use crate::{
+        rvec, shape, test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor,
+    };
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -54,9 +56,23 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: ()) -> Self::Strategy {
-            Shape::arbitrary_with((4, 4, 128, 128))
+            let original_ranges = rvec![1..2, 1..8, 1..2, 1..128];
+
+            Shape::arbitrary_with(original_ranges)
                 .prop_flat_map(|original_shape| {
-                    let to = Shape::arbitrary_with((4, 4, 128, 128));
+                    let create_broadcast_range = |dim: usize| {
+                        if original_shape[dim] == 1 {
+                            1..8
+                        } else {
+                            original_shape[dim]..original_shape[dim] + 1
+                        }
+                    };
+                    let r0 = create_broadcast_range(0);
+                    let r1 = create_broadcast_range(1);
+                    let r2 = create_broadcast_range(2);
+                    let r3 = create_broadcast_range(3);
+
+                    let to = Shape::arbitrary_with(rvec![r0, r1, r2, r3]);
                     (Just(original_shape), to)
                 })
                 .prop_map(|(original_shape, to)| BroadcastProblem {
@@ -101,6 +117,15 @@ def slice(a):
         let d_gpu = ours.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-5, 1e-5)?;
         Ok(())
+    }
+
+    #[test]
+    fn test_broadcast_single() {
+        let prob = BroadcastProblem {
+            original_shape: shape![1, 2, 2],
+            op: Broadcast::new(shape![3, 2, 2]),
+        };
+        run_reindex_trial(prob).unwrap();
     }
 
     #[proptest(cases = 16)]
