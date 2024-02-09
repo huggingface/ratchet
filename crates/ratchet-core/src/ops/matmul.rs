@@ -218,8 +218,10 @@ impl Matmul {
         let arank = ashape.rank();
         let brank = bshape.rank();
         let (a_prefix, b_prefix) = (&ashape[..arank - 2], &bshape[..brank - 2]);
-        let c_broadcasted_prefix =
-            Shape::multi_broadcast(&[a_prefix.into(), b_prefix.into()]).unwrap();
+        let c_broadcasted_prefix = Shape::multi_broadcast(&[&a_prefix.into(), &b_prefix.into()])
+            .ok_or_else(|| {
+                anyhow::anyhow!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape)
+            })?;
 
         let (m, ka) = (ashape[arank - 2], ashape[arank - 1]);
         let (kb, n) = (bshape[brank - 2], bshape[brank - 1]);

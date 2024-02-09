@@ -52,6 +52,10 @@ impl Shape {
         self.0.push(dim);
     }
 
+    pub fn is_scalar(&self) -> bool {
+        self.0.iter().all(|&x| x == 1)
+    }
+
     #[inline]
     pub fn left_pad_to(&mut self, scalar: usize, rank: usize) {
         while self.0.len() < rank {
@@ -77,7 +81,7 @@ impl Shape {
         Shape(self.0[range].to_vec().into())
     }
 
-    pub fn multi_broadcast(shapes: &[Shape]) -> Option<Shape> {
+    pub fn multi_broadcast(shapes: &[&Shape]) -> Option<Shape> {
         let max_rank = shapes.iter().map(|shape| shape.rank()).max()?;
         let mut shape: Shape = shape![];
         for i in 0..max_rank {

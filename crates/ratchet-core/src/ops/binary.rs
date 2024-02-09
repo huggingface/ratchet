@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
-    StorageView, Tensor,
+    rvec, wgc, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata, Operation,
+    OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -56,14 +56,20 @@ impl OpMetadata for BinaryMeta {}
 
 impl Operation for Binary {
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        //TODO: THIS IS WRONG
-        if srcs.len() != 2 {
-            panic!("Binary operation expects 2 inputs");
+        let (lhs, rhs) = (srcs[0], srcs[1]);
+        let shapes = &[lhs.shape(), rhs.shape()];
+        if lhs.is_scalar() || rhs.is_scalar() {
+            let scalar = if lhs.is_scalar() { lhs } else { rhs };
+            let other = if lhs.is_scalar() { rhs } else { lhs };
+            return Ok(other.storage_view().clone());
         }
-        if srcs[0].shape() != srcs[1].shape() {
-            panic!("Binary operation expects inputs of the same shape");
+        let broadcasted = Shape::multi_broadcast(shapes);
+        if broadcasted.is_none() {
+            return Err(InvariantError::BroadcastingFailed.into());
         }
-        Ok(srcs[0].storage_view().clone())
+        let broadcasted = broadcasted.unwrap();
+        let ostrides = Strides::from(&broadcasted);
+        Ok(StorageView::new(broadcasted, lhs.dt(), ostrides))
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
@@ -93,17 +99,17 @@ impl MetaOperation for Binary {
         }
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let a = &self.lhs;
-        let a_rank = a.shape().rank();
-        let M = a.shape()[a_rank - 2];
-        let a_prefix = &a.shape()[..(a_rank - 2)];
-        let stacks = a_prefix.iter().product::<usize>();
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+        let dst_rank = dst.shape().rank();
+        let M = dst.shape()[dst_rank - 2];
+        let dst_prefix = &dst.shape()[..(dst_rank - 2)];
+        let stacks = dst_prefix.iter().product::<usize>();
 
         let wgcx = WorkgroupCount::div_ceil(M as _, 64);
         Ok(wgc![wgcx as _, stacks as _, 1])
     }
 
+    //TODO: binary inplace!
     fn storage_bind_group_layout(
         &self,
         _inplace: bool,
@@ -124,12 +130,14 @@ impl MetaOperation for Binary {
 
     fn metadata(
         &self,
-        _dst: &Tensor,
+        dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        let a = &self.lhs;
-        let a_rank = a.shape().rank();
-        let [M, N] = [a.shape()[a_rank - 2] as u32, a.shape()[a_rank - 1] as u32];
+        let dst_rank = dst.shape().rank();
+        let [M, N] = [
+            dst.shape()[dst_rank - 2] as u32,
+            dst.shape()[dst_rank - 1] as u32,
+        ];
         Ok(BinaryMeta { M, N })
     }
 }
