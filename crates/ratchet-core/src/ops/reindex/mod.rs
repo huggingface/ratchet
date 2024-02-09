@@ -1,5 +1,8 @@
+mod broadcast;
 mod permute;
 mod slice;
+
+pub use broadcast::Broadcast;
 pub use permute::Permute;
 pub use slice::Slice;
 
@@ -11,15 +14,13 @@ use crate::{
     rvec, wgc, KernelElement, MetaOperation, OpMetadata, OperationError, RVec, Shape, Strides,
     Tensor,
 };
+use glam::UVec4;
 
-#[cfg(test)]
-use test_strategy::Arbitrary;
-
-#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Clone)]
 pub enum ReindexOp {
     Permute(Permute),
     Slice(Slice),
+    Broadcast(Broadcast),
 }
 
 impl ReindexOp {
@@ -27,6 +28,7 @@ impl ReindexOp {
         match self {
             ReindexOp::Permute(_) => "permute",
             ReindexOp::Slice(_) => "slice",
+            ReindexOp::Broadcast(_) => "broadcast",
         }
     }
 }
@@ -56,6 +58,7 @@ pub struct ReindexMeta {
     //"Optional" fields below (if not present, they are set to 0)
     permute: glam::UVec4,
     src_offsets: glam::UVec4,
+    broadcast_to: glam::UVec4,
 }
 
 impl OpMetadata for ReindexMeta {}
@@ -108,11 +111,12 @@ impl MetaOperation for Reindex {
         let (input_shape, input_strides) = padder(self.input.shape().clone());
         let (dst_shape, dst_strides) = padder(dst.shape().clone());
 
-        let src_stride = glam::UVec4::try_from(&input_strides).unwrap();
-        let dst_stride = glam::UVec4::try_from(&dst_strides).unwrap();
+        let src_stride = UVec4::try_from(&input_strides).unwrap();
+        let dst_stride = UVec4::try_from(&dst_strides).unwrap();
         let src_numel = input_shape.numel() as u32;
         let dst_numel = dst_shape.numel() as u32;
 
+        //TODO: move this to the inner ops
         let permute = match &self.op {
             ReindexOp::Permute(p) => {
                 let dims = p.promote();
@@ -131,12 +135,31 @@ impl MetaOperation for Reindex {
             }
             _ => [0, 0, 0, 0],
         };
+        let broadcast_to = match &self.op {
+            ReindexOp::Broadcast(b) => {
+                let shape = b.to().clone();
+                let shape = padder(shape).0;
+                [
+                    shape[0] as u32,
+                    shape[1] as u32,
+                    shape[2] as u32,
+                    shape[3] as u32,
+                ]
+            }
+            _ => [0, 0, 0, 0],
+        };
         let permute = glam::UVec4::new(permute[0], permute[1], permute[2], permute[3]);
         let src_offsets = glam::UVec4::new(
             src_offsets[0],
             src_offsets[1],
             src_offsets[2],
             src_offsets[3],
+        );
+        let broadcast_to = glam::UVec4::new(
+            broadcast_to[0],
+            broadcast_to[1],
+            broadcast_to[2],
+            broadcast_to[3],
         );
         Ok(ReindexMeta {
             src_stride,
@@ -145,6 +168,7 @@ impl MetaOperation for Reindex {
             dst_numel,
             permute,
             src_offsets,
+            broadcast_to,
         })
     }
 }

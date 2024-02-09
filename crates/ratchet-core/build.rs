@@ -112,6 +112,7 @@ impl std::fmt::Display for UnaryOp {
 pub enum ReindexOp {
     Permute,
     Slice,
+    Broadcast,
 }
 
 impl std::fmt::Display for ReindexOp {
@@ -119,6 +120,7 @@ impl std::fmt::Display for ReindexOp {
         let s = match self {
             ReindexOp::Permute => "permute",
             ReindexOp::Slice => "slice",
+            ReindexOp::Broadcast => "broadcast",
         };
         write!(f, "{}", s)
     }
@@ -132,12 +134,18 @@ impl ReindexOp {
     src_index[metadata.perm[0]] = dst_index[0]; 
     src_index[metadata.perm[1]] = dst_index[1];
     src_index[metadata.perm[2]] = dst_index[2];
-    src_index[metadata.perm[3]] = dst_index[3];
-                "#
-            .to_string(),
+    src_index[metadata.perm[3]] = dst_index[3];"#
+                .to_string(),
             ReindexOp::Slice => r#"
-    var src_index = dst_index;
-                "#
+    var src_index = dst_index;"#
+                .to_string(),
+            ReindexOp::Broadcast => r#"
+    var src_index = vec4<u32>(0u);
+    for (var i: i32 = 0; i < 4; i++) {
+        if (metadata.broadcast_to[i] > 1) {
+            src_index[i] = dst_index[i];
+        } 
+    }"#
             .to_string(),
         }
     }

@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides,
-    TensorDType, TensorId,
+    InvariantError, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage,
+    Strides, TensorDType, TensorId,
 };
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
@@ -212,8 +212,7 @@ impl Tensor {
         let shape = self.shape();
         let dt = self.dt();
         let storage = self.storage();
-        let storage_fmt = self
-            .storage()
+        let storage_fmt = storage
             .as_ref()
             .map(|s| s.plot_fmt())
             .unwrap_or_else(|| "Unresolved".to_string());
@@ -227,7 +226,35 @@ macro_rules! impl_binary_op {
             Binary::check_invariants(&[self, other])?;
 
             let binary = Binary::new(self.clone(), other.clone(), $op);
-            let new_view = binary.infer_output(&[self, other])?;
+            let (lhs, rhs) = (self, other);
+            let shapes = &[lhs.shape(), rhs.shape()];
+            if lhs.is_scalar() || rhs.is_scalar() {
+                let other = if lhs.is_scalar() { rhs } else { lhs };
+                let new_view = other.view.clone();
+                return Ok(Tensor::lazy(
+                    LazyOp::Binary(binary),
+                    new_view,
+                    self.device.clone(),
+                ));
+            }
+
+            let broadcasted = Shape::multi_broadcast(shapes);
+            if broadcasted.is_none() {
+                return Err(InvariantError::BroadcastingFailed.into());
+            }
+            let broadcasted = broadcasted.unwrap();
+            let left_required = self.shape() != &broadcasted;
+            let right_required = other.shape() != &broadcasted;
+
+            let (lhs, rhs) = if left_required {
+                (self.broadcast_to(broadcasted.clone())?, other.clone())
+            } else if right_required {
+                (self.clone(), other.broadcast_to(broadcasted.clone())?)
+            } else {
+                (self.clone(), other.clone())
+            };
+
+            let new_view = binary.infer_output(&[&lhs, &rhs])?;
             Ok(Tensor::lazy(
                 LazyOp::Binary(binary),
                 new_view,
@@ -359,8 +386,8 @@ impl Tensor {
         let permute = Permute::new(dims.to_vec());
         let out_view = permute.infer_output(&[self])?;
 
-        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
-        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
+        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
+        Ok(Tensor::lazy(op, out_view, self.device.clone()))
     }
 
     //TODO: switch dim to isize and allow negative indexing
@@ -386,6 +413,14 @@ impl Tensor {
             new_view,
             self.device.clone(),
         ))
+    }
+
+    pub fn broadcast_to(&self, shape: Shape) -> anyhow::Result<Tensor> {
+        Broadcast::check_invariants(&[self])?;
+        let broadcast = Broadcast::new(shape);
+        let new_view = broadcast.infer_output(&[self])?;
+        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Broadcast(broadcast)));
+        Ok(Tensor::lazy(op, new_view, self.device.clone()))
     }
 
     #[cfg(feature = "rand")]

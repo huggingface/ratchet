@@ -101,6 +101,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/layernorm_vec2.wgsl"),
         );
         m.insert(
+            "broadcast_scalar",
+            include_str!(r"../kernels/generated/broadcast_scalar.wgsl"),
+        );
+        m.insert(
             "tanh_scalar",
             include_str!(r"../kernels/generated/tanh_scalar.wgsl"),
         );
