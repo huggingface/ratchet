@@ -162,6 +162,17 @@ impl From<&[usize]> for Shape {
     }
 }
 
+impl From<&Shape> for glam::UVec4 {
+    fn from(shape: &Shape) -> Self {
+        glam::UVec4::new(
+            shape[0] as u32,
+            shape[1] as u32,
+            shape[2] as u32,
+            shape[3] as u32,
+        )
+    }
+}
+
 macro_rules! impl_try_into_for_shape {
     ($($N:expr),*) => {
         $(

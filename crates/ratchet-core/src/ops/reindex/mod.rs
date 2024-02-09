@@ -51,6 +51,8 @@ impl Reindex {
 
 #[derive(Debug, ShaderType)]
 pub struct ReindexMeta {
+    src_shape: glam::UVec4,
+    dst_shape: glam::UVec4,
     src_stride: glam::UVec4,
     dst_stride: glam::UVec4,
     src_numel: u32,
@@ -58,7 +60,6 @@ pub struct ReindexMeta {
     //"Optional" fields below (if not present, they are set to 0)
     permute: glam::UVec4,
     src_offsets: glam::UVec4,
-    broadcast_from: glam::UVec4,
 }
 
 impl OpMetadata for ReindexMeta {}
@@ -116,6 +117,9 @@ impl MetaOperation for Reindex {
         let src_numel = input_shape.numel() as u32;
         let dst_numel = dst_shape.numel() as u32;
 
+        let src_shape = UVec4::try_from(&input_shape).unwrap();
+        let dst_shape = UVec4::try_from(&dst_shape).unwrap();
+
         //TODO: move this to the inner ops
         //TODO: this is incredibly bad
         let permute = match &self.op {
@@ -136,15 +140,6 @@ impl MetaOperation for Reindex {
             }
             _ => [0, 0, 0, 0],
         };
-        let broadcast_from = match &self.op {
-            ReindexOp::Broadcast(_) => [
-                input_shape[0] as u32,
-                input_shape[1] as u32,
-                input_shape[2] as u32,
-                input_shape[3] as u32,
-            ],
-            _ => [0, 0, 0, 0],
-        };
         let permute = glam::UVec4::new(permute[0], permute[1], permute[2], permute[3]);
         let src_offsets = glam::UVec4::new(
             src_offsets[0],
@@ -152,20 +147,15 @@ impl MetaOperation for Reindex {
             src_offsets[2],
             src_offsets[3],
         );
-        let broadcast_from = glam::UVec4::new(
-            broadcast_from[0],
-            broadcast_from[1],
-            broadcast_from[2],
-            broadcast_from[3],
-        );
         Ok(ReindexMeta {
+            src_shape,
+            dst_shape,
             src_stride,
             dst_stride,
             src_numel,
             dst_numel,
             permute,
             src_offsets,
-            broadcast_from,
         })
     }
 }
