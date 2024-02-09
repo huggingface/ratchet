@@ -225,12 +225,12 @@ macro_rules! impl_binary_op {
         pub fn $method_name(&self, other: &Tensor) -> anyhow::Result<Tensor> {
             Binary::check_invariants(&[self, other])?;
 
-            let binary = Binary::new(self.clone(), other.clone(), $op);
             let (lhs, rhs) = (self, other);
             let shapes = &[lhs.shape(), rhs.shape()];
             if lhs.is_scalar() || rhs.is_scalar() {
                 let other = if lhs.is_scalar() { rhs } else { lhs };
                 let new_view = other.view.clone();
+                let binary = Binary::new(self.clone(), other.clone(), $op);
                 return Ok(Tensor::lazy(
                     LazyOp::Binary(binary),
                     new_view,
@@ -253,8 +253,9 @@ macro_rules! impl_binary_op {
             } else {
                 (self.clone(), other.clone())
             };
-
+            let binary = Binary::new(lhs.clone(), rhs.clone(), $op);
             let new_view = binary.infer_output(&[&lhs, &rhs])?;
+
             Ok(Tensor::lazy(
                 LazyOp::Binary(binary),
                 new_view,
