@@ -1,4 +1,4 @@
-use js_sys::{ArrayBuffer, Uint8Array, JSON};
+use js_sys::{JSON};
 
 use wasm_bindgen::{prelude::*, JsValue};
 use wasm_bindgen_futures::JsFuture;
@@ -34,7 +34,7 @@ pub(crate) async fn fetch(url: &str) -> Result<Response, JsValue> {
     opts.method("GET");
     opts.mode(RequestMode::Cors);
 
-    let request = Request::new_with_str_and_init(&url, &opts)?;
+    let request = Request::new_with_str_and_init(url, &opts)?;
 
     let window = web_sys::window().unwrap();
     let promise = window.fetch_with_request(&request);

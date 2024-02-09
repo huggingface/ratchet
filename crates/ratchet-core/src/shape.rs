@@ -16,6 +16,10 @@ impl Shape {
         &self.0
     }
 
+    pub fn get(&self, index: usize) -> Option<&usize> {
+        self.0.get(index)
+    }
+
     pub fn insert(&mut self, index: usize, dim: usize) {
         self.0.insert(index, dim);
     }
@@ -52,6 +56,10 @@ impl Shape {
         self.0.push(dim);
     }
 
+    pub fn is_scalar(&self) -> bool {
+        self.0.iter().all(|&x| x == 1)
+    }
+
     #[inline]
     pub fn left_pad_to(&mut self, scalar: usize, rank: usize) {
         while self.0.len() < rank {
@@ -77,7 +85,7 @@ impl Shape {
         Shape(self.0[range].to_vec().into())
     }
 
-    pub fn multi_broadcast(shapes: &[Shape]) -> Option<Shape> {
+    pub fn multi_broadcast(shapes: &[&Shape]) -> Option<Shape> {
         let max_rank = shapes.iter().map(|shape| shape.rank()).max()?;
         let mut shape: Shape = shape![];
         for i in 0..max_rank {
@@ -154,6 +162,17 @@ impl From<&[usize]> for Shape {
     }
 }
 
+impl From<&Shape> for glam::UVec4 {
+    fn from(shape: &Shape) -> Self {
+        glam::UVec4::new(
+            shape[0] as u32,
+            shape[1] as u32,
+            shape[2] as u32,
+            shape[3] as u32,
+        )
+    }
+}
+
 macro_rules! impl_try_into_for_shape {
     ($($N:expr),*) => {
         $(
@@ -177,3 +196,40 @@ macro_rules! impl_try_into_for_shape {
 }
 
 impl_try_into_for_shape!(0, 1, 2, 3, 4);
+
+#[cfg(test)]
+mod tests {
+    use crate::shape;
+    use crate::RVec;
+    use crate::Shape;
+    use proptest::prelude::*;
+    use proptest::strategy::{BoxedStrategy, Strategy};
+    use std::ops::Range;
+
+    impl Arbitrary for Shape {
+        type Parameters = RVec<Range<usize>>;
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(mut args: Self::Parameters) -> Self::Strategy {
+            let mut x = args.drain(..);
+            let range = x.next().unwrap();
+            let range2 = x.next().unwrap();
+            let range3 = x.next().unwrap();
+            let range4 = x.next().unwrap();
+            (range, range2, range3, range4)
+                .prop_map(|(val1, val2, val3, val4)| shape![val1, val2, val3, val4])
+                .boxed()
+        }
+    }
+
+    impl Shape {
+        pub fn as_torch(&self) -> String {
+            let mut shape = format!("({}", self[0]);
+            for dim in self.iter().skip(1) {
+                shape.push_str(&format!(", {}", dim));
+            }
+            shape.push(')');
+            shape
+        }
+    }
+}

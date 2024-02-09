@@ -1,11 +1,13 @@
 mod cpu_buffer;
 mod gpu_buffer;
 
+use std::io::{BufRead, Seek};
+
 use bytemuck::NoUninit;
 pub use cpu_buffer::*;
 pub use gpu_buffer::*;
 
-use crate::{Device, DeviceError, Shape};
+use crate::{Device, DeviceError, Shape, TensorDType};
 
 use crate::DType;
 
@@ -23,10 +25,30 @@ impl Storage {
         }
     }
 
+    pub fn from_disk<T: TensorDType, R: BufRead + Seek>(
+        reader: &mut R,
+        shape: &Shape,
+        device: &Device,
+    ) -> Result<Self, DeviceError> {
+        match device {
+            Device::CPU => Ok(Storage::CPU(CPUBuffer::from_disk::<T, R>(reader, shape)?)),
+            Device::GPU(_) => Ok(Storage::GPU(GPUBuffer::from_disk::<T, R>(
+                reader, shape, device,
+            )?)),
+        }
+    }
+
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &Device) -> Self {
         match device {
             Device::CPU => Storage::CPU(CPUBuffer::from_slice(data, shape)),
             Device::GPU(g) => Storage::GPU(GPUBuffer::from_slice(data, shape, g)),
+        }
+    }
+
+    pub fn from_bytes(data: &[u8], alignment: usize, device: &Device) -> Self {
+        match device {
+            Device::CPU => Storage::CPU(CPUBuffer::from_bytes(data, alignment)),
+            Device::GPU(g) => Storage::GPU(GPUBuffer::from_bytes(data, alignment, g)),
         }
     }
 
@@ -40,14 +62,20 @@ impl Storage {
     pub fn try_cpu(&self) -> Result<&CPUBuffer, DeviceError> {
         match self {
             Storage::CPU(c) => Ok(c),
-            _ => unimplemented!(),
+            Storage::GPU(_g) => Err(DeviceError::DeviceMismatch(
+                "CPU".to_string(),
+                "GPU".to_string(),
+            )),
         }
     }
 
     pub fn try_gpu(&self) -> Result<&GPUBuffer, DeviceError> {
         match self {
             Storage::GPU(g) => Ok(g),
-            _ => unimplemented!(),
+            Storage::CPU(_c) => Err(DeviceError::DeviceMismatch(
+                "GPU".to_string(),
+                "CPU".to_string(),
+            )),
         }
     }
 

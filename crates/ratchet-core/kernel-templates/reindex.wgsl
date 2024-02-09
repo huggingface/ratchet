@@ -5,6 +5,8 @@ var<storage, read> X: array<f32>;
 var<storage, read_write> Y: array<f32>;
 
 struct Meta {
+    src_shape: vec4<u32>,
+    dst_shape: vec4<u32>,
     src_stride: vec4<u32>,
     dst_stride: vec4<u32>,
     src_numel: u32,

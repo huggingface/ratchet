@@ -82,13 +82,15 @@ impl RenderableGraph {
             let node_graph_id = renderable_node.plot_id;
             graph_index_map.insert(t.id(), renderable_node.plot_id);
             renderable_node.style_as_op();
-
             t.op().srcs().iter().for_each(|src_t| {
                 if let Some(src_id) = graph_index_map.get(&src_t.id()) {
                     g.create_edge(Cow::Owned(src_t.plot_fmt()), *src_id, node_graph_id);
                 }
             });
         }
+
+        g.create_node(leaf.id(), Cow::Borrowed(leaf.op().name()))
+            .style_as_output();
 
         Ok(g)
     }
@@ -99,7 +101,6 @@ impl RenderableGraph {
         let mut f = NamedTempFile::new().expect("Failed to create temp file.");
         render_to(&mut f, self)?;
         Command::new("dot")
-            .arg("-Goverlap=scale")
             .arg("-Tsvg")
             .arg(f.path())
             .arg("-o")

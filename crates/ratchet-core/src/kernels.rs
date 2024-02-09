@@ -101,6 +101,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/layernorm_vec2.wgsl"),
         );
         m.insert(
+            "broadcast_scalar",
+            include_str!(r"../kernels/generated/broadcast_scalar.wgsl"),
+        );
+        m.insert(
             "tanh_scalar",
             include_str!(r"../kernels/generated/tanh_scalar.wgsl"),
         );
@@ -210,7 +214,6 @@ lazy_static! {
             "sgemm_scalar",
             include_str!(r"../kernels/sgemm_scalar.wgsl"),
         );
-        m.insert("add_scalar", include_str!(r"../kernels/add_scalar.wgsl"));
         m.insert("sgemm_vec2", include_str!(r"../kernels/sgemm_vec2.wgsl"));
         m.insert(
             "softmax_vec2",
