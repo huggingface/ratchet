@@ -36,10 +36,14 @@ jobs:
       - name: Install rust toolchain
         uses: dtolnay/rust-toolchain@1.72
 
-      - name: Install cargo-nextest 
+      - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      - name: Install just
+        uses: extractions/setup-just@v1
+        with:
+          just-version: 1.5.0 # optional semver specification, otherwise latest
 
       - name: (linux) install lavapipe, vulkan sdk, alsa
         if: matrix.os == 'ubuntu-latest'
@@ -87,22 +91,26 @@ jobs:
           echo "VK_DRIVER_FILES=$PWD/mesa/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
           echo "GALLIUM_DRIVER=llvmpipe" >> "$GITHUB_ENV"
 
-      - name: Setup python 
+      - name: Setup python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10.11'
-          cache: 'pip'
+          python-version: "3.10.11"
+          cache: "pip"
       - run: pip install -r requirements.txt
 
       - name: run tests
         shell: bash
         run: |
           set -e
-          cargo nextest run --features pyo3 --no-fail-fast --no-capture
+          cargo nextest run -j 1 --features pyo3 --no-fail-fast
 
-          # - name: Install wasm-pack 
-          #   run: |
-          #     curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Install integration test dependencies
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          npm install -g pnpm
 
-          # - name: Run integration tests
-          #   run: (cd crates/ratchet-integration-tests;sh run-tests.sh)
+      - name: Run wasm-bindgen-test integration tests
+        run: |
+          pnpm install -r
+          just wasm ratchet-client
+          just wasm-it-headless
