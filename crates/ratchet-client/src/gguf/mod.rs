@@ -1,18 +1,19 @@
 //! Support for the GGUF file format.
 //! Adapted from https://github.com/huggingface/candle/blob/main/candle-core/src/quantized/gguf_file.rs
 
-use crate::error::Result;
+use self::ggml::GgmlDType;
+use crate::error::{self, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use futures_util::{future, stream, AsyncWrite, StreamExt};
+use ratchet::shape;
 use ratchet::{Device, Shape, Tensor};
 use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use self::ggml::GgmlDType;
-
-pub mod ggml;
-pub mod ggml_file;
-pub mod k_quants;
-pub mod utils;
+// pub mod ggml;
+// pub mod ggml_file;
+// pub mod k_quants;
+// pub mod utils;
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,13 +82,16 @@ impl TensorInfo {
             .seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))
             .await?;
         reader.read_exact(&mut raw_data).await?;
-        ggml_file::qtensor_from_ggml(
-            self.ggml_dtype,
-            &raw_data,
-            // self.shape.dims().to_vec(),
-            self.shape.to_vec(),
-            device,
-        )
+        // ggml_file::qtensor_from_ggml(
+        //     self.ggml_dtype,
+        //     &raw_data,
+        //     // self.shape.dims().to_vec(),
+        //     self.shape.to_vec(),
+        //     device,
+        // )
+        // [TODO] Implement
+        let tensor = ratchet::Tensor::randn(shape![1, 2], device.clone());
+        Ok(tensor)
     }
 }
 
@@ -398,6 +402,31 @@ impl ValueType {
     }
 }
 
+trait AsyncReadExt2 {
+    async fn read_u32_into(&mut self, n: u32) -> Result<Vec<u32>>;
+    async fn read_u64_into(&mut self, n: u32) -> Result<Vec<u64>>;
+}
+
+impl<T: AsyncRead + Unpin> AsyncReadExt2 for T {
+    async fn read_u32_into(&mut self, n: u32) -> Result<Vec<u32>> {
+        let mut result = vec![];
+        for i in 0..n {
+            let elem = self.read_u32_le().await.map_err(error::Error::wrap)?;
+            result.push(elem)
+        }
+        Ok(result)
+    }
+    async fn read_u64_into(&mut self, n: u32) -> Result<Vec<u64>> {
+        let mut result = vec![];
+        for i in 0..n {
+            let elem = self.read_u64_le().await.map_err(error::Error::wrap)?;
+            result.push(elem)
+        }
+
+        Ok(result)
+    }
+}
+
 impl Content {
     pub async fn read<R: AsyncSeek + AsyncRead + Unpin>(reader: &mut R) -> Result<Self> {
         let magic = VersionedMagic::read(reader).await?;
@@ -426,13 +455,15 @@ impl Content {
 
             let mut dimensions: Vec<usize> = match magic {
                 VersionedMagic::GgufV1 => {
-                    let mut dimensions = vec![0; n_dimensions as usize];
-                    reader.read_u32_into(&mut dimensions).await?;
+                    // let mut dimensions = vec![0; n_dimensions as usize];
+                    // reader.read_u32_into(&mut dimensions).await?;
+                    let dimensions = reader.read_u32_into(n_dimensions).await?;
                     dimensions.into_iter().map(|c| c as usize).collect()
                 }
                 VersionedMagic::GgufV2 | VersionedMagic::GgufV3 => {
-                    let mut dimensions = vec![0; n_dimensions as usize];
-                    reader.read_u64_into(&mut dimensions).await?;
+                    // let mut dimensions = vec![0; n_dimensions as usize];
+                    // reader.read_u64_into(&mut dimensions).await?;
+                    let dimensions = reader.read_u64_into(n_dimensions).await?;
                     dimensions.into_iter().map(|c| c as usize).collect()
                 }
             };
@@ -450,7 +481,7 @@ impl Content {
                 },
             );
         }
-        let position = reader.stream_position()?;
+        let position = reader.stream_position().await?;
         let alignment = match metadata.get("general.alignment") {
             Some(Value::U8(v)) => *v as u64,
             Some(Value::U16(v)) => *v as u64,
