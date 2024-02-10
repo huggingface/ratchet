@@ -116,6 +116,31 @@ impl DeviceStorage for GPUBuffer {
         Ok(self.clone())
     }
 
+    #[cfg(target_arch = "wasm32")]
+    async fn to_cpu(&self, device: &Device) -> Result<CPUBuffer, DeviceError> {
+        self.validate_usages(BufferUsages::COPY_SRC)?;
+        let device = device.try_gpu()?;
+        let buffer_slice = self.inner.slice(..);
+        let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
+        let alignment = self.alignment;
+
+        wgpu::util::DownloadBuffer::read_buffer(
+            device,
+            device.queue(),
+            &buffer_slice,
+            move |buffer| {
+                tx.send(match buffer {
+                    Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
+                    Err(error) => Err(error),
+                })
+                .expect("Failed to send result of read_buffer");
+            },
+        );
+        device.poll(wgpu::Maintain::Wait);
+        Ok(rx.receive().await.unwrap()?)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn to_cpu(&self, device: &Device) -> Result<CPUBuffer, DeviceError> {
         self.validate_usages(BufferUsages::COPY_SRC)?;
         let device = device.try_gpu()?;

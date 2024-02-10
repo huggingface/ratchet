@@ -5,7 +5,7 @@ members = [
     "crates/ratchet-it-rust",
     "crates/ratchet-loader",
     "crates/ratchet-models",
-    "crates/ratchet-nn",
+    "crates/ratchet-nn", 
 ]
 resolver = "2"
 
@@ -21,7 +21,7 @@ strip = true
 #debug = 2
 
 [workspace.dependencies]
-wgpu = { version = "0.18", features = ["fragile-send-sync-non-atomic-wasm", "expose-ids"] }
+wgpu = { version = "0.18", features = ["expose-ids", "fragile-send-sync-non-atomic-wasm"] }
 anyhow = "1.0.40"
 bytemuck = { version = "1.14.0", features=["wasm_simd", "aarch64_simd", "extern_crate_alloc"] }
 num-traits = "0.2.17"

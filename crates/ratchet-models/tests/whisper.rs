@@ -1,12 +1,11 @@
-use ratchet::{shape, Device, DeviceRequest, Tensor};
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
 use ratchet_client::ApiBuilder;
 use ratchet_loader::GGMLCompatible;
 use ratchet_models::{Whisper, WhisperEncoder};
 use ratchet_nn::Module;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_test::wasm_bindgen_test;
-
-wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+use wasm_bindgen_test::*;
 
 fn log_init() {
     console_error_panic_hook::set_once();
@@ -16,6 +15,7 @@ fn log_init() {
 
 #[wasm_bindgen_test]
 async fn chrome_tiny_encoder() -> Result<(), JsValue> {
+    use ratchet::{shape, Device, DeviceRequest, Tensor};
     log_init();
     let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp").build();
     let model = model_repo.get("ggml-tiny.bin").await?;
@@ -24,14 +24,12 @@ async fn chrome_tiny_encoder() -> Result<(), JsValue> {
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(uint8array.to_vec()));
     let gg = Whisper::load_ggml(&mut reader).unwrap();
 
-    let device = Device::request_device(DeviceRequest::GPU).unwrap();
+    let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
     let encoder = WhisperEncoder::load(&gg, &mut reader, &device).unwrap();
     let input = Tensor::randn::<f32>(shape![1, 80, 3000], device);
-
     let result = encoder.forward(&input).unwrap();
     result.resolve().unwrap();
-    let ours = result.to(&Device::CPU).unwrap();
-    println!("OURS: {:#?}", ours);
-
+    let ours = result.to(&Device::CPU).await.unwrap();
+    log::warn!("OURS: {:?}", ours);
     Ok(())
 }
