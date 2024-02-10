@@ -1,5 +1,6 @@
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
+use ratchet::{shape, Device, DeviceRequest, Tensor};
 use ratchet_client::ApiBuilder;
 use ratchet_loader::GGMLCompatible;
 use ratchet_models::{Whisper, WhisperEncoder};
@@ -15,7 +16,6 @@ fn log_init() {
 
 #[wasm_bindgen_test]
 async fn chrome_tiny_encoder() -> Result<(), JsValue> {
-    use ratchet::{shape, Device, DeviceRequest, Tensor};
     log_init();
     let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp").build();
     let model = model_repo.get("ggml-tiny.bin").await?;
