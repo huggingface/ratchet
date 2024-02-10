@@ -3,7 +3,6 @@ mod k_quants;
 
 pub use ggml::*;
 
-
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
     #[error("Invalid GGML Format: {0:#x}")]
