@@ -16,7 +16,6 @@ use std::sync::Arc;
 #[cfg(feature = "rand")]
 use {rand::prelude::*, rand_distr::StandardNormal};
 
-#[cfg(feature = "pyo3")]
 #[cfg(not(target_arch = "wasm32"))]
 use {
     ndarray::{ArrayD, ArrayViewD, Dimension},
@@ -779,7 +778,6 @@ impl CloseStats {
 }
 
 /// Conversion to and from numpy arrays
-#[cfg(feature = "pyo3")]
 #[cfg(not(target_arch = "wasm32"))]
 impl Tensor {
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
@@ -837,7 +835,6 @@ impl Tensor {
     }
 }
 
-#[cfg(feature = "pyo3")]
 #[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType> From<ArrayD<T>> for Tensor {
     fn from(it: ArrayD<T>) -> Self {
@@ -866,7 +863,6 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
     }
 }
 
-#[cfg(feature = "pyo3")]
 #[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
     fn from(array: &PyArrayDyn<T>) -> Self {
