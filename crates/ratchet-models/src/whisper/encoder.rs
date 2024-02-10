@@ -228,7 +228,7 @@ impl WhisperEncoder {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use crate::{Whisper, WhisperEncoder};
     use hf_hub::api::sync::Api;

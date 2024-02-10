@@ -137,6 +137,12 @@ impl DeviceStorage for CPUBuffer {
         Ok(GPUBuffer::from_bytes(bytes, layout.align(), gpu_device))
     }
 
+    #[cfg(target_arch = "wasm32")]
+    async fn to_cpu(&self, _device: &Device) -> Result<CPUBuffer, DeviceError> {
+        Ok(self.clone())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn to_cpu(&self, _device: &Device) -> Result<CPUBuffer, DeviceError> {
         Ok(self.clone())
     }

@@ -628,25 +628,6 @@ impl Tensor {
         Ok(())
     }
 
-    fn to_cpu(&self) -> Result<Tensor, TensorError> {
-        if self.device().is_cpu() || !self.resolved() {
-            return Ok(self.clone());
-        }
-        let storage_guard = self.storage();
-        let gpu_buf = storage_guard
-            .as_ref()
-            .ok_or(TensorError::TransferError)?
-            .try_gpu()?;
-        let cpu_buf = gpu_buf.to_cpu(&self.device)?;
-
-        Ok(Tensor::new(
-            LazyOp::Const,
-            self.view.clone(),
-            Some(Storage::CPU(cpu_buf)),
-            Device::CPU,
-        ))
-    }
-
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
         if self.device().is_gpu() || !self.resolved() {
             return Ok(self.clone());
@@ -667,19 +648,6 @@ impl Tensor {
         ))
     }
 
-    /// Transfers the tensor to the specified device.
-    ///
-    /// If the tensor is already on the specified device, it will be returned as-is,
-    /// and the underlying storage will not be copied.
-    /// If the tensor is on a different device, it will be copied to the specified device.
-    pub fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
-        match (self.device(), device) {
-            (Device::GPU(_), Device::CPU) => self.to_cpu(),
-            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
-            _ => Ok(self.clone()),
-        }
-    }
-
     pub fn deep_clone(&self) -> Tensor {
         let storage_guard = self.storage();
         let storage = storage_guard.as_ref().unwrap();
@@ -693,8 +661,75 @@ impl Tensor {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Tensor {
-    #[cfg(not(target_arch = "wasm32"))]
+    async fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        if self.device().is_cpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let gpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_gpu()?;
+        let cpu_buf = gpu_buf.to_cpu(&self.device).await?;
+
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(Storage::CPU(cpu_buf)),
+            Device::CPU,
+        ))
+    }
+
+    /// Transfers the tensor to the specified device.
+    ///
+    /// If the tensor is already on the specified device, it will be returned as-is,
+    /// and the underlying storage will not be copied.
+    /// If the tensor is on a different device, it will be copied to the specified device.
+    pub async fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu().await,
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
+            _ => Ok(self.clone()),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Tensor {
+    /// Transfers the tensor to the specified device.
+    ///
+    /// If the tensor is already on the specified device, it will be returned as-is,
+    /// and the underlying storage will not be copied.
+    /// If the tensor is on a different device, it will be copied to the specified device.
+    pub fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu(),
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
+            _ => Ok(self.clone()),
+        }
+    }
+
+    fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        if self.device().is_cpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let gpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_gpu()?;
+        let cpu_buf = gpu_buf.to_cpu(&self.device)?;
+
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(Storage::CPU(cpu_buf)),
+            Device::CPU,
+        ))
+    }
+
     pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
         if self.shape() != other.shape() {
             anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
