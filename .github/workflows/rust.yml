@@ -24,13 +24,15 @@ jobs:
           - name: Windows x86_64
             os: windows-2022
             target: x86_64-pc-windows-msvc
+            arch: win64
             kind: native
 
           - name: MacOS aarch64
             os: macos-14
             target: aarch64-apple-darwin
+            arch: arm64
             kind: native
-          #TODO: android?
+
     steps:
       - uses: actions/checkout@v4
       - name: Install rust toolchain
@@ -98,6 +100,29 @@ jobs:
           cache: "pip"
       - run: pip install -r requirements.txt
 
+      - name: Get Chromedriver version
+        id: get_version
+        run: |
+          import requests
+          import os
+
+          response = requests.get('https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json')
+          data = response.json()
+          stable_version = data['channels']['Stable']['version']
+          print(f"::set-output name=version::{stable_version}")
+        shell: python
+
+      - name: Download and extract Chromedriver
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          PLATFORM=${{ matrix.platform }}
+          ARCH=${{ matrix.arch }}
+          URL="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/${PLATFORM}-${ARCH}/chromedriver-${PLATFORM}-${ARCH}.zip"
+          wget $URL -O chromedriver.zip
+          unzip chromedriver.zip
+          echo "${PWD}" >> $GITHUB_PATH
+        shell: bash
+
       - name: run tests
         shell: bash
         run: |
@@ -112,5 +137,7 @@ jobs:
       - name: Run wasm-bindgen-test integration tests
         run: |
           pnpm install -r
-          just wasm ratchet-client
+          just wasm ratchet-models chrome
+          just wasm ratchet-client chrome
           just wasm-it-headless
+
