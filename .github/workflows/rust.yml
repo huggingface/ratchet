@@ -24,15 +24,13 @@ jobs:
           - name: Windows x86_64
             os: windows-2022
             target: x86_64-pc-windows-msvc
-            platform: win
-            arch: win64
+            platform: win64
             kind: native
 
           - name: MacOS aarch64
             os: macos-14
             target: aarch64-apple-darwin
-            platform: mac
-            arch: arm64
+            platform: mac-arm64
             kind: native
 
     steps:
@@ -119,7 +117,7 @@ jobs:
           VERSION=${{ steps.get_version.outputs.version }}
           PLATFORM=${{ matrix.platform }}
           ARCH=${{ matrix.arch }}
-          URL="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/${PLATFORM}-${ARCH}/chromedriver-${PLATFORM}-${ARCH}.zip"
+          URL="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/${PLATFORM}/chromedriver-${PLATFORM}.zip"
           if [ "${{ runner.os }}" = "windows-2022" ]; then
             curl.exe -L --output "chromedriver.zip" $URL 
             powershell.exe -Command "Expand-Archive -Path chromedriver.zip -DestinationPath ."
