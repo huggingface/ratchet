@@ -140,15 +140,15 @@ jobs:
           cargo nextest run -j 1 --no-fail-fast
 
       - name: Set up WebDriver for Ubuntu
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         run: cp config/ubuntu-webdriver.json crates/ratchet-models/webdriver.json
 
       - name: Set up WebDriver for Windows
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-2022'
         run: cp config/windows-webdriver.json crates/ratchet-models/webdriver.json
 
       - name: Set up WebDriver for macOS
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-14'
         run: cp config/macos-webdriver.json crates/ratchet-models/webdriver.json
 
       - name: Install integration test dependencies
