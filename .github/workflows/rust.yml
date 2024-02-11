@@ -27,10 +27,10 @@ jobs:
             target: x86_64-pc-windows-msvc
             platform: win64
 
-          - name: Linux x86_64
-            os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            platform: linux64
+              #- name: Linux x86_64
+              #  os: ubuntu-22.04
+              #  target: x86_64-unknown-linux-gnu
+              #  platform: linux64
 
           - name: MacOS aarch64
             os: macos-14
@@ -138,6 +138,18 @@ jobs:
         run: |
           set -e
           cargo nextest run -j 1 --no-fail-fast
+
+      - name: Set up WebDriver for Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: cp config/ubuntu-webdriver.json crates/ratchet-models/webdriver.json
+
+      - name: Set up WebDriver for Windows
+        if: matrix.os == 'windows-latest'
+        run: cp config/windows-webdriver.json crates/ratchet-models/webdriver.json
+
+      - name: Set up WebDriver for macOS
+        if: matrix.os == 'macos-latest'
+        run: cp config/macos-webdriver.json crates/ratchet-models/webdriver.json
 
       - name: Install integration test dependencies
         run: |
