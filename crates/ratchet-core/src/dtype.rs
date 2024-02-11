@@ -60,7 +60,6 @@ impl DType {
     }
 }
 
-#[cfg(feature = "pyo3")]
 #[cfg(not(target_arch = "wasm32"))]
 impl DType {
     fn handle_type_str(ts: npyz::TypeStr) -> DType {
@@ -76,7 +75,6 @@ impl DType {
     }
 }
 
-#[cfg(feature = "pyo3")]
 #[cfg(not(target_arch = "wasm32"))]
 impl From<npyz::DType> for DType {
     fn from(dtype: npyz::DType) -> Self {
