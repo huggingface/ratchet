@@ -109,11 +109,14 @@ impl WgpuDevice {
     async fn select_adapter() -> Adapter {
         let instance = wgpu::Instance::default();
         let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
-        let options = wgpu::RequestAdapterOptions::default();
         instance
-            .request_adapter(&options)
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
             .await
-            .expect("Failed to find an adapter!")
+            .unwrap()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
