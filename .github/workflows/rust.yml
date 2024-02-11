@@ -121,7 +121,7 @@ jobs:
           ARCH=${{ matrix.arch }}
           URL="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/${PLATFORM}-${ARCH}/chromedriver-${PLATFORM}-${ARCH}.zip"
           if [ "${{ runner.os }}" = "windows-2022" ]; then
-            powershell.exe -Command "Invoke-WebRequest -Uri $URL -OutFile chromedriver.zip"
+            curl.exe -L --output "chromedriver.zip" . 
             powershell.exe -Command "Expand-Archive -Path chromedriver.zip -DestinationPath ."
             echo "${PWD}" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
           else
