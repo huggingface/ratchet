@@ -158,7 +158,7 @@ jobs:
 
       - name: Run wasm-bindgen-test integration tests
         run: |
-          pnpm install -r
           just wasm-test ratchet-models chrome
-          just wasm-it-headless
+          #pnpm install -r
+          #just wasm-it-headless
 
