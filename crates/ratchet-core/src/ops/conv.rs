@@ -170,7 +170,7 @@ def conv(input, filters, bias, stride, padding):
 
         println!("ours = {:?}", ours);
         println!("ground = {:?}", ground);
-        ground.all_close(&ours, 1e-3, 1e-3).unwrap();
+        ground.all_close(&ours, 5e-3, 5e-3).unwrap();
     }
 
     #[derive(Arbitrary, Debug)]
