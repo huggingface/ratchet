@@ -60,8 +60,7 @@ impl DType {
     }
 }
 
-#[cfg(feature = "pyo3")]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "testing")]
 impl DType {
     fn handle_type_str(ts: npyz::TypeStr) -> DType {
         match ts.endianness() {
@@ -76,8 +75,7 @@ impl DType {
     }
 }
 
-#[cfg(feature = "pyo3")]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "testing")]
 impl From<npyz::DType> for DType {
     fn from(dtype: npyz::DType) -> Self {
         match dtype {

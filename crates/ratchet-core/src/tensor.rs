@@ -16,12 +16,10 @@ use std::sync::Arc;
 #[cfg(feature = "rand")]
 use {rand::prelude::*, rand_distr::StandardNormal};
 
-#[cfg(feature = "pyo3")]
+#[cfg(feature = "testing")]
+use ndarray::{ArrayD, ArrayViewD, Dimension};
 #[cfg(not(target_arch = "wasm32"))]
-use {
-    ndarray::{ArrayD, ArrayViewD, Dimension},
-    numpy::PyArrayDyn,
-};
+use numpy::PyArrayDyn;
 
 // thiserror error for Tensor
 #[derive(thiserror::Error, Debug)]
@@ -629,25 +627,6 @@ impl Tensor {
         Ok(())
     }
 
-    fn to_cpu(&self) -> Result<Tensor, TensorError> {
-        if self.device().is_cpu() || !self.resolved() {
-            return Ok(self.clone());
-        }
-        let storage_guard = self.storage();
-        let gpu_buf = storage_guard
-            .as_ref()
-            .ok_or(TensorError::TransferError)?
-            .try_gpu()?;
-        let cpu_buf = gpu_buf.to_cpu(&self.device)?;
-
-        Ok(Tensor::new(
-            LazyOp::Const,
-            self.view.clone(),
-            Some(Storage::CPU(cpu_buf)),
-            Device::CPU,
-        ))
-    }
-
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
         if self.device().is_gpu() || !self.resolved() {
             return Ok(self.clone());
@@ -668,19 +647,6 @@ impl Tensor {
         ))
     }
 
-    /// Transfers the tensor to the specified device.
-    ///
-    /// If the tensor is already on the specified device, it will be returned as-is,
-    /// and the underlying storage will not be copied.
-    /// If the tensor is on a different device, it will be copied to the specified device.
-    pub fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
-        match (self.device(), device) {
-            (Device::GPU(_), Device::CPU) => self.to_cpu(),
-            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
-            _ => Ok(self.clone()),
-        }
-    }
-
     pub fn deep_clone(&self) -> Tensor {
         let storage_guard = self.storage();
         let storage = storage_guard.as_ref().unwrap();
@@ -694,55 +660,105 @@ impl Tensor {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Tensor {
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
-        if self.shape() != other.shape() {
-            anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
+    async fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        if self.device().is_cpu() || !self.resolved() {
+            return Ok(self.clone());
         }
+        let storage_guard = self.storage();
+        let gpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_gpu()?;
+        let cpu_buf = gpu_buf.to_cpu(&self.device).await?;
 
-        let self_nd = self.to_ndarray_view::<f32>();
-        let other_nd = other.to_ndarray_view::<f32>();
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(Storage::CPU(cpu_buf)),
+            Device::CPU,
+        ))
+    }
 
-        let mut stats = CloseStats::new(atol, rtol);
-        ndarray::indices_of(&self_nd).into_iter().for_each(|idx| {
-            let (a, b) = (self_nd[&idx], other_nd[&idx]);
-            stats.update(&a, &b, idx);
-        });
-
-        let idx_fmt = stats.max_abs_error_idxs.as_ref().map(|idx| idx.slice());
-        if stats.fail_count > 0 {
-            anyhow::bail!(
-                "\x1b[1;31m{} samples not close \x1b[0m - AVGE={} MAE={} at {:?}",
-                stats.fail_count,
-                stats.avg_error(),
-                stats.max_abs_error,
-                idx_fmt
-            );
-        } else {
-            println!(
-                "\x1b[1;32mAll close \x1b[0m - AVGE={} MAE={} at {:?}",
-                stats.avg_error(),
-                stats.max_abs_error,
-                idx_fmt
-            );
-            Ok(())
+    /// Transfers the tensor to the specified device.
+    ///
+    /// If the tensor is already on the specified device, it will be returned as-is,
+    /// and the underlying storage will not be copied.
+    /// If the tensor is on a different device, it will be copied to the specified device.
+    pub async fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu().await,
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
+            _ => Ok(self.clone()),
         }
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+impl Tensor {
+    /// Transfers the tensor to the specified device.
+    ///
+    /// If the tensor is already on the specified device, it will be returned as-is,
+    /// and the underlying storage will not be copied.
+    /// If the tensor is on a different device, it will be copied to the specified device.
+    pub fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu(),
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
+            _ => Ok(self.clone()),
+        }
+    }
+
+    fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        if self.device().is_cpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let gpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_gpu()?;
+        let cpu_buf = gpu_buf.to_cpu(&self.device)?;
+
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(Storage::CPU(cpu_buf)),
+            Device::CPU,
+        ))
+    }
+}
+
+/// Conversion to and from numpy arrays
+#[cfg(not(target_arch = "wasm32"))]
+impl Tensor {
+    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
+        &'s self,
+        py: &'p pyo3::Python<'p>,
+    ) -> &PyArrayDyn<T> {
+        use numpy::PyArray;
+        assert!(
+            self.device().is_cpu(),
+            "Cannot convert non-CPU tensor to numpy array"
+        );
+        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+}
+
+#[cfg(feature = "testing")]
 #[derive(Default)]
 struct CloseStats {
     total_error: f32,
     max_abs_error: f32,
-    #[cfg(not(target_arch = "wasm32"))]
-    max_abs_error_idxs: Option<ndarray::IxDyn>,
+    max_abs_error_idxs: Option<Vec<usize>>,
     element_count: usize,
     fail_count: usize,
     atol: f32,
     rtol: f32,
 }
 
+#[cfg(feature = "testing")]
 impl CloseStats {
     fn new(atol: f32, rtol: f32) -> Self {
         Self {
@@ -751,7 +767,7 @@ impl CloseStats {
             ..Default::default()
         }
     }
-    #[cfg(not(target_arch = "wasm32"))]
+
     fn update(&mut self, a: &f32, b: &f32, index: ndarray::IxDyn) {
         let abs_diff = (a - b).abs();
         self.total_error += abs_diff;
@@ -759,7 +775,7 @@ impl CloseStats {
 
         if abs_diff > self.max_abs_error {
             self.max_abs_error = abs_diff;
-            self.max_abs_error_idxs = Some(index);
+            self.max_abs_error_idxs = Some(index.slice().into());
         }
 
         if !self.is_close(a, b, abs_diff) {
@@ -778,10 +794,31 @@ impl CloseStats {
     }
 }
 
-/// Conversion to and from numpy arrays
-#[cfg(feature = "pyo3")]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "testing")]
 impl Tensor {
+    pub fn from_npy_path<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
+    where
+        T: TensorDType + npyz::Deserialize,
+        P: AsRef<Path>,
+    {
+        Self::from_npy_bytes::<T>(&std::fs::read(path)?, device)
+    }
+
+    pub fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
+        bytes: &[u8],
+        device: &Device,
+    ) -> anyhow::Result<Tensor> {
+        let reader = npyz::NpyFile::new(&bytes[..])?;
+        let shape = reader
+            .shape()
+            .iter()
+            .map(|&x| x as usize)
+            .collect::<Vec<_>>()
+            .into();
+        let data = reader.into_vec::<T>()?;
+        Ok(Tensor::from_data(data, shape, device.clone()))
+    }
+
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
@@ -808,36 +845,41 @@ impl Tensor {
         }
     }
 
-    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
-        &'s self,
-        py: &'p pyo3::Python<'p>,
-    ) -> &PyArrayDyn<T> {
-        use numpy::PyArray;
-        assert!(
-            self.device().is_cpu(),
-            "Cannot convert non-CPU tensor to numpy array"
-        );
-        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
-    }
+    pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
+        if self.shape() != other.shape() {
+            anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
+        }
 
-    pub fn from_npy<T: TensorDType + npyz::Deserialize, P: AsRef<Path>>(
-        path: P,
-        device: &Device,
-    ) -> anyhow::Result<Tensor> {
-        let bytes = std::fs::read(path)?;
-        let reader = npyz::NpyFile::new(&bytes[..])?;
-        let shape = reader
-            .shape()
-            .iter()
-            .map(|&x| x as usize)
-            .collect::<Vec<_>>()
-            .into();
-        let data = reader.into_vec::<T>()?;
-        Ok(Tensor::from_data(data, shape, device.clone()))
+        let self_nd = self.to_ndarray_view::<f32>();
+        let other_nd = other.to_ndarray_view::<f32>();
+
+        let mut stats = CloseStats::new(atol, rtol);
+        ndarray::indices_of(&self_nd).into_iter().for_each(|idx| {
+            let (a, b) = (self_nd[&idx], other_nd[&idx]);
+            stats.update(&a, &b, idx);
+        });
+
+        let idx_fmt = stats.max_abs_error_idxs.as_ref();
+        if stats.fail_count > 0 {
+            anyhow::bail!(
+                "\x1b[1;31m{} samples not close \x1b[0m - AVGE={} MAE={} at {:?}",
+                stats.fail_count,
+                stats.avg_error(),
+                stats.max_abs_error,
+                idx_fmt
+            );
+        } else {
+            println!(
+                "\x1b[1;32mAll close \x1b[0m - AVGE={} MAE={} at {:?}",
+                stats.avg_error(),
+                stats.max_abs_error,
+                idx_fmt
+            );
+            Ok(())
+        }
     }
 }
 
-#[cfg(feature = "pyo3")]
 #[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType> From<ArrayD<T>> for Tensor {
     fn from(it: ArrayD<T>) -> Self {
@@ -866,7 +908,6 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
     }
 }
 
-#[cfg(feature = "pyo3")]
 #[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
     fn from(array: &PyArrayDyn<T>) -> Self {

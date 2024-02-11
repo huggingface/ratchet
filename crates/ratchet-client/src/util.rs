@@ -1,4 +1,4 @@
-use js_sys::{JSON};
+use js_sys::JSON;
 
 use wasm_bindgen::{prelude::*, JsValue};
 use wasm_bindgen_futures::JsFuture;

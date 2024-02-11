@@ -1,0 +1,11 @@
+{
+  "goog:chromeOptions": {
+    "args": [
+        "--no-sandbox",
+        "--headless=new",
+        "--use-angle=d3d12",
+        "--enable-features=D3D12",
+        "--enable-unsafe-webgpu"
+    ]
+  }
+}
