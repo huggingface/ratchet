@@ -10,9 +10,8 @@
     "args": [
         "--no-sandbox",
         "--headless=new",
-        "--use-angle=vulkan",
-        "--enable-features=Vulkan",
-        "--disable-vulkan-surface",
+        "--use-angle=metal",
+        "--enable-features=Metal",
         "--enable-unsafe-webgpu"
     ]
   }
