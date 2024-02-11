@@ -101,6 +101,7 @@ console_log = "1.0.0"
 wasm-bindgen-test = "0.3.41"
 ratchet-client = { path = "../ratchet-client" }
 wasm-bindgen = "0.2.91"
+wasm-bindgen-futures = "0.4.41"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hf-hub = "0.3.2"
