@@ -24,20 +24,13 @@ async fn chrome_tiny_encoder() -> Result<(), JsValue> {
 
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(uint8array.to_vec()));
     let gg = Whisper::load_ggml(&mut reader).unwrap();
-    log::error!("Loaded Whisper to GG");
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
-    log::error!("Got device");
     let encoder = WhisperEncoder::load(&gg, &mut reader, &device).unwrap();
-    log::error!("Loaded WhisperEncoder");
     let input = Tensor::randn::<f32>(shape![1, 80, 3000], device);
-    log::error!("Generated input");
     let result = encoder.forward(&input).unwrap();
-    log::error!("Forwarded input");
     result.resolve().unwrap();
-    log::error!("Resolved result");
     let ours = result.to(&Device::CPU).await;
-    log::error!("OURS: {:?}", ours);
-    log::warn!("OURS: {:?}", ours);
+    //TODO: validate
     Ok(())
 }
