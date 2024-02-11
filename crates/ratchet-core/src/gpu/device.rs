@@ -110,7 +110,10 @@ impl WgpuDevice {
         let instance = wgpu::Instance::default();
         let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
         let options = wgpu::RequestAdapterOptions::default();
-        instance.request_adapter(&options).await.unwrap()
+        instance
+            .request_adapter(&options)
+            .await
+            .expect("Failed to find an adapter!")
     }
 
     #[cfg(not(target_arch = "wasm32"))]
