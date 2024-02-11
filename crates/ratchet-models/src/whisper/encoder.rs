@@ -251,12 +251,12 @@ mod tests {
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
-        let input = Tensor::from_npy::<f32, _>(input_npy, &device)?;
+        let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
 
         let result = encoder.forward(&input)?;
         result.resolve()?;
         let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::from_npy::<f32, _>(ground_npy, &Device::CPU)?;
+        let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);
         ground.all_close(&ours, 1e-3, 1e-3)?;

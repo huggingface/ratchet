@@ -18,7 +18,6 @@ panic = 'abort'
 lto = "fat"
 codegen-units = 1
 strip = true
-#debug = 2
 
 [workspace.dependencies]
 wgpu = { version = "0.18", features = ["expose-ids", "fragile-send-sync-non-atomic-wasm"] }
@@ -31,6 +30,3 @@ log = "0.4.20"
 thiserror = "1.0.56"
 byteorder = "1.5.0"
 wasm-bindgen-test = "0.3.34"
-
-[workspace.dev-dependencies]
-hf-hub = "0.3.0"

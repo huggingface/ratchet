@@ -14,6 +14,18 @@ wasm_bindgen_test_configure!(run_in_browser);
 pub type ProgressBar = dyn Fn(u32);
 
 #[wasm_bindgen]
+#[derive(Debug, Clone, Copy)]
+pub enum RepoType {
+    /// This is a model, usually it consists of weight files and some configuration
+    /// files
+    Model,
+    /// This is a dataset, usually contains data within parquet files
+    Dataset,
+    /// This is a space, usually a demo showcashing a given model or dataset
+    Space,
+}
+
+#[wasm_bindgen]
 pub struct ApiBuilder {
     endpoint: String,
     cached: bool,
@@ -23,10 +35,24 @@ pub struct ApiBuilder {
 impl ApiBuilder {
     /// Build an Api from a HF hub repository.
     #[wasm_bindgen]
-    pub fn from_hf(repo_id: &str) -> Self {
+    pub fn from_hf(repo_id: &str, ty: RepoType) -> Self {
         Self {
             cached: true,
-            endpoint: format!("https://huggingface.co/{repo_id}/resolve/main"),
+            endpoint: Self::endpoint(repo_id, ty),
+        }
+    }
+
+    pub fn endpoint(repo_id: &str, ty: RepoType) -> String {
+        match ty {
+            RepoType::Model => {
+                format!("https://huggingface.co/{repo_id}/resolve/main")
+            }
+            RepoType::Dataset => {
+                format!("https://huggingface.co/datasets/{repo_id}/resolve/main")
+            }
+            RepoType::Space => {
+                format!("https://huggingface.co/spaces/{repo_id}/resolve/main")
+            }
         }
     }
 
@@ -154,7 +180,7 @@ mod tests {
     use super::*;
     #[wasm_bindgen_test]
     async fn pass() -> Result<(), JsValue> {
-        let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test").build();
+        let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
         let model = model_repo.get("model.safetensors").await?;
         let bytes = model.to_uint8().await?;
         let length = bytes.length();
