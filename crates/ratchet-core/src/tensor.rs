@@ -16,11 +16,10 @@ use std::sync::Arc;
 #[cfg(feature = "rand")]
 use {rand::prelude::*, rand_distr::StandardNormal};
 
+#[cfg(feature = "testing")]
+use ndarray::{ArrayD, ArrayViewD, Dimension};
 #[cfg(not(target_arch = "wasm32"))]
-use {
-    ndarray::{ArrayD, ArrayViewD, Dimension},
-    numpy::PyArrayDyn,
-};
+use numpy::PyArrayDyn;
 
 // thiserror error for Tensor
 #[derive(thiserror::Error, Debug)]
@@ -729,54 +728,37 @@ impl Tensor {
             Device::CPU,
         ))
     }
+}
 
-    pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
-        if self.shape() != other.shape() {
-            anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
-        }
-
-        let self_nd = self.to_ndarray_view::<f32>();
-        let other_nd = other.to_ndarray_view::<f32>();
-
-        let mut stats = CloseStats::new(atol, rtol);
-        ndarray::indices_of(&self_nd).into_iter().for_each(|idx| {
-            let (a, b) = (self_nd[&idx], other_nd[&idx]);
-            stats.update(&a, &b, idx);
-        });
-
-        let idx_fmt = stats.max_abs_error_idxs.as_ref().map(|idx| idx.slice());
-        if stats.fail_count > 0 {
-            anyhow::bail!(
-                "\x1b[1;31m{} samples not close \x1b[0m - AVGE={} MAE={} at {:?}",
-                stats.fail_count,
-                stats.avg_error(),
-                stats.max_abs_error,
-                idx_fmt
-            );
-        } else {
-            println!(
-                "\x1b[1;32mAll close \x1b[0m - AVGE={} MAE={} at {:?}",
-                stats.avg_error(),
-                stats.max_abs_error,
-                idx_fmt
-            );
-            Ok(())
-        }
+/// Conversion to and from numpy arrays
+#[cfg(not(target_arch = "wasm32"))]
+impl Tensor {
+    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
+        &'s self,
+        py: &'p pyo3::Python<'p>,
+    ) -> &PyArrayDyn<T> {
+        use numpy::PyArray;
+        assert!(
+            self.device().is_cpu(),
+            "Cannot convert non-CPU tensor to numpy array"
+        );
+        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
     }
 }
 
+#[cfg(feature = "testing")]
 #[derive(Default)]
 struct CloseStats {
     total_error: f32,
     max_abs_error: f32,
-    #[cfg(not(target_arch = "wasm32"))]
-    max_abs_error_idxs: Option<ndarray::IxDyn>,
+    max_abs_error_idxs: Option<Vec<usize>>,
     element_count: usize,
     fail_count: usize,
     atol: f32,
     rtol: f32,
 }
 
+#[cfg(feature = "testing")]
 impl CloseStats {
     fn new(atol: f32, rtol: f32) -> Self {
         Self {
@@ -785,7 +767,7 @@ impl CloseStats {
             ..Default::default()
         }
     }
-    #[cfg(not(target_arch = "wasm32"))]
+
     fn update(&mut self, a: &f32, b: &f32, index: ndarray::IxDyn) {
         let abs_diff = (a - b).abs();
         self.total_error += abs_diff;
@@ -793,7 +775,7 @@ impl CloseStats {
 
         if abs_diff > self.max_abs_error {
             self.max_abs_error = abs_diff;
-            self.max_abs_error_idxs = Some(index);
+            self.max_abs_error_idxs = Some(index.slice().into());
         }
 
         if !self.is_close(a, b, abs_diff) {
@@ -812,9 +794,31 @@ impl CloseStats {
     }
 }
 
-/// Conversion to and from numpy arrays
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "testing")]
 impl Tensor {
+    pub fn from_npy_path<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
+    where
+        T: TensorDType + npyz::Deserialize,
+        P: AsRef<Path>,
+    {
+        Self::from_npy_bytes::<T>(&std::fs::read(path)?, device)
+    }
+
+    pub fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
+        bytes: &[u8],
+        device: &Device,
+    ) -> anyhow::Result<Tensor> {
+        let reader = npyz::NpyFile::new(&bytes[..])?;
+        let shape = reader
+            .shape()
+            .iter()
+            .map(|&x| x as usize)
+            .collect::<Vec<_>>()
+            .into();
+        let data = reader.into_vec::<T>()?;
+        Ok(Tensor::from_data(data, shape, device.clone()))
+    }
+
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
@@ -841,32 +845,38 @@ impl Tensor {
         }
     }
 
-    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
-        &'s self,
-        py: &'p pyo3::Python<'p>,
-    ) -> &PyArrayDyn<T> {
-        use numpy::PyArray;
-        assert!(
-            self.device().is_cpu(),
-            "Cannot convert non-CPU tensor to numpy array"
-        );
-        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
-    }
+    pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
+        if self.shape() != other.shape() {
+            anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
+        }
 
-    pub fn from_npy<T: TensorDType + npyz::Deserialize, P: AsRef<Path>>(
-        path: P,
-        device: &Device,
-    ) -> anyhow::Result<Tensor> {
-        let bytes = std::fs::read(path)?;
-        let reader = npyz::NpyFile::new(&bytes[..])?;
-        let shape = reader
-            .shape()
-            .iter()
-            .map(|&x| x as usize)
-            .collect::<Vec<_>>()
-            .into();
-        let data = reader.into_vec::<T>()?;
-        Ok(Tensor::from_data(data, shape, device.clone()))
+        let self_nd = self.to_ndarray_view::<f32>();
+        let other_nd = other.to_ndarray_view::<f32>();
+
+        let mut stats = CloseStats::new(atol, rtol);
+        ndarray::indices_of(&self_nd).into_iter().for_each(|idx| {
+            let (a, b) = (self_nd[&idx], other_nd[&idx]);
+            stats.update(&a, &b, idx);
+        });
+
+        let idx_fmt = stats.max_abs_error_idxs.as_ref();
+        if stats.fail_count > 0 {
+            anyhow::bail!(
+                "\x1b[1;31m{} samples not close \x1b[0m - AVGE={} MAE={} at {:?}",
+                stats.fail_count,
+                stats.avg_error(),
+                stats.max_abs_error,
+                idx_fmt
+            );
+        } else {
+            println!(
+                "\x1b[1;32mAll close \x1b[0m - AVGE={} MAE={} at {:?}",
+                stats.avg_error(),
+                stats.max_abs_error,
+                idx_fmt
+            );
+            Ok(())
+        }
     }
 }
 
