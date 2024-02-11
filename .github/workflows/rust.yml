@@ -141,15 +141,15 @@ jobs:
 
       - name: Set up WebDriver for Ubuntu
         if: matrix.os == 'ubuntu-22.04'
-        run: cp config/ubuntu-webdriver.json crates/ratchet-models/webdriver.json
+        run: cp config/webdriver-linux.json crates/ratchet-models/webdriver.json
 
       - name: Set up WebDriver for Windows
         if: matrix.os == 'windows-2022'
-        run: cp config/windows-webdriver.json crates/ratchet-models/webdriver.json
+        run: cp config/webdriver-win.json crates/ratchet-models/webdriver.json
 
       - name: Set up WebDriver for macOS
         if: matrix.os == 'macos-14'
-        run: cp config/macos-webdriver.json crates/ratchet-models/webdriver.json
+        run: cp config/webdriver-macos.json crates/ratchet-models/webdriver.json
 
       - name: Install integration test dependencies
         run: |
