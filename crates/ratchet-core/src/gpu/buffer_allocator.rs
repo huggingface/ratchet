@@ -1,3 +1,4 @@
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use wgpu::BufferUsages;
 
@@ -5,10 +6,7 @@ use crate::{
     gpu::{BufferDescriptor, BufferPool, GpuBufferHandle, PooledGPUBuffer},
     DeviceError, Tensor, TensorId,
 };
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use super::{BufferUsagesExt, CpuUniform, WgpuDevice, UNIFORM_ALIGN};
 
@@ -19,8 +17,7 @@ pub enum AllocatorError {
 }
 
 pub struct BufferAllocator {
-    //TODO: should this be RefCell
-    pool: RefCell<BufferPool>,
+    pool: RwLock<BufferPool>,
 }
 
 impl BufferAllocator {
@@ -31,23 +28,15 @@ impl BufferAllocator {
     }
 
     pub fn begin_pass(&self, pass_index: u64) {
-        self.pool.borrow_mut().begin_pass(pass_index);
+        self.pool.write().begin_pass(pass_index);
     }
 
     pub fn get(&self, handle: GpuBufferHandle) -> PooledGPUBuffer {
-        self.pool.borrow().get(handle).unwrap()
-    }
-
-    pub fn pool(&self) -> Ref<BufferPool> {
-        self.pool.borrow()
-    }
-
-    pub fn pool_mut(&self) -> RefMut<BufferPool> {
-        self.pool.borrow_mut()
+        self.pool.read().get(handle).unwrap()
     }
 
     pub fn create_buffer(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> PooledGPUBuffer {
-        self.pool.borrow_mut().get_or_create(desc, device)
+        self.pool.write().get_or_create(desc, device)
     }
 
     pub fn create_buffer_init(
@@ -56,7 +45,7 @@ impl BufferAllocator {
         contents: &[u8],
         device: &WgpuDevice,
     ) -> PooledGPUBuffer {
-        let buf = self.pool.borrow_mut().get_or_create(desc, device);
+        let buf = self.pool.write().get_or_create(desc, device);
         device.queue().write_buffer(&buf.inner, 0, contents);
         device.queue().submit(None);
         device.poll(wgpu::Maintain::Wait);
@@ -75,7 +64,7 @@ impl BufferAllocator {
             false,
         );
 
-        let resource = self.pool.borrow_mut().get_or_create(&desc, device);
+        let resource = self.pool.write().get_or_create(&desc, device);
         device
             .queue()
             .write_buffer(&resource.inner, 0, uniform.as_slice());

@@ -4,7 +4,7 @@ use ratchet::{Device, Tensor};
 use ratchet_loader::GGMLModel;
 use ratchet_nn::{LayerNorm, Linear, Module};
 
-use crate::{HyperParameters, MHAInputs, MultiHeadAttention, Whisper, MLP};
+use crate::{MHAInputs, MultiHeadAttention, Whisper, MLP};
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {
@@ -194,9 +194,9 @@ impl WhisperEncoder {
     pub fn load<R: BufRead + Seek>(
         disk_model: &GGMLModel<Whisper>,
         reader: &mut R,
-        hparams: &HyperParameters,
         device: &Device,
     ) -> anyhow::Result<Self> {
+        let hparams = &disk_model.header.hparams;
         let stem = EncoderStem::load(disk_model, reader, device)?;
         let (n_layers, n_heads) = (hparams.n_audio_layer, hparams.n_audio_head);
 
@@ -228,7 +228,7 @@ impl WhisperEncoder {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use crate::{Whisper, WhisperEncoder};
     use hf_hub::api::sync::Api;
@@ -250,14 +250,13 @@ mod tests {
         assert_eq!(gg_disk.tensors.len(), 167);
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let hparams = &gg_disk.header.hparams;
-        let encoder = WhisperEncoder::load(&gg_disk, &mut reader, hparams, &device)?;
-        let input = Tensor::from_npy::<f32, _>(input_npy, &device)?;
+        let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
+        let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
 
         let result = encoder.forward(&input)?;
         result.resolve()?;
         let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::from_npy::<f32, _>(ground_npy, &Device::CPU)?;
+        let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);
         ground.all_close(&ours, 1e-3, 1e-3)?;
