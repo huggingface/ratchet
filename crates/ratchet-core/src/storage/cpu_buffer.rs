@@ -63,6 +63,7 @@ pub struct CPUBuffer {
 }
 
 unsafe impl Send for CPUBuffer {}
+unsafe impl Sync for CPUBuffer {}
 
 impl CPUBuffer {
     pub fn new(inner: RawCPUBuffer) -> Self {
@@ -129,6 +130,7 @@ impl CPUBuffer {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait)]
 impl DeviceStorage for CPUBuffer {
     fn to_device(&self, device: &Device) -> Result<GPUBuffer, DeviceError> {
         let gpu_device = device.try_gpu()?;

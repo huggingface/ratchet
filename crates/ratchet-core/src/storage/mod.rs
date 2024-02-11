@@ -101,6 +101,7 @@ impl Storage {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait)]
 pub trait DeviceStorage: std::fmt::Debug + Clone + 'static {
     // To be expanded to other devices
     fn to_device(&self, device: &Device) -> Result<GPUBuffer, DeviceError>;
