@@ -1,0 +1,19 @@
+{
+  "moz:firefoxOptions": {
+    "prefs": {
+      "media.navigator.streams.fake": true,
+      "media.navigator.permission.disabled": true
+    },
+    "args": []
+  },
+  "goog:chromeOptions": {
+    "args": [
+        "--no-sandbox",
+        "--headless=new",
+        "--use-angle=vulkan",
+        "--enable-features=Vulkan",
+        "--disable-vulkan-surface",
+        "--enable-unsafe-webgpu"
+    ]
+  }
+}
