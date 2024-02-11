@@ -52,7 +52,7 @@ jobs:
           just-version: 1.5.0 # optional semver specification, otherwise latest
 
       - name: (linux) install lavapipe, vulkan sdk, alsa
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         shell: bash
         run: |
           set -e
