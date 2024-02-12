@@ -30,3 +30,4 @@ log = "0.4.20"
 thiserror = "1.0.56"
 byteorder = "1.5.0"
 wasm-bindgen-test = "0.3.34"
+npyz = { version = "0.8.3"}
