@@ -12,16 +12,17 @@ use crate::{ops::*, rvec, CompiledOp, InvariantError, KernelElement, RVec, Stora
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum LazyOp {
+    Const,
     Matmul(Matmul),
     Binary(Binary),
-    Softmax(Softmax), //Should be custom
     Unary(Unary),
     Reindex(Reindex),
+    // ---- Everything below this line shouldn't exist ----
+    Softmax(Softmax),
     Norm(Norm),
     View(View),          //Should be general class, metadata modification
     Conv(Conv),          //Really it's a matmul
     Select(IndexSelect), //Can probably be Reindex
-    Const,
 }
 
 impl LazyOp {
