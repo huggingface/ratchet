@@ -808,7 +808,7 @@ impl Tensor {
         bytes: &[u8],
         device: &Device,
     ) -> anyhow::Result<Tensor> {
-        let reader = npyz::NpyFile::new(&bytes[..])?;
+        let reader = npyz::NpyFile::new(bytes)?;
         let shape = reader
             .shape()
             .iter()
