@@ -98,6 +98,8 @@ num = "0.4.1"
 realfft = "3.3.0"
 ndarray = "0.15.6"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+hf-hub = "0.3.2"
 
 [dev-dependencies]
 console_error_panic_hook = "0.1.7"
@@ -109,6 +111,4 @@ wasm-bindgen-futures = "0.4.41"
 npyz = { workspace = true }
 hound = { version = "3.5.0" }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hf-hub = "0.3.2"
 
