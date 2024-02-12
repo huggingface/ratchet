@@ -22,7 +22,7 @@ impl IndexSelect {
 
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct IndexSelectMeta {
-    dummy: u32,
+    dim_len: i32,
 }
 
 impl OpMetadata for IndexSelectMeta {}
@@ -30,13 +30,10 @@ impl OpMetadata for IndexSelectMeta {}
 impl Operation for IndexSelect {
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
         let (input, indices) = (srcs[0], srcs[1]);
-        let (indices_shape, irank) = (indices.shape(), indices.rank());
-        let input_shape = input.shape();
-        println!("input_shape: {:?}", input_shape);
-        println!("indices_shape: {:?}", indices_shape);
+        let (indices_shape, input_shape) = (indices.shape(), input.shape());
+
         let mut output_shape = input_shape.clone();
         output_shape[self.dim] = indices_shape[0];
-        println!("output_shape: {:?}", output_shape);
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, input.dt(), strides))
     }
@@ -73,13 +70,9 @@ impl MetaOperation for IndexSelect {
 
     fn storage_bind_group_layout(
         &self,
-        inplace: bool,
+        _: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if inplace {
-            Ok(BindGroupLayoutDescriptor::unary_inplace())
-        } else {
-            Ok(BindGroupLayoutDescriptor::unary())
-        }
+        Ok(BindGroupLayoutDescriptor::binary())
     }
 
     fn metadata(
@@ -87,7 +80,11 @@ impl MetaOperation for IndexSelect {
         _dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        Ok(IndexSelectMeta::new(0))
+        let meta = IndexSelectMeta {
+            dim_len: self.input.shape()[self.dim + 1] as _,
+        };
+        println!("meta: {:?}", meta);
+        Ok(meta)
     }
 }
 
@@ -153,6 +150,7 @@ def index_select(input, indices):
         let result = input.index_select(&indices, dim).unwrap();
         result.resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
+        println!("result: {:?}", x);
         ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();
     }
 
@@ -160,6 +158,15 @@ def index_select(input, indices):
     struct IndexSelectProblem {
         input_shape: Shape,
         indices: Tensor,
+    }
+
+    #[test]
+    fn debug_index_select() {
+        let problem = IndexSelectProblem {
+            input_shape: shape![3, 4],
+            indices: Tensor::from_data(vec![0, 2], shape![2], Device::CPU),
+        };
+        run_index_select_trial(problem);
     }
 
     #[proptest(cases = 1)]
