@@ -133,7 +133,15 @@ jobs:
         shell: bash
 
       - uses: FedericoCarboni/setup-ffmpeg@v3
-        id: setup-ffmpeg
+        if: matrix.os != 'macos-14'
+
+      - name: Install FFMPEG M1
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          wget https://www.osxexperts.net/ffmpeg611arm.zip
+          unzip ffmpeg611arm.zip
+          sudo mv ffmpeg611arm/ffmpeg /usr/local/bin/ffmpeg
 
       - name: run tests
         shell: bash
