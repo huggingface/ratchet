@@ -54,7 +54,7 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: ()) -> Self::Strategy {
-            let original_ranges = rvec![1..2, 1..8, 1..2, 1..128];
+            let original_ranges = vec![1..2, 1..8, 1..2, 1..128];
 
             Shape::arbitrary_with(original_ranges)
                 .prop_flat_map(|original_shape| {
@@ -66,11 +66,11 @@ mod tests {
                         }
                     };
 
-                    let to = Shape::arbitrary_with(rvec![
+                    let to = Shape::arbitrary_with(vec![
                         create_broadcast_range(0),
                         create_broadcast_range(1),
                         create_broadcast_range(2),
-                        create_broadcast_range(3)
+                        create_broadcast_range(3),
                     ]);
                     (Just(original_shape), to)
                 })

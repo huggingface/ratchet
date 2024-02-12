@@ -416,7 +416,7 @@ impl Tensor {
         Ok(Tensor::lazy(op, new_view, self.device.clone()))
     }
 
-    pub fn index_select(&self, dim: usize, indices: &Tensor) -> anyhow::Result<Tensor> {
+    pub fn index_select(&self, indices: &Tensor, dim: usize) -> anyhow::Result<Tensor> {
         IndexSelect::check_invariants(&[self, indices])?;
         let index_select = IndexSelect::new(self.clone(), indices.clone(), dim);
         let new_view = index_select.infer_output(&[self, indices])?;
@@ -611,6 +611,7 @@ impl Tensor {
             LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }
