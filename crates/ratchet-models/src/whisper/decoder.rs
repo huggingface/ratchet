@@ -93,8 +93,8 @@ impl WhisperDecoder {
                     reader,
                     i as _,
                     n_heads as _,
-                    "encoder",
-                    false,
+                    "decoder",
+                    true,
                     device,
                 ));
                 blocks
@@ -113,5 +113,39 @@ impl WhisperDecoder {
             mask: Self::load_mask(hparams.n_text_ctx as _, device),
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
         })
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use crate::{Whisper, WhisperDecoder};
+    use hf_hub::api::sync::Api;
+    use ratchet::{shape, Device, DeviceRequest, Tensor};
+    use ratchet_loader::GGMLCompatible;
+    use ratchet_nn::Module;
+
+    #[test]
+    fn decoder_matches() -> anyhow::Result<()> {
+        let api = Api::new().unwrap();
+        let model = api.model("ggerganov/whisper.cpp".to_string());
+        let path = model.get("ggml-tiny.bin").unwrap();
+        let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
+        let audio_ctx_npy = dataset.get("jfk_tiny_encoder_output.npy").unwrap();
+
+        let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
+        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
+        assert_eq!(gg_disk.tensors.len(), 167);
+
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
+        let audio_ctx = Tensor::from_npy_path::<f32, _>(audio_ctx_npy, &device)?;
+        let tokens = Tensor::from_data(vec![50258, 50259, 50359], shape![1, 3], device);
+
+        let result = decoder.forward(&[audio_ctx, tokens])?;
+        result.resolve()?;
+        let ours = result.to(&Device::CPU)?;
+        println!("{:?}", ours);
+
+        Ok(())
     }
 }
