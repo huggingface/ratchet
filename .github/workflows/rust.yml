@@ -132,7 +132,7 @@ jobs:
           fi
         shell: bash
 
-      - uses: FedericoCarboni/setup-ffmpeg@v2
+      - uses: FedericoCarboni/setup-ffmpeg@v3
         id: setup-ffmpeg
 
       - name: run tests
