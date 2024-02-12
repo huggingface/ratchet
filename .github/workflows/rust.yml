@@ -120,7 +120,6 @@ jobs:
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
           PLATFORM=${{ matrix.platform }}
-          ARCH=${{ matrix.arch }}
           URL="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/${PLATFORM}/chromedriver-${PLATFORM}.zip"
           if [ "${{ runner.os }}" = "windows-2022" ]; then
             curl.exe -L --output "chromedriver.zip" $URL 
@@ -132,6 +131,9 @@ jobs:
             echo "${PWD}" >> $GITHUB_PATH
           fi
         shell: bash
+
+      - uses: FedericoCarboni/setup-ffmpeg@v2
+        id: setup-ffmpeg
 
       - name: run tests
         shell: bash
