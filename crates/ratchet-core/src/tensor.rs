@@ -416,6 +416,39 @@ impl Tensor {
         Ok(Tensor::lazy(op, new_view, self.device.clone()))
     }
 
+    pub fn index_select(&self, dim: usize, indices: &Tensor) -> anyhow::Result<Tensor> {
+        IndexSelect::check_invariants(&[self, indices])?;
+        let index_select = IndexSelect::new(self.clone(), indices.clone(), dim);
+        let new_view = index_select.infer_output(&[self, indices])?;
+        Ok(Tensor::lazy(
+            LazyOp::Select(index_select),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
+    #[cfg(feature = "rand")]
+    pub fn randint<T: TensorDType + rand_distr::uniform::SampleUniform + PartialOrd>(
+        low: T,
+        high: T,
+        shape: Shape,
+        device: Device,
+    ) -> Tensor {
+        let mut rng = if let Ok(seed) = std::env::var("RATCHET_SEED") {
+            let seed = seed.parse::<u64>().unwrap();
+            StdRng::seed_from_u64(seed)
+        } else {
+            StdRng::from_entropy()
+        };
+        let data = (0..shape.numel())
+            .map(|_| {
+                let sample: T = rng.gen_range(low..high);
+                sample
+            })
+            .collect::<Vec<_>>();
+        Tensor::from_data(data, shape, device)
+    }
+
     #[cfg(feature = "rand")]
     pub fn randn<T: TensorDType + num_traits::Float>(shape: Shape, device: Device) -> Self {
         let mut rng = if let Ok(seed) = std::env::var("RATCHET_SEED") {

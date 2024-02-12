@@ -3,6 +3,7 @@ mod conv;
 mod matmul;
 mod norm;
 mod reindex;
+mod select;
 mod softmax;
 mod unary;
 
@@ -11,6 +12,7 @@ pub use conv::*;
 pub use matmul::*;
 pub use norm::*;
 pub use reindex::*;
+pub use select::*;
 pub use softmax::*;
 pub use unary::*;
 

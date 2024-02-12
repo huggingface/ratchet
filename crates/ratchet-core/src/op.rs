@@ -18,8 +18,9 @@ pub enum LazyOp {
     Unary(Unary),
     Reindex(Reindex),
     Norm(Norm),
-    View(View), //Should be general class, metadata modification
-    Conv(Conv), //Really it's a matmul
+    View(View),          //Should be general class, metadata modification
+    Conv(Conv),          //Really it's a matmul
+    Select(IndexSelect), //Can probably be Reindex
     Const,
 }
 
