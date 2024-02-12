@@ -880,7 +880,6 @@ impl Tensor {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType> From<ArrayD<T>> for Tensor {
     fn from(it: ArrayD<T>) -> Self {
         if it.as_slice().is_some() {
