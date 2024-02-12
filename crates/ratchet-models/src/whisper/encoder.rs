@@ -2,11 +2,10 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
 use ratchet_loader::GGMLModel;
-use ratchet_nn::{LayerNorm, Linear, Module};
+use ratchet_nn::{LayerNorm, Module};
 
 use crate::{
-    MHAInputs, MultiHeadAttention, ResidualAttentionBlock, ResidualAttentionBlockInputs, Whisper,
-    MLP,
+    ResidualAttentionBlock, ResidualAttentionBlockInputs, Whisper,
 };
 
 #[derive(Debug, derive_new::new)]

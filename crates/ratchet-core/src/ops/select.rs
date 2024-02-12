@@ -81,7 +81,7 @@ impl MetaOperation for IndexSelect {
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
         let meta = IndexSelectMeta {
-            dim_len: self.input.shape()[self.dim + 1] as _,
+            dim_len: self.input.shape()[self.dim + 1] as _, //TODO: this is wrong
         };
         println!("meta: {:?}", meta);
         Ok(meta)

@@ -43,7 +43,7 @@ mod tests {
     };
     use test_strategy::proptest;
 
-    use crate::{rvec, test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor};
+    use crate::{test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
