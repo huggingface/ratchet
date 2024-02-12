@@ -808,7 +808,7 @@ impl Tensor {
         bytes: &[u8],
         device: &Device,
     ) -> anyhow::Result<Tensor> {
-        let reader = npyz::NpyFile::new(&bytes[..])?;
+        let reader = npyz::NpyFile::new(bytes)?;
         let shape = reader
             .shape()
             .iter()
@@ -880,7 +880,6 @@ impl Tensor {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType> From<ArrayD<T>> for Tensor {
     fn from(it: ArrayD<T>) -> Self {
         if it.as_slice().is_some() {

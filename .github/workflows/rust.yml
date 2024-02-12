@@ -120,7 +120,6 @@ jobs:
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
           PLATFORM=${{ matrix.platform }}
-          ARCH=${{ matrix.arch }}
           URL="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/${PLATFORM}/chromedriver-${PLATFORM}.zip"
           if [ "${{ runner.os }}" = "windows-2022" ]; then
             curl.exe -L --output "chromedriver.zip" $URL 
@@ -132,6 +131,17 @@ jobs:
             echo "${PWD}" >> $GITHUB_PATH
           fi
         shell: bash
+
+      - uses: FedericoCarboni/setup-ffmpeg@v3
+        if: matrix.os != 'macos-14'
+
+      - name: Install FFMPEG M1
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          wget -q https://www.osxexperts.net/ffmpeg611arm.zip
+          unzip ffmpeg611arm.zip 
+          sudo mv ffmpeg /usr/local/bin/ffmpeg
 
       - name: run tests
         shell: bash
