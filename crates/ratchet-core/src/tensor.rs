@@ -221,8 +221,7 @@ impl Tensor {
 macro_rules! impl_binary_op {
     ($method_name:ident, $op:expr) => {
         pub fn $method_name(&self, other: &Tensor) -> anyhow::Result<Tensor> {
-            //TODO: we can short circuit here and have a much more efficient kernel
-            //if either tensor is a scalar
+            //TODO: avoid broadcasting if either operand is scalar
             Binary::check_invariants(&[self, other])?;
 
             let (lhs, rhs) = (self, other);
@@ -288,48 +287,6 @@ impl Tensor {
     impl_unary_op!(floor, UnaryOp::Floor);
     impl_unary_op!(ceil, UnaryOp::Ceil);
 
-    /// # Slice
-    ///
-    /// Current slice implementation requires specification of all dimensions.
-    /// Currently very user hostile, but will be improved.
-    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
-        let mut resolved_ranges = rvec![];
-
-        for (ridx, r) in ranges.iter().enumerate() {
-            let start = match r.start_bound() {
-                Bound::Included(&s) => s,
-                Bound::Excluded(&s) => s + 1,
-                Bound::Unbounded => 0,
-            };
-            let end = match r.end_bound() {
-                Bound::Included(&e) => e + 1,
-                Bound::Excluded(&e) => e,
-                Bound::Unbounded => self.shape()[ridx],
-            };
-            resolved_ranges.push(start..end);
-        }
-
-        let slice = Slice::new(resolved_ranges);
-        let out_view = slice.infer_output(&[self])?;
-
-        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
-        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
-    }
-
-    pub fn view(&self, shape: Shape) -> anyhow::Result<Tensor> {
-        let view = View::new(self.clone(), shape);
-        let out_view = view.infer_output(&[self])?;
-
-        let storage = self.storage.clone();
-
-        Ok(Tensor::from_shallow(
-            LazyOp::View(view),
-            out_view,
-            storage,
-            self.device.clone(),
-        ))
-    }
-
     pub fn layer_norm(
         &self,
         weight: &Tensor,
@@ -372,14 +329,6 @@ impl Tensor {
         ))
     }
 
-    pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
-        let permute = Permute::new(dims.to_vec());
-        let out_view = permute.infer_output(&[self])?;
-
-        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
-        Ok(Tensor::lazy(op, out_view, self.device.clone()))
-    }
-
     //TODO: switch dim to isize and allow negative indexing
     pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
         Softmax::check_invariants(&[self])?;
@@ -403,6 +352,60 @@ impl Tensor {
             new_view,
             self.device.clone(),
         ))
+    }
+
+    /// # Slice
+    ///
+    /// Current slice implementation requires specification of all dimensions.
+    /// Currently very user hostile, but will be improved.
+    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
+        let mut resolved_ranges = rvec![];
+
+        for (ridx, r) in ranges.iter().enumerate() {
+            let start = match r.start_bound() {
+                Bound::Included(&s) => s,
+                Bound::Excluded(&s) => s + 1,
+                Bound::Unbounded => 0,
+            };
+            let end = match r.end_bound() {
+                Bound::Included(&e) => e + 1,
+                Bound::Excluded(&e) => e,
+                Bound::Unbounded => self.shape()[ridx],
+            };
+            resolved_ranges.push(start..end);
+        }
+
+        let slice = Slice::new(resolved_ranges);
+        let out_view = slice.infer_output(&[self])?;
+
+        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
+        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
+    }
+
+    /// # View
+    ///
+    /// Creates a new tensor with the same data, but a different shape.
+    /// The new shape must have the same number of elements as the original shape.
+    pub fn view(&self, shape: Shape) -> anyhow::Result<Tensor> {
+        let view = View::new(self.clone(), shape);
+        let out_view = view.infer_output(&[self])?;
+
+        let storage = self.storage.clone();
+
+        Ok(Tensor::from_shallow(
+            LazyOp::View(view),
+            out_view,
+            storage,
+            self.device.clone(),
+        ))
+    }
+
+    pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
+        let permute = Permute::new(dims.to_vec());
+        let out_view = permute.infer_output(&[self])?;
+
+        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
+        Ok(Tensor::lazy(op, out_view, self.device.clone()))
     }
 
     pub fn broadcast_to(&self, shape: Shape) -> anyhow::Result<Tensor> {
@@ -728,11 +731,7 @@ impl Tensor {
             Device::CPU,
         ))
     }
-}
 
-/// Conversion to and from numpy arrays
-#[cfg(not(target_arch = "wasm32"))]
-impl Tensor {
     pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
         &'s self,
         py: &'p pyo3::Python<'p>,
@@ -743,6 +742,13 @@ impl Tensor {
             "Cannot convert non-CPU tensor to numpy array"
         );
         PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
+    fn from(array: &PyArrayDyn<T>) -> Self {
+        Self::from(array.to_owned_array())
     }
 }
 
@@ -904,12 +910,5 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
         } else {
             panic!("Cannot convert numpy array with non-contiguous memory layout to tensor");
         }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
-    fn from(array: &PyArrayDyn<T>) -> Self {
-        Self::from(array.to_owned_array())
     }
 }
