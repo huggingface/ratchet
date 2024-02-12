@@ -87,7 +87,7 @@ macro_rules! shape {
 }
 
 pub mod prelude {
-    pub use crate::{rvec, shape, Device, Tensor};
+    pub use crate::{rvec, shape, Device, DeviceRequest, Tensor};
 }
 
 #[cfg(not(target_arch = "wasm32"))]
