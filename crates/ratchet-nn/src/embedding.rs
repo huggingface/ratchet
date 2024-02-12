@@ -10,7 +10,7 @@ pub struct Embedding {
 impl Module for Embedding {
     type Input = Tensor;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, _input: &Self::Input) -> anyhow::Result<Tensor> {
         //self.weight.index_select(0, input)
         todo!()
     }

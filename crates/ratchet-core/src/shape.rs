@@ -208,8 +208,8 @@ mod tests {
         type Parameters = Vec<Range<usize>>;
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(mut args: Self::Parameters) -> Self::Strategy {
-            args.prop_map(move |shape| Into::<Shape>::into(shape))
+        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+            args.prop_map(Into::<Shape>::into)
                 .boxed()
         }
     }
