@@ -4,15 +4,18 @@
 use self::ggml::GgmlDType;
 use crate::error::{self, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use futures_util::future::BoxFuture;
 use futures_util::{future, stream, AsyncWrite, StreamExt};
+use futures_util::{Future, FutureExt};
 use ratchet::shape;
 use ratchet::{Device, Shape, Tensor};
 use std::collections::HashMap;
+use std::pin::Pin;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-// pub mod ggml;
+pub mod ggml;
 // pub mod ggml_file;
-// pub mod k_quants;
+pub mod k_quants;
 // pub mod utils;
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -90,7 +93,7 @@ impl TensorInfo {
         //     device,
         // )
         // [TODO] Implement
-        let tensor = ratchet::Tensor::randn(shape![1, 2], device.clone());
+        let tensor = ratchet::Tensor::randn::<f32>(shape![1, 2], device.clone());
         Ok(tensor)
     }
 }
@@ -282,7 +285,15 @@ impl Value {
         }
     }
 
-    async fn read<R: AsyncRead + Unpin>(
+    fn recursive_read_wrapper<'a, R: AsyncRead + Unpin + Send>(
+        reader: &'a mut R,
+        value_type: ValueType,
+        magic: &'a VersionedMagic,
+    ) -> BoxFuture<'a, Result<Self>> {
+        Box::pin(Value::read(reader, value_type, magic))
+    }
+
+    async fn read<R: AsyncRead + Unpin + Send>(
         reader: &mut R,
         value_type: ValueType,
         magic: &VersionedMagic,
@@ -315,11 +326,12 @@ impl Value {
                 };
                 let mut vs = Vec::with_capacity(len);
                 for _ in 0..len {
-                    vs.push(Value::read(reader, value_type, magic).await?)
+                    vs.push(Value::recursive_read_wrapper(reader, value_type, magic).await?)
                 }
                 Self::Array(vs)
             }
         };
+
         Ok(v)
     }
 
@@ -428,7 +440,7 @@ impl<T: AsyncRead + Unpin> AsyncReadExt2 for T {
 }
 
 impl Content {
-    pub async fn read<R: AsyncSeek + AsyncRead + Unpin>(reader: &mut R) -> Result<Self> {
+    pub async fn read<R: AsyncSeek + AsyncRead + Unpin + Send>(reader: &mut R) -> Result<Self> {
         let magic = VersionedMagic::read(reader).await?;
 
         let tensor_count = match magic {
