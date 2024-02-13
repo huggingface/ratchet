@@ -39,6 +39,7 @@ impl Module for ResidualAttentionBlock {
                 let x_attn_ln = xa_ln.forward(&attn)?;
                 let x_attn =
                     xa_blck.forward(&MHAInputs::new(x_attn_ln, xa.clone(), None, false))?;
+                return Ok(x_attn);
                 attn = x_attn.add(&attn)?;
             }
         }

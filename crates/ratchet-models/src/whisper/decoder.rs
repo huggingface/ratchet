@@ -62,9 +62,12 @@ impl Module for WhisperDecoder {
             };
             x = block.forward(&block_input)?;
         }
+        /*
         x = self.ln_post.forward(&x)?;
         let logits = x.matmul(&self.stem.token_embed.weight.permute(&[1, 0])?)?;
         Ok(logits)
+        */
+        Ok(x)
     }
 }
 
@@ -83,8 +86,8 @@ impl WhisperDecoder {
     ) -> anyhow::Result<Self> {
         let hparams = &disk_model.header.hparams;
         let stem = DecoderStem::load(disk_model, reader, device)?;
-        let (n_layers, n_heads) = (hparams.n_text_layer, hparams.n_text_head);
-        //let (n_layers, n_heads) = (1, hparams.n_text_head);
+        //let (n_layers, n_heads) = (hparams.n_text_layer, hparams.n_text_head);
+        let (n_layers, n_heads) = (1, hparams.n_text_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
