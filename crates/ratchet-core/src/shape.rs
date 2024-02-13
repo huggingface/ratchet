@@ -1,6 +1,6 @@
 use crate::{shape, RVec};
 use encase::impl_wrapper;
-use std::ops::RangeTo;
+use std::ops::{RangeFrom, RangeTo};
 
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct Shape(RVec<usize>);
@@ -136,6 +136,14 @@ impl std::ops::IndexMut<usize> for Shape {
     }
 }
 
+impl std::ops::Index<RangeFrom<usize>> for Shape {
+    type Output = [usize];
+
+    fn index(&self, index: RangeFrom<usize>) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
 impl std::ops::Index<RangeTo<usize>> for Shape {
     type Output = [usize];
 
@@ -209,8 +217,7 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-            args.prop_map(Into::<Shape>::into)
-                .boxed()
+            args.prop_map(Into::<Shape>::into).boxed()
         }
     }
 

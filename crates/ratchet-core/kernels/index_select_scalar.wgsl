@@ -8,7 +8,11 @@ var<storage, read> I: array<i32>;
 var<storage, read_write> Y: array<f32>;
 
 struct Meta {
-    dim_len: i32
+    dst_numel: u32,
+    left_numel: u32,
+    right_numel: u32,
+    ids_numel: u32,
+    src_dim_numel: u32,
 }
 
 @group(1) @binding(0)
@@ -21,13 +25,15 @@ fn main(
         @builtin(workgroup_id) group_id: vec3<u32>,
         @builtin(num_workgroups) num_groups: vec3<u32>
 ) {
-    let src_offset = u32(I[group_id.y] * metadata.dim_len);
-    let dst_offset = group_id.y * u32(metadata.dim_len);
-
-    let thread_offset = group_id.x * 64u + local_index;
-    if (thread_offset >= u32(metadata.dim_len)) {
+    let tid = group_id.x * 64u + local_index;
+    if (tid >= metadata.dst_numel) {
         return;
     }
+    let id_i = (tid / metadata.right_numel) % metadata.ids_numel;
+    let input_i = min(u32(I[id_i]), metadata.src_dim_numel - 1u);
+    let right_rank_i = tid % metadata.right_numel;
+    let left_rank_i = tid / (metadata.right_numel * metadata.ids_numel);
 
-    Y[dst_offset + thread_offset] = X[src_offset + thread_offset];
+    let src_i = left_rank_i * metadata.src_dim_numel * metadata.right_numel + input_i * metadata.right_numel + right_rank_i;
+    Y[tid] = X[src_i];
 }
