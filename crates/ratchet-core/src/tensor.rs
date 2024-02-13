@@ -358,6 +358,7 @@ impl Tensor {
     ///
     /// Current slice implementation requires specification of all dimensions.
     /// Currently very user hostile, but will be improved.
+    /// TODO: should allow mixed range types
     pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
         let mut resolved_ranges = rvec![];
 
@@ -653,11 +654,8 @@ impl Tensor {
             }
         }
 
-        #[cfg(all(debug_assertions, feature = "plotting"))]
-        {
-            let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "allocations.svg").unwrap();
-        }
+        let last = execution_order.last().unwrap();
+        crate::plot::render_to_file(last, "allocations.svg").unwrap();
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));

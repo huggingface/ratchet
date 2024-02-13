@@ -170,6 +170,12 @@ impl From<&[usize]> for Shape {
     }
 }
 
+impl From<RVec<usize>> for Shape {
+    fn from(shape: RVec<usize>) -> Self {
+        Self(shape)
+    }
+}
+
 impl From<&Shape> for glam::UVec4 {
     fn from(shape: &Shape) -> Self {
         glam::UVec4::new(

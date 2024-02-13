@@ -35,9 +35,8 @@ impl Module for DecoderStem {
 
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
         let num_tokens = input.shape()[input.rank() - 1];
-        self.token_embed
-            .forward(input)?
-            .add(&self.pos_embed.slice(&[0..num_tokens])?)
+        let sliced = self.pos_embed.slice(&[0..num_tokens, 0..384])?;
+        self.token_embed.forward(input)?.add(&sliced)
     }
 }
 
@@ -85,6 +84,7 @@ impl WhisperDecoder {
         let hparams = &disk_model.header.hparams;
         let stem = DecoderStem::load(disk_model, reader, device)?;
         let (n_layers, n_heads) = (hparams.n_text_layer, hparams.n_text_head);
+        //let (n_layers, n_heads) = (1, hparams.n_text_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -103,7 +103,7 @@ impl WhisperDecoder {
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut lt = |name: &str| {
-            let key = format!("encoder.ln_post.{}", name);
+            let key = format!("decoder.ln.{}", name);
             disk_model.load_tensor(&key, reader, device)
         };
 
@@ -118,8 +118,10 @@ impl WhisperDecoder {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use crate::{Whisper, WhisperDecoder};
+    use crate::{DecoderStem, Whisper, WhisperDecoder};
     use hf_hub::api::sync::Api;
+    use ndarray::{s, Axis};
+    use ndarray_stats::QuantileExt;
     use ratchet::{shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
@@ -139,12 +141,25 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
         let audio_ctx = Tensor::from_npy_path::<f32, _>(audio_ctx_npy, &device)?;
+        println!("AUDIO CTX: {:?}", audio_ctx);
         let tokens = Tensor::from_data(vec![50258, 50259, 50359], shape![1, 3], device);
 
         let result = decoder.forward(&[audio_ctx, tokens])?;
         result.resolve()?;
-        let ours = result.to(&Device::CPU)?;
-        println!("{:?}", ours);
+        let our_logits = result.to(&Device::CPU)?;
+        println!("OUR LOGITS: {:?}", our_logits);
+        println!("OUR LOGITS SHAPE: {:?}", our_logits.shape());
+
+        let nd_logits = our_logits.to_ndarray_view::<f32>();
+        let sliced = nd_logits.slice(s![.., -1.., ..51865]).remove_axis(Axis(1));
+
+        let toks = sliced
+            .map_axis(Axis(1), |row| row.argmax_skipnan().unwrap())
+            .iter()
+            .map(|&x| x as i32)
+            .collect::<Vec<_>>();
+
+        println!("TOKENS: {:?}", toks);
 
         Ok(())
     }
