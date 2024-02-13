@@ -62,12 +62,9 @@ impl Module for WhisperDecoder {
             };
             x = block.forward(&block_input)?;
         }
-        /*
         x = self.ln_post.forward(&x)?;
         let logits = x.matmul(&self.stem.token_embed.weight.permute(&[1, 0])?)?;
         Ok(logits)
-        */
-        Ok(x)
     }
 }
 
@@ -86,8 +83,7 @@ impl WhisperDecoder {
     ) -> anyhow::Result<Self> {
         let hparams = &disk_model.header.hparams;
         let stem = DecoderStem::load(disk_model, reader, device)?;
-        //let (n_layers, n_heads) = (hparams.n_text_layer, hparams.n_text_head);
-        let (n_layers, n_heads) = (1, hparams.n_text_head);
+        let (n_layers, n_heads) = (hparams.n_text_layer, hparams.n_text_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -143,8 +139,8 @@ mod tests {
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
-        let audio_ctx = Tensor::from_npy_path::<f32, _>(audio_ctx_npy, &device)?;
-        println!("AUDIO CTX: {:?}", audio_ctx);
+        let mut audio_ctx = Tensor::from_npy_path::<f32, _>(audio_ctx_npy, &Device::CPU)?;
+        audio_ctx = audio_ctx.to(&device)?;
         let tokens = Tensor::from_data(vec![50258, 50259, 50359], shape![1, 3], device);
 
         let result = decoder.forward(&[audio_ctx, tokens])?;
