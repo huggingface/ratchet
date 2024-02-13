@@ -33,10 +33,6 @@ impl Module for MultiHeadAttention {
 
         let to_project = xa.as_ref().unwrap_or(x);
         let k = self.k.forward(to_project)?;
-        if xa.is_some() {
-            println!("K: {:?}", k);
-            return Ok(k);
-        }
         let v = self.v.forward(to_project)?;
 
         //TODO: cache
