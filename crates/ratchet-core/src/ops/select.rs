@@ -22,7 +22,11 @@ impl IndexSelect {
 
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct IndexSelectMeta {
-    dim_len: i32,
+    dst_numel: u32,
+    left_numel: u32,
+    right_numel: u32,
+    ids_numel: u32,
+    src_dim_numel: u32,
 }
 
 impl OpMetadata for IndexSelectMeta {}
@@ -62,10 +66,9 @@ impl MetaOperation for IndexSelect {
         KernelElement::Scalar
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let embedding_dim = self.input.shape()[self.dim] as _;
-        let wgc_y = self.indices.shape().numel() as _;
-        Ok(wgc![wgc_y, embedding_dim, 1])
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+        let wgcx = WorkgroupCount::div_ceil(dst.shape().numel(), 64);
+        Ok(wgc![wgcx as _, 1, 1])
     }
 
     fn storage_bind_group_layout(
@@ -77,14 +80,23 @@ impl MetaOperation for IndexSelect {
 
     fn metadata(
         &self,
-        _dst: &Tensor,
+        dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        let meta = IndexSelectMeta {
-            dim_len: self.input.shape()[self.dim + 1] as _, //TODO: this is wrong
-        };
-        println!("meta: {:?}", meta);
-        Ok(meta)
+        let dst_numel = dst.shape().numel() as u32;
+        let left_numel = self.input.shape()[..self.dim].iter().product::<usize>() as u32;
+        let right_numel = self.input.shape()[(self.dim + 1)..]
+            .iter()
+            .product::<usize>() as u32;
+        let ids_numel = self.indices.shape().numel() as u32;
+        let src_dim_numel = self.input.shape()[self.dim] as u32;
+        Ok(IndexSelectMeta {
+            dst_numel,
+            left_numel,
+            right_numel,
+            ids_numel,
+            src_dim_numel,
+        })
     }
 }
 
@@ -106,8 +118,8 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            Shape::arbitrary_with(vec![1..20000, 1..1024])
-                .prop_flat_map(|input_shape| (Just(input_shape), 1..1024usize))
+            Shape::arbitrary_with(vec![1..512usize, 1..16usize])
+                .prop_flat_map(|input_shape| (Just(input_shape), 1..64usize))
                 .prop_map(|(input_shape, num_indices)| {
                     let indices =
                         Tensor::randint(0, input_shape[0] as i32, shape![num_indices], Device::CPU);
@@ -160,16 +172,7 @@ def index_select(input, indices):
         indices: Tensor,
     }
 
-    #[test]
-    fn debug_index_select() {
-        let problem = IndexSelectProblem {
-            input_shape: shape![3, 4],
-            indices: Tensor::from_data(vec![0, 2], shape![2], Device::CPU),
-        };
-        run_index_select_trial(problem);
-    }
-
-    #[proptest(cases = 1)]
+    #[proptest(cases = 16)]
     fn test_index_select(prob: IndexSelectProblem) {
         run_index_select_trial(prob);
     }
