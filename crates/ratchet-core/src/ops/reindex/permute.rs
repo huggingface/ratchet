@@ -114,23 +114,6 @@ def permute(a):
         Ok(())
     }
 
-    #[test]
-    fn debug_permute() -> anyhow::Result<()> {
-        let op = Permute::new(vec![1, 0]);
-
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![384, 384], cpu_device.clone());
-        let device = GPU_DEVICE.with(|d| d.clone());
-
-        let a_gpu = a.to(&device)?;
-        let ground = ground_truth(&a, format!("{:?}", op.dims).as_str())?;
-        let ours = a_gpu.permute(&op.dims)?;
-        ours.resolve()?;
-        let d_gpu = ours.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 1e-5, 1e-5)?;
-        Ok(())
-    }
-
     #[proptest(cases = 16)]
     fn test_permute(prob: PermuteProblem) {
         run_reindex_trial(prob).unwrap();

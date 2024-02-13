@@ -117,19 +117,24 @@ impl WhisperDecoder {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use crate::{DecoderStem, Whisper, WhisperDecoder};
+    use crate::{Whisper, WhisperDecoder};
     use hf_hub::api::sync::Api;
     use ndarray::{s, Axis};
     use ndarray_stats::QuantileExt;
     use ratchet::{shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
+    use tokenizers::Tokenizer;
 
     #[test]
     fn decoder_matches() -> anyhow::Result<()> {
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
         let path = model.get("ggml-tiny.bin").unwrap();
+
+        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
+        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
+
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_ctx_npy = dataset.get("jfk_tiny_encoder_output.npy").unwrap();
 
@@ -141,24 +146,32 @@ mod tests {
         let decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
         let mut audio_ctx = Tensor::from_npy_path::<f32, _>(audio_ctx_npy, &Device::CPU)?;
         audio_ctx = audio_ctx.to(&device)?;
-        let tokens = Tensor::from_data(vec![50258, 50259, 50359], shape![1, 3], device);
 
-        let result = decoder.forward(&[audio_ctx, tokens])?;
-        result.resolve()?;
-        let our_logits = result.to(&Device::CPU)?;
-        println!("OUR LOGITS: {:?}", our_logits);
-        println!("OUR LOGITS SHAPE: {:?}", our_logits.shape());
+        let mut tokens = vec![50258, 50259, 50359];
+        let mut token = -1;
+        while token != 50257 {
+            let token_t =
+                Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
+            let result = decoder.forward(&[audio_ctx.clone(), token_t])?;
+            result.resolve()?;
 
-        let nd_logits = our_logits.to_ndarray_view::<f32>();
-        let sliced = nd_logits.slice(s![.., -1.., ..51865]).remove_axis(Axis(1));
+            let our_logits = result.to(&Device::CPU)?;
+            let nd_logits = our_logits.to_ndarray_view::<f32>();
+            let sliced = nd_logits.slice(s![.., -1.., ..51865]).remove_axis(Axis(1));
 
-        let toks = sliced
-            .map_axis(Axis(1), |row| row.argmax_skipnan().unwrap())
-            .iter()
-            .map(|&x| x as i32)
-            .collect::<Vec<_>>();
+            token = sliced
+                .map_axis(Axis(1), |row| row.argmax_skipnan().unwrap())
+                .iter()
+                .map(|&x| x as i32)
+                .collect::<Vec<_>>()[0];
+            println!("Token: {}", token);
+            tokens.push(token);
+        }
 
-        println!("TOKENS: {:?}", toks);
+        let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
+        let u32_tokens: Vec<_> = tokens.iter().map(|&x| x as u32).collect();
+        let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
+        println!("{}", decoded);
 
         Ok(())
     }

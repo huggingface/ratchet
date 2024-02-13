@@ -97,6 +97,8 @@ ndarray-stats = "0.5.1"
 num = "0.4.1"
 realfft = "3.3.0"
 ndarray = "0.15.6"
+tokenizers = { version = "0.13.4", default-features = false, features=["unstable_wasm"] }
+
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hf-hub = "0.3.2"
