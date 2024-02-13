@@ -38,11 +38,10 @@ impl Module for ResidualAttentionBlock {
             if let Some(xa_ln) = &self.x_attn_ln {
                 let x_attn_ln = xa_ln.forward(&attn)?;
                 let x_attn =
-                    xa_blck.forward(&MHAInputs::new(x_attn_ln, xa.clone(), mask.clone(), false))?;
-                attn = attn.add(&x_attn)?;
+                    xa_blck.forward(&MHAInputs::new(x_attn_ln, xa.clone(), None, false))?;
+                attn = x_attn.add(&attn)?;
             }
         }
-
         let mlp_ln = self.mlp_ln.forward(&attn)?;
         let mlp = self.mlp.forward(&mlp_ln)?;
         mlp.add(&attn)
