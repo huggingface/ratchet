@@ -152,12 +152,12 @@ def index_select(input, indices):
         } = problem;
         let input = Tensor::randn::<f32>(input_shape, Device::CPU);
 
-        let ground_truth = ground_truth(&input, &indices, 0).unwrap();
+        let dim = 0;
+        let ground_truth = ground_truth(&input, &indices, dim).unwrap();
         println!("ground_truth: {:?}", ground_truth);
 
         let input = input.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
-        let dim = 0;
 
         let result = input.index_select(&indices, dim).unwrap();
         result.resolve().unwrap();
