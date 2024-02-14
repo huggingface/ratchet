@@ -1,4 +1,3 @@
-//TODO: move this to a custom operation
 use derive_new::new;
 use encase::ShaderType;
 

@@ -214,6 +214,10 @@ lazy_static! {
             "sgemm_scalar",
             include_str!(r"../kernels/sgemm_scalar.wgsl"),
         );
+        m.insert(
+            "index_select_scalar",
+            include_str!(r"../kernels/index_select_scalar.wgsl"),
+        );
         m.insert("sgemm_vec2", include_str!(r"../kernels/sgemm_vec2.wgsl"));
         m.insert(
             "softmax_vec2",

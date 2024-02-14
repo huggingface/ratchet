@@ -1,14 +1,17 @@
 use ratchet::Tensor;
 
+use crate::Module;
+
 #[derive(derive_new::new, Debug)]
 pub struct Linear {
     w: Tensor,
     b: Option<Tensor>,
 }
 
-impl Linear {
-    pub fn forward(&self, x: &Tensor) -> anyhow::Result<Tensor> {
-        let y = x.matmul(&self.w.permute(&[1, 0])?)?;
+impl Module for Linear {
+    type Input = Tensor;
+    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+        let y = input.matmul(&self.w.permute(&[1, 0])?)?;
         if let Some(b) = &self.b {
             y.add(b)
         } else {

@@ -87,12 +87,12 @@ macro_rules! shape {
 }
 
 pub mod prelude {
-    pub use crate::{rvec, shape, Device, Tensor};
+    pub use crate::{rvec, shape, Device, DeviceRequest, Tensor};
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod test_util {
-    use crate::Tensor;
+    use crate::{DType, Tensor};
     use regex::Regex;
     use {
         numpy::PyArrayDyn,
@@ -109,7 +109,14 @@ pub mod test_util {
 
         Python::with_gil(|py| {
             let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
-            let py_args = PyTuple::new(py, args.iter().map(|arg| arg.to_py::<f32>(&py)));
+            let py_args = PyTuple::new(
+                py,
+                args.iter().map(|arg| match arg.dt() {
+                    DType::F32 => arg.to_py::<f32>(&py).as_untyped(),
+                    DType::I32 => arg.to_py::<i32>(&py).as_untyped(),
+                    _ => unimplemented!(),
+                }),
+            );
             let py_result: &PyArrayDyn<f32> = prg.getattr(func)?.call1(py_args)?.extract()?;
             Ok(Tensor::from(py_result))
         })

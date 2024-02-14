@@ -1,6 +1,6 @@
 use crate::{shape, RVec};
 use encase::impl_wrapper;
-use std::ops::RangeTo;
+use std::ops::{RangeFrom, RangeTo};
 
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct Shape(RVec<usize>);
@@ -136,6 +136,14 @@ impl std::ops::IndexMut<usize> for Shape {
     }
 }
 
+impl std::ops::Index<RangeFrom<usize>> for Shape {
+    type Output = [usize];
+
+    fn index(&self, index: RangeFrom<usize>) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
 impl std::ops::Index<RangeTo<usize>> for Shape {
     type Output = [usize];
 
@@ -159,6 +167,12 @@ impl From<Vec<u32>> for Shape {
 impl From<&[usize]> for Shape {
     fn from(slice: &[usize]) -> Self {
         Shape(slice.into())
+    }
+}
+
+impl From<RVec<usize>> for Shape {
+    fn from(shape: RVec<usize>) -> Self {
+        Self(shape)
     }
 }
 
@@ -199,26 +213,17 @@ impl_try_into_for_shape!(0, 1, 2, 3, 4);
 
 #[cfg(test)]
 mod tests {
-    use crate::shape;
-    use crate::RVec;
     use crate::Shape;
     use proptest::prelude::*;
     use proptest::strategy::{BoxedStrategy, Strategy};
     use std::ops::Range;
 
     impl Arbitrary for Shape {
-        type Parameters = RVec<Range<usize>>;
+        type Parameters = Vec<Range<usize>>;
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(mut args: Self::Parameters) -> Self::Strategy {
-            let mut x = args.drain(..);
-            let range = x.next().unwrap();
-            let range2 = x.next().unwrap();
-            let range3 = x.next().unwrap();
-            let range4 = x.next().unwrap();
-            (range, range2, range3, range4)
-                .prop_map(|(val1, val2, val3, val4)| shape![val1, val2, val3, val4])
-                .boxed()
+        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+            args.prop_map(Into::<Shape>::into).boxed()
         }
     }
 
