@@ -43,11 +43,14 @@ impl RoPE {
         let sin = idx_theta.sin()?;
         Ok((cos, sin))
     }
-}
-impl crate::Module for RoPE {
-    type Input = Tensor;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    pub fn new(dim: u32, end: u32, theta: f32, device: Device) -> anyhow::Result<RoPE> {
+        let (cos, sin) = RoPE::precompute_freqs_cis(dim, end, theta, device)?;
+        Ok(Self { cos, sin })
+    }
+
+    pub fn apply_rotary_embedding(&self, x: &Tensor, index_pos: usize) -> anyhow::Result<Tensor> {
+        let [batch_size, n_heads, seq_len, n_embeddings] = x.shape().try_into()?;
         todo!()
     }
 }
