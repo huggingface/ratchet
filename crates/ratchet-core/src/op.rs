@@ -12,15 +12,17 @@ use crate::{ops::*, rvec, CompiledOp, InvariantError, KernelElement, RVec, Stora
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum LazyOp {
+    Const,
     Matmul(Matmul),
     Binary(Binary),
-    Softmax(Softmax), //Should be custom
     Unary(Unary),
     Reindex(Reindex),
+    // ---- Everything below this line shouldn't exist ----
+    Softmax(Softmax),
     Norm(Norm),
-    View(View), //Should be general class, metadata modification
-    Conv(Conv), //Really it's a matmul
-    Const,
+    View(View),          //Should be general class, metadata modification
+    Conv(Conv),          //Really it's a matmul
+    Select(IndexSelect), //Can probably be Reindex
 }
 
 impl LazyOp {
@@ -33,7 +35,8 @@ impl LazyOp {
             LazyOp::Reindex(r) => r.name(),
             LazyOp::Norm(n) => n.name(),
             LazyOp::Conv(c) => c.name(),
-            LazyOp::View(_v) => "View",
+            LazyOp::Select(s) => s.name(),
+            LazyOp::View(_) => "View",
             LazyOp::Const => "Const",
         }
     }
@@ -47,9 +50,9 @@ impl LazyOp {
             LazyOp::Reindex(r) => r.srcs(),
             LazyOp::Norm(n) => n.srcs(),
             LazyOp::Conv(c) => c.srcs(),
+            LazyOp::Select(s) => s.srcs(),
             LazyOp::View(v) => rvec![v.input()],
             LazyOp::Const => rvec![], //end of the line kid
-            _ => unimplemented!(),
         }
     }
 
@@ -62,9 +65,9 @@ impl LazyOp {
             LazyOp::Reindex(r) => r.supports_inplace(),
             LazyOp::Norm(n) => n.supports_inplace(),
             LazyOp::Conv(c) => c.supports_inplace(),
+            LazyOp::Select(s) => s.supports_inplace(),
             LazyOp::View(_v) => true,
             LazyOp::Const => false,
-            _ => unimplemented!(),
         }
     }
 
