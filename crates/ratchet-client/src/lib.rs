@@ -203,6 +203,10 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_gguf() -> Result<(), JsValue> {
+        const DUMMY_GGUF: &[u8] =
+            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/dummy.gguf"));
+
+        debug!(format!("{:?}", DUMMY_GGUF));
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model)
             .uncached()
             .build();
