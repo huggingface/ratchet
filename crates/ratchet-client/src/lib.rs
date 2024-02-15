@@ -1,6 +1,10 @@
+use std::io::BufReader;
+
+use futures_util::StreamExt;
 use js_sys::Uint8Array;
 use util::{js_error, js_to_js_error, to_future};
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
+use wasm_streams::ReadableStream;
 use web_sys::{Cache, Request, RequestInit, RequestMode, Response};
 
 pub mod error;
@@ -69,10 +73,10 @@ impl ApiBuilder {
 
     /// Build an Api from a custom URL.
     #[wasm_bindgen]
-    pub fn from_custom(endpoint: String) -> Self {
+    pub fn from_custom(endpoint: &str) -> Self {
         Self {
             cached: true,
-            endpoint,
+            endpoint: endpoint.to_string(),
         }
     }
 
@@ -161,6 +165,17 @@ impl ApiResponse {
     }
 
     #[wasm_bindgen]
+    pub async fn gguf(&self) -> Result<(), JsError> {
+        let data = self.to_uint8().await?;
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(data.to_vec()));
+
+        let result = gguf::gguf::Content::read(&mut reader)?;
+
+        println!("{:?}", result.metadata);
+        return Ok(());
+    }
+
+    #[wasm_bindgen]
     pub fn is_cached(&self) -> bool {
         self.cached
     }
@@ -181,12 +196,21 @@ impl ApiResponse {
 mod tests {
     use super::*;
     #[wasm_bindgen_test]
-    async fn pass() -> Result<(), JsValue> {
+    async fn test_loading_from_hub() -> Result<(), JsValue> {
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
         let model = model_repo.get("model.safetensors").await?;
         let bytes = model.to_uint8().await?;
         let length = bytes.length();
         assert!(length == 8388776, "Length was {length}");
+        Ok(())
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_gguf() -> Result<(), JsValue> {
+        let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
+        let file = model_repo.get("dummy.gguf").await?;
+        let model_data = file.gguf().await?;
+
         Ok(())
     }
 }

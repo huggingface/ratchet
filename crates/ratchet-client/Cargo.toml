@@ -23,6 +23,7 @@ js-sys = "0.3.64"
 futures-util = { version = "^0.3.28", features = ["io", "sink"] }
 byteorder.workspace = true
 thiserror.workspace = true
+wasm-streams = "0.4.0"
 ratchet = { path = "../ratchet-core" }
 
 [dependencies.web-sys]
