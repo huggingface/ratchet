@@ -3,6 +3,8 @@ use util::{js_error, js_to_js_error, to_future};
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
 use web_sys::{Cache, Request, RequestInit, RequestMode, Response};
 
+pub mod error;
+mod gguf;
 mod util;
 
 #[cfg(test)]
