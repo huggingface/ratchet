@@ -1,12 +1,12 @@
 use std::io::BufReader;
 
 use futures_util::StreamExt;
+use gloo::console::debug;
 use js_sys::Uint8Array;
 use util::{js_error, js_to_js_error, to_future};
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
 use wasm_streams::ReadableStream;
 use web_sys::{Cache, Request, RequestInit, RequestMode, Response};
-
 pub mod error;
 mod gguf;
 mod util;
@@ -130,9 +130,16 @@ impl Api {
 
         let (raw, cached) = if cache_hit.is_undefined() || !self.cached {
             let raw_response = util::fetch(file_url.as_str()).await?;
-            let _ =
-                to_future::<JsValue>(cache.put_with_str(file_url.as_str(), &raw_response.clone()?))
-                    .await;
+
+            let status = raw_response.status();
+
+            // [TODO] Need to improve the whole caching here
+            if (status >= 200 && status < 400) {
+                let _ = to_future::<JsValue>(
+                    cache.put_with_str(file_url.as_str(), &raw_response.clone()?),
+                )
+                .await;
+            }
             (raw_response, false)
         } else {
             let raw_response: Response = cache_hit.dyn_into()?;
@@ -171,7 +178,7 @@ impl ApiResponse {
 
         let result = gguf::gguf::Content::read(&mut reader)?;
 
-        println!("{:?}", result.metadata);
+        debug!("result", format!("{:?}", result.metadata));
         return Ok(());
     }
 
@@ -207,7 +214,9 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_gguf() -> Result<(), JsValue> {
-        let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
+        let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model)
+            .uncached()
+            .build();
         let file = model_repo.get("dummy.gguf").await?;
         let model_data = file.gguf().await?;
 
