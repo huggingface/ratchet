@@ -186,17 +186,6 @@ impl ApiResponse {
     pub fn is_cached(&self) -> bool {
         self.cached
     }
-
-    // #[wasm_bindgen]
-    // pub async fn stream(&self) -> Result<ApiStream, JsError> {
-    //     let raw_body = self.raw.body().ok_or(js_error("Failed to open body"))?;
-
-    //     let mut body: ReadableStream = ReadableStream::from_raw(raw_body);
-    //     let reader: ReadableStreamBYOBReader<'_> = body.get_byob_reader();
-    //     let mut async_read = reader.into_async_read();
-
-    //     return Ok(ApiStream { async_read });
-    // }
 }
 
 #[cfg(test)]
