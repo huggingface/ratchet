@@ -97,7 +97,7 @@ impl BufferAllocator {
             }
         }
 
-        if std::env::var("RATCHET_error").is_ok() {
+        if std::env::var("RATCHET_DEBUG").is_ok() {
             return GraphBuffer::from(self.create_buffer(&descriptor, device));
         }
 
