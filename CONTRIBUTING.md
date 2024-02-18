@@ -1,8 +1,3 @@
-# Ratchet
-
-### [Discord](https://discord.gg/XFe33KQTG4)
-
-A web-first, cross-platform ML framework.
 
 # Running Tests for the Ratchet Rust Package
 
@@ -24,7 +19,17 @@ git clone https://github.com/FL33TW00D/ratchet.git
 cd ratchet/
 ```
 
-### Step 2: Install PyO3
+### Step 2: Install `just` Command Runner
+
+Before installing PyO3, ensure you have `just`, a command runner that simplifies running project-specific commands, installed. If `just` is not already installed on your system, you can install it using Cargo, Rust's package manager:
+
+```sh
+cargo install just
+```
+
+This step assumes you have Rust and Cargo already installed on your system. If not, please refer to the Rust installation guide to set up Rust and Cargo.
+
+### Step 3: Install PyO3
 
 Use `just` to install PyO3, ensuring Rust can interface with Python:
 
@@ -32,7 +37,7 @@ Use `just` to install PyO3, ensuring Rust can interface with Python:
 just install-pyo3
 ```
 
-### Step 3: Configure Python Environment for PyO3
+### Step 4: Configure Python Environment for PyO3
 
 Add the path to the Python interpreter to your shell's configuration file. This path should point to the Python version you plan to use with PyO3.
 
@@ -71,7 +76,7 @@ Verify the environment variable is set correctly:
 echo $PYO3_PYTHON
 ```
 
-### Step 4: Install `pyenv` and `pyenv-virtualenv`
+### Step 5: Install `pyenv` and `pyenv-virtualenv`
 
 If `pyenv` is not installed, you can install it along with `pyenv-virtualenv` to manage Python versions more effectively. This step is optional but recommended.
 
@@ -88,7 +93,7 @@ eval "$(pyenv init --path)"
 eval "$(pyenv virtualenv-init -)"
 ```
 
-### Step 5: Set Local Python Version and Install Dependencies
+### Step 6: Set Local Python Version and Install Dependencies
 
 Set the local Python version to 3.10.6 (or whichever version given by PyO3) and verify it:
 
@@ -103,7 +108,7 @@ Install the required Python packages specified in `requirements.txt`:
 pip install -r requirements.txt
 ```
 
-### Step 6: Run Tests
+### Step 7: Run Tests
 
 Finally, run the tests for the package using Cargo:
 
