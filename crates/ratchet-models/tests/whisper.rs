@@ -10,6 +10,7 @@ use ratchet_loader::GGMLCompatible;
 use ratchet_models::{Whisper, WhisperDecoder, WhisperEncoder};
 use ratchet_nn::Module;
 
+use tokenizers::Tokenizer;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::*;
 
@@ -102,6 +103,16 @@ async fn tiny_decoder() -> Result<(), JsValue> {
         console_log!("Token: {}", token);
         tokens.push(token);
     }
+
+    let tokenizer_repo = ApiBuilder::from_hf("openai/whisper-tiny", RepoType::Model).build();
+    let tokenizer_json = tokenizer_repo.get("tokenizer.json").await?;
+    let tokenizer_data = tokenizer_json.to_uint8().await?;
+
+    let tokenizer_data_slice = tokenizer_data.to_vec();
+    let tokenizer = Tokenizer::from_bytes(&tokenizer_data_slice).unwrap();
+    let u32_tokens = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
+    let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
+    console_log!("Decoded: {}", decoded);
 
     Ok(())
 }
