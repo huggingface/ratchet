@@ -32,8 +32,8 @@ pub enum InvariantError {
     UnsupportedDType(DType),
     #[error("Duplicate dims in permutation.")]
     DuplicateDims,
-    #[error("Broadcasting failed.")]
-    BroadcastingFailed,
+    #[error("Broadcasting failed: {0:?}")]
+    BroadcastingFailed(Vec<Shape>),
 }
 
 /// # Enforcer

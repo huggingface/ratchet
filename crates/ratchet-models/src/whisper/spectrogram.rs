@@ -79,7 +79,8 @@ impl SpectrogramGenerator {
         mel_spec.mapv_inplace(|x| x.max(1e-10).log10());
         let max = *mel_spec.max().unwrap();
         mel_spec.mapv_inplace(|x| (x.max(max - 8.0) + 4.0) / 4.0);
-        Tensor::from(mel_spec.into_dyn())
+        let expanded = mel_spec.insert_axis(ndarray::Axis(0));
+        Tensor::from(expanded.into_dyn())
     }
 
     pub fn generate(&self, audio: Vec<f32>) -> Result<Tensor, AudioError> {

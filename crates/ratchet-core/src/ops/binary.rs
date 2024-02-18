@@ -63,7 +63,8 @@ impl Operation for Binary {
         }
         let broadcasted = Shape::multi_broadcast(shapes);
         if broadcasted.is_none() {
-            return Err(InvariantError::BroadcastingFailed.into());
+            let failed = shapes.iter().map(|s| (*s).clone()).collect::<Vec<_>>();
+            return Err(InvariantError::BroadcastingFailed(failed).into());
         }
         let broadcasted = broadcasted.unwrap();
         let ostrides = Strides::from(&broadcasted);
