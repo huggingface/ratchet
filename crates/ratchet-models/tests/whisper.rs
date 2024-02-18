@@ -57,7 +57,6 @@ async fn tiny_decoder() -> Result<(), JsValue> {
     let model_data = model.to_uint8().await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-    // let input_npy = ground_repo.get("jfk_tiny_encoder_input.npy").await?;
     let ground_npy = ground_repo.get("jfk_tiny_encoder_output.npy").await?;
 
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(model_data.to_vec()));
@@ -65,8 +64,6 @@ async fn tiny_decoder() -> Result<(), JsValue> {
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
 
-    // let input_data = &input_npy.to_uint8().await?.to_vec();
-    // let input = Tensor::from_npy_bytes::<f32>(input_data, &device).unwrap();
     let ground =
         Tensor::from_npy_bytes::<f32>(&ground_npy.to_uint8().await?.to_vec(), &Device::CPU)
             .unwrap();
