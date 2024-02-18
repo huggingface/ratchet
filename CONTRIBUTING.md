@@ -125,3 +125,18 @@ Finally, run the tests for the package using Cargo:
 ```sh
 cargo test
 ```
+
+### Step 8: Run WASM Tests
+
+To run WASM tests (e.g., the whisper test) run:
+
+```sh
+cd crates/ratchet-models/
+wasm-pack test --chrome
+```
+
+And check the result in:
+
+```
+http://localhost:8000
+```
