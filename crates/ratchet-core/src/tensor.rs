@@ -858,6 +858,9 @@ impl Tensor {
     }
 
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
+        if !self.resolved() {
+            panic!("Tensor is not resolved");
+        }
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
         if self.num_bytes() != 0 {
@@ -871,6 +874,9 @@ impl Tensor {
     }
 
     pub fn to_ndarray_view<T: TensorDType>(&self) -> ArrayViewD<T> {
+        if !self.resolved() {
+            panic!("Tensor is not resolved");
+        }
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
         if self.num_bytes() != 0 {
