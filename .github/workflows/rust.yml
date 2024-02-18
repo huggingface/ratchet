@@ -120,7 +120,7 @@ jobs:
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
           PLATFORM=${{ matrix.platform }}
-          URL="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/${PLATFORM}/chromedriver-${PLATFORM}.zip"
+          URL="https://storage.googleapis.com/chrome-for-testing-public/${VERSION}/${PLATFORM}/chromedriver-${PLATFORM}.zip"
           if [ "${{ runner.os }}" = "windows-2022" ]; then
             curl.exe -L --output "chromedriver.zip" $URL 
             powershell.exe -Command "Expand-Archive -Path chromedriver.zip -DestinationPath ."

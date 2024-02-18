@@ -228,7 +228,8 @@ macro_rules! impl_binary_op {
             let shapes = &[lhs.shape(), rhs.shape()];
             let broadcasted = Shape::multi_broadcast(shapes);
             if broadcasted.is_none() {
-                return Err(InvariantError::BroadcastingFailed.into());
+                let failed = shapes.iter().map(|s| (*s).clone()).collect::<Vec<_>>();
+                return Err(InvariantError::BroadcastingFailed(failed).into());
             }
             let broadcasted = broadcasted.unwrap();
             let left_required = self.shape() != &broadcasted;
@@ -858,6 +859,9 @@ impl Tensor {
     }
 
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
+        if !self.resolved() {
+            panic!("Tensor is not resolved");
+        }
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
         if self.num_bytes() != 0 {
@@ -871,6 +875,9 @@ impl Tensor {
     }
 
     pub fn to_ndarray_view<T: TensorDType>(&self) -> ArrayViewD<T> {
+        if !self.resolved() {
+            panic!("Tensor is not resolved");
+        }
         assert!(self.device().is_cpu());
         let shape = self.shape().to_vec();
         if self.num_bytes() != 0 {
