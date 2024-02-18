@@ -93,6 +93,16 @@ eval "$(pyenv init --path)"
 eval "$(pyenv virtualenv-init -)"
 ```
 
+And apply the changes:
+
+- For `zsh`:
+  ```sh
+  source ~/.zshrc
+  ```
+- For `bash`:
+  ```sh
+  source ~/.bashrc
+
 ### Step 6: Set Local Python Version and Install Dependencies
 
 Set the local Python version to 3.10.6 (or whichever version given by PyO3) and verify it:
