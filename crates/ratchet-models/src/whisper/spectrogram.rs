@@ -144,9 +144,10 @@ mod tests {
         let prg = format!(
             r#"
 import whisper
+import numpy as np
 def ground_truth():
     audio = whisper.load_audio("{}")
-    return whisper.log_mel_spectrogram(audio, padding=480000).numpy()
+    return whisper.log_mel_spectrogram(audio, padding=480000).numpy()[np.newaxis]
 "#,
             gb0.to_str().unwrap()
         );
