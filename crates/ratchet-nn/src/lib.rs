@@ -1,6 +1,8 @@
+mod embedding;
 mod linear;
 mod norm;
 
+pub use embedding::*;
 pub use linear::*;
 pub use norm::*;
 

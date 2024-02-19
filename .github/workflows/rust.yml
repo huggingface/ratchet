@@ -13,6 +13,7 @@ env:
   RUST_BACKTRACE: 1
   DXC_RELEASE: "v1.7.2308"
   DXC_FILENAME: "dxc_2023_08_14.zip"
+  WASM_BINDGEN_TEST_TIMEOUT: 300 # 5 minutes
 
 jobs:
   build:
@@ -24,13 +25,18 @@ jobs:
           - name: Windows x86_64
             os: windows-2022
             target: x86_64-pc-windows-msvc
-            kind: native
+            platform: win64
+
+              #- name: Linux x86_64
+              #  os: ubuntu-22.04
+              #  target: x86_64-unknown-linux-gnu
+              #  platform: linux64
 
           - name: MacOS aarch64
             os: macos-14
             target: aarch64-apple-darwin
-            kind: native
-          #TODO: android?
+            platform: mac-arm64
+
     steps:
       - uses: actions/checkout@v4
       - name: Install rust toolchain
@@ -46,7 +52,7 @@ jobs:
           just-version: 1.5.0 # optional semver specification, otherwise latest
 
       - name: (linux) install lavapipe, vulkan sdk, alsa
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         shell: bash
         run: |
           set -e
@@ -98,11 +104,62 @@ jobs:
           cache: "pip"
       - run: pip install -r requirements.txt
 
+      - name: Get Chromedriver version
+        id: get_version
+        run: |
+          import requests
+          import os
+
+          response = requests.get('https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json')
+          data = response.json()
+          stable_version = data['channels']['Stable']['version']
+          print(f"::set-output name=version::{stable_version}")
+        shell: python
+
+      - name: Download and extract Chromedriver
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          PLATFORM=${{ matrix.platform }}
+          URL="https://storage.googleapis.com/chrome-for-testing-public/${VERSION}/${PLATFORM}/chromedriver-${PLATFORM}.zip"
+          if [ "${{ runner.os }}" = "windows-2022" ]; then
+            curl.exe -L --output "chromedriver.zip" $URL 
+            powershell.exe -Command "Expand-Archive -Path chromedriver.zip -DestinationPath ."
+            echo "${PWD}" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          else
+            curl -L $URL -o chromedriver.zip
+            unzip chromedriver.zip
+            echo "${PWD}" >> $GITHUB_PATH
+          fi
+        shell: bash
+
+      - uses: FedericoCarboni/setup-ffmpeg@v3
+        if: matrix.os != 'macos-14'
+
+      - name: Install FFMPEG M1
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          wget -q https://www.osxexperts.net/ffmpeg611arm.zip
+          unzip ffmpeg611arm.zip 
+          sudo mv ffmpeg /usr/local/bin/ffmpeg
+
       - name: run tests
         shell: bash
         run: |
           set -e
-          cargo nextest run -j 1 --features pyo3 --no-fail-fast
+          cargo nextest run -j 1 --no-fail-fast
+
+      - name: Set up WebDriver for Ubuntu
+        if: matrix.os == 'ubuntu-22.04'
+        run: cp config/webdriver-linux.json crates/ratchet-models/webdriver.json
+
+      - name: Set up WebDriver for Windows
+        if: matrix.os == 'windows-2022'
+        run: cp config/webdriver-win.json crates/ratchet-models/webdriver.json
+
+      - name: Set up WebDriver for macOS
+        if: matrix.os == 'macos-14'
+        run: cp config/webdriver-macos.json crates/ratchet-models/webdriver.json
 
       - name: Install integration test dependencies
         run: |
@@ -111,6 +168,7 @@ jobs:
 
       - name: Run wasm-bindgen-test integration tests
         run: |
-          pnpm install -r
-          just wasm ratchet-client
-          just wasm-it-headless
+          just wasm-test ratchet-models chrome
+          #pnpm install -r
+          #just wasm-it-headless
+

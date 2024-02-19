@@ -24,10 +24,12 @@ impl Operation for Slice {
 
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
         //TODO: Check if slice is valid
-        let mut output_shape = shape![0, 0, 0, 0];
-        for (idx, range) in self.indices.iter().enumerate() {
-            output_shape[idx] = range.end - range.start;
-        }
+        let output_shape = self
+            .indices
+            .iter()
+            .map(|range| range.end - range.start)
+            .collect::<RVec<usize>>()
+            .into();
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, srcs[0].dt(), strides))
     }

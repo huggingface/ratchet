@@ -1,4 +1,3 @@
-//TODO: move this to a custom operation
 use derive_new::new;
 use encase::ShaderType;
 
@@ -107,6 +106,10 @@ mod tests {
     use crate::test_util::run_py_prg;
     use crate::{shape, Device, DeviceRequest, Tensor};
 
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
     fn ground_truth(a: &Tensor) -> anyhow::Result<Tensor> {
         let prg = r#"
 import torch
@@ -117,12 +120,13 @@ def softmax(a):
         run_py_prg(prg.to_string(), &[a])
     }
 
-    fn run_softmax_trial(device: &Device, problem: SoftmaxProblem) {
+    fn run_softmax_trial(problem: SoftmaxProblem) {
+        let device = GPU_DEVICE.with(|d| d.clone());
         let SoftmaxProblem { B, M, N } = problem;
         let a = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let ground = ground_truth(&a).unwrap();
 
-        let a_gpu = a.to(device).unwrap();
+        let a_gpu = a.to(&device).unwrap();
         let b = a_gpu.softmax(2).unwrap();
         b.resolve().unwrap();
 
@@ -144,9 +148,8 @@ def softmax(a):
 
     #[proptest(cases = 8)]
     fn test_softmax(prob: SoftmaxProblem) {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let SoftmaxProblem { B, M, N } = prob;
         println!("B = {}, M = {}, N = {}", B, M, N);
-        run_softmax_trial(&device, prob);
+        run_softmax_trial(prob);
     }
 }

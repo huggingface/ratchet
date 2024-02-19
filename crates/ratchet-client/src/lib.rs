@@ -1,26 +1,29 @@
 use js_sys::Uint8Array;
 use util::{js_error, js_to_js_error, to_future};
+use wasm_bindgen::{prelude::*, JsCast, JsValue};
+use web_sys::{Cache, Request, RequestInit, RequestMode, Response};
+
+mod util;
+
 #[cfg(test)]
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
-
-use futures_util::{TryFutureExt};
-
-
-use wasm_bindgen::{prelude::*, JsCast, JsValue};
-
-
-
-use web_sys::{
-    Cache,
-    Request, RequestInit, RequestMode, Response,
-};
-mod util;
-use bytes::Bytes;
 
 #[cfg(test)]
 wasm_bindgen_test_configure!(run_in_browser);
 
 pub type ProgressBar = dyn Fn(u32);
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy)]
+pub enum RepoType {
+    /// This is a model, usually it consists of weight files and some configuration
+    /// files
+    Model,
+    /// This is a dataset, usually contains data within parquet files
+    Dataset,
+    /// This is a space, usually a demo showcashing a given model or dataset
+    Space,
+}
 
 #[wasm_bindgen]
 pub struct ApiBuilder {
@@ -32,10 +35,24 @@ pub struct ApiBuilder {
 impl ApiBuilder {
     /// Build an Api from a HF hub repository.
     #[wasm_bindgen]
-    pub fn from_hf(repo_id: &str) -> Self {
+    pub fn from_hf(repo_id: &str, ty: RepoType) -> Self {
         Self {
             cached: true,
-            endpoint: format!("https://huggingface.co/{repo_id}/resolve/main"),
+            endpoint: Self::endpoint(repo_id, ty),
+        }
+    }
+
+    pub fn endpoint(repo_id: &str, ty: RepoType) -> String {
+        match ty {
+            RepoType::Model => {
+                format!("https://huggingface.co/{repo_id}/resolve/main")
+            }
+            RepoType::Dataset => {
+                format!("https://huggingface.co/datasets/{repo_id}/resolve/main")
+            }
+            RepoType::Space => {
+                format!("https://huggingface.co/spaces/{repo_id}/resolve/main")
+            }
         }
     }
 
@@ -158,31 +175,16 @@ impl ApiResponse {
     // }
 }
 
-trait ToBytes {
-    fn to_bytes(self) -> Bytes;
-}
-
-impl ToBytes for Uint8Array {
-    fn to_bytes(self) -> Bytes {
-        let mut bytes = vec![0; self.length() as usize];
-        self.copy_to(&mut bytes);
-        bytes.into()
-    }
-}
 #[cfg(test)]
-#[wasm_bindgen_test]
-async fn pass() -> Result<(), JsValue> {
-    
-
-    let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test").build();
-
-    let model = model_repo.get("model.safetensors").await?;
-
-    let bytes = model.to_uint8().await?;
-
-    let length = bytes.to_bytes().len();
-
-    assert!(length == 8388776, "Length was {length}");
-
-    Ok(())
+mod tests {
+    use super::*;
+    #[wasm_bindgen_test]
+    async fn pass() -> Result<(), JsValue> {
+        let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
+        let model = model_repo.get("model.safetensors").await?;
+        let bytes = model.to_uint8().await?;
+        let length = bytes.length();
+        assert!(length == 8388776, "Length was {length}");
+        Ok(())
+    }
 }

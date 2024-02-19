@@ -48,6 +48,15 @@ impl Device {
         matches!(self, Device::GPU(_))
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub async fn request_device(request: DeviceRequest) -> Result<Self, DeviceError> {
+        match request {
+            DeviceRequest::CPU => Ok(Device::CPU),
+            DeviceRequest::GPU => Ok(Device::GPU(WgpuDevice::new().await?)),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn request_device(request: DeviceRequest) -> Result<Self, DeviceError> {
         match request {
             DeviceRequest::CPU => Ok(Device::CPU),

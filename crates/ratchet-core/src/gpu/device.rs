@@ -51,9 +51,10 @@ impl PartialEq for WgpuDevice {
 impl WgpuDevice {
     pub async fn new() -> Result<Self, DeviceError> {
         #[cfg(target_arch = "wasm32")]
-        let adapter = Self::select_adapter().await?;
+        let adapter = Self::select_adapter().await;
         #[cfg(not(target_arch = "wasm32"))]
         let adapter = Self::select_adapter()?;
+        log::info!("Using adapter {:?}", adapter.get_info());
 
         #[allow(unused_mut)]
         let mut features = wgpu::Features::default();
@@ -73,7 +74,7 @@ impl WgpuDevice {
         };
         let device_request = adapter.request_device(&device_descriptor, None).await;
         let (device, queue) = if let Err(e) = device_request {
-            log::warn!(
+            log::error!(
                 "Failed to acq. device, trying again with reduced limits: {:?}",
                 e
             );
@@ -84,7 +85,6 @@ impl WgpuDevice {
         }?;
 
         let device = Arc::new(device);
-
         Ok(Self {
             queue: Arc::new(queue),
             ordinal: 0,
@@ -106,9 +106,8 @@ impl WgpuDevice {
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn select_adapter() -> Result<Adapter, DeviceError> {
+    async fn select_adapter() -> Adapter {
         let instance = wgpu::Instance::default();
-        let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
         instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -116,10 +115,7 @@ impl WgpuDevice {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or({
-                log::error!("Failed to request adapter.");
-                DeviceError::AdapterRequestFailed
-            })
+            .unwrap()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -139,8 +135,6 @@ impl WgpuDevice {
                 DeviceType::Cpu => 1,
             })
             .ok_or(DeviceError::AdapterRequestFailed)?;
-
-        log::info!("Using adapter {:?}", adapter.get_info());
         Ok(adapter)
     }
 }

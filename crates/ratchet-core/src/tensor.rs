@@ -16,12 +16,10 @@ use std::sync::Arc;
 #[cfg(feature = "rand")]
 use {rand::prelude::*, rand_distr::StandardNormal};
 
-#[cfg(feature = "pyo3")]
+#[cfg(feature = "testing")]
+use ndarray::{ArrayD, ArrayViewD, Dimension};
 #[cfg(not(target_arch = "wasm32"))]
-use {
-    ndarray::{ArrayD, ArrayViewD, Dimension},
-    numpy::PyArrayDyn,
-};
+use numpy::PyArrayDyn;
 
 // thiserror error for Tensor
 #[derive(thiserror::Error, Debug)]
@@ -223,15 +221,15 @@ impl Tensor {
 macro_rules! impl_binary_op {
     ($method_name:ident, $op:expr) => {
         pub fn $method_name(&self, other: &Tensor) -> anyhow::Result<Tensor> {
-            //TODO: we can short circuit here and have a much more efficient kernel
-            //if either tensor is a scalar
+            //TODO: avoid broadcasting if either operand is scalar
             Binary::check_invariants(&[self, other])?;
 
             let (lhs, rhs) = (self, other);
             let shapes = &[lhs.shape(), rhs.shape()];
             let broadcasted = Shape::multi_broadcast(shapes);
             if broadcasted.is_none() {
-                return Err(InvariantError::BroadcastingFailed.into());
+                let failed = shapes.iter().map(|s| (*s).clone()).collect::<Vec<_>>();
+                return Err(InvariantError::BroadcastingFailed(failed).into());
             }
             let broadcasted = broadcasted.unwrap();
             let left_required = self.shape() != &broadcasted;
@@ -290,48 +288,6 @@ impl Tensor {
     impl_unary_op!(floor, UnaryOp::Floor);
     impl_unary_op!(ceil, UnaryOp::Ceil);
 
-    /// # Slice
-    ///
-    /// Current slice implementation requires specification of all dimensions.
-    /// Currently very user hostile, but will be improved.
-    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
-        let mut resolved_ranges = rvec![];
-
-        for (ridx, r) in ranges.iter().enumerate() {
-            let start = match r.start_bound() {
-                Bound::Included(&s) => s,
-                Bound::Excluded(&s) => s + 1,
-                Bound::Unbounded => 0,
-            };
-            let end = match r.end_bound() {
-                Bound::Included(&e) => e + 1,
-                Bound::Excluded(&e) => e,
-                Bound::Unbounded => self.shape()[ridx],
-            };
-            resolved_ranges.push(start..end);
-        }
-
-        let slice = Slice::new(resolved_ranges);
-        let out_view = slice.infer_output(&[self])?;
-
-        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
-        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
-    }
-
-    pub fn view(&self, shape: Shape) -> anyhow::Result<Tensor> {
-        let view = View::new(self.clone(), shape);
-        let out_view = view.infer_output(&[self])?;
-
-        let storage = self.storage.clone();
-
-        Ok(Tensor::from_shallow(
-            LazyOp::View(view),
-            out_view,
-            storage,
-            self.device.clone(),
-        ))
-    }
-
     pub fn layer_norm(
         &self,
         weight: &Tensor,
@@ -374,14 +330,6 @@ impl Tensor {
         ))
     }
 
-    pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
-        let permute = Permute::new(dims.to_vec());
-        let out_view = permute.infer_output(&[self])?;
-
-        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
-        Ok(Tensor::lazy(op, out_view, self.device.clone()))
-    }
-
     //TODO: switch dim to isize and allow negative indexing
     pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
         Softmax::check_invariants(&[self])?;
@@ -407,12 +355,100 @@ impl Tensor {
         ))
     }
 
+    /// # Slice
+    ///
+    /// Current slice implementation requires specification of all dimensions.
+    /// Currently very user hostile, but will be improved.
+    /// TODO: should allow mixed range types
+    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
+        let mut resolved_ranges = rvec![];
+
+        for (ridx, r) in ranges.iter().enumerate() {
+            let start = match r.start_bound() {
+                Bound::Included(&s) => s,
+                Bound::Excluded(&s) => s + 1,
+                Bound::Unbounded => 0,
+            };
+            let end = match r.end_bound() {
+                Bound::Included(&e) => e + 1,
+                Bound::Excluded(&e) => e,
+                Bound::Unbounded => self.shape()[ridx],
+            };
+            resolved_ranges.push(start..end);
+        }
+
+        let slice = Slice::new(resolved_ranges);
+        let out_view = slice.infer_output(&[self])?;
+
+        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
+        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
+    }
+
+    /// # View
+    ///
+    /// Creates a new tensor with the same data, but a different shape.
+    /// The new shape must have the same number of elements as the original shape.
+    pub fn view(&self, shape: Shape) -> anyhow::Result<Tensor> {
+        let view = View::new(self.clone(), shape);
+        let out_view = view.infer_output(&[self])?;
+
+        let storage = self.storage.clone();
+
+        Ok(Tensor::from_shallow(
+            LazyOp::View(view),
+            out_view,
+            storage,
+            self.device.clone(),
+        ))
+    }
+
+    pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
+        let permute = Permute::new(dims.to_vec());
+        let out_view = permute.infer_output(&[self])?;
+
+        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
+        Ok(Tensor::lazy(op, out_view, self.device.clone()))
+    }
+
     pub fn broadcast_to(&self, shape: Shape) -> anyhow::Result<Tensor> {
         Broadcast::check_invariants(&[self])?;
         let broadcast = Broadcast::new(shape);
         let new_view = broadcast.infer_output(&[self])?;
         let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Broadcast(broadcast)));
         Ok(Tensor::lazy(op, new_view, self.device.clone()))
+    }
+
+    pub fn index_select(&self, indices: &Tensor, dim: usize) -> anyhow::Result<Tensor> {
+        IndexSelect::check_invariants(&[self, indices])?;
+        let index_select = IndexSelect::new(self.clone(), indices.clone(), dim);
+        let new_view = index_select.infer_output(&[self, indices])?;
+        Ok(Tensor::lazy(
+            LazyOp::Select(index_select),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
+    #[cfg(feature = "rand")]
+    pub fn randint<T: TensorDType + rand_distr::uniform::SampleUniform + PartialOrd>(
+        low: T,
+        high: T,
+        shape: Shape,
+        device: Device,
+    ) -> Tensor {
+        let mut rng = if let Ok(seed) = std::env::var("RATCHET_SEED") {
+            let seed = seed.parse::<u64>().unwrap();
+            StdRng::seed_from_u64(seed)
+        } else {
+            StdRng::from_entropy()
+        };
+        let data = (0..shape.numel())
+            .map(|_| {
+                let sample: T = rng.gen_range(low..high);
+                sample
+            })
+            .collect::<Vec<_>>();
+        Tensor::from_data(data, shape, device)
     }
 
     #[cfg(feature = "rand")]
@@ -577,6 +613,7 @@ impl Tensor {
             LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }
@@ -618,34 +655,12 @@ impl Tensor {
             }
         }
 
-        #[cfg(all(debug_assertions, feature = "plotting"))]
-        {
-            let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "allocations.svg").unwrap();
-        }
+        //let last = execution_order.last().unwrap();
+        //crate::plot::render_to_file(last, "allocations.svg").unwrap();
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(())
-    }
-
-    fn to_cpu(&self) -> Result<Tensor, TensorError> {
-        if self.device().is_cpu() || !self.resolved() {
-            return Ok(self.clone());
-        }
-        let storage_guard = self.storage();
-        let gpu_buf = storage_guard
-            .as_ref()
-            .ok_or(TensorError::TransferError)?
-            .try_gpu()?;
-        let cpu_buf = gpu_buf.to_cpu(&self.device)?;
-
-        Ok(Tensor::new(
-            LazyOp::Const,
-            self.view.clone(),
-            Some(Storage::CPU(cpu_buf)),
-            Device::CPU,
-        ))
     }
 
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
@@ -668,19 +683,6 @@ impl Tensor {
         ))
     }
 
-    /// Transfers the tensor to the specified device.
-    ///
-    /// If the tensor is already on the specified device, it will be returned as-is,
-    /// and the underlying storage will not be copied.
-    /// If the tensor is on a different device, it will be copied to the specified device.
-    pub fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
-        match (self.device(), device) {
-            (Device::GPU(_), Device::CPU) => self.to_cpu(),
-            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
-            _ => Ok(self.clone()),
-        }
-    }
-
     pub fn deep_clone(&self) -> Tensor {
         let storage_guard = self.storage();
         let storage = storage_guard.as_ref().unwrap();
@@ -694,8 +696,200 @@ impl Tensor {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Tensor {
-    #[cfg(not(target_arch = "wasm32"))]
+    async fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        if self.device().is_cpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let gpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_gpu()?;
+        let cpu_buf = gpu_buf.to_cpu(&self.device).await?;
+
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(Storage::CPU(cpu_buf)),
+            Device::CPU,
+        ))
+    }
+
+    /// Transfers the tensor to the specified device.
+    ///
+    /// If the tensor is already on the specified device, it will be returned as-is,
+    /// and the underlying storage will not be copied.
+    /// If the tensor is on a different device, it will be copied to the specified device.
+    pub async fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu().await,
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
+            _ => Ok(self.clone()),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Tensor {
+    /// Transfers the tensor to the specified device.
+    ///
+    /// If the tensor is already on the specified device, it will be returned as-is,
+    /// and the underlying storage will not be copied.
+    /// If the tensor is on a different device, it will be copied to the specified device.
+    pub fn to(&self, device: &Device) -> Result<Tensor, TensorError> {
+        match (self.device(), device) {
+            (Device::GPU(_), Device::CPU) => self.to_cpu(),
+            (Device::CPU, Device::GPU(_)) => self.to_gpu(device),
+            _ => Ok(self.clone()),
+        }
+    }
+
+    fn to_cpu(&self) -> Result<Tensor, TensorError> {
+        if self.device().is_cpu() || !self.resolved() {
+            return Ok(self.clone());
+        }
+        let storage_guard = self.storage();
+        let gpu_buf = storage_guard
+            .as_ref()
+            .ok_or(TensorError::TransferError)?
+            .try_gpu()?;
+        let cpu_buf = gpu_buf.to_cpu(&self.device)?;
+
+        Ok(Tensor::new(
+            LazyOp::Const,
+            self.view.clone(),
+            Some(Storage::CPU(cpu_buf)),
+            Device::CPU,
+        ))
+    }
+
+    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
+        &'s self,
+        py: &'p pyo3::Python<'p>,
+    ) -> &PyArrayDyn<T> {
+        use numpy::PyArray;
+        assert!(
+            self.device().is_cpu(),
+            "Cannot convert non-CPU tensor to numpy array"
+        );
+        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
+    fn from(array: &PyArrayDyn<T>) -> Self {
+        Self::from(array.to_owned_array())
+    }
+}
+
+#[cfg(feature = "testing")]
+#[derive(Default)]
+struct CloseStats {
+    total_error: f32,
+    max_abs_error: f32,
+    max_abs_error_idxs: Option<Vec<usize>>,
+    element_count: usize,
+    fail_count: usize,
+    atol: f32,
+    rtol: f32,
+}
+
+#[cfg(feature = "testing")]
+impl CloseStats {
+    fn new(atol: f32, rtol: f32) -> Self {
+        Self {
+            atol,
+            rtol,
+            ..Default::default()
+        }
+    }
+
+    fn update(&mut self, a: &f32, b: &f32, index: ndarray::IxDyn) {
+        let abs_diff = (a - b).abs();
+        self.total_error += abs_diff;
+        self.element_count += 1;
+
+        if abs_diff > self.max_abs_error {
+            self.max_abs_error = abs_diff;
+            self.max_abs_error_idxs = Some(index.slice().into());
+        }
+
+        if !self.is_close(a, b, abs_diff) {
+            self.fail_count += 1;
+        }
+    }
+
+    fn avg_error(&self) -> f32 {
+        self.total_error / self.element_count as f32
+    }
+
+    fn is_close(&self, a: &f32, b: &f32, abs_diff: f32) -> bool {
+        (a.is_nan() && b.is_nan())
+            || (a.is_infinite() && b.is_infinite() && a.signum() == b.signum())
+            || abs_diff <= self.atol + self.rtol * b.abs()
+    }
+}
+
+#[cfg(feature = "testing")]
+impl Tensor {
+    pub fn from_npy_path<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
+    where
+        T: TensorDType + npyz::Deserialize,
+        P: AsRef<Path>,
+    {
+        Self::from_npy_bytes::<T>(&std::fs::read(path)?, device)
+    }
+
+    pub fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
+        bytes: &[u8],
+        device: &Device,
+    ) -> anyhow::Result<Tensor> {
+        let reader = npyz::NpyFile::new(bytes)?;
+        let shape = reader
+            .shape()
+            .iter()
+            .map(|&x| x as usize)
+            .collect::<Vec<_>>()
+            .into();
+        let data = reader.into_vec::<T>()?;
+        Ok(Tensor::from_data(data, shape, device.clone()))
+    }
+
+    pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
+        if !self.resolved() {
+            panic!("Tensor is not resolved");
+        }
+        assert!(self.device().is_cpu());
+        let shape = self.shape().to_vec();
+        if self.num_bytes() != 0 {
+            let storage_guard = self.storage();
+            let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
+            let (ptr, _) = buffer.inner().into_raw_parts();
+            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
+        } else {
+            ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
+        }
+    }
+
+    pub fn to_ndarray_view<T: TensorDType>(&self) -> ArrayViewD<T> {
+        if !self.resolved() {
+            panic!("Tensor is not resolved");
+        }
+        assert!(self.device().is_cpu());
+        let shape = self.shape().to_vec();
+        if self.num_bytes() != 0 {
+            let storage_guard = self.storage();
+            let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
+            let (ptr, _) = buffer.inner().into_raw_parts();
+            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T) }
+        } else {
+            ArrayViewD::from_shape(shape, &[]).unwrap()
+        }
+    }
+
     pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
         if self.shape() != other.shape() {
             anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
@@ -710,7 +904,7 @@ impl Tensor {
             stats.update(&a, &b, idx);
         });
 
-        let idx_fmt = stats.max_abs_error_idxs.as_ref().map(|idx| idx.slice());
+        let idx_fmt = stats.max_abs_error_idxs.as_ref();
         if stats.fail_count > 0 {
             anyhow::bail!(
                 "\x1b[1;31m{} samples not close \x1b[0m - AVGE={} MAE={} at {:?}",
@@ -731,114 +925,6 @@ impl Tensor {
     }
 }
 
-#[derive(Default)]
-struct CloseStats {
-    total_error: f32,
-    max_abs_error: f32,
-    #[cfg(not(target_arch = "wasm32"))]
-    max_abs_error_idxs: Option<ndarray::IxDyn>,
-    element_count: usize,
-    fail_count: usize,
-    atol: f32,
-    rtol: f32,
-}
-
-impl CloseStats {
-    fn new(atol: f32, rtol: f32) -> Self {
-        Self {
-            atol,
-            rtol,
-            ..Default::default()
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    fn update(&mut self, a: &f32, b: &f32, index: ndarray::IxDyn) {
-        let abs_diff = (a - b).abs();
-        self.total_error += abs_diff;
-        self.element_count += 1;
-
-        if abs_diff > self.max_abs_error {
-            self.max_abs_error = abs_diff;
-            self.max_abs_error_idxs = Some(index);
-        }
-
-        if !self.is_close(a, b, abs_diff) {
-            self.fail_count += 1;
-        }
-    }
-
-    fn avg_error(&self) -> f32 {
-        self.total_error / self.element_count as f32
-    }
-
-    fn is_close(&self, a: &f32, b: &f32, abs_diff: f32) -> bool {
-        (a.is_nan() && b.is_nan())
-            || (a.is_infinite() && b.is_infinite() && a.signum() == b.signum())
-            || abs_diff <= self.atol + self.rtol * b.abs()
-    }
-}
-
-/// Conversion to and from numpy arrays
-#[cfg(feature = "pyo3")]
-#[cfg(not(target_arch = "wasm32"))]
-impl Tensor {
-    pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
-        assert!(self.device().is_cpu());
-        let shape = self.shape().to_vec();
-        if self.num_bytes() != 0 {
-            let storage_guard = self.storage();
-            let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
-            let (ptr, _) = buffer.inner().into_raw_parts();
-            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
-        } else {
-            ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
-        }
-    }
-
-    pub fn to_ndarray_view<T: TensorDType>(&self) -> ArrayViewD<T> {
-        assert!(self.device().is_cpu());
-        let shape = self.shape().to_vec();
-        if self.num_bytes() != 0 {
-            let storage_guard = self.storage();
-            let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
-            let (ptr, _) = buffer.inner().into_raw_parts();
-            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T) }
-        } else {
-            ArrayViewD::from_shape(shape, &[]).unwrap()
-        }
-    }
-
-    pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
-        &'s self,
-        py: &'p pyo3::Python<'p>,
-    ) -> &PyArrayDyn<T> {
-        use numpy::PyArray;
-        assert!(
-            self.device().is_cpu(),
-            "Cannot convert non-CPU tensor to numpy array"
-        );
-        PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
-    }
-
-    pub fn from_npy<T: TensorDType + npyz::Deserialize, P: AsRef<Path>>(
-        path: P,
-        device: &Device,
-    ) -> anyhow::Result<Tensor> {
-        let bytes = std::fs::read(path)?;
-        let reader = npyz::NpyFile::new(&bytes[..])?;
-        let shape = reader
-            .shape()
-            .iter()
-            .map(|&x| x as usize)
-            .collect::<Vec<_>>()
-            .into();
-        let data = reader.into_vec::<T>()?;
-        Ok(Tensor::from_data(data, shape, device.clone()))
-    }
-}
-
-#[cfg(feature = "pyo3")]
-#[cfg(not(target_arch = "wasm32"))]
 impl<T: TensorDType> From<ArrayD<T>> for Tensor {
     fn from(it: ArrayD<T>) -> Self {
         if it.as_slice().is_some() {
@@ -863,13 +949,5 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
         } else {
             panic!("Cannot convert numpy array with non-contiguous memory layout to tensor");
         }
-    }
-}
-
-#[cfg(feature = "pyo3")]
-#[cfg(not(target_arch = "wasm32"))]
-impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
-    fn from(array: &PyArrayDyn<T>) -> Self {
-        Self::from(array.to_owned_array())
     }
 }
