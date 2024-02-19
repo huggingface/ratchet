@@ -21,7 +21,7 @@ pub async fn transcribe(
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
             log::error!("No language specified, using language detection");
-            let mel = mel.slice(&[])?;
+            let mel = mel.slice(&[0..1])?;
             decode_options.language = Some(model.detect_language(mel)?);
         }
     }
@@ -35,9 +35,10 @@ pub async fn transcribe(
     let prompt_since_reset = 0;
 
     while seek < content_frames {
+        let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
-        let mel_segment = mel.slice(&[])?;
+        let mel_segment = mel.slice(&[0..1])?;
         log::info!(
             "processing segment - from: {}, to: {}",
             seek,
@@ -55,7 +56,7 @@ pub async fn transcribe(
         hs.resolve();
 
         let task = DecodingTask::new(decode_options, &model.tokenizer);
-        let decoded = task.run();
+        let decoded = task.run(&model.decoder, &hs, &model.tokenizer)?;
     }
 
     Ok(())

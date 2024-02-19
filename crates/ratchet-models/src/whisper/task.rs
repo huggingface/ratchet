@@ -1,8 +1,10 @@
 use ratchet::prelude::shape;
+use ratchet::Device;
 use ratchet::Tensor;
 use ratchet_nn::Module;
 
 use crate::DecodingOptions;
+use crate::GreedySampler;
 use crate::LogitMutator;
 use crate::Prompt;
 use crate::WhisperDecoder;
@@ -71,62 +73,55 @@ impl DecodingTask {
         task
     }
 
-    async fn main_loop(
+    fn main_loop(
         &self,
         decoder: &WhisperDecoder,
         audio_ctx: Tensor,
         mut tokens: Vec<i32>,
     ) -> Result<(), DecodeError> {
         let mut timestamps_seen = 0;
-        let mut loop_result = None;
+        let device = audio_ctx.device().clone();
 
         for _ in 0..self.sample_len {
-            let token_t =
-                Tensor::from_data(tokens, shape![1, tokens.len()], audio_ctx.device().clone());
             let input_tokens = if tokens.len() > self.initial_tokens_len.unwrap() {
                 &tokens[tokens.len() - 1..]
             } else {
                 &tokens
             };
+            let input_t =
+                Tensor::from_data(input_tokens, shape![1, input_tokens.len()], device.clone());
 
-            let logits = decoder.forward(&[audio_ctx, token_t])?;
+            let mut logits = decoder.forward(&[audio_ctx.clone(), input_t])?;
 
+            let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
-                logits = m.apply(logits, token_t)?;
+                logits = m.apply(logits, &token_t)?;
             }
 
             let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
-
-            if let Some(ref cb) = callback {
-                self.handle_callback(&new_tokens, &mut timestamps_seen, cb);
-            }
 
             tokens = new_tokens;
             if completed {
                 break;
             }
         }
-        res.tokens = tokens;
-        Ok(res)
+        Ok(())
     }
 
-    fn run(
+    pub fn run(
         &self,
         decoder: &WhisperDecoder,
         audio_ctx: &Tensor,
         tokenizer: &WhisperTokenizer,
     ) -> Result<Vec<i32>, DecodeError> {
         let mut tokens = self.get_initial_tokens(tokenizer);
-        let result = self.main_loop(decoder, audio_ctx, tokens)?;
+        let result = self.main_loop(decoder, audio_ctx.clone(), tokens.clone());
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
         let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);
         if let Some(eot_index) = eot_index {
             tokens.truncate(eot_index);
         }
-        #[cfg(not(debug_assertions))]
-        return Ok(DecodingResult::new(tokens));
-        #[cfg(debug_assertions)]
-        return Ok(DecodingResult::new(tokens, result.dbg_ctx));
+        return Ok(tokens);
     }
 }
