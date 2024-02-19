@@ -36,14 +36,8 @@ jobs:
       - name: Setup MacOS self-hosted 
         if: matrix.os == 'self-hosted'
         run: |
-          if ! command -v brew &>/dev/null; then
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          else
-            echo "Homebrew is already installed"
-          fi
           brew install jq
           brew install curl
-
 
       - uses: actions/checkout@v4
       - name: Install rust toolchain
