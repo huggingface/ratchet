@@ -1,9 +1,10 @@
 use std::io::{BufRead, Seek, SeekFrom};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use ratchet::{Device, Tensor};
 use ratchet_loader::{GGMLCompatible, GGMLFormat, LoadError};
 
-use crate::{SpectrogramGenerator, WhisperDecoder, WhisperEncoder};
+use crate::{Language, SpectrogramGenerator, WhisperDecoder, WhisperEncoder};
 
 pub struct WhisperGGMLHeader {
     pub format: GGMLFormat,
@@ -104,6 +105,8 @@ pub struct Whisper {
     pub specgen: SpectrogramGenerator,
     pub encoder: WhisperEncoder,
     pub decoder: WhisperDecoder,
+    pub hparams: HyperParameters,
+    pub device: Device,
 }
 
 impl GGMLCompatible for Whisper {
@@ -138,5 +141,15 @@ impl GGMLCompatible for Whisper {
             writer.write_u32::<LittleEndian>(0)?;
         }
         Ok(())
+    }
+}
+
+impl Whisper {
+    pub fn is_multilingual(&self) -> bool {
+        self.hparams.n_vocab == 51865
+    }
+
+    pub fn detect_language(&self, mel: Tensor) -> anyhow::Result<Language> {
+        todo!()
     }
 }
