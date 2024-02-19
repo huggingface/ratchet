@@ -33,12 +33,6 @@ jobs:
             platform: mac-arm64
 
     steps:
-      - name: Setup MacOS self-hosted 
-        if: matrix.os == 'self-hosted'
-        run: |
-          brew install jq
-          brew install curl
-
       - uses: actions/checkout@v4
       - name: Install rust toolchain
         uses: dtolnay/rust-toolchain@1.72
