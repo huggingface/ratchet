@@ -86,21 +86,9 @@ impl DecodingOptionsBuilder {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new() -> DecodingOptionsBuilder {
         DecodingOptionsBuilder {
-            task: None,
-            language: None,
-            temperature: None,
-            sample_len: None,
-            best_of: None,
-            beam_size: None,
-            patience: None,
-            length_penalty: None,
-            prompt: None,
-            prefix: None,
             suppress_tokens: Some(vec![-1]),
-            suppress_blank: None,
-            without_timestamps: None,
             max_initial_timestamp: Some(1.0),
-            time_offset: None,
+            ..Default::default()
         }
     }
 
@@ -238,29 +226,6 @@ impl DecodingOptionsBuilder {
             time_offset: self.time_offset,
         };
         serde_wasm_bindgen::to_value(&options).unwrap()
-    }
-}
-
-// We typically implement the `Default` trait for structs that have sensible default values
-impl Default for DecodingOptions {
-    fn default() -> Self {
-        Self {
-            task: Task::Transcribe,
-            language: None,
-            temperature: 0.0,
-            sample_len: None,
-            best_of: None,
-            beam_size: None,
-            patience: None,
-            length_penalty: None,
-            prompt: None,
-            prefix: None,
-            suppress_tokens: Some(vec![-1]),
-            suppress_blank: false,
-            without_timestamps: false,
-            max_initial_timestamp: Some(1.0),
-            time_offset: None,
-        }
     }
 }
 
