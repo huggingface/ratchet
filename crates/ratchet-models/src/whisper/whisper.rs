@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ratchet::{Device, Tensor};
 use ratchet_loader::{GGMLCompatible, GGMLFormat, LoadError};
 
-use crate::{Language, SpectrogramGenerator, WhisperDecoder, WhisperEncoder};
+use crate::{Language, SpectrogramGenerator, WhisperDecoder, WhisperEncoder, WhisperTokenizer};
 
 pub struct WhisperGGMLHeader {
     pub format: GGMLFormat,
@@ -107,6 +107,7 @@ pub struct Whisper {
     pub decoder: WhisperDecoder,
     pub hparams: HyperParameters,
     pub device: Device,
+    pub tokenzier: WhisperTokenizer,
 }
 
 impl GGMLCompatible for Whisper {

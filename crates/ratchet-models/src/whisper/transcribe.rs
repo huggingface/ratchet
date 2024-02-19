@@ -3,8 +3,8 @@ use std::cmp::min;
 use ratchet_nn::Module;
 
 use crate::{
-    DecodingOptions, Language, Prompt, Whisper, WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX,
-    N_FRAMES, SAMPLE_RATE,
+    DecodingOptions, DecodingTask, Language, Prompt, Whisper, WhisperTokenizer, HOP_LENGTH,
+    N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,
 };
 
 pub async fn transcribe(
