@@ -1,9 +1,24 @@
+use ratchet::prelude::shape;
+use ratchet::Tensor;
+use ratchet_nn::Module;
+
 use crate::DecodingOptions;
 use crate::LogitMutator;
 use crate::Prompt;
+use crate::WhisperDecoder;
 use crate::WhisperTokenizer;
 use crate::CHUNK_LENGTH;
 use crate::N_AUDIO_CTX;
+
+#[derive(Debug, thiserror::Error)]
+pub enum DecodeError {
+    #[error("No valid logits found")]
+    NoValidLogitsFound,
+    #[error("Tokenizer error: {0}")]
+    TokenizerError(#[from] tokenizers::Error),
+    #[error("Unknown error: {0}")]
+    UnknownError(#[from] anyhow::Error),
+}
 
 pub struct DecodingTask {
     options: DecodingOptions,
@@ -53,21 +68,65 @@ impl DecodingTask {
             max_initial_timestamp_index =
                 Some((max_initial_timestamp / precision).round() as usize);
         }
-
-        task.logit_mutators.push(Box::new(ApplyTimestampRules {
-            sample_begin: task.initial_tokens_len.unwrap(),
-            max_initial_timestamp_index,
-        }));
-        if let Some(suppress_tokens) = &task.options.suppress_tokens {
-            let mut suppress_tokens = suppress_tokens.clone();
-            if suppress_tokens.contains(&-1) {
-                let neg_one = suppress_tokens.iter().position(|x| *x == -1).unwrap();
-                suppress_tokens.remove(neg_one);
-                suppress_tokens.extend(WhisperTokenizer::NON_SPEECH);
-            }
-            task.logit_mutators
-                .push(Box::new(SuppressNonSpeech { suppress_tokens }));
-        }
         task
+    }
+
+    async fn main_loop(
+        &self,
+        decoder: &WhisperDecoder,
+        audio_ctx: Tensor,
+        mut tokens: Vec<i32>,
+    ) -> Result<(), DecodeError> {
+        let mut timestamps_seen = 0;
+        let mut loop_result = None;
+
+        for _ in 0..self.sample_len {
+            let token_t =
+                Tensor::from_data(tokens, shape![1, tokens.len()], audio_ctx.device().clone());
+            let input_tokens = if tokens.len() > self.initial_tokens_len.unwrap() {
+                &tokens[tokens.len() - 1..]
+            } else {
+                &tokens
+            };
+
+            let logits = decoder.forward(&[audio_ctx, token_t])?;
+
+            for m in &self.logit_mutators {
+                logits = m.apply(logits, token_t)?;
+            }
+
+            let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
+
+            if let Some(ref cb) = callback {
+                self.handle_callback(&new_tokens, &mut timestamps_seen, cb);
+            }
+
+            tokens = new_tokens;
+            if completed {
+                break;
+            }
+        }
+        res.tokens = tokens;
+        Ok(res)
+    }
+
+    fn run(
+        &self,
+        decoder: &WhisperDecoder,
+        audio_ctx: &Tensor,
+        tokenizer: &WhisperTokenizer,
+    ) -> Result<Vec<i32>, DecodeError> {
+        let mut tokens = self.get_initial_tokens(tokenizer);
+        let result = self.main_loop(decoder, audio_ctx, tokens)?;
+
+        tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
+        let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);
+        if let Some(eot_index) = eot_index {
+            tokens.truncate(eot_index);
+        }
+        #[cfg(not(debug_assertions))]
+        return Ok(DecodingResult::new(tokens));
+        #[cfg(debug_assertions)]
+        return Ok(DecodingResult::new(tokens, result.dbg_ctx));
     }
 }
