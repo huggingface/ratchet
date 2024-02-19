@@ -1,5 +1,6 @@
 use ndarray::s;
-use ratchet::Tensor;
+use ndarray_stats::QuantileExt;
+use ratchet::{NDArrayExt, Tensor};
 
 use crate::{LogitMutator, WhisperTokenizer};
 
@@ -10,8 +11,8 @@ pub struct ApplyTimestampRules {
 }
 
 impl LogitMutator for ApplyTimestampRules {
-    fn apply(&self, logits: Tensor, tokens: Tensor) -> anyhow::Result<Tensor> {
-        let nd_tokens = tokens.into_ndarray::<i32>();
+    fn apply(&self, logits: Tensor, tokens: &Tensor) -> anyhow::Result<Tensor> {
+        let nd_tokens = tokens.clone().into_ndarray::<i32>();
         let mut nd_logits = logits.into_ndarray::<f32>();
 
         nd_logits
@@ -72,7 +73,7 @@ impl LogitMutator for ApplyTimestampRules {
             }
         }
 
-        let logprobs: () = todo!();
+        let logprobs = nd_logits.log_softmax(1);
         for _k in 0..nd_tokens.shape()[0] {
             let timestamp_logprob = logprobs
                 .slice(s![.., WhisperTokenizer::TS_BEGIN..])
