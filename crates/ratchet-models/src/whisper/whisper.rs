@@ -107,7 +107,7 @@ pub struct Whisper {
     pub decoder: WhisperDecoder,
     pub hparams: HyperParameters,
     pub device: Device,
-    pub tokenzier: WhisperTokenizer,
+    pub tokenizer: WhisperTokenizer,
 }
 
 impl GGMLCompatible for Whisper {

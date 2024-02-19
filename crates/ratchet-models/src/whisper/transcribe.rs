@@ -3,8 +3,8 @@ use std::cmp::min;
 use ratchet_nn::Module;
 
 use crate::{
-    DecodingOptions, DecodingTask, Language, Prompt, Whisper, WhisperTokenizer, HOP_LENGTH,
-    N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,
+    DecodingOptions, DecodingTask, Language, Prompt, Whisper, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES,
+    SAMPLE_RATE,
 };
 
 pub async fn transcribe(
@@ -28,8 +28,6 @@ pub async fn transcribe(
 
     let language = decode_options.language.as_ref().unwrap();
     let task = decode_options.task;
-
-    let tokenizer = WhisperTokenizer::load(bytes, model.is_multilingual(), language.clone(), task);
 
     let mut seek = 0;
     let mut all_tokens = Vec::with_capacity(512);
@@ -56,7 +54,7 @@ pub async fn transcribe(
         let mut hs = model.encoder.forward(&mel_segment)?;
         hs.resolve();
 
-        let task = DecodingTask::new(decode_options, tokenizer);
+        let task = DecodingTask::new(decode_options, &model.tokenizer);
         let decoded = task.run();
     }
 
