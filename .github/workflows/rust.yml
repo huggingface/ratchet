@@ -22,10 +22,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: Windows x86_64
-            os: windows-2022
-            target: x86_64-pc-windows-msvc
-            platform: win64
+          # - name: Windows x86_64
+          #   os: windows-2022
+          #   target: x86_64-pc-windows-msvc
+          #   platform: win64
 
           - name: MacOS aarch64
             os: self-hosted 
