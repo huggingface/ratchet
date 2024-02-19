@@ -3,7 +3,7 @@ use std::io::{BufRead, Seek, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ratchet_loader::{GGMLCompatible, GGMLFormat, LoadError};
 
-pub struct Whisper;
+use crate::{SpectrogramGenerator, WhisperDecoder, WhisperEncoder};
 
 pub struct WhisperGGMLHeader {
     pub format: GGMLFormat,
@@ -98,6 +98,12 @@ impl MelFilters {
         }
         Ok(())
     }
+}
+
+pub struct Whisper {
+    pub specgen: SpectrogramGenerator,
+    pub encoder: WhisperEncoder,
+    pub decoder: WhisperDecoder,
 }
 
 impl GGMLCompatible for Whisper {

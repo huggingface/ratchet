@@ -77,23 +77,7 @@ pub struct DecodingOptionsBuilder {
 
 impl Default for DecodingOptionsBuilder {
     fn default() -> Self {
-        DecodingOptionsBuilder {
-            task: Some(Task::Transcribe),
-            language: None,
-            temperature: Some(0.0),
-            sample_len: None,
-            best_of: None,
-            beam_size: None,
-            patience: None,
-            length_penalty: None,
-            prompt: None,
-            prefix: None,
-            suppress_tokens: Some(vec![-1]),
-            suppress_blank: Some(true),
-            without_timestamps: Some(false),
-            max_initial_timestamp: Some(1.0),
-            time_offset: None,
-        }
+        Self::new()
     }
 }
 
@@ -102,7 +86,21 @@ impl DecodingOptionsBuilder {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new() -> DecodingOptionsBuilder {
         DecodingOptionsBuilder {
-            ..Default::default()
+            task: None,
+            language: None,
+            temperature: None,
+            sample_len: None,
+            best_of: None,
+            beam_size: None,
+            patience: None,
+            length_penalty: None,
+            prompt: None,
+            prefix: None,
+            suppress_tokens: Some(vec![-1]),
+            suppress_blank: None,
+            without_timestamps: None,
+            max_initial_timestamp: Some(1.0),
+            time_offset: None,
         }
     }
 
@@ -243,8 +241,31 @@ impl DecodingOptionsBuilder {
     }
 }
 
+// We typically implement the `Default` trait for structs that have sensible default values
+impl Default for DecodingOptions {
+    fn default() -> Self {
+        Self {
+            task: Task::Transcribe,
+            language: None,
+            temperature: 0.0,
+            sample_len: None,
+            best_of: None,
+            beam_size: None,
+            patience: None,
+            length_penalty: None,
+            prompt: None,
+            prefix: None,
+            suppress_tokens: Some(vec![-1]),
+            suppress_blank: false,
+            without_timestamps: false,
+            max_initial_timestamp: Some(1.0),
+            time_offset: None,
+        }
+    }
+}
+
 cfg_if::cfg_if! {
-    if #[cfg(all(not(target_arch = "wasm32"), test))] {
+    if #[cfg(test)] {
         use pyo3::types::{IntoPyDict, PyDict};
         use pyo3::Python;
         use pyo3::types::PyString;
