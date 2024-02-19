@@ -53,7 +53,7 @@ impl WhisperTokenizer {
         49870, 50254,
     ];
 
-    pub fn get_tokenizer(
+    pub fn load(
         bytes: Option<Vec<u8>>,
         _is_multilingual: bool,
         language: Language,
