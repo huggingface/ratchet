@@ -35,6 +35,6 @@ fn main(
     if (thread_offset >= metadata.src_numel) {
         return;
     }
-    let offset_index = ndIndexToOffset(metadata.write_start, metadata.dst_stride);
+    let offset_index = ndIndexToOffset(metadata.write_start, metadata.dst_strides);
     D[offset_index + thread_offset] = S[thread_offset];
 }
