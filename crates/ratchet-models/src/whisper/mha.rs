@@ -35,8 +35,6 @@ impl Module for MultiHeadAttention {
         let k = self.k.forward(to_project)?;
         let v = self.v.forward(to_project)?;
 
-        //TODO: cache
-
         self.qkv_attention(q, k, v, mask, xa.is_some(), *is_causal)
     }
 }
