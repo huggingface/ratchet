@@ -76,6 +76,7 @@ impl Module for WhisperEncoder {
                 x: x.clone(),
                 xa: None,
                 mask: None,
+                cache: None,
             };
             x = block.forward(&input)?;
         }
