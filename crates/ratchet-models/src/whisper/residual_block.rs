@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
 use ratchet_loader::GGMLModel;
-use ratchet_nn::{KVCache, LayerNorm, Linear, Module};
+use ratchet_nn::{KVCache, KVEntry, LayerNorm, Linear, Module};
 
 use crate::{MHAInputs, MultiHeadAttention, Whisper, MLP};
 
@@ -21,7 +21,7 @@ pub struct ResidualAttentionBlockInputs {
     pub x: Tensor,
     pub xa: Option<Tensor>,
     pub mask: Option<Tensor>,
-    pub cache: Option<KVCache>,
+    pub cache: Option<KVEntry>,
 }
 
 impl Module for ResidualAttentionBlock {
@@ -29,9 +29,13 @@ impl Module for ResidualAttentionBlock {
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
         let ResidualAttentionBlockInputs { x, xa, mask, cache } = input;
         let attn_ln = self.attn_ln.forward(x)?;
-        let self_attn = self
-            .attn
-            .forward(&MHAInputs::new(attn_ln, None, mask.clone(), true))?;
+        let self_attn = self.attn.forward(&MHAInputs::new(
+            attn_ln,
+            None,
+            mask.clone(),
+            cache.clone(),
+            true,
+        ))?;
 
         let mut attn = self_attn.add(x)?;
 
@@ -39,7 +43,7 @@ impl Module for ResidualAttentionBlock {
             if let Some(xa_ln) = &self.x_attn_ln {
                 let x_attn_ln = xa_ln.forward(&attn)?;
                 let x_attn =
-                    xa_blck.forward(&MHAInputs::new(x_attn_ln, xa.clone(), None, false))?;
+                    xa_blck.forward(&MHAInputs::new(x_attn_ln, xa.clone(), None, None, false))?;
                 attn = x_attn.add(&attn)?;
             }
         }

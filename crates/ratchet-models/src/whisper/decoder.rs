@@ -55,11 +55,12 @@ impl Module for WhisperDecoder {
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
         let [audio_ctx, tokens] = input;
         let mut x = self.stem.forward(tokens)?;
-        for block in &self.blocks {
+        for (block_idx, block) in self.blocks.iter().enumerate() {
             let block_input = ResidualAttentionBlockInputs {
                 x,
                 xa: Some(audio_ctx.clone()),
                 mask: Some(self.mask.clone()),
+                cache: Some(self.cache[block_idx].clone()),
             };
             x = block.forward(&block_input)?;
         }
