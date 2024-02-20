@@ -1,3 +1,5 @@
+use std::cmp::max;
+
 use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
     gpu::{BufferUsagesExt, PooledGPUBuffer},
@@ -24,6 +26,16 @@ impl GPUBuffer {
         Self::from_bytes(
             bytemuck::cast_slice(data),
             std::mem::align_of::<T>(),
+            device,
+        )
+    }
+
+    //We have to use from_bytes here, as buffers may be reused and we need to
+    //ensure that the buffer is zeroed
+    pub fn zeros<T: TensorDType>(shape: &Shape, device: &WgpuDevice) -> Self {
+        Self::from_bytes(
+            vec![0; shape.numel() * T::dt().size_of()].as_slice(),
+            T::dt().size_of(),
             device,
         )
     }
