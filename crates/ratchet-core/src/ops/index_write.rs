@@ -86,15 +86,45 @@ impl MetaOperation for IndexWrite {
         let (_, dst_strides) = padder(self.dst.shape().clone());
         let (src_shape, _) = padder(self.src.shape().clone());
 
-        let mut start = [1u32; 4];
+        let mut start = [0u32; 4];
+        let offset = 4 - self.write_start.len();
         for (i, &s) in self.write_start.iter().enumerate() {
-            start[i] = s as u32;
+            start[i + offset] = s as u32;
         }
 
-        Ok(IndexWriteMeta {
+        let meta = IndexWriteMeta {
             dst_strides: glam::UVec4::try_from(&dst_strides).unwrap(),
             src_numel: src_shape.numel() as u32,
             write_start: start.into(),
-        })
+        };
+        println!("META: {:#?}", meta);
+        Ok(meta)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{rvec, shape, Device, DeviceRequest, Tensor};
+
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
+    #[test]
+    fn test_index_write() {
+        let device = GPU_DEVICE.with(|d| d.clone());
+        let dst = Tensor::from_data(vec![1., 2., 3., 4., 5., 6.], shape![3, 2], device.clone());
+        let src = Tensor::from_data(vec![7., 8.], shape![1, 2], device.clone());
+        let write_start = rvec![2, 0];
+        let b = dst.index_write(&src, write_start).unwrap();
+        b.resolve().unwrap();
+
+        let result = b.to(&Device::CPU).unwrap();
+
+        let ground_truth =
+            Tensor::from_data(vec![1., 2., 3., 4., 7., 8.], shape![3, 2], Device::CPU);
+        println!("result: {:?}", result);
+        println!("ground_truth: {:?}", ground_truth);
+        ground_truth.all_close(&result, 1e-8, 1e-8).unwrap();
     }
 }
