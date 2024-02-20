@@ -429,6 +429,7 @@ impl Tensor {
         ))
     }
 
+    ///CAUTION: inplace but you need to use the resultant tensor
     pub fn index_write(&self, src: &Tensor, write_start: RVec<usize>) -> anyhow::Result<Tensor> {
         IndexWrite::check_invariants(&[self, src])?;
         let index_write = IndexWrite::new(self.clone(), src.clone(), write_start);
@@ -478,6 +479,13 @@ impl Tensor {
             })
             .collect::<Vec<_>>();
         Self::from_data(data, shape, device)
+    }
+
+    pub fn zeros<T: TensorDType>(shape: &Shape, device: &Device) -> Tensor {
+        let storage = Storage::zeros::<T>(shape, device);
+        let strides = Strides::from(shape);
+        let meta = StorageView::new(shape.clone(), T::dt(), strides);
+        Tensor::new(LazyOp::Const, meta, Some(storage), device.clone())
     }
 
     /// Creates a new tensor from a chunk of data.
