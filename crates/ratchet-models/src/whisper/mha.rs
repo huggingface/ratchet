@@ -1,5 +1,5 @@
-use ratchet::{shape, Tensor};
-use ratchet_nn::{Linear, Module};
+use ratchet::{rvec, shape, Tensor};
+use ratchet_nn::{KVCache, KVEntry, Linear, Module};
 
 #[derive(Debug, derive_new::new)]
 pub struct MultiHeadAttention {
@@ -15,6 +15,7 @@ pub struct MHAInputs {
     x: Tensor,
     xa: Option<Tensor>,
     mask: Option<Tensor>,
+    cache: Option<KVEntry>,
     is_causal: bool,
 }
 
@@ -26,6 +27,7 @@ impl Module for MultiHeadAttention {
             x,
             xa,
             mask,
+            cache,
             is_causal,
         } = input;
 
@@ -34,6 +36,13 @@ impl Module for MultiHeadAttention {
         let to_project = xa.as_ref().unwrap_or(x);
         let k = self.k.forward(to_project)?;
         let v = self.v.forward(to_project)?;
+        let (k, v) = if let Some(kv) = cache {
+            let k_cache = kv.k_cache.index_write(&k, rvec![0, 0, 0, 0])?;
+            let v_cache = kv.v_cache.index_write(&v, rvec![0, 0, 0, 0])?;
+            (k_cache, v_cache)
+        } else {
+            (k, v)
+        };
 
         self.qkv_attention(q, k, v, mask, xa.is_some(), *is_causal)
     }

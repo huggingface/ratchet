@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::prelude::*;
 use ratchet_loader::GGMLModel;
-use ratchet_nn::{Embedding, LayerNorm, Module};
+use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
 
 use crate::{ResidualAttentionBlock, ResidualAttentionBlockInputs, Whisper};
 
@@ -46,6 +46,7 @@ pub struct WhisperDecoder {
     blocks: Vec<ResidualAttentionBlock>,
     mask: Tensor,
     ln_post: LayerNorm,
+    cache: KVCache,
 }
 
 impl Module for WhisperDecoder {
@@ -111,6 +112,7 @@ impl WhisperDecoder {
             blocks,
             mask: Self::load_mask(hparams.n_text_ctx as _, device),
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
+            cache: KVCache::new(n_layers, device),
         })
     }
 }
