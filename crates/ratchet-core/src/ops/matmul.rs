@@ -385,7 +385,7 @@ mod tests {
 import torch
 def matmul(a, b):
     return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#;
-        run_py_prg(prg.to_string(), &[a, b])
+        run_py_prg(prg.to_string(), &[a, b], &[])
     }
 
     #[derive(Arbitrary, Debug)]

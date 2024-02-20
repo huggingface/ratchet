@@ -140,13 +140,13 @@ def conv(input, filters, bias, stride, padding):
     input = torch.from_numpy(input)
     filters = torch.from_numpy(filters)
     bias = torch.from_numpy(bias)
-    stride = int(stride.item())
-    padding = int(padding.item())
     return F.conv1d(input, filters, bias, stride=stride, padding=padding).numpy()
 "#;
-        let stride = Tensor::from_data([stride as f32], shape![1], Device::CPU);
-        let padding = Tensor::from_data([padding as f32], shape![1], Device::CPU);
-        run_py_prg(prg.to_string(), &[input, filters, bias, &stride, &padding])
+        run_py_prg(
+            prg.to_string(),
+            &[input, filters, bias],
+            &[&stride, &padding],
+        )
     }
 
     fn run_conv_trial(device: &Device, problem: ConvProblem) {

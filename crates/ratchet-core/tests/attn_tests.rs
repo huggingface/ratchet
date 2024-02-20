@@ -41,6 +41,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         run_py_prg(
             prg.to_string(),
             &[&case.input, &case.qw, &case.kw, &case.vw],
+            &[],
         )
     }
 
@@ -89,7 +90,6 @@ import torch.nn.functional as F
 import numpy as np
 
 def qkv_attention(input, qw, kw, vw, n_heads):
-    n_heads = int(n_heads.item())
     input = torch.from_numpy(input)
     q = input @ torch.from_numpy(qw)
     k = input @ torch.from_numpy(kw)
@@ -107,10 +107,10 @@ def qkv_attention(input, qw, kw, vw, n_heads):
     out = (w @ v).permute(0, 2, 1, 3).flatten(start_dim=2)
     return np.ascontiguousarray(out.numpy())
 "#;
-        let head_t = Tensor::from_data([case.n_heads.unwrap() as f32], shape![1], Device::CPU);
         run_py_prg(
             prg.to_string(),
-            &[&case.input, &case.qw, &case.kw, &case.vw, &head_t],
+            &[&case.input, &case.qw, &case.kw, &case.vw],
+            &[&case.n_heads.unwrap()],
         )
     }
 
