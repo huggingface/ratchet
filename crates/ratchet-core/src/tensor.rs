@@ -429,6 +429,17 @@ impl Tensor {
         ))
     }
 
+    pub fn index_write(&self, src: &Tensor, write_start: RVec<usize>) -> anyhow::Result<Tensor> {
+        IndexWrite::check_invariants(&[self, src])?;
+        let index_write = IndexWrite::new(self.clone(), src.clone(), write_start);
+        let new_view = index_write.infer_output(&[self, src])?;
+        Ok(Tensor::lazy(
+            LazyOp::IndexWrite(index_write),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
     #[cfg(feature = "rand")]
     pub fn randint<T: TensorDType + rand_distr::uniform::SampleUniform + PartialOrd>(
         low: T,
@@ -614,6 +625,7 @@ impl Tensor {
             LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::IndexWrite(i) => i.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }
