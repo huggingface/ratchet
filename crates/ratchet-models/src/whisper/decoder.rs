@@ -145,7 +145,6 @@ import numpy as np
 def ground(options):
     model = whisper.load_model("tiny")
     result = model.transcribe(audio="{}", **options)
-    print("Result: ", result)
     output_logits = [l.numpy() for logits in result["all_logits"] for l in logits]
     return output_logits
 "#,
@@ -166,14 +165,10 @@ def ground(options):
         let model = api.model("ggerganov/whisper.cpp".to_string());
         let path = model.get("ggml-tiny.bin").unwrap();
 
-        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
-        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
-
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("jfk.wav").unwrap();
 
         let options = DecodingOptionsBuilder::new().build();
-        let gt = ground_truth(&audio_path.to_string_lossy(), options)?;
 
         let hs_npy = load_npy(dataset.get("jfk_tiny_encoder_hs.npy").unwrap());
 
@@ -187,6 +182,7 @@ def ground(options):
 
         let mut tokens = vec![50258, 50259, 50359];
         let mut token = -1;
+        let mut all_logits = vec![];
         while token != 50257 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
@@ -194,6 +190,7 @@ def ground(options):
             result.resolve()?;
 
             let our_logits = result.to(&Device::CPU)?;
+            all_logits.push(our_logits.clone());
             let nd_logits = our_logits.to_ndarray_view::<f32>();
             let sliced = nd_logits.slice(s![.., -1.., ..51865]).remove_axis(Axis(1));
 
@@ -202,14 +199,22 @@ def ground(options):
                 .iter()
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>()[0];
-            println!("Token: {}", token);
             tokens.push(token);
         }
+        println!("OUR TOKENS: {:?}", tokens);
+        println!("OUR LOGITS: \n {:#?}", all_logits);
+        println!(
+            "GROUND TRUTH LOGITS: \n {:#?}",
+            ground_truth(&audio_path.to_string_lossy(), options)?
+        );
 
+        /*
+        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
+        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
         let u32_tokens: Vec<_> = tokens.iter().map(|&x| x as u32).collect();
         let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
-        println!("{}", decoded);
+        */
 
         Ok(())
     }
