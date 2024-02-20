@@ -117,20 +117,47 @@ impl WhisperDecoder {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::path::PathBuf;
-
-    use crate::{Whisper, WhisperDecoder};
+    use crate::{DecodingOptions, DecodingOptionsBuilder, Whisper, WhisperDecoder};
     use hf_hub::api::sync::Api;
     use ndarray::{s, Axis};
     use ndarray_stats::QuantileExt;
+    use numpy::PyArrayDyn;
+    use pyo3::{
+        prelude::*,
+        types::{IntoPyDict, PyTuple},
+    };
     use ratchet::{shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
+    use std::path::PathBuf;
     use tokenizers::Tokenizer;
 
     pub fn load_npy(path: PathBuf) -> Vec<f32> {
         let bytes = std::fs::read(path).unwrap();
         npyz::NpyFile::new(&bytes[..]).unwrap().into_vec().unwrap()
+    }
+
+    fn ground_truth(audio_path: &str, options: DecodingOptions) -> anyhow::Result<Vec<Tensor>> {
+        let prg = format!(
+            r#"
+import whisper
+import numpy as np
+def ground(options):
+    model = whisper.load_model("tiny")
+    result = model.transcribe(audio="{}", **options)
+    print("Result: ", result)
+    output_logits = [l.numpy() for logits in result["all_logits"] for l in logits]
+    return output_logits
+"#,
+            audio_path
+        );
+        Python::with_gil(|py| {
+            let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
+            let py_args = PyTuple::new(py, &[options.into_py_dict(py)]);
+            let py_result: Vec<&PyArrayDyn<f32>> =
+                prg.getattr("ground")?.call1(py_args)?.extract()?;
+            Ok(py_result.into_iter().map(Tensor::from).collect::<_>())
+        })
     }
 
     #[test]
@@ -143,14 +170,19 @@ mod tests {
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_npy = load_npy(dataset.get("jfk_tiny_encoder_hs.npy").unwrap());
+        let audio_path = dataset.get("jfk.wav").unwrap();
+
+        let options = DecodingOptionsBuilder::new().build();
+        let gt = ground_truth(&audio_path.to_string_lossy(), options)?;
+
+        let hs_npy = load_npy(dataset.get("jfk_tiny_encoder_hs.npy").unwrap());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
         assert_eq!(gg_disk.tensors.len(), 167);
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let audio_ctx = Tensor::from_data(audio_npy, shape![1, 1500, 384], device.clone());
+        let audio_ctx = Tensor::from_data(hs_npy, shape![1, 1500, 384], device.clone());
         let decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
 
         let mut tokens = vec![50258, 50259, 50359];
