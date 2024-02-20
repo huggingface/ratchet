@@ -119,7 +119,7 @@ impl WhisperDecoder {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::{SpectrogramGenerator, Whisper, WhisperDecoder, WhisperEncoder};
+    use crate::{Whisper, WhisperDecoder};
     use hf_hub::api::sync::Api;
     use ndarray::{s, Axis};
     use ndarray_stats::QuantileExt;
@@ -133,14 +133,6 @@ mod tests {
         npyz::NpyFile::new(&bytes[..]).unwrap().into_vec().unwrap()
     }
 
-    fn load_sample(audio: PathBuf) -> Vec<f32> {
-        let mut reader = hound::WavReader::open(audio).unwrap();
-        reader
-            .samples::<i16>()
-            .map(|x| x.unwrap() as f32 / 32768.0)
-            .collect::<Vec<_>>()
-    }
-
     #[test]
     fn decoder_matches() -> anyhow::Result<()> {
         let api = Api::new().unwrap();
@@ -151,22 +143,15 @@ mod tests {
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio = dataset.get("jfk.wav").unwrap();
-        let mels = dataset.get("mel_filters.npy").unwrap();
+        let audio_npy = load_npy(dataset.get("jfk_tiny_encoder_hs.npy").unwrap());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
         assert_eq!(gg_disk.tensors.len(), 167);
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let generator = SpectrogramGenerator::new(load_npy(mels));
-        let log_mel = generator.generate(load_sample(audio))?.to(&device)?;
-
-        let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
+        let audio_ctx = Tensor::from_data(audio_npy, shape![1, 1500, 384], device.clone());
         let decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
-
-        let audio_ctx = encoder.forward(&log_mel.slice(&[0..1, 0..80, 0..3000])?)?;
-        audio_ctx.resolve()?;
 
         let mut tokens = vec![50258, 50259, 50359];
         let mut token = -1;
