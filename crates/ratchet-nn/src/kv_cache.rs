@@ -2,15 +2,16 @@ use ratchet::{Device, Shape, Tensor};
 
 #[derive(Clone, Debug)]
 pub struct KVEntry {
-    pub k: Tensor,
-    pub v: Tensor,
+    pub k_cache: Tensor,
+    pub v_cache: Tensor,
 }
 
 impl KVEntry {
     pub fn allocate(shape: &Shape, device: &Device) -> Self {
-        let k = Tensor::zeros::<f32>(shape, device);
-        let v = Tensor::zeros::<f32>(shape, device);
-        KVEntry { k, v }
+        KVEntry {
+            k_cache: Tensor::zeros::<f32>(shape, device),
+            v_cache: Tensor::zeros::<f32>(shape, device),
+        }
     }
 }
 
@@ -25,10 +26,12 @@ impl std::ops::Index<usize> for KVCache {
     }
 }
 
-impl Default for KVCache {
-    fn default() -> Self {
-        KVCache(Vec::with_capacity(8))
+impl KVCache {
+    pub fn new(n_layers: i32, device: &Device) -> Self {
+        let mut entries = Vec::with_capacity(n_layers as _);
+        for _ in 0..n_layers {
+            entries.push(KVEntry::allocate(&Shape::default(), device));
+        }
+        KVCache(entries)
     }
 }
-
-impl KVCache {}

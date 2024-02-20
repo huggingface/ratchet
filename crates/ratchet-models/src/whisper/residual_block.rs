@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
 use ratchet_loader::GGMLModel;
-use ratchet_nn::{LayerNorm, Linear, Module};
+use ratchet_nn::{KVCache, LayerNorm, Linear, Module};
 
 use crate::{MHAInputs, MultiHeadAttention, Whisper, MLP};
 
@@ -21,12 +21,13 @@ pub struct ResidualAttentionBlockInputs {
     pub x: Tensor,
     pub xa: Option<Tensor>,
     pub mask: Option<Tensor>,
+    pub cache: Option<KVCache>,
 }
 
 impl Module for ResidualAttentionBlock {
     type Input = ResidualAttentionBlockInputs;
     fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
-        let ResidualAttentionBlockInputs { x, xa, mask } = input;
+        let ResidualAttentionBlockInputs { x, xa, mask, cache } = input;
         let attn_ln = self.attn_ln.forward(x)?;
         let self_attn = self
             .attn
