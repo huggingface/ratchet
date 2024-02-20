@@ -1,5 +1,6 @@
 mod binary;
 mod conv;
+mod index_write;
 mod matmul;
 mod norm;
 mod reindex;
@@ -9,6 +10,7 @@ mod unary;
 
 pub use binary::*;
 pub use conv::*;
+pub use index_write::*;
 pub use matmul::*;
 pub use norm::*;
 pub use reindex::*;
