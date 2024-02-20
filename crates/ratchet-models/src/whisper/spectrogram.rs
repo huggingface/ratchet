@@ -151,7 +151,7 @@ def ground_truth():
 "#,
             gb0.to_str().unwrap()
         );
-        let ground_truth = run_py_prg(prg.to_string(), &[]).unwrap();
+        let ground_truth = run_py_prg(prg.to_string(), &[], &[]).unwrap();
         let generator = crate::SpectrogramGenerator::new(load_npy(mels));
         let result = generator.generate(load_sample(gb0)).unwrap();
         ground_truth.all_close(&result, MAX_DIFF, MAX_DIFF).unwrap();

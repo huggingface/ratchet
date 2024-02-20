@@ -147,7 +147,7 @@ def layernorm(input, scale, bias):
     (input, scale, bias) = (torch.from_numpy(input), torch.from_numpy(scale), torch.from_numpy(bias))
     return F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
 "#;
-        run_py_prg(prg.to_string(), &[input, scale, bias])
+        run_py_prg(prg.to_string(), &[input, scale, bias], &[])
     }
 
     fn run_norm_trial(device: &Device, problem: NormProblem) -> anyhow::Result<()> {
