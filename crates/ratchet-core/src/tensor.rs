@@ -7,7 +7,6 @@ use crate::{
 use crate::{BinaryOp, LazyOp};
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
-use pyo3::ToPyObject;
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
