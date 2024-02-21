@@ -92,13 +92,11 @@ impl MetaOperation for IndexWrite {
             start[i + offset] = s as u32;
         }
 
-        let meta = IndexWriteMeta {
+        Ok(IndexWriteMeta {
             dst_strides: glam::UVec4::try_from(&dst_strides).unwrap(),
             src_numel: src_shape.numel() as u32,
             write_start: start.into(),
-        };
-        println!("META: {:#?}", meta);
-        Ok(meta)
+        })
     }
 }
 

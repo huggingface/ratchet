@@ -77,8 +77,6 @@ impl Operation for View {
         &self,
         srcs: &[&crate::Tensor],
     ) -> Result<crate::StorageView, crate::OperationError> {
-        Enforcer::assert_equal_numel(&[srcs[0].shape(), &self.shape])?;
-        //TODO: check if view is valid 🚨
         let strides = Strides::from(&self.shape);
         Ok(StorageView::new(self.shape.clone(), srcs[0].dt(), strides))
     }

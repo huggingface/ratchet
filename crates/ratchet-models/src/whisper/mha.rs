@@ -1,4 +1,4 @@
-use ratchet::{rvec, shape, Tensor};
+use ratchet::{rvec, shape, Device, Tensor};
 use ratchet_nn::{KVCache, KVEntry, Linear, Module};
 
 #[derive(Debug, derive_new::new)]
@@ -32,13 +32,30 @@ impl Module for MultiHeadAttention {
         } = input;
 
         let q = self.q.forward(x)?;
+        let [bs, n_ctx, n_state]: [usize; 3] = q.shape().try_into()?;
 
         let to_project = xa.as_ref().unwrap_or(x);
         let k = self.k.forward(to_project)?;
         let v = self.v.forward(to_project)?;
+
         let (k, v) = if let Some(kv) = cache {
-            let k_cache = kv.k_cache.index_write(&k, rvec![0, 0, 0, 0])?;
-            let v_cache = kv.v_cache.index_write(&v, rvec![0, 0, 0, 0])?;
+            let prev_entries = kv.entries;
+            let new_entries = prev_entries + n_ctx;
+            let k_cache = kv
+                .k_cache
+                .index_write(&k, rvec![0, prev_entries, 0])?
+                .slice(&[0..bs, 0..new_entries, 0..n_state])?;
+            //k_cache.resolve();
+            //let k_cpu = k_cache.to(&Device::CPU)?;
+            //println!("KCACHE: {:?}\n", k_cpu);
+
+            let v_cache = kv
+                .v_cache
+                .index_write(&v, rvec![0, prev_entries, 0])?
+                .slice(&[0..bs, 0..new_entries, 0..n_state])?;
+            //v_cache.resolve();
+            //let v_cpu = v_cache.to(&Device::CPU)?;
+            //println!("VDBG: {:?}\n", v_cpu);
             (k_cache, v_cache)
         } else {
             (k, v)
@@ -89,11 +106,15 @@ impl MultiHeadAttention {
         }
 
         let w = qk.softmax(3)?;
-        let wv = w
-            .matmul(&v)?
+        let mat = w.matmul(&v)?;
+        //mat.resolve();
+        //let mat_cpu = mat.to(&Device::CPU)?;
+        //println!("MATDBG: {:?}\n", mat_cpu);
+        let wv = mat
             .permute(&[0, 2, 1, 3])?
             .view(shape![bs, n_ctx, n_state])?;
 
-        self.o.forward(&wv)
+        let dbg = self.o.forward(&wv)?;
+        Ok(dbg)
     }
 }
