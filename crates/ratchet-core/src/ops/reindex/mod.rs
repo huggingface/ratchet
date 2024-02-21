@@ -131,12 +131,13 @@ impl MetaOperation for Reindex {
         };
         let src_offsets = match &self.op {
             ReindexOp::Slice(s) => {
-                let starts: [u32; 4] = (0..4)
-                    .map(|i| (s.indices().get(i).map(|index| index.start).unwrap_or(0)) as u32)
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap();
-                starts
+                let starts = s.indices().iter().map(|i| i.start).collect::<Vec<_>>();
+                let mut offsets = [0; 4];
+                let offset = 4 - starts.len();
+                for (i, &start) in starts.iter().enumerate() {
+                    offsets[i + offset] = start as u32;
+                }
+                offsets
             }
             _ => [0, 0, 0, 0],
         };
@@ -147,7 +148,7 @@ impl MetaOperation for Reindex {
             src_offsets[2],
             src_offsets[3],
         );
-        Ok(ReindexMeta {
+        let meta = ReindexMeta {
             src_shape,
             dst_shape,
             src_stride,
@@ -156,6 +157,7 @@ impl MetaOperation for Reindex {
             dst_numel,
             permute,
             src_offsets,
-        })
+        };
+        Ok(meta)
     }
 }

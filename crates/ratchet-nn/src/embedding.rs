@@ -70,6 +70,7 @@ def embedding(input, indices):
 
     fn run_embedding_trial(problem: EmbeddingProblem) {
         let device = GPU_DEVICE.with(|d| d.clone());
+        println!("Embedding problem: {:?}", problem);
         let EmbeddingProblem {
             vocab_shape,
             indices,
@@ -77,15 +78,16 @@ def embedding(input, indices):
         let weight = Tensor::randn::<f32>(vocab_shape, Device::CPU);
 
         let ground_truth = ground_truth(&weight, &indices).unwrap();
+        println!("GROUND TRUTH: {:?}", ground_truth);
 
         let weight = weight.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
 
         let embedding = Embedding::new(weight);
         let result = embedding.forward(&indices).unwrap();
-
         result.resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
+        println!("OURS: {:?}", x);
         ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();
     }
 
@@ -93,6 +95,15 @@ def embedding(input, indices):
     struct EmbeddingProblem {
         vocab_shape: Shape,
         indices: Tensor,
+    }
+
+    #[test]
+    fn debug_embedding() {
+        let prob = EmbeddingProblem {
+            vocab_shape: shape![51865, 384],
+            indices: Tensor::from_data(&[50363i32], shape![1, 1], Device::CPU),
+        };
+        run_embedding_trial(prob);
     }
 
     #[proptest(cases = 16)]

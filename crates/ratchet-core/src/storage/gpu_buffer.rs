@@ -1,5 +1,3 @@
-
-
 use crate::{
     gpu::{BufferDescriptor, WgpuDevice},
     gpu::{BufferUsagesExt, PooledGPUBuffer},
