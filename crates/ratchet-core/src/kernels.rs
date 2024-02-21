@@ -215,6 +215,10 @@ lazy_static! {
             include_str!(r"../kernels/sgemm_scalar.wgsl"),
         );
         m.insert(
+            "index_write_scalar",
+            include_str!(r"../kernels/index_write_scalar.wgsl"),
+        );
+        m.insert(
             "index_select_scalar",
             include_str!(r"../kernels/index_select_scalar.wgsl"),
         );
