@@ -157,12 +157,14 @@ mod tests {
     fn ground_truth(audio_path: &str, options: DecodingOptions) -> anyhow::Result<Vec<Tensor>> {
         let prg = format!(
             r#"
+import warnings
+warnings.simplefilter("ignore")
 import whisper
 import numpy as np
 def ground(options):
     model = whisper.load_model("tiny")
     result = model.transcribe(audio="{}", **options)
-    output_logits = [l.numpy() for logits in result["all_logits"] for l in logits]
+    output_logits = [l.numpy()[np.newaxis] for logits in result["all_logits"] for l in logits]
     return output_logits
 "#,
             audio_path
@@ -220,19 +222,18 @@ def ground(options):
             println!("Token: {:?}", tokens);
             all_tokens.extend(tokens.clone());
         }
-        println!("OUR TOKENS: {:?}", all_tokens);
-        println!("OUR LOGITS: \n {:#?}", all_logits);
-        println!(
-            "GROUND TRUTH LOGITS: \n {:#?}",
-            ground_truth(&audio_path.to_string_lossy(), options)?
-        );
 
         let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
         let u32_tokens: Vec<_> = all_tokens.iter().map(|&x| x as u32).collect();
         let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
+        println!("Decoded: {}", decoded);
 
+        let ground_logits = ground_truth(&audio_path.to_string_lossy(), options)?;
+        for (our, their) in all_logits.iter().zip(ground_logits.iter()) {
+            their.all_close(our, 1e-4, 1e-4).unwrap();
+        }
         Ok(())
     }
 }
