@@ -44,18 +44,11 @@ impl Module for MultiHeadAttention {
             let k_cache = kv
                 .k_cache
                 .index_write(&k, rvec![0, prev_entries, 0])?
-                .slice(&[0..bs, 0..new_entries, 0..n_state])?;
-            //k_cache.resolve();
-            //let k_cpu = k_cache.to(&Device::CPU)?;
-            //println!("KCACHE: {:?}\n", k_cpu);
-
+                .view(shape![bs, new_entries, n_state])?;
             let v_cache = kv
                 .v_cache
                 .index_write(&v, rvec![0, prev_entries, 0])?
-                .slice(&[0..bs, 0..new_entries, 0..n_state])?;
-            //v_cache.resolve();
-            //let v_cpu = v_cache.to(&Device::CPU)?;
-            //println!("VDBG: {:?}\n", v_cpu);
+                .view(shape![bs, new_entries, n_state])?;
             (k_cache, v_cache)
         } else {
             (k, v)
@@ -106,11 +99,8 @@ impl MultiHeadAttention {
         }
 
         let w = qk.softmax(3)?;
-        let mat = w.matmul(&v)?;
-        //mat.resolve();
-        //let mat_cpu = mat.to(&Device::CPU)?;
-        //println!("MATDBG: {:?}\n", mat_cpu);
-        let wv = mat
+        let wv = w
+            .matmul(&v)?
             .permute(&[0, 2, 1, 3])?
             .view(shape![bs, n_ctx, n_state])?;
 
