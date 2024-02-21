@@ -42,4 +42,8 @@ impl KVCache {
             entry.entries += offset;
         }
     }
+
+    pub fn entries(&self, layer: usize) -> usize {
+        self.0[layer].entries
+    }
 }
