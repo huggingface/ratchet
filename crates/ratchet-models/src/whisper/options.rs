@@ -80,9 +80,9 @@ impl DecodingOptionsBuilder {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new() -> DecodingOptionsBuilder {
         DecodingOptionsBuilder {
-            task: None,
+            task: Some(Task::Transcribe),
             language: None,
-            temperature: None,
+            temperature: Some(0.0),
             sample_len: None,
             best_of: None,
             beam_size: None,
