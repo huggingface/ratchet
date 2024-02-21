@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install rust toolchain
-        uses: dtolnay/rust-toolchain@1.72
+        uses: dtolnay/rust-toolchain@1.74
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
