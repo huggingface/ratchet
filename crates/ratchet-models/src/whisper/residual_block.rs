@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
 use ratchet_loader::GGMLModel;
-use ratchet_nn::{KVCache, KVEntry, LayerNorm, Linear, Module};
+use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
 
 use crate::{MHAInputs, MultiHeadAttention, Whisper, MLP};
 

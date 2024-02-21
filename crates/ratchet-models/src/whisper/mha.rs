@@ -1,5 +1,5 @@
-use ratchet::{rvec, shape, Device, Tensor};
-use ratchet_nn::{KVCache, KVEntry, Linear, Module};
+use ratchet::{rvec, shape, Tensor};
+use ratchet_nn::{KVEntry, Linear, Module};
 
 #[derive(Debug, derive_new::new)]
 pub struct MultiHeadAttention {
