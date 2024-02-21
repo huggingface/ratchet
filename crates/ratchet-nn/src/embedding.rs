@@ -101,7 +101,7 @@ def embedding(input, indices):
     fn debug_embedding() {
         let prob = EmbeddingProblem {
             vocab_shape: shape![51865, 384],
-            indices: Tensor::from_data(&[50363i32], shape![1, 1], Device::CPU),
+            indices: Tensor::from_data([50363i32], shape![1, 1], Device::CPU),
         };
         run_embedding_trial(prob);
     }
