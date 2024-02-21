@@ -429,6 +429,18 @@ impl Tensor {
         ))
     }
 
+    ///CAUTION: inplace but you need to use the resultant tensor
+    pub fn index_write(&self, src: &Tensor, write_start: RVec<usize>) -> anyhow::Result<Tensor> {
+        IndexWrite::check_invariants(&[self, src])?;
+        let index_write = IndexWrite::new(self.clone(), src.clone(), write_start);
+        let new_view = index_write.infer_output(&[self, src])?;
+        Ok(Tensor::lazy(
+            LazyOp::IndexWrite(index_write),
+            new_view,
+            self.device.clone(),
+        ))
+    }
+
     #[cfg(feature = "rand")]
     pub fn randint<T: TensorDType + rand_distr::uniform::SampleUniform + PartialOrd>(
         low: T,
@@ -467,6 +479,13 @@ impl Tensor {
             })
             .collect::<Vec<_>>();
         Self::from_data(data, shape, device)
+    }
+
+    pub fn zeros<T: TensorDType>(shape: &Shape, device: &Device) -> Tensor {
+        let storage = Storage::zeros::<T>(shape, device);
+        let strides = Strides::from(shape);
+        let meta = StorageView::new(shape.clone(), T::dt(), strides);
+        Tensor::new(LazyOp::Const, meta, Some(storage), device.clone())
     }
 
     /// Creates a new tensor from a chunk of data.
@@ -614,6 +633,7 @@ impl Tensor {
             LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::IndexWrite(i) => i.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }

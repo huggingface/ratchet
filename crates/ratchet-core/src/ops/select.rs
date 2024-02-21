@@ -141,7 +141,7 @@ def index_select(input, indices):
 "#,
             dim
         );
-        run_py_prg(prg.to_string(), &[input, indices])
+        run_py_prg(prg.to_string(), &[input, indices], &[])
     }
 
     fn run_index_select_trial(problem: IndexSelectProblem) {

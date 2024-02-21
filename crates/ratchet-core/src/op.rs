@@ -20,9 +20,10 @@ pub enum LazyOp {
     // ---- Everything below this line shouldn't exist ----
     Softmax(Softmax),
     Norm(Norm),
-    View(View),          //Should be general class, metadata modification
-    Conv(Conv),          //Really it's a matmul
-    Select(IndexSelect), //Can probably be Reindex
+    View(View),             //Should be general class, metadata modification
+    Conv(Conv),             //Really it's a matmul
+    Select(IndexSelect),    //Can probably be Reindex
+    IndexWrite(IndexWrite), //Above 2 should be merged
 }
 
 impl LazyOp {
@@ -36,6 +37,7 @@ impl LazyOp {
             LazyOp::Norm(n) => n.name(),
             LazyOp::Conv(c) => c.name(),
             LazyOp::Select(s) => s.name(),
+            LazyOp::IndexWrite(iw) => iw.name(),
             LazyOp::View(_) => "View",
             LazyOp::Const => "Const",
         }
@@ -51,6 +53,7 @@ impl LazyOp {
             LazyOp::Norm(n) => n.srcs(),
             LazyOp::Conv(c) => c.srcs(),
             LazyOp::Select(s) => s.srcs(),
+            LazyOp::IndexWrite(iw) => iw.srcs(),
             LazyOp::View(v) => rvec![v.input()],
             LazyOp::Const => rvec![], //end of the line kid
         }
@@ -66,6 +69,7 @@ impl LazyOp {
             LazyOp::Norm(n) => n.supports_inplace(),
             LazyOp::Conv(c) => c.supports_inplace(),
             LazyOp::Select(s) => s.supports_inplace(),
+            LazyOp::IndexWrite(iw) => iw.supports_inplace(),
             LazyOp::View(_v) => true,
             LazyOp::Const => false,
         }

@@ -100,7 +100,11 @@ pub mod test_util {
     };
 
     /// It's a bit of a hack, but it's useful for testing.
-    pub fn run_py_prg(prg: String, args: &[&Tensor]) -> anyhow::Result<Tensor> {
+    pub fn run_py_prg(
+        prg: String,
+        tensors: &[&Tensor],
+        args: &[&dyn ToPyObject],
+    ) -> anyhow::Result<Tensor> {
         let re = Regex::new(r"def\s+(\w+)\s*\(").unwrap();
         let func = match re.captures(&prg) {
             Some(caps) => caps.get(1).map(|m| m.as_str()).unwrap(),
@@ -109,14 +113,15 @@ pub mod test_util {
 
         Python::with_gil(|py| {
             let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
-            let py_args = PyTuple::new(
-                py,
-                args.iter().map(|arg| match arg.dt() {
-                    DType::F32 => arg.to_py::<f32>(&py).as_untyped(),
-                    DType::I32 => arg.to_py::<i32>(&py).as_untyped(),
-                    _ => unimplemented!(),
-                }),
-            );
+            let py_tensors = tensors.iter().map(|t| match t.dt() {
+                DType::F32 => t.to_py::<f32>(&py).to_object(py),
+                DType::I32 => t.to_py::<i32>(&py).to_object(py),
+                _ => unimplemented!(),
+            });
+            let py_args = py_tensors
+                .chain(args.iter().map(|a| a.to_object(py)))
+                .collect::<Vec<_>>();
+            let py_args = PyTuple::new(py, py_args);
             let py_result: &PyArrayDyn<f32> = prg.getattr(func)?.call1(py_args)?.extract()?;
             Ok(Tensor::from(py_result))
         })

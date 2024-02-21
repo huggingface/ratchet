@@ -177,7 +177,7 @@ def {}(a):
             _ => imp_prg,
         };
 
-        run_py_prg(prg.to_string(), &[a])
+        run_py_prg(prg.to_string(), &[a], &[])
     }
 
     thread_local! {
