@@ -93,6 +93,13 @@ impl CPUBuffer {
         bytemuck::cast_slice(self.inner().as_bytes())
     }
 
+    pub fn zeros<T: TensorDType>(shape: &Shape) -> Self {
+        let n_bytes = shape.numel() * T::dt().size_of();
+        let mut raw = RawCPUBuffer::uninitialized(n_bytes, std::mem::align_of::<T>());
+        raw.as_bytes_mut().fill(0);
+        Self::new(raw)
+    }
+
     pub fn from_disk<T: TensorDType, R: std::io::BufRead + std::io::Seek>(
         reader: &mut R,
         shape: &Shape,

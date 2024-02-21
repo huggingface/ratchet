@@ -28,6 +28,16 @@ impl GPUBuffer {
         )
     }
 
+    //We have to use from_bytes here, as buffers may be reused and we need to
+    //ensure that the buffer is zeroed
+    pub fn zeros<T: TensorDType>(shape: &Shape, device: &WgpuDevice) -> Self {
+        Self::from_bytes(
+            vec![0; shape.numel() * T::dt().size_of()].as_slice(),
+            T::dt().size_of(),
+            device,
+        )
+    }
+
     pub(crate) fn from_bytes(bytes: &[u8], alignment: usize, device: &WgpuDevice) -> Self {
         let num_bytes = bytes.len();
         let mut min_bytes = [0; Self::MIN_SIZE];

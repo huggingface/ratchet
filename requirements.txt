@@ -2,4 +2,5 @@
 numpy==1.24.3
 torch==2.0.1
 requests==2.26.0
-openai-whisper==20231117
+git+https://github.com/FL33TW00D/whisper.git@feature/reference#egg=openai-whisper
+

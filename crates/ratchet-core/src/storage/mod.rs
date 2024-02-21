@@ -38,6 +38,13 @@ impl Storage {
         }
     }
 
+    pub fn zeros<T: TensorDType>(shape: &Shape, device: &Device) -> Self {
+        match device {
+            Device::CPU => Storage::CPU(CPUBuffer::zeros::<T>(shape)),
+            Device::GPU(g) => Storage::GPU(GPUBuffer::zeros::<T>(shape, g)),
+        }
+    }
+
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &Device) -> Self {
         match device {
             Device::CPU => Storage::CPU(CPUBuffer::from_slice(data, shape)),

@@ -95,7 +95,7 @@ def permute(a):
 "#,
             args
         );
-        run_py_prg(prg.to_string(), &[a])
+        run_py_prg(prg.to_string(), &[a], &[])
     }
 
     fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {

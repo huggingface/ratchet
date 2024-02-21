@@ -24,7 +24,7 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
     let input_npy = ground_repo.get("jfk_tiny_encoder_input.npy").await?;
-    let ground_npy = ground_repo.get("jfk_tiny_encoder_output.npy").await?;
+    let ground_npy = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;
 
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(model_data.to_vec()));
     let gg = Whisper::load_ggml(&mut reader).unwrap();

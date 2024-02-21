@@ -1,5 +1,6 @@
 mod binary;
 mod conv;
+mod index_write;
 mod matmul;
 mod norm;
 mod reindex;
@@ -9,6 +10,7 @@ mod unary;
 
 pub use binary::*;
 pub use conv::*;
+pub use index_write::*;
 pub use matmul::*;
 pub use norm::*;
 pub use reindex::*;
@@ -75,8 +77,6 @@ impl Operation for View {
         &self,
         srcs: &[&crate::Tensor],
     ) -> Result<crate::StorageView, crate::OperationError> {
-        Enforcer::assert_equal_numel(&[srcs[0].shape(), &self.shape])?;
-        //TODO: check if view is valid 🚨
         let strides = Strides::from(&self.shape);
         Ok(StorageView::new(self.shape.clone(), srcs[0].dt(), strides))
     }

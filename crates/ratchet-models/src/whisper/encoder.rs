@@ -76,6 +76,7 @@ impl Module for WhisperEncoder {
                 x: x.clone(),
                 xa: None,
                 mask: None,
+                cache: None,
             };
             x = block.forward(&input)?;
         }
@@ -137,7 +138,7 @@ mod tests {
         let path = model.get("ggml-tiny.bin").unwrap();
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
-        let ground_npy = dataset.get("jfk_tiny_encoder_output.npy").unwrap();
+        let ground_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
