@@ -157,7 +157,7 @@ def ground(options):
         );
         Python::with_gil(|py| {
             let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
-            let py_args = PyTuple::new(py, &[options.into_py_dict(py)]);
+            let py_args = PyTuple::new(py, [options.into_py_dict(py)]);
             let py_result: Vec<&PyArrayDyn<f32>> =
                 prg.getattr("ground")?.call1(py_args)?.extract()?;
             Ok(py_result.into_iter().map(Tensor::from).collect::<_>())
@@ -171,9 +171,9 @@ def ground(options):
         let path = model.get("ggml-tiny.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_path = dataset.get("jfk.wav").unwrap();
+        let _audio_path = dataset.get("jfk.wav").unwrap();
 
-        let options = DecodingOptionsBuilder::new().build();
+        let _options = DecodingOptionsBuilder::new().build();
 
         let hs_npy = load_npy(dataset.get("jfk_tiny_encoder_hs.npy").unwrap());
 
