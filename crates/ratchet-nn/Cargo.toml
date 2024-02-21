@@ -9,3 +9,7 @@ edition = "2021"
 anyhow.workspace = true
 derive-new = "0.6.0"
 ratchet = { path = "../ratchet-core" }
+
+[dev-dependencies]
+proptest = "1.4.0"
+test-strategy = "0.3.1"

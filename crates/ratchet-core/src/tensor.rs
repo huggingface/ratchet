@@ -74,7 +74,7 @@ impl Tensor {
 
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
+        let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), true));
         let (id, op) = (self.id(), self.op());
         f.debug_struct("Tensor")
             .field("id", &id)
