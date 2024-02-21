@@ -24,6 +24,7 @@ js-sys = "0.3.64"
 futures-util = { version = "^0.3.28", features = ["io", "sink"] }
 byteorder.workspace = true
 thiserror.workspace = true
+anyhow.workspace = true
 wasm-streams = "0.4.0"
 ratchet = { path = "../ratchet-core" }
 
@@ -48,6 +49,14 @@ version = "0.3.64"
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true
+tokio = { version = "1.36.0", features = [
+    "sync",
+    "macros",
+    "io-util",
+    "rt",
+    "time",
+] }
+
 
 [lib]
 crate-type = ["cdylib", "rlib"]

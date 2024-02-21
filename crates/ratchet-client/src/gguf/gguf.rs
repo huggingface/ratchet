@@ -1,6 +1,8 @@
 //! Support for the GGUF file format.
 //!
 //! Spec: https://github.com/philpax/ggml/blob/gguf-spec/docs/gguf.md
+//!
+//! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
 use crate::error::{Error, Result};
 use crate::gguf::ggml::GgmlDType;
@@ -70,13 +72,24 @@ impl TensorInfo {
             "the number of elements {tensor_elems} is not divisible by the block size {block_size}"
         )
         }
+
+        println!("shape={:?} ggml_dtype={:?}", self.shape, self.ggml_dtype);
         let size_in_bytes = tensor_elems / block_size * self.ggml_dtype.type_size();
         let mut raw_data = vec![0u8; size_in_bytes];
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
         reader.read_exact(&mut raw_data)?;
 
+        // [TODO]
+
         // [TODO] Implement
-        let tensor = ratchet::Tensor::randn::<f32>(shape![1, 2], device.clone());
+        let tensor = match self.ggml_dtype {
+            GgmlDType::Q4K => {
+                println!("Got Q4K type");
+                ratchet::Tensor::randn::<f32>(shape![1, 2], device.clone())
+            }
+            _ => ratchet::Tensor::randn::<f32>(shape![1, 2], device.clone()),
+        };
+
         Ok(tensor)
     }
 }
@@ -307,44 +320,6 @@ impl Value {
         };
         Ok(v)
     }
-
-    // fn write<W: std::io::Write>(&self, w: &mut W) -> Result<()> {
-    //     match self {
-    //         &Self::U8(v) => w.write_u8(v)?,
-    //         &Self::I8(v) => w.write_i8(v)?,
-    //         &Self::U16(v) => w.write_u16::<LittleEndian>(v)?,
-    //         &Self::I16(v) => w.write_i16::<LittleEndian>(v)?,
-    //         &Self::U32(v) => w.write_u32::<LittleEndian>(v)?,
-    //         &Self::I32(v) => w.write_i32::<LittleEndian>(v)?,
-    //         &Self::U64(v) => w.write_u64::<LittleEndian>(v)?,
-    //         &Self::I64(v) => w.write_i64::<LittleEndian>(v)?,
-    //         &Self::F32(v) => w.write_f32::<LittleEndian>(v)?,
-    //         &Self::F64(v) => w.write_f64::<LittleEndian>(v)?,
-    //         &Self::Bool(v) => w.write_u8(u8::from(v))?,
-    //         Self::String(v) => write_string(w, v.as_str())?,
-    //         Self::Array(v) => {
-    //             // The `Value` type does not enforce that all the values in an Array have the same
-    //             // type.
-    //             let value_type = if v.is_empty() {
-    //                 // Doesn't matter, the array is empty.
-    //                 ValueType::U32
-    //             } else {
-    //                 let value_type: std::collections::HashSet<_> =
-    //                     v.iter().map(|elem| elem.value_type()).collect();
-    //                 if value_type.len() != 1 {
-    //                     crate::bail!("multiple value-types in the same array {value_type:?}")
-    //                 }
-    //                 value_type.into_iter().next().unwrap()
-    //             };
-    //             w.write_u32::<LittleEndian>(value_type.to_u32())?;
-    //             w.write_u64::<LittleEndian>(v.len() as u64)?;
-    //             for elem in v.iter() {
-    //                 elem.write(w)?
-    //             }
-    //         }
-    //     }
-    //     Ok(())
-    // }
 }
 
 impl ValueType {
@@ -475,60 +450,3 @@ impl Content {
         tensor_info.read(reader, self.tensor_data_offset, device)
     }
 }
-
-// fn write_string<W: std::io::Write>(w: &mut W, str: &str) -> Result<()> {
-//     let bytes = str.as_bytes();
-//     w.write_u64::<LittleEndian>(bytes.len() as u64)?;
-//     w.write_all(bytes)?;
-//     Ok(())
-// }
-
-// pub fn write<W: std::io::Seek + std::io::Write>(
-//     w: &mut W,
-//     metadata: &[(&str, &Value)],
-//     tensors: &[(&str, &QTensor)],
-// ) -> Result<()> {
-//     w.write_u32::<LittleEndian>(0x46554747)?;
-//     w.write_u32::<LittleEndian>(2)?; // version 2.
-//     w.write_u64::<LittleEndian>(tensors.len() as u64)?;
-//     w.write_u64::<LittleEndian>(metadata.len() as u64)?;
-//     for (name, value) in metadata.iter() {
-//         write_string(w, name)?;
-//         w.write_u32::<LittleEndian>(value.value_type().to_u32())?;
-//         value.write(w)?;
-//     }
-//     let mut offset = 0usize;
-//     let mut offsets = Vec::with_capacity(tensors.len());
-//     for (name, tensor) in tensors.iter() {
-//         write_string(w, name)?;
-//         let dims = tensor.shape().dims();
-//         w.write_u32::<LittleEndian>(dims.len() as u32)?;
-//         for &dim in dims.iter().rev() {
-//             w.write_u64::<LittleEndian>(dim as u64)?;
-//         }
-//         w.write_u32::<LittleEndian>(tensor.dtype().to_u32())?;
-//         w.write_u64::<LittleEndian>(offset as u64)?;
-//         offsets.push(offset);
-//         let size_in_bytes = tensor.storage_size_in_bytes();
-//         let padding = 31 - (31 + size_in_bytes) % 32;
-//         offset += size_in_bytes + padding;
-//     }
-//     let pos = w.stream_position()? as usize;
-//     let padding = 31 - (31 + pos) % 32;
-//     w.write_all(&vec![0u8; padding])?;
-//     let tensor_start_pos = w.stream_position()? as usize;
-//     for (offset, (_name, tensor)) in offsets.iter().zip(tensors.iter()) {
-//         let pos = w.stream_position()? as usize;
-//         if tensor_start_pos + offset != pos {
-//             crate::bail!(
-//                 "internal error, unexpected current position {tensor_start_pos} {offset} {pos}"
-//             )
-//         }
-//         let data = tensor.data()?;
-//         let size_in_bytes = data.len();
-//         w.write_all(&data)?;
-//         let padding = 31 - (31 + size_in_bytes) % 32;
-//         w.write_all(&vec![0u8; padding])?;
-//     }
-//     Ok(())
-// }

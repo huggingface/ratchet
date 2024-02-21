@@ -1,4 +1,4 @@
-// Adapted from https://github.com/huggingface/candle/blob/main/candle-core/src/quantized/mod.rs
+// Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/mod.rs
 //
 
 use crate::error::Result;
@@ -92,7 +92,7 @@ impl GgmlDType {
         use k_quants::*;
         match self {
             Self::F32 => 4,
-            Self::F16 => 2,
+            Self::F16 => 4, // 2, [TODO] Think about this. Currently WASM doesn't support F16
             Self::Q4_0 => std::mem::size_of::<BlockQ4_0>(),
             Self::Q4_1 => std::mem::size_of::<BlockQ4_1>(),
             Self::Q5_0 => std::mem::size_of::<BlockQ5_0>(),

@@ -15,6 +15,7 @@ mod util;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 
 #[cfg(test)]
+#[cfg(target_family = "wasm")]
 wasm_bindgen_test_configure!(run_in_browser);
 
 pub type ProgressBar = dyn Fn(u32);
@@ -134,7 +135,7 @@ impl Api {
             let status = raw_response.status();
 
             // [TODO] Need to improve the whole caching here
-            if (status >= 200 && status < 400) {
+            if status >= 200 && status < 400 {
                 let _ = to_future::<JsValue>(
                     cache.put_with_str(file_url.as_str(), &raw_response.clone()?),
                 )
@@ -190,7 +191,10 @@ impl ApiResponse {
 
 #[cfg(test)]
 mod tests {
+    use ratchet::{Device, DeviceRequest};
+
     use super::*;
+
     #[wasm_bindgen_test]
     async fn test_loading_from_hub() -> Result<(), JsValue> {
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
@@ -201,18 +205,45 @@ mod tests {
         Ok(())
     }
 
-    #[wasm_bindgen_test]
-    async fn test_gguf() -> Result<(), JsValue> {
+    #[tokio::test]
+    async fn test_gguf() -> anyhow::Result<()> {
         const DUMMY_GGUF: &[u8] =
-            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/dummy.gguf"));
+            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/TheBloke_TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"));
 
-        debug!(format!("{:?}", DUMMY_GGUF));
-        let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model)
-            .uncached()
-            .build();
-        let file = model_repo.get("dummy.gguf").await?;
-        let model_data = file.gguf().await?;
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(DUMMY_GGUF.to_vec()));
 
+        let result = gguf::gguf::Content::read(&mut reader)?;
+
+        let empty_value = gguf::gguf::Value::String(String::from(""));
+        let metadata = result
+            .metadata
+            .keys()
+            .filter(|key| !(*key).starts_with("tokenizer"))
+            .map(|key| {
+                (
+                    key,
+                    result.metadata.get(key).unwrap_or_else(|| &empty_value),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        println!("{:?}", metadata);
+
+        println!(
+            "{:?}",
+            result
+                .tensor_infos
+                .keys()
+                .filter(|key| (*key).starts_with("blk.0"))
+                .collect::<Vec<_>>()
+        );
+
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        // let tensor = result.tensor(&mut reader, "blk.0.ffn_norm.weight", &device);
+        let tensor = result.tensor(&mut reader, "blk.0.attn_k.weight", &device);
+        // let model_data = file.gguf().await?;
+
+        println!("{:?}", tensor);
         Ok(())
     }
 }
