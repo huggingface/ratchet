@@ -332,8 +332,6 @@ impl Tensor {
 
     //TODO: switch dim to isize and allow negative indexing
     pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
-        println!("CALLING SOFTMAX");
-        println!("ARC COUNT: {:?}", Arc::strong_count(&self.inner));
         Softmax::check_invariants(&[self])?;
 
         let softmax = Softmax::new(self.clone(), dim);
@@ -654,9 +652,6 @@ impl Tensor {
         for t in execution_order.iter() {
             if t.resolved() {
                 continue;
-            }
-            if t.id() == TensorId::debug(29) {
-                println!("STRONG COUNT: {:?}", Arc::strong_count(&t.inner));
             }
 
             let id = t.id();
