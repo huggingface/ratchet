@@ -77,6 +77,14 @@ pub struct DecodingOptionsBuilder {
 
 impl Default for DecodingOptionsBuilder {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl DecodingOptionsBuilder {
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
+    pub fn new() -> DecodingOptionsBuilder {
         DecodingOptionsBuilder {
             task: Some(Task::Transcribe),
             language: None,
@@ -90,19 +98,9 @@ impl Default for DecodingOptionsBuilder {
             prefix: None,
             suppress_tokens: Some(vec![-1]),
             suppress_blank: Some(true),
-            without_timestamps: Some(false),
             max_initial_timestamp: Some(1.0),
+            without_timestamps: Some(false),
             time_offset: None,
-        }
-    }
-}
-
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-impl DecodingOptionsBuilder {
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
-    pub fn new() -> DecodingOptionsBuilder {
-        DecodingOptionsBuilder {
-            ..Default::default()
         }
     }
 
