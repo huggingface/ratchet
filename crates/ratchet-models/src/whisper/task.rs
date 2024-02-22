@@ -52,7 +52,7 @@ impl DecodingTask {
 
     pub fn new(options: DecodingOptions, tokenizer: &WhisperTokenizer) -> Self {
         let sample_len = options.sample_len.unwrap_or(256);
-        let selected_lang = options.language.as_ref().unwrap();
+        let _selected_lang = options.language.as_ref().unwrap();
         let max_initial_timestamp = options.max_initial_timestamp;
         let mut task = DecodingTask {
             options,
@@ -79,7 +79,7 @@ impl DecodingTask {
         audio_ctx: Tensor,
         mut tokens: Vec<i32>,
     ) -> Result<(), DecodeError> {
-        let mut timestamps_seen = 0;
+        let _timestamps_seen = 0;
         let device = audio_ctx.device().clone();
 
         for _ in 0..self.sample_len {
@@ -115,13 +115,13 @@ impl DecodingTask {
         tokenizer: &WhisperTokenizer,
     ) -> Result<Vec<i32>, DecodeError> {
         let mut tokens = self.get_initial_tokens(tokenizer);
-        let result = self.main_loop(decoder, audio_ctx.clone(), tokens.clone());
+        let _result = self.main_loop(decoder, audio_ctx.clone(), tokens.clone());
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
         let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);
         if let Some(eot_index) = eot_index {
             tokens.truncate(eot_index);
         }
-        return Ok(tokens);
+        Ok(tokens)
     }
 }
