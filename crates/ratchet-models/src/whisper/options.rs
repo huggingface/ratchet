@@ -75,13 +75,13 @@ pub struct DecodingOptionsBuilder {
     time_offset: Option<f64>,
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Default for DecodingOptionsBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl DecodingOptionsBuilder {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new() -> DecodingOptionsBuilder {
