@@ -575,7 +575,7 @@ impl Tensor {
         Ok(slice.to_vec())
     }
 
-    pub(crate) fn execution_order<'s>(&'s self) -> Vec<&'s Tensor> {
+    pub(crate) fn execution_order(&self) -> Vec<&Tensor> {
         let mut done = HashSet::new();
         let mut pending = HashSet::new();
         let mut order = Vec::new();
