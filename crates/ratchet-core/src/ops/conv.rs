@@ -164,8 +164,11 @@ def conv(input, filters, bias, stride, padding):
         let input = input.to(device).unwrap();
         let weight = weight.to(device).unwrap();
         let bias = bias.to(device).unwrap();
-        let ours = input.conv1d(&weight, Some(&bias), stride, 1).unwrap();
-        ours.resolve().unwrap();
+        let ours = input
+            .conv1d(&weight, Some(&bias), stride, 1)
+            .unwrap()
+            .resolve()
+            .unwrap();
         let ours = ours.to(&Device::CPU).unwrap();
 
         println!("ours = {:?}", ours);

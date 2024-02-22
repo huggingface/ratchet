@@ -131,8 +131,13 @@ mod tests {
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
 
+    fn log_init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
     fn encoder_matches() -> anyhow::Result<()> {
+        log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
         let path = model.get("ggml-tiny.bin").unwrap();
@@ -148,8 +153,7 @@ mod tests {
         let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
         let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
 
-        let result = encoder.forward(&input)?;
-        result.resolve()?;
+        let result = encoder.forward(&input)?.resolve()?;
         let ours = result.to(&Device::CPU)?;
         let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);

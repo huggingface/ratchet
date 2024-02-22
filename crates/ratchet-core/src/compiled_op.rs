@@ -26,8 +26,9 @@ impl CompiledOp {
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
         inplace: bool,
-        _kernel_name: &str,
+        kernel_name: &str,
     ) -> Result<RVec<GpuBindGroup>, OperationError> {
+        log::debug!("Creating storage bind groups for kernel: {}", kernel_name);
         let mut bind_group_entries = drvec![];
 
         for tensor in srcs.iter() {

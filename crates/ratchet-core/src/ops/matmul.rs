@@ -417,8 +417,7 @@ def matmul(a, b):
 
         let a_gpu = a.to(device)?;
         let b_gpu = b.to(device)?;
-        let c_gpu = a_gpu.matmul(&b_gpu)?;
-        c_gpu.resolve()?;
+        let c_gpu = a_gpu.matmul(&b_gpu)?.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-4, 1e-4)?;
@@ -435,8 +434,7 @@ def matmul(a, b):
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = a.to(&device)?;
         let b_gpu = bq.to(&device)?;
-        let c_gpu = a_gpu.matmul(&b_gpu)?;
-        c_gpu.resolve()?;
+        let c_gpu = a_gpu.matmul(&b_gpu)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET WQ8\n{:?}\n", ours);

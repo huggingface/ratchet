@@ -161,8 +161,9 @@ def layernorm(input, scale, bias):
         let scale_gpu = scale.to(device)?;
         let bias_gpu = bias.to(device)?;
 
-        let result = input_gpu.layer_norm(&scale_gpu, Some(&bias_gpu), 1e-5)?;
-        result.resolve()?;
+        let result = input_gpu
+            .layer_norm(&scale_gpu, Some(&bias_gpu), 1e-5)?
+            .resolve()?;
 
         let ours = result.to(&Device::CPU)?;
         ground.all_close(&ours, 1e-4, 1e-4)?;

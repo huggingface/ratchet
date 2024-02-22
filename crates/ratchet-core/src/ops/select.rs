@@ -159,8 +159,11 @@ def index_select(input, indices):
         let input = input.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
 
-        let result = input.index_select(&indices, dim).unwrap();
-        result.resolve().unwrap();
+        let result = input
+            .index_select(&indices, dim)
+            .unwrap()
+            .resolve()
+            .unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("result: {:?}", x);
         ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();

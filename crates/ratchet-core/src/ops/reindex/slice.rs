@@ -131,30 +131,9 @@ def slice(a):
 
         let a_gpu = a.to(&device)?;
         let ground = ground_truth(&a, &op.as_torch())?;
-        let ours = a_gpu.slice(&op.indices)?;
-        ours.resolve()?;
+        let ours = a_gpu.slice(&op.indices)?.resolve()?;
         let d_gpu = ours.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-5, 1e-5)?;
-        Ok(())
-    }
-
-    #[test]
-    fn debug_slice() -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let slice = Slice {
-            indices: rvec![3..4, 0..384],
-        };
-        let a = Tensor::randn::<f32>(shape![448, 384], cpu_device.clone());
-        let device = GPU_DEVICE.with(|d| d.clone());
-
-        let a_gpu = a.to(&device)?;
-        let ground = ground_truth(&a, &slice.as_torch())?;
-        println!("GROUND: {:?}", ground);
-        let ours = a_gpu.slice(&slice.indices)?;
-        ours.resolve()?;
-        let d_cpu = ours.to(&Device::CPU)?;
-        println!("OURS: {:?}", d_cpu);
-        ground.all_close(&d_cpu, 1e-5, 1e-5)?;
         Ok(())
     }
 
