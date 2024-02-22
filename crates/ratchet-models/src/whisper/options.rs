@@ -76,6 +76,12 @@ pub struct DecodingOptionsBuilder {
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl Default for DecodingOptionsBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DecodingOptionsBuilder {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new() -> DecodingOptionsBuilder {

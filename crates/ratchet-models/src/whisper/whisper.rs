@@ -150,7 +150,7 @@ impl Whisper {
         self.hparams.n_vocab == 51865
     }
 
-    pub fn detect_language(&self, mel: Tensor) -> anyhow::Result<Language> {
+    pub fn detect_language(&self, _mel: Tensor) -> anyhow::Result<Language> {
         todo!()
     }
 }

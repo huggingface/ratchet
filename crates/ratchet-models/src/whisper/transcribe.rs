@@ -30,12 +30,12 @@ pub async fn transcribe(
         }
     }
 
-    let language = decode_options.language.as_ref().unwrap();
-    let task = decode_options.task;
+    let _language = decode_options.language.as_ref().unwrap();
+    let _task = decode_options.task;
 
-    let mut seek = 0;
-    let mut all_tokens = Vec::with_capacity(512);
-    let input_stride = N_FRAMES / N_AUDIO_CTX;
+    let seek = 0;
+    let all_tokens = Vec::with_capacity(512);
+    let _input_stride = N_FRAMES / N_AUDIO_CTX;
     let prompt_since_reset = 0;
 
     while seek < content_frames {
@@ -50,13 +50,13 @@ pub async fn transcribe(
         );
 
         let segment_size = min(N_FRAMES, content_frames - seek);
-        let segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE;
+        let _segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE;
 
         if !all_tokens.is_empty() {
             decode_options.prompt = Some(Prompt::Tokens(all_tokens[prompt_since_reset..].to_vec()));
         }
 
-        let mut hs = model.encoder.forward(&mel_segment)?;
+        let hs = model.encoder.forward(&mel_segment)?;
         hs.resolve();
 
         let task = DecodingTask::new(decode_options, &model.tokenizer);
