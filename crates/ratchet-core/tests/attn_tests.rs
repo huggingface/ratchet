@@ -55,8 +55,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let kt = k_proj.permute(&[0, 2, 1])?;
 
         let logits = q_proj.matmul(&kt)?.mul(&scale_factor)?;
-        let out = logits.softmax(2)?.matmul(&v_proj)?.resolve()?;
-        Ok(out)
+        logits.softmax(2)?.matmul(&v_proj)
     }
 
     #[test]
@@ -71,7 +70,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
 
         let device = Device::request_device(DeviceRequest::GPU)?;
         let gpu_test_case = cpu_test_case.to_gpu(device.clone());
-        let out = sdpa_cfg(&gpu_test_case, device.clone())?;
+        let out = sdpa_cfg(&gpu_test_case, device.clone())?.resolve()?;
         let out_cpu = out.to(&Device::CPU)?;
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
@@ -136,13 +135,10 @@ def qkv_attention(input, qw, kw, vw, n_heads):
             .permute(&[0, 2, 1, 3])?;
 
         let qk = q.matmul(&k)?;
-        let w = qk
-            .softmax(3)?
-            .matmul(&v)?
+        let attn = qk.softmax(3)?;
+        attn.matmul(&v)?
             .permute(&[0, 2, 1, 3])?
-            .view(shape![1, hdim, qdim])?
-            .resolve()?;
-        Ok(w)
+            .view(shape![1, hdim, qdim])
     }
 
     #[test]
@@ -157,7 +153,7 @@ def qkv_attention(input, qw, kw, vw, n_heads):
 
         let device = Device::request_device(DeviceRequest::GPU)?;
         let gpu_test_case = cpu_test_case.to_gpu(device.clone());
-        let out = mha_cfg(&gpu_test_case, device.clone())?;
+        let out = mha_cfg(&gpu_test_case, device.clone())?.resolve()?;
         let out_cpu = out.to(&Device::CPU)?;
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
