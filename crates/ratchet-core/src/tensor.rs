@@ -879,19 +879,7 @@ impl Tensor {
     }
 
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {
-        if !self.resolved() {
-            panic!("Tensor is not resolved");
-        }
-        assert!(self.device().is_cpu());
-        let shape = self.shape().to_vec();
-        if self.num_bytes() != 0 {
-            let storage_guard = self.storage();
-            let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
-            let (ptr, _) = buffer.inner().into_raw_parts();
-            unsafe { ArrayViewD::from_shape_ptr(shape, ptr as *const T).to_owned() }
-        } else {
-            ArrayViewD::from_shape(shape, &[]).unwrap().to_owned()
-        }
+        self.to_ndarray_view().into_owned()
     }
 
     pub fn to_ndarray_view<T: TensorDType>(&self) -> ArrayViewD<T> {
