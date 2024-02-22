@@ -118,6 +118,7 @@ wasm-bindgen = "0.2.91"
 wasm-bindgen-futures = "0.4.41"
 npyz = { workspace = true }
 hound = { version = "3.5.0" }
+env_logger = "0.11.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 pyo3 = "0.20.2"
