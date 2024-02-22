@@ -246,6 +246,15 @@ impl BufferAllocator {
             }
         }
 
+        log::info!(
+            "Total bytes allocated: {}kb",
+            self.pool.read().total_gpu_size_in_bytes() / 1024,
+        );
+        log::info!(
+            "Total buffers allocated: {}",
+            self.pool.read().num_resources()
+        );
+
         Ok(assignments)
     }
 }

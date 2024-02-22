@@ -131,8 +131,13 @@ mod tests {
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
 
+    fn log_init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
     fn encoder_matches() -> anyhow::Result<()> {
+        log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
         let path = model.get("ggml-tiny.bin").unwrap();
