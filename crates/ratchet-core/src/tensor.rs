@@ -332,6 +332,8 @@ impl Tensor {
 
     //TODO: switch dim to isize and allow negative indexing
     pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
+        println!("CALLING SOFTMAX");
+        println!("ARC COUNT: {:?}", Arc::strong_count(&self.inner));
         Softmax::check_invariants(&[self])?;
 
         let softmax = Softmax::new(self.clone(), dim);
@@ -639,7 +641,7 @@ impl Tensor {
         }
     }
 
-    pub fn resolve(&self) -> Result<(), TensorError> {
+    pub fn resolve(self) -> Result<Tensor, TensorError> {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
 
@@ -647,10 +649,14 @@ impl Tensor {
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
+        //println!("Allocations: {:#?}", allocations);
 
         for t in execution_order.iter() {
             if t.resolved() {
                 continue;
+            }
+            if t.id() == TensorId::debug(29) {
+                println!("STRONG COUNT: {:?}", Arc::strong_count(&t.inner));
             }
 
             let id = t.id();
@@ -675,7 +681,7 @@ impl Tensor {
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
-        Ok(())
+        Ok(self)
     }
 
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
