@@ -116,7 +116,7 @@ impl BufferAllocator {
     /// 1. We reach an operation that does not support inplace
     /// 2. We reach an operation that has more than one consumer
     /// 3. We reach an operation that has more than one source (this condition is wrong)
-    fn determine_tensor_source<'a>(source: &'a Tensor) -> &'a Tensor {
+    fn determine_tensor_source(source: &Tensor) -> &Tensor {
         let mut true_source = source;
         loop {
             let cant_inplace = !true_source.op().supports_inplace();
