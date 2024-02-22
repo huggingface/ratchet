@@ -9,6 +9,10 @@ impl std::fmt::Debug for TensorId {
 }
 
 impl TensorId {
+    pub(crate) fn debug(id: usize) -> Self {
+        Self(id)
+    }
+
     pub(crate) fn inner(&self) -> usize {
         self.0
     }

@@ -189,8 +189,8 @@ def {}(a, b):
             BinaryOp::Sub => a_gpu.sub(&b_gpu)?,
             BinaryOp::Mul => a_gpu.mul(&b_gpu)?,
             BinaryOp::Div => a_gpu.div(&b_gpu)?,
-        };
-        c_gpu.resolve()?;
+        }
+        .resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-4, 1e-4)?;

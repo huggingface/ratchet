@@ -2,7 +2,12 @@
 use crate::{Tensor, TensorId};
 use derive_new::new;
 use std::{
-    borrow::Cow, collections::HashMap, io::Write, path::Path, path::PathBuf, process::Command,
+    borrow::Cow,
+    collections::HashMap,
+    io::Write,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Arc,
 };
 use tempfile::NamedTempFile;
 
@@ -10,9 +15,29 @@ type Nd = usize;
 
 #[derive(Clone, Debug, new)]
 struct PlotEdge {
+    id: usize,
     label: Cow<'static, str>,
     from: usize,
     to: usize,
+    attributes: Option<HashMap<&'static str, &'static str>>,
+}
+
+impl PlotEdge {
+    fn add_attribute(&mut self, attribute: (&'static str, &'static str)) {
+        if let Some(attr_map) = &mut self.attributes {
+            attr_map.insert(attribute.0, attribute.1);
+        } else {
+            self.attributes = Some(HashMap::from([attribute]));
+        }
+    }
+
+    fn style_as_inplace(&mut self) {
+        self.add_attribute(("color", "red"));
+    }
+
+    fn style_as_normal(&mut self) {
+        self.add_attribute(("color", "black"));
+    }
 }
 
 #[derive(Clone, Debug, new)]
@@ -41,11 +66,22 @@ impl PlotNode {
         self.add_attribute(("fillcolor", "lightgray"));
         self.add_attribute(("shape", "ellipse"));
     }
+
+    fn style_as_const(&mut self) {
+        self.add_attribute(("fillcolor", "lightgreen"));
+        self.add_attribute(("shape", "ellipse"));
+    }
+
+    fn style_as_inplace(&mut self) {
+        self.add_attribute(("fillcolor", "white"));
+        self.add_attribute(("color", "red"));
+    }
 }
 
 #[derive(Default, Debug)]
 struct RenderableGraph {
-    current_id: usize,
+    current_node_id: usize,
+    current_edge_id: usize,
     nodes: Vec<PlotNode>,
     edges: Vec<PlotEdge>,
 }
@@ -53,21 +89,25 @@ struct RenderableGraph {
 impl RenderableGraph {
     fn new() -> Self {
         RenderableGraph {
-            current_id: 0,
+            current_node_id: 0,
+            current_edge_id: 0,
             nodes: Vec::new(),
             edges: Vec::new(),
         }
     }
 
     fn create_node(&mut self, actual_id: TensorId, op_type: Cow<'static, str>) -> &mut PlotNode {
-        let n = PlotNode::new(self.current_id, actual_id, op_type, None);
+        let n = PlotNode::new(self.current_node_id, actual_id, op_type, None);
         self.nodes.push(n);
-        self.current_id += 1;
-        &mut self.nodes[self.current_id - 1]
+        self.current_node_id += 1;
+        &mut self.nodes[self.current_node_id - 1]
     }
 
-    fn create_edge(&mut self, label: Cow<'static, str>, from: usize, to: usize) {
-        self.edges.push(PlotEdge::new(label, from, to));
+    fn create_edge(&mut self, label: Cow<'static, str>, from: usize, to: usize) -> &mut PlotEdge {
+        let e = PlotEdge::new(self.current_edge_id, label, from, to, None);
+        self.edges.push(e);
+        self.current_edge_id += 1;
+        &mut self.edges[self.current_edge_id - 1]
     }
 
     fn build_graph(leaf: &Tensor) -> anyhow::Result<RenderableGraph> {
@@ -78,13 +118,22 @@ impl RenderableGraph {
         let execution_order = leaf.execution_order();
         for t in execution_order.iter() {
             let renderable_node = g.create_node(t.id(), Cow::Borrowed(t.op().name()));
+            let can_inplace = t.op().supports_inplace() && Arc::strong_count(&t.inner) == 1;
+            match t.op() {
+                crate::LazyOp::Const => renderable_node.style_as_const(),
+                _ => renderable_node.style_as_op(),
+            }
+            if can_inplace {
+                renderable_node.style_as_inplace()
+            }
 
             let node_graph_id = renderable_node.plot_id;
             graph_index_map.insert(t.id(), renderable_node.plot_id);
-            renderable_node.style_as_op();
             t.op().srcs().iter().for_each(|src_t| {
                 if let Some(src_id) = graph_index_map.get(&src_t.id()) {
-                    g.create_edge(Cow::Owned(src_t.plot_fmt()), *src_id, node_graph_id);
+                    let e = g.create_edge(Cow::Owned(src_t.plot_fmt()), *src_id, node_graph_id);
+                } else {
+                    panic!("Source tensor not found in graph index map");
                 }
             });
         }
@@ -148,6 +197,13 @@ impl<'a> dot3::Labeller<'a, Nd, PlotEdge> for RenderableGraph {
             .attributes
             .clone()
             .unwrap_or_else(|| HashMap::from([("fillcolor", "white")]))
+    }
+
+    fn edge_attrs(&'a self, e: &PlotEdge) -> HashMap<&str, &str> {
+        self.edges[e.id]
+            .attributes
+            .clone()
+            .unwrap_or_else(|| HashMap::from([("color", "black")]))
     }
 }
 

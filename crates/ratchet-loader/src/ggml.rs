@@ -138,6 +138,7 @@ impl<M: GGMLCompatible> GGMLModel<M> {
         let shape = header.shape.clone();
         let mut dt: DType = header.dtype.into();
         if dt == DType::F16 {
+            log::error!("F16 is not supported by wgpu, converting to F32");
             //TODO: terrible cast whilst wgpu doesn't support F16
             let f16_data = bytemuck::cast_slice::<u8, f16>(&data);
             let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
@@ -148,7 +149,7 @@ impl<M: GGMLCompatible> GGMLModel<M> {
     }
 }
 
-struct GGMLLoader;
+struct GGMLLoader {}
 
 impl GGMLLoader {
     pub fn load<R: BufRead + Seek, M: GGMLCompatible>(
@@ -159,10 +160,13 @@ impl GGMLLoader {
         reader.seek(std::io::SeekFrom::Start(0))?;
         let model_header = M::load_header(reader)?;
 
+        let mut total_size = 0;
         while reader.stream_position()? != last_position {
             let header = Self::load_single(reader)?;
+            total_size += header.data_size() as u64;
             tensor_map.insert(header.name.clone(), header);
         }
+        log::info!("GGML Model size: {}kb", total_size / 1024);
         Ok(GGMLModel::new(model_header, tensor_map))
     }
 

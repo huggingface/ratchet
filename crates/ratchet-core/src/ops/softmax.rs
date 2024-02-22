@@ -78,11 +78,10 @@ impl MetaOperation for Softmax {
         &self,
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if inplace {
-            Ok(BindGroupLayoutDescriptor::unary_inplace())
-        } else {
-            Ok(BindGroupLayoutDescriptor::unary())
+        if !inplace {
+            panic!("Only inplace softmax is supported");
         }
+        Ok(BindGroupLayoutDescriptor::unary_inplace())
     }
 
     fn metadata(
@@ -127,8 +126,7 @@ def softmax(a):
         let ground = ground_truth(&a).unwrap();
 
         let a_gpu = a.to(&device).unwrap();
-        let b = a_gpu.softmax(2).unwrap();
-        b.resolve().unwrap();
+        let b = a_gpu.softmax(2).unwrap().resolve().unwrap();
 
         let ours = b.to(&Device::CPU).unwrap();
         println!("ours = {:?}", ours);
