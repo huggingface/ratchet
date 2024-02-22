@@ -220,4 +220,8 @@ impl WgpuDevice {
     ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
         self.buffer_allocator.allocate_cfg(execution_order, device)
     }
+
+    pub fn begin_pass(&self, pass_index: u64) {
+        self.buffer_allocator.begin_pass(pass_index);
+    }
 }

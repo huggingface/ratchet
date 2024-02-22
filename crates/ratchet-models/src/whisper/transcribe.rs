@@ -12,7 +12,11 @@ pub async fn transcribe(
     audio: Vec<f32>,
     mut decode_options: DecodingOptions,
 ) -> anyhow::Result<()> {
+    #[cfg(not(target_arch = "wasm32"))]
     let mel = model.specgen.generate(audio)?.to(&model.device)?;
+    #[cfg(target_arch = "wasm32")]
+    let mel = model.specgen.generate(audio)?.to(&model.device).await?;
+
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
 
     if decode_options.language.is_none() {
@@ -21,7 +25,7 @@ pub async fn transcribe(
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
             log::error!("No language specified, using language detection");
-            let mel = mel.slice(&[0..1])?;
+            let mel = mel.slice(&[0..80, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel)?);
         }
     }
@@ -38,7 +42,7 @@ pub async fn transcribe(
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
-        let mel_segment = mel.slice(&[0..1])?;
+        let mel_segment = mel.slice(&[0..80, 0..3000])?;
         log::info!(
             "processing segment - from: {}, to: {}",
             seek,
@@ -57,6 +61,7 @@ pub async fn transcribe(
 
         let task = DecodingTask::new(decode_options, &model.tokenizer);
         let decoded = task.run(&model.decoder, &hs, &model.tokenizer)?;
+        println!("{}: {:?}", time_offset, decoded);
     }
 
     Ok(())
