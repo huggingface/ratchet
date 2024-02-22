@@ -643,7 +643,6 @@ impl Tensor {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
 
-        println!("STRONG COUNT BEFORE: {:?}", Arc::strong_count(&self.inner));
         let execution_order = self.execution_order();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
