@@ -11,7 +11,7 @@ use crate::{
 };
 use std::sync::Arc;
 
-use super::TensorUsageRecord;
+use super::{OpProfile, TensorUsageRecord};
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AllocatorError {
@@ -141,7 +141,6 @@ impl BufferAllocator {
     //2. When we encounter the last consumer of a tensor, we start recording the interval.
     //3. When we encounter the producer of a tensor, we stop recording the interval.
     fn calculate_usage_records(
-        &self,
         execution_order: &[&Tensor],
     ) -> FxHashMap<TensorId, TensorUsageRecord> {
         let mut records =
@@ -162,6 +161,21 @@ impl BufferAllocator {
             }
         }
         records
+    }
+
+    fn calculate_op_profiles(
+        usage_records: &FxHashMap<TensorId, TensorUsageRecord>,
+        num_ops: usize,
+    ) -> Vec<OpProfile> {
+        //An operation profile is the set of all tensor usage records within which an operation lies.
+        let mut op_profiles: Vec<OpProfile> = Vec::with_capacity(num_ops);
+
+        for (id, record) in usage_records.iter() {
+            for tid in record.op_range() {
+                op_profiles[tid].push(record.clone());
+            }
+        }
+        op_profiles
     }
 
     /// # Graph memory allocation
