@@ -195,6 +195,7 @@ def ground(options):
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
         let hs_npy = load_npy(dataset.get("jfk_tiny_encoder_hs.npy").unwrap());
+        let audio_path = dataset.get("jfk.wav").unwrap();
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
