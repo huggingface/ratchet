@@ -107,8 +107,7 @@ def permute(a):
 
         let a_gpu = a.to(&device)?;
         let ground = ground_truth(&a, format!("{:?}", op.dims).as_str())?;
-        let ours = a_gpu.permute(&op.dims)?;
-        ours.resolve()?;
+        let ours = a_gpu.permute(&op.dims)?.resolve()?;
         let d_gpu = ours.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-5, 1e-5)?;
         Ok(())

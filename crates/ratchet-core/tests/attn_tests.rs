@@ -55,9 +55,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let kt = k_proj.permute(&[0, 2, 1])?;
 
         let logits = q_proj.matmul(&kt)?.mul(&scale_factor)?;
-        let logits = logits.softmax(2)?;
-        let out = logits.matmul(&v_proj)?;
-        out.resolve()?;
+        let out = logits.softmax(2)?.matmul(&v_proj)?.resolve()?;
         Ok(out)
     }
 
@@ -137,12 +135,13 @@ def qkv_attention(input, qw, kw, vw, n_heads):
             .view(shape![1, hdim, n_heads, hdim])?
             .permute(&[0, 2, 1, 3])?;
 
-        let attn = q.matmul(&k)?.softmax(3)?;
-        let w = attn
+        let qk = q.matmul(&k)?;
+        let w = qk
+            .softmax(3)?
             .matmul(&v)?
             .permute(&[0, 2, 1, 3])?
-            .view(shape![1, hdim, qdim])?;
-        w.resolve()?;
+            .view(shape![1, hdim, qdim])?
+            .resolve()?;
         Ok(w)
     }
 

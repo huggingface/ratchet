@@ -17,7 +17,10 @@ debug-assertions = true
 panic = 'abort'
 lto = "fat"
 codegen-units = 1
-strip = true
+
+[profile.profiling]
+inherits = "release"
+debug = 2
 
 [workspace.dependencies]
 wgpu = { version = "0.18", features = ["expose-ids", "fragile-send-sync-non-atomic-wasm"] }

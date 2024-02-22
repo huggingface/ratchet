@@ -191,16 +191,16 @@ impl BufferAllocator {
                 //Never release Consts
                 continue;
             }
-            log::debug!("Leasing sources for t: {:?}", t.id());
+            println!("Leasing sources for t: {:?}", t.id());
 
             // I need all of my sources to be allocated in order to compute my output value.
             // We "lease" the buffer, and it is released when we reach it in the execution order.
             // If the current tensor is an inplace operation,
             // we traverse upwards until we find a non-inplace operation.
             for source in t.op().srcs() {
-                log::debug!("Processing source: {:?}", source.id());
+                println!("Processing source: {:?}", source.id());
                 let true_source = Self::determine_tensor_source(source);
-                log::debug!("Inserting assingment: {:?}", true_source.id());
+                println!("Inserting assingment: {:?}", true_source.id());
                 assignments.entry(true_source.id()).or_insert_with(|| {
                     self.graph_allocate(
                         BufferDescriptor::new(
@@ -213,14 +213,14 @@ impl BufferAllocator {
                     )
                 });
                 let just_allocated = &assignments[&true_source.id()];
-                log::debug!(
+                println!(
                     "Assigned: {:?} -> {:?}",
                     true_source.id(),
                     just_allocated.inner().global_id(),
                 );
 
                 if true_source.id() != source.id() {
-                    log::debug!(
+                    println!(
                         "Double Assignment: {:?} -> {:?}",
                         source.id(),
                         just_allocated.inner().global_id(),

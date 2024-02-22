@@ -148,8 +148,7 @@ mod tests {
         let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
         let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
 
-        let result = encoder.forward(&input)?;
-        result.resolve()?;
+        let result = encoder.forward(&input)?.resolve()?;
         let ours = result.to(&Device::CPU)?;
         let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
