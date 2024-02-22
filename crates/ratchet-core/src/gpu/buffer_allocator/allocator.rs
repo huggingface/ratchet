@@ -3,12 +3,15 @@ use rustc_hash::FxHashMap;
 use wgpu::BufferUsages;
 
 use crate::{
-    gpu::{BufferDescriptor, BufferPool, GpuBufferHandle, PooledGPUBuffer},
+    gpu::{
+        BufferDescriptor, BufferPool, BufferUsagesExt, CpuUniform, GpuBufferHandle,
+        PooledGPUBuffer, WgpuDevice, UNIFORM_ALIGN,
+    },
     DeviceError, Tensor, TensorId,
 };
 use std::sync::Arc;
 
-use super::{BufferUsagesExt, CpuUniform, WgpuDevice, UNIFORM_ALIGN};
+use super::TensorUsageRecord;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AllocatorError {
@@ -133,6 +136,34 @@ impl BufferAllocator {
         true_source
     }
 
+    //To calculate the tensor usage records, we do the following:
+    //1. Traverse topologically sorted graph in reverse order
+    //2. When we encounter the last consumer of a tensor, we start recording the interval.
+    //3. When we encounter the producer of a tensor, we stop recording the interval.
+    fn calculate_usage_records(
+        &self,
+        execution_order: &[&Tensor],
+    ) -> FxHashMap<TensorId, TensorUsageRecord> {
+        let mut records =
+            FxHashMap::with_capacity_and_hasher(execution_order.len(), Default::default());
+        let topo_len = execution_order.len() - 1;
+        for (iter, t) in execution_order.iter().rev().enumerate() {
+            for source in t.op().srcs() {
+                records
+                    .entry(source.id())
+                    .or_insert_with(|| TensorUsageRecord {
+                        producer: None,
+                        last_consumer: topo_len - iter,
+                        size: source.num_bytes(),
+                    });
+            }
+            if let Some(record) = records.get_mut(&t.id()) {
+                record.producer = Some(topo_len - iter);
+            }
+        }
+        records
+    }
+
     /// # Graph memory allocation
     ///
     /// Simple greedy algorithm
@@ -148,6 +179,9 @@ impl BufferAllocator {
         execution_order: &[&Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
+        let records = self.calculate_usage_records(execution_order);
+        println!("{:#?}", records);
+
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
         //Assignments already needs all of the constants in it.
