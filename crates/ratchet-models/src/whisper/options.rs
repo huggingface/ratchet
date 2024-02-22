@@ -236,7 +236,7 @@ impl DecodingOptionsBuilder {
 }
 
 cfg_if::cfg_if! {
-    if #[cfg(test)] {
+    if #[cfg(all(not(target_arch = "wasm32"), test))] {
         use pyo3::types::{IntoPyDict, PyDict};
         use pyo3::Python;
         use pyo3::types::PyString;
