@@ -116,25 +116,18 @@ impl BufferAllocator {
     /// 1. We reach an operation that does not support inplace
     /// 2. We reach an operation that has more than one consumer
     /// 3. We reach an operation that has more than one source (this condition is wrong)
-    fn determine_tensor_source<'a>(source: &'a Tensor, execution_order: &[Tensor]) -> &'a Tensor {
+    fn determine_tensor_source<'a>(source: &'a Tensor) -> &'a Tensor {
         let mut true_source = source;
         loop {
             let cant_inplace = !true_source.op().supports_inplace();
-            let ts_index = execution_order
-                .iter()
-                .position(|t| t.id() == true_source.id())
-                .unwrap();
-            let multiple_consumers = execution_order[ts_index + 1..]
-                .iter()
-                .filter(|t| t.op().srcs().contains(&true_source))
-                .count()
-                > 1;
+            let multiple_consumers = Arc::strong_count(&true_source.inner) > 1;
             log::debug!("Conditions: {:?} {:?}", cant_inplace, multiple_consumers);
             if cant_inplace || multiple_consumers {
                 break;
             }
 
-            true_source = true_source.op().srcs()[0];
+            true_source = true_source.op().srcs()[0]; //TODO: this shouldn't be 0, operations
+                                                      //should define their inplace source
         }
         log::debug!("Traversed to true source: {:?}", true_source.id());
         true_source
@@ -152,7 +145,7 @@ impl BufferAllocator {
     ///    and earlier tensors can use it.
     pub fn allocate_cfg(
         &self,
-        execution_order: &[Tensor],
+        execution_order: &[&Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
         let mut free = Vec::new(); //TODO: switch to BTreeMap
@@ -176,7 +169,7 @@ impl BufferAllocator {
         //We know we need an allocation for the output.
         //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
         let output = execution_order.last().unwrap();
-        let output_source = Self::determine_tensor_source(output, execution_order);
+        let output_source = Self::determine_tensor_source(output);
         let output_buffer = assignments
             .get(&output_source.id())
             .cloned()
@@ -206,7 +199,7 @@ impl BufferAllocator {
             // we traverse upwards until we find a non-inplace operation.
             for source in t.op().srcs() {
                 log::debug!("Processing source: {:?}", source.id());
-                let true_source = Self::determine_tensor_source(source, execution_order);
+                let true_source = Self::determine_tensor_source(source);
                 log::debug!("Inserting assingment: {:?}", true_source.id());
                 assignments.entry(true_source.id()).or_insert_with(|| {
                     self.graph_allocate(

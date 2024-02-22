@@ -215,7 +215,7 @@ impl WgpuDevice {
     /// Additionally, allocates buffer for leaf node, the tensor upon which resolve was called.
     pub fn allocate_cfg(
         &self,
-        execution_order: &[Tensor],
+        execution_order: &[&Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
         self.buffer_allocator.allocate_cfg(execution_order, device)

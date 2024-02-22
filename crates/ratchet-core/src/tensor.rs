@@ -42,7 +42,7 @@ pub enum TensorError {
 /// value and it's own value will not be computed until `resolve` is called.
 #[derive(Clone)]
 pub struct Tensor {
-    inner: Arc<Inner>,
+    pub(crate) inner: Arc<Inner>,
 }
 
 impl Tensor {
@@ -575,12 +575,12 @@ impl Tensor {
         Ok(slice.to_vec())
     }
 
-    pub(crate) fn execution_order(&self) -> Vec<Tensor> {
+    pub(crate) fn execution_order<'s>(&'s self) -> Vec<&'s Tensor> {
         let mut done = HashSet::new();
         let mut pending = HashSet::new();
         let mut order = Vec::new();
 
-        let mut stack: Vec<(Tensor, usize)> = vec![(self.clone(), 0)];
+        let mut stack: Vec<(&Tensor, usize)> = vec![(self, 0)];
         while let Some((cur_t, cur_src)) = stack.pop() {
             let all_deps_done = cur_src == cur_t.op().srcs().len();
 
@@ -605,13 +605,13 @@ impl Tensor {
             let precursor: &Tensor = all_srcs[cur_src];
 
             if done.contains(&precursor.id()) {
-                stack.push((cur_t.clone(), cur_src + 1));
+                stack.push((cur_t, cur_src + 1));
             } else if pending.contains(&precursor.id()) {
                 panic!("CYCLE");
             } else {
                 pending.insert(precursor.id());
-                stack.push((cur_t.clone(), cur_src));
-                stack.push((precursor.clone(), 0));
+                stack.push((cur_t, cur_src));
+                stack.push((precursor, 0));
             }
         }
 
@@ -643,12 +643,13 @@ impl Tensor {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
 
+        println!("STRONG COUNT BEFORE: {:?}", Arc::strong_count(&self.inner));
         let execution_order = self.execution_order();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
 
-        for (tix, t) in execution_order.iter().enumerate() {
+        for t in execution_order.iter() {
             if t.resolved() {
                 continue;
             }
@@ -663,12 +664,7 @@ impl Tensor {
             t.update_storage(Storage::GPU(storage));
 
             //Can inplace && only 1 consumer
-            let can_inplace = t.op().supports_inplace()
-                && execution_order[tix + 1..]
-                    .iter()
-                    .filter(|t2| t2.op.srcs().contains(&t))
-                    .count()
-                    <= 1;
+            let can_inplace = t.op().supports_inplace() && Arc::strong_count(&t.inner) == 1;
 
             if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
