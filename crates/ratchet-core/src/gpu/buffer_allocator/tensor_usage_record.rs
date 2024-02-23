@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 
-use crate::TensorId;
-
 /// Records the interval for which a tensor is used
 /// produce & last_consumer as indices into the topologically sorted execution order
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +23,14 @@ impl PartialOrd for TensorUsageRecord {
 }
 
 /// The set of all tensor usage records within which an operation lies.
+#[derive(Debug, Clone)]
 pub struct OpProfile(Vec<TensorUsageRecord>);
+
+impl Default for OpProfile {
+    fn default() -> Self {
+        OpProfile(Vec::new())
+    }
+}
 
 impl OpProfile {
     pub fn push(&mut self, record: TensorUsageRecord) {

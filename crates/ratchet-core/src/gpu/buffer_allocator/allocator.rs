@@ -147,7 +147,13 @@ impl BufferAllocator {
             FxHashMap::with_capacity_and_hasher(execution_order.len(), Default::default());
         let topo_len = execution_order.len() - 1;
         for (iter, t) in execution_order.iter().rev().enumerate() {
+            if t.resolved() {
+                continue;
+            }
             for source in t.op().srcs() {
+                if source.resolved() {
+                    continue;
+                }
                 records
                     .entry(source.id())
                     .or_insert_with(|| TensorUsageRecord {
@@ -168,11 +174,12 @@ impl BufferAllocator {
         num_ops: usize,
     ) -> Vec<OpProfile> {
         //An operation profile is the set of all tensor usage records within which an operation lies.
-        let mut op_profiles: Vec<OpProfile> = Vec::with_capacity(num_ops);
+        let mut op_profiles: Vec<OpProfile> = vec![OpProfile::default(); num_ops];
+        println!("PROFILE: {:?}", op_profiles);
 
         for (id, record) in usage_records.iter() {
-            for tid in record.op_range() {
-                op_profiles[tid].push(record.clone());
+            for o in record.op_range() {
+                op_profiles[o].push(record.clone());
             }
         }
         op_profiles
@@ -193,8 +200,17 @@ impl BufferAllocator {
         execution_order: &[&Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
-        let records = self.calculate_usage_records(execution_order);
+        let records = Self::calculate_usage_records(execution_order);
         println!("{:#?}", records);
+        let op_profiles = Self::calculate_op_profiles(&records, execution_order.len());
+        let op_list = execution_order
+            .iter()
+            .map(|t| t.op().name())
+            .collect::<Vec<_>>();
+        let zipped = op_list.iter().zip(op_profiles.iter());
+        for (op, profile) in zipped {
+            println!("Op: {:?} Profile: {:?}\n", op, profile);
+        }
 
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
