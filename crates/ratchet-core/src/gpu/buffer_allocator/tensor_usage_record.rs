@@ -1,10 +1,14 @@
-use std::cmp::Ordering;
-use std::ops::Range;
+use std::{cmp::Reverse, ops::Range};
+
+use rustc_hash::FxHashMap;
+
+use crate::{rvec, RVec, TensorId};
 
 /// Records the interval for which a tensor is used
 /// produce & last_consumer as indices into the topologically sorted execution order
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TensorUsageRecord {
+    pub id: Option<TensorId>,
     pub producer: Option<usize>,
     pub last_consumer: usize,
     pub size: usize,
@@ -16,19 +20,24 @@ impl TensorUsageRecord {
     }
 }
 
-impl PartialOrd for TensorUsageRecord {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.size.cmp(&other.size))
+#[derive(Debug, Clone)]
+pub struct TensorUsageRecords(pub Vec<TensorUsageRecord>);
+
+impl From<FxHashMap<TensorId, TensorUsageRecord>> for TensorUsageRecords {
+    fn from(mut map: FxHashMap<TensorId, TensorUsageRecord>) -> Self {
+        let mut records = map.drain().map(|(_, v)| v).collect::<Vec<_>>();
+        records.sort_unstable_by_key(|r| Reverse(r.size));
+        TensorUsageRecords(records)
     }
 }
 
 /// The set of all tensor usage records within which an operation lies.
 #[derive(Debug, Clone)]
-pub struct OpProfile(Vec<TensorUsageRecord>);
+pub struct OpProfile(RVec<TensorUsageRecord>);
 
 impl Default for OpProfile {
     fn default() -> Self {
-        OpProfile(Vec::new())
+        OpProfile(rvec![])
     }
 }
 

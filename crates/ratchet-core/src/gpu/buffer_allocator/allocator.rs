@@ -5,7 +5,7 @@ use wgpu::BufferUsages;
 use crate::{
     gpu::{
         BufferDescriptor, BufferPool, BufferUsagesExt, CpuUniform, GpuBufferHandle,
-        PooledGPUBuffer, WgpuDevice, UNIFORM_ALIGN,
+        PooledGPUBuffer, TensorUsageRecords, WgpuDevice, UNIFORM_ALIGN,
     },
     DeviceError, Tensor, TensorId,
 };
@@ -157,32 +157,57 @@ impl BufferAllocator {
                 records
                     .entry(source.id())
                     .or_insert_with(|| TensorUsageRecord {
+                        id: None,
                         producer: None,
                         last_consumer: topo_len - iter,
                         size: source.num_bytes(),
                     });
             }
             if let Some(record) = records.get_mut(&t.id()) {
+                record.id = Some(t.id());
                 record.producer = Some(topo_len - iter);
             }
         }
         records
     }
 
-    fn calculate_op_profiles(
-        usage_records: &FxHashMap<TensorId, TensorUsageRecord>,
-        num_ops: usize,
-    ) -> Vec<OpProfile> {
+    fn calculate_op_profiles(usage_records: &TensorUsageRecords, num_ops: usize) -> Vec<OpProfile> {
         //An operation profile is the set of all tensor usage records within which an operation lies.
         let mut op_profiles: Vec<OpProfile> = vec![OpProfile::default(); num_ops];
-        println!("PROFILE: {:?}", op_profiles);
-
-        for (id, record) in usage_records.iter() {
+        for record in usage_records.0.iter() {
             for o in record.op_range() {
                 op_profiles[o].push(record.clone());
             }
         }
         op_profiles
+    }
+
+    pub fn greedy_by_size(
+        &self,
+        execution_order: &[&Tensor],
+        device: &WgpuDevice,
+    ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
+        let mut assignments = FxHashMap::default();
+        let mut record_map = Self::calculate_usage_records(execution_order);
+        let mut records = TensorUsageRecords::from(record_map);
+        let shared_objects = self.pool.read().all_resources();
+
+        for record in records.0.iter() {
+            let best_obj = None;
+            for obj in shared_objects.iter() {
+                let mut suitable = true;
+                for x in records.0.iter() {
+                    let max_first = std::cmp::max(record.producer.unwrap(), x.producer.unwrap());
+                    let min_last = std::cmp::min(record.last_consumer, x.last_consumer);
+                    if assignments.get(x.id) == Some(obj) && max_first <= min_last {
+                        suitable = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(assignments)
     }
 
     /// # Graph memory allocation
@@ -200,8 +225,10 @@ impl BufferAllocator {
         execution_order: &[&Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
-        let records = Self::calculate_usage_records(execution_order);
-        println!("{:#?}", records);
+        let mut record_map = Self::calculate_usage_records(execution_order);
+        let mut records = TensorUsageRecords::from(record_map);
+        println!("Records: {:#?}", records);
+
         let op_profiles = Self::calculate_op_profiles(&records, execution_order.len());
         let op_list = execution_order
             .iter()
