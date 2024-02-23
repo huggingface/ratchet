@@ -84,6 +84,10 @@ impl BufferPool {
         self.inner.get_from_handle(handle)
     }
 
+    pub fn all_resources(&self) -> Vec<PooledGPUBuffer> {
+        self.inner.all_resources()
+    }
+
     pub fn num_resources(&self) -> usize {
         self.inner.num_resources()
     }
