@@ -1,19 +1,23 @@
-use std::cmp::min;
+use std::{cmp::min, time::Instant};
 
+use ratchet::Device;
 use ratchet_nn::Module;
 
 use crate::{
-    DecodingOptions, DecodingTask, Language, Prompt, Whisper, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES,
-    SAMPLE_RATE,
+    DecodingOptions, DecodingTask, Language, Prompt, TranscriptionResult, Whisper,
+    WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,
 };
 
-pub async fn transcribe(
-    model: &Whisper,
+pub fn transcribe(
+    model: &mut Whisper,
     audio: Vec<f32>,
     mut decode_options: DecodingOptions,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<TranscriptionResult> {
+    let runtime = Instant::now();
+
     #[cfg(not(target_arch = "wasm32"))]
     let mel = model.specgen.generate(audio)?.to(&model.device)?;
+    println!("mel shape: {:?}", mel.shape());
     #[cfg(target_arch = "wasm32")]
     let mel = model.specgen.generate(audio)?.to(&model.device).await?;
 
@@ -25,24 +29,29 @@ pub async fn transcribe(
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
             log::error!("No language specified, using language detection");
-            let mel = mel.slice(&[0..80, 0..3000])?;
+            let mel = mel.slice(&[0..1, 0..80, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel)?);
         }
     }
 
-    let _language = decode_options.language.as_ref().unwrap();
-    let _task = decode_options.task;
+    let language = decode_options.language.as_ref().unwrap();
+    let task = decode_options.task;
+    let tokenizer = WhisperTokenizer::load(None, false, language.clone(), task.clone());
 
-    let seek = 0;
-    let all_tokens = Vec::with_capacity(512);
-    let _input_stride = N_FRAMES / N_AUDIO_CTX;
+    let mut seek = 0;
+    let input_stride = N_FRAMES / N_AUDIO_CTX;
+    let mut all_tokens = Vec::with_capacity(512);
+    let mut all_segments = Vec::with_capacity(512);
     let prompt_since_reset = 0;
 
+    let mut pass_idx = 0;
     while seek < content_frames {
+        model.device.try_gpu()?.begin_pass(pass_idx);
+        println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
-        let mel_segment = mel.slice(&[0..80, 0..3000])?;
+        let mel_segment = mel.slice(&[0..1, 0..80, seek..(seek + N_FRAMES)])?;
         log::info!(
             "processing segment - from: {}, to: {}",
             seek,
@@ -50,7 +59,7 @@ pub async fn transcribe(
         );
 
         let segment_size = min(N_FRAMES, content_frames - seek);
-        let _segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE;
+        let segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE;
 
         if !all_tokens.is_empty() {
             decode_options.prompt = Some(Prompt::Tokens(all_tokens[prompt_since_reset..].to_vec()));
@@ -58,10 +67,28 @@ pub async fn transcribe(
 
         let hs = model.encoder.forward(&mel_segment)?.resolve()?;
 
-        let task = DecodingTask::new(decode_options, &model.tokenizer);
-        let decoded = task.run(&model.decoder, &hs, &model.tokenizer)?;
-        println!("{}: {:?}", time_offset, decoded);
+        let task = DecodingTask::new(decode_options, &tokenizer);
+        let decoded = task.run(&mut model.decoder, hs, &tokenizer)?;
+        let (segments, advance) = DecodingTask::build_segments(
+            decoded,
+            time_offset,
+            segment_size,
+            segment_duration,
+            input_stride,
+        );
+        let all_segment_tokens = segments
+            .iter()
+            .flat_map(|s| s.tokens.clone())
+            .map(|x| x as i32)
+            .collect::<Vec<_>>();
+        all_tokens.extend(all_segment_tokens);
+        all_segments.extend(segments);
+        model.decoder.reset();
+        seek += advance;
+        pass_idx += 1;
     }
 
-    Ok(())
+    let mut t = TranscriptionResult::new(runtime.elapsed(), all_segments, None);
+    t.generate_formatted(&tokenizer);
+    Ok(t)
 }

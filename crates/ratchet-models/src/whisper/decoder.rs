@@ -91,6 +91,10 @@ impl WhisperDecoder {
         &mut self.cache
     }
 
+    pub fn reset(&mut self) {
+        self.cache.reset();
+    }
+
     fn load_mask(n_ctx: usize, device: &Device) -> Tensor {
         let mask: Vec<_> = (0..n_ctx)
             .flat_map(|i| (0..n_ctx).map(move |j| if j > i { f32::NEG_INFINITY } else { 0f32 }))
