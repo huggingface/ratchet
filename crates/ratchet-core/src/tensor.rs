@@ -644,6 +644,8 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
+        //let last = execution_order.last().unwrap();
+        //crate::plot::render_to_file(last, "pre-allocations.svg").unwrap();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
@@ -655,10 +657,10 @@ impl Tensor {
             }
 
             let id = t.id();
-            let graph_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+            let buf = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
             assert!(t.device().is_gpu());
             let storage = GPUBuffer {
-                inner: (**graph_buffer.inner()).clone(),
+                inner: (*buf).clone(),
                 alignment: t.dt().size_of(),
             };
             t.update_storage(Storage::GPU(storage));
@@ -670,7 +672,8 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-
+        //let exec_order_ids = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
+        //println!("Execution order: {:?}", exec_order_ids);
         //let last = execution_order.last().unwrap();
         //crate::plot::render_to_file(last, "allocations.svg").unwrap();
 

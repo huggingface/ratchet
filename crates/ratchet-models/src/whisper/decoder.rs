@@ -162,6 +162,10 @@ mod tests {
         npyz::NpyFile::new(&bytes[..]).unwrap().into_vec().unwrap()
     }
 
+    fn log_init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     fn ground_truth(audio_path: &str, options: DecodingOptions) -> anyhow::Result<Vec<Tensor>> {
         let prg = format!(
             r#"
@@ -188,6 +192,7 @@ def ground(options):
 
     #[test]
     fn decoder_matches() -> anyhow::Result<()> {
+        log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
         let path = model.get("ggml-tiny.bin").unwrap();

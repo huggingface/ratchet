@@ -217,7 +217,7 @@ impl WgpuDevice {
         &self,
         execution_order: &[&Tensor],
         device: &WgpuDevice,
-    ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
+    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
         self.buffer_allocator.allocate_cfg(execution_order, device)
     }
 

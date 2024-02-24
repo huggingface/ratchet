@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 // Adapted from https://github.com/rerun-io/rerun MIT licensed
 use super::{DynamicResource, DynamicResourcePool, DynamicResourcesDesc, PoolError};
 use crate::{
@@ -23,8 +25,22 @@ slotmap::new_key_type! { pub struct GpuBufferHandle; }
 
 /// A reference-counter baked buffer.
 /// Once all instances are dropped, the buffer will be marked for reclamation in the following pass.
-pub type PooledGPUBuffer =
-    std::sync::Arc<DynamicResource<GpuBufferHandle, BufferDescriptor, RawGPUBuffer>>;
+#[derive(Debug, Clone)]
+pub struct PooledGPUBuffer(Arc<DynamicResource<GpuBufferHandle, BufferDescriptor, RawGPUBuffer>>);
+
+impl std::ops::Deref for PooledGPUBuffer {
+    type Target = Arc<DynamicResource<GpuBufferHandle, BufferDescriptor, RawGPUBuffer>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialEq for PooledGPUBuffer {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.inner.global_id() == other.0.inner.global_id()
+    }
+}
 
 impl DynamicResourcesDesc for BufferDescriptor {
     fn resource_size_in_bytes(&self) -> u64 {
@@ -61,7 +77,7 @@ impl BufferPool {
         } else {
             desc.clone()
         };
-        self.inner.get_or_create(&descriptor, |descriptor| {
+        PooledGPUBuffer(self.inner.get_or_create(&descriptor, |descriptor| {
             let (size, usage, mapped_at_creation) = descriptor.fields();
             let buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
@@ -72,7 +88,7 @@ impl BufferPool {
             device.queue().submit(None);
             device.poll(wgpu::Maintain::Wait);
             buf
-        })
+        }))
     }
 
     pub fn begin_pass(&mut self, pass_index: u64) {
@@ -81,7 +97,15 @@ impl BufferPool {
 
     /// Method to retrieve a resource from a weak handle (used by [`super::GpuBindGroupPool`])
     pub fn get(&self, handle: GpuBufferHandle) -> Result<PooledGPUBuffer, PoolError> {
-        self.inner.get_from_handle(handle)
+        Ok(PooledGPUBuffer(self.inner.get_from_handle(handle)?))
+    }
+
+    pub fn all_resources(&self) -> Vec<PooledGPUBuffer> {
+        self.inner
+            .all_resources()
+            .into_iter()
+            .map(PooledGPUBuffer)
+            .collect::<Vec<_>>()
     }
 
     pub fn num_resources(&self) -> usize {
