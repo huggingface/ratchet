@@ -47,8 +47,11 @@ fn relu(val: {{ elem }}) -> {{ elem }} {
 fn main( 
         @builtin(local_invocation_index) local_index: u32,
         @builtin(workgroup_id) group_id: vec3<u32>,
+        @builtin(num_workgroups) num_groups: vec3<u32>
 ) {
-    let index = group_id.x * 64u + local_index;
+
+    let x_offset = group_id.x * 64u;
+    let index = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
     if (index >= metadata.numel / {{ elem_size }}u) {
         return;
     }
