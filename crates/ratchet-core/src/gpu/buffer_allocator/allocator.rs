@@ -191,8 +191,8 @@ impl BufferAllocator {
         assignments: &mut FxHashMap<TensorId, GraphBuffer>,
         device: &WgpuDevice,
     ) -> Result<(), DeviceError> {
-        let mut record_map = Self::calculate_usage_records(execution_order);
-        let mut records = TensorUsageRecords::from(record_map);
+        let record_map = Self::calculate_usage_records(execution_order);
+        let records = TensorUsageRecords::from(record_map);
         let mut shared_objects: Vec<GraphBuffer> = vec![];
 
         for record in records.0.iter() {
@@ -228,6 +228,7 @@ impl BufferAllocator {
             }
         }
 
+        //Loop through and add inplace assignments
         for t in execution_order.iter() {
             if t.resolved() {
                 continue;
@@ -240,74 +241,6 @@ impl BufferAllocator {
             }
         }
         Ok(())
-    }
-
-    pub fn old_alloc(
-        &self,
-        execution_order: &[&Tensor],
-        device: &WgpuDevice,
-        assignments: &mut FxHashMap<TensorId, GraphBuffer>,
-        mut free: &mut Vec<GraphBuffer>,
-    ) {
-        for t in execution_order.iter().rev() {
-            if t.resolved() {
-                //Never release Consts
-                continue;
-            }
-            log::debug!("Leasing sources for t: {:?}", t.id());
-
-            // I need all of my sources to be allocated in order to compute my output value.
-            // We "lease" the buffer, and it is released when we reach it in the execution order.
-            // If the current tensor is an inplace operation,
-            // we traverse upwards until we find a non-inplace operation.
-            for source in t.op().srcs() {
-                log::debug!("Processing source: {:?}", source.id());
-                let true_source = Self::determine_tensor_source(source);
-                log::debug!("Inserting assingment: {:?}", true_source.id());
-                assignments.entry(true_source.id()).or_insert_with(|| {
-                    self.graph_allocate(
-                        BufferDescriptor::new(
-                            true_source.num_bytes() as _,
-                            BufferUsages::standard(),
-                            false,
-                        ),
-                        &mut free,
-                        device,
-                    )
-                });
-                let just_allocated = &assignments[&true_source.id()];
-                log::debug!(
-                    "Assigned: {:?} -> {:?}",
-                    true_source.id(),
-                    just_allocated.inner().global_id(),
-                );
-
-                if true_source.id() != source.id() {
-                    log::debug!(
-                        "Double Assignment: {:?} -> {:?}",
-                        source.id(),
-                        just_allocated.inner().global_id(),
-                    );
-                    assignments.insert(source.id(), just_allocated.clone());
-                }
-            }
-
-            //My buffer is no longer needed, since we traverse in reverse order
-            //Earlier tensors can use my buffer
-            if let Some(buf) = assignments.get(&t.id()) {
-                log::debug!(
-                    "Tensor: {:?} refcount: {}",
-                    t.id(),
-                    Arc::strong_count(buf.inner())
-                );
-                //if value == 1, he's the last one and we can release
-                //TODO: this won't work for inplace operations, count never reaches 1
-                if Arc::strong_count(buf.inner()) == 1 {
-                    log::debug!("Releasing buffer: {:?}", buf.inner().global_id());
-                    free.push(buf.clone());
-                }
-            }
-        }
     }
 
     /// # Graph memory allocation
