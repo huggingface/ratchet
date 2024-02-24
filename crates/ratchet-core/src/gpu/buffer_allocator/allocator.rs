@@ -9,7 +9,7 @@ use crate::{
     },
     DeviceError, Tensor, TensorId,
 };
-use std::{collections::HashSet, sync::Arc};
+use std::{sync::Arc};
 
 use super::{OpProfile, TensorUsageRecord};
 

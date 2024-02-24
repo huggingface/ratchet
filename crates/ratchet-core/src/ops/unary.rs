@@ -197,7 +197,7 @@ def {}(a):
         let ground = ground_truth(&a, &op, args)?;
 
         let a_gpu = a.to(&device)?;
-        let mut c_gpu = match op {
+        let c_gpu = match op {
             UnaryOp::Gelu => a_gpu.gelu()?,
             UnaryOp::Tanh => a_gpu.tanh()?,
             UnaryOp::Exp => a_gpu.exp()?,
