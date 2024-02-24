@@ -11,8 +11,8 @@ pub struct ApplyTimestampRules {
 }
 
 impl LogitMutator for ApplyTimestampRules {
-    fn apply(&self, logits: Tensor, tokens: &Tensor) -> anyhow::Result<Tensor> {
-        let nd_tokens = tokens.clone().into_ndarray::<i32>();
+    fn apply(&self, logits: Tensor, tokens: Option<&Tensor>) -> anyhow::Result<Tensor> {
+        let nd_tokens = tokens.unwrap().clone().into_ndarray::<i32>();
         let mut nd_logits = logits.into_ndarray::<f32>();
 
         nd_logits

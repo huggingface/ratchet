@@ -46,4 +46,10 @@ impl KVCache {
     pub fn entries(&self, layer: usize) -> usize {
         self.0[layer].entries
     }
+
+    pub fn reset(&mut self) {
+        for entry in &mut self.0 {
+            entry.entries = 0;
+        }
+    }
 }
