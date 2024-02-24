@@ -9,7 +9,7 @@ use crate::{
     },
     DeviceError, Tensor, TensorId,
 };
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use super::{OpProfile, TensorUsageRecord};
 
@@ -82,14 +82,14 @@ impl BufferAllocator {
     fn graph_allocate(
         &self,
         descriptor: BufferDescriptor,
-        free: &mut Vec<GraphBuffer>,
+        free: &mut Vec<PooledGPUBuffer>,
         device: &WgpuDevice,
-    ) -> GraphBuffer {
+    ) -> PooledGPUBuffer {
         let required_size = descriptor.size as _;
         let mut closest_index = None;
         let mut closest_size_diff: Option<usize> = None;
         for (idx, buffer) in free.iter().enumerate() {
-            let current_size = buffer.0.descriptor.size as _;
+            let current_size = buffer.descriptor.size as _;
             if current_size >= required_size {
                 let size_diff = usize::abs_diff(current_size, required_size);
 
@@ -101,12 +101,12 @@ impl BufferAllocator {
         }
 
         if std::env::var("RATCHET_DEBUG").is_ok() {
-            return GraphBuffer::from(self.create_buffer(&descriptor, device));
+            return self.create_buffer(&descriptor, device);
         }
 
         match closest_index {
             Some(idx) => free.remove(idx),
-            None => GraphBuffer::from(self.create_buffer(&descriptor, device)),
+            None => self.create_buffer(&descriptor, device),
         }
     }
 
@@ -161,6 +161,7 @@ impl BufferAllocator {
                         id: None,
                         producer: None,
                         last_consumer: topo_len - iter,
+                        #[cfg(debug_assertions)]
                         last_consumer_id: t.id(),
                         size: true_source.num_bytes(),
                     });
@@ -185,15 +186,17 @@ impl BufferAllocator {
         op_profiles
     }
 
+    //https://arxiv.org/pdf/2001.03288.pdf + inplace support
+    //Takes in const assignments as inplace may be performed on constants
     pub fn greedy_by_size(
         &self,
         execution_order: &[&Tensor],
-        assignments: &mut FxHashMap<TensorId, GraphBuffer>,
+        assignments: &mut FxHashMap<TensorId, PooledGPUBuffer>,
         device: &WgpuDevice,
     ) -> Result<(), DeviceError> {
         let record_map = Self::calculate_usage_records(execution_order);
         let records = TensorUsageRecords::from(record_map);
-        let mut shared_objects: Vec<GraphBuffer> = vec![];
+        let mut shared_objects: Vec<PooledGPUBuffer> = Vec::with_capacity(records.0.len());
 
         for record in records.0.iter() {
             if record.producer.is_none() {
@@ -202,14 +205,14 @@ impl BufferAllocator {
             let mut best_obj = None;
             for obj in shared_objects.iter() {
                 let mut suitable = true;
-                for x in records.0.iter() {
-                    if x.producer.is_none() {
+                for inner_r in records.0.iter() {
+                    if inner_r.producer.is_none() {
                         continue;
                     }
-                    let x_tid = x.id.unwrap();
-                    let max_first = std::cmp::max(record.producer.unwrap(), x.producer.unwrap());
-                    let min_last = std::cmp::min(record.last_consumer, x.last_consumer);
-                    if assignments.get(&x_tid) == Some(obj) && max_first <= min_last {
+                    let max_first =
+                        std::cmp::max(record.producer.unwrap(), inner_r.producer.unwrap());
+                    let min_last = std::cmp::min(record.last_consumer, inner_r.last_consumer);
+                    if assignments.get(&inner_r.id.unwrap()) == Some(obj) && max_first <= min_last {
                         suitable = false;
                         break;
                     }
@@ -219,12 +222,14 @@ impl BufferAllocator {
                 }
             }
             if let Some(obj) = best_obj {
-                assignments.insert(record.id.unwrap(), obj.clone());
+                assignments.insert(record.id.unwrap(), (*obj).clone());
             } else {
-                let desc = BufferDescriptor::new(record.size as _, BufferUsages::standard(), false);
-                let buf = self.create_buffer(&desc, device);
-                shared_objects.push(buf.clone().into());
-                assignments.insert(record.id.unwrap(), buf.into());
+                let buf = self.create_buffer(
+                    &BufferDescriptor::new(record.size as _, BufferUsages::standard(), false),
+                    device,
+                );
+                shared_objects.push(buf.clone());
+                assignments.insert(record.id.unwrap(), buf);
             }
         }
 
@@ -257,26 +262,7 @@ impl BufferAllocator {
         &self,
         execution_order: &[&Tensor],
         device: &WgpuDevice,
-    ) -> Result<FxHashMap<TensorId, GraphBuffer>, DeviceError> {
-        //let mut record_map = Self::calculate_usage_records(execution_order);
-        //let mut records = TensorUsageRecords::from(record_map);
-        //for record in records.0.iter() {
-        //    if record.producer.is_none() {
-        //        println!("Failed to find producer for: {:?}", record);
-        //    }
-        //}
-        //println!("Records: {:#?}", records);
-
-        //let op_profiles = Self::calculate_op_profiles(&records, execution_order.len());
-        //let op_list = execution_order
-        //    .iter()
-        //    .map(|t| t.op().name())
-        //    .collect::<Vec<_>>();
-        //let zipped = op_list.iter().zip(op_profiles.iter());
-        //for (op, profile) in zipped {
-        //    println!("Op: {:?} Profile: {:?}\n", op, profile);
-        //}
-
+    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
         //Assignments already needs all of the constants in it.
@@ -290,13 +276,15 @@ impl BufferAllocator {
                     .try_gpu()?
                     .inner
                     .clone();
-                assignments.insert(t.id(), GraphBuffer::from(pooled));
+                assignments.insert(t.id(), pooled);
             }
         }
 
         //The output never gets allocated in the below loop, because it is not a source.
         //We know we need an allocation for the output.
         //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
+        //It's also handy to treat output as different, as we can handle getting data back to CPU
+        //more efficiently in future.
         let output = execution_order.last().unwrap();
         let output_source = Self::determine_tensor_source(output);
         let output_buffer = assignments
@@ -315,9 +303,8 @@ impl BufferAllocator {
             });
         assignments.insert(output.id(), output_buffer);
 
-        //self.old_alloc(execution_order, device, &mut assignments, &mut free);
+        //Allocate intermediates
         self.greedy_by_size(execution_order, &mut assignments, device)?;
-        //println!("ASSIGNMENTS: {:#?}", assignments);
 
         log::info!(
             "Total bytes allocated: {}kb",
@@ -329,22 +316,5 @@ impl BufferAllocator {
         );
 
         Ok(assignments)
-    }
-}
-
-// We currently use a 2nd arc on top of the pool
-// to track graph allocations
-#[derive(Clone, Debug, PartialEq)]
-pub struct GraphBuffer(Arc<PooledGPUBuffer>);
-
-impl GraphBuffer {
-    pub fn inner(&self) -> &Arc<PooledGPUBuffer> {
-        &self.0
-    }
-}
-
-impl From<PooledGPUBuffer> for GraphBuffer {
-    fn from(buf: PooledGPUBuffer) -> Self {
-        Self(buf.into())
     }
 }

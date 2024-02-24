@@ -657,10 +657,10 @@ impl Tensor {
             }
 
             let id = t.id();
-            let graph_buffer = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
+            let buf = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
             assert!(t.device().is_gpu());
             let storage = GPUBuffer {
-                inner: (**graph_buffer.inner()).clone(),
+                inner: (*buf).clone(),
                 alignment: t.dt().size_of(),
             };
             t.update_storage(Storage::GPU(storage));
