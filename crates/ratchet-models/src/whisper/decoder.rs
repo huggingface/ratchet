@@ -230,7 +230,6 @@ def ground(options):
             all_tokens.extend(tokens.clone());
             iters += 1;
         }
-        /*
 
         let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
@@ -239,6 +238,7 @@ def ground(options):
         let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
         println!("Decoded: {}", decoded);
 
+        /*
         let ground_logits = ground_truth(&audio_path.to_string_lossy(), options)?;
         for (our, their) in all_logits.iter().zip(ground_logits.iter()) {
             their.all_close(our, 1e-4, 1e-4).unwrap();

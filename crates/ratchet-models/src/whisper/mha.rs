@@ -1,13 +1,30 @@
 use ratchet::{rvec, shape, Tensor};
 use ratchet_nn::{KVEntry, Linear, Module};
 
-#[derive(Debug, derive_new::new)]
+#[derive(Debug)]
 pub struct MultiHeadAttention {
     q: Linear,
     k: Linear,
     v: Linear,
     o: Linear,
     n_heads: usize,
+    dk: Tensor,
+}
+
+impl MultiHeadAttention {
+    pub fn new(q: Linear, k: Linear, v: Linear, o: Linear, n_heads: usize) -> MultiHeadAttention {
+        let n_state = q.w.shape()[1];
+        let dk = (n_state / n_heads) as f32;
+        let dk = Tensor::from_data([dk.powf(-0.25)], shape![1], q.w.device().clone());
+        MultiHeadAttention {
+            q,
+            k,
+            v,
+            o,
+            n_heads,
+            dk,
+        }
+    }
 }
 
 #[derive(Debug, derive_new::new)]
@@ -73,14 +90,13 @@ impl MultiHeadAttention {
         let [v0, v1, _]: [usize; 3] = v.shape().try_into()?;
 
         let hdim = n_state / self.n_heads;
-        let dk = Tensor::from_data([(hdim as f32).powf(-0.25)], shape![1], q.device().clone());
 
         let qs = shape![bs, n_ctx, self.n_heads, hdim];
         let ks = shape![k0, k1, self.n_heads, hdim];
         let vs = shape![v0, v1, self.n_heads, hdim];
 
-        let q = q.view(qs)?.permute(&[0, 2, 1, 3])?.mul(&dk)?;
-        let k = k.view(ks)?.permute(&[0, 2, 3, 1])?.mul(&dk)?;
+        let q = q.view(qs)?.permute(&[0, 2, 1, 3])?.mul(&self.dk)?;
+        let k = k.view(ks)?.permute(&[0, 2, 3, 1])?.mul(&self.dk)?;
         let v = v.view(vs)?.permute(&[0, 2, 1, 3])?;
 
         if x_attn {
