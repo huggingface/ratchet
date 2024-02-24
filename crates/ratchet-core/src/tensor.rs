@@ -644,6 +644,8 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
+        //let last = execution_order.last().unwrap();
+        //crate::plot::render_to_file(last, "pre-allocations.svg").unwrap();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
@@ -670,10 +672,10 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        let exec_order_ids = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
-        println!("Execution order: {:?}", exec_order_ids);
-        let last = execution_order.last().unwrap();
-        crate::plot::render_to_file(last, "allocations.svg").unwrap();
+        //let exec_order_ids = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
+        //println!("Execution order: {:?}", exec_order_ids);
+        //let last = execution_order.last().unwrap();
+        //crate::plot::render_to_file(last, "allocations.svg").unwrap();
 
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
