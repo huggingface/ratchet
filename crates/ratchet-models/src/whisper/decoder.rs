@@ -231,24 +231,24 @@ def ground(options):
             iters += 1;
         }
 
-        // let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
-        // let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
-        // let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
-        // let u32_tokens: Vec<_> = all_tokens.iter().map(|&x| x as u32).collect();
-        // let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
-        // println!("Decoded: {}", decoded);
+        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
+        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
+        let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
+        let u32_tokens: Vec<_> = all_tokens.iter().map(|&x| x as u32).collect();
+        let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
+        println!("Decoded: {}", decoded);
 
-        // let ground_logits = ground_truth(&audio_path.to_string_lossy(), options)?;
+        let ground_logits = ground_truth(&audio_path.to_string_lossy(), options)?;
 
-        // let all_equal = all_logits
-        //     .iter()
-        //     .zip(ground_logits.iter())
-        //     .all(|(our, their)| match their.all_close(our, 1e-4, 1e-4) {
-        //         Ok(_) => true,
-        //         Err(_) => false,
-        //     });
+        let all_equal = all_logits
+            .iter()
+            .zip(ground_logits.iter())
+            .all(|(our, their)| match their.all_close(our, 1e-4, 1e-4) {
+                Ok(_) => true,
+                Err(_) => false,
+            });
 
-        // assert!(all_equal);
+        assert!(all_equal);
 
         Ok(())
     }
