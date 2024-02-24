@@ -138,7 +138,6 @@ impl<M: GGMLCompatible> GGMLModel<M> {
         let shape = header.shape.clone();
         let mut dt: DType = header.dtype.into();
         if dt == DType::F16 {
-            log::error!("F16 is not supported by wgpu, converting to F32");
             //TODO: terrible cast whilst wgpu doesn't support F16
             let f16_data = bytemuck::cast_slice::<u8, f16>(&data);
             let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();

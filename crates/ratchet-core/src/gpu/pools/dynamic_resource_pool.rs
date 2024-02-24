@@ -197,6 +197,10 @@ where
         self.state.read().all_resources.len()
     }
 
+    pub fn all_resources(&self) -> Vec<Arc<DynamicResource<Handle, Desc, Res>>> {
+        self.state.read().all_resources.values().cloned().collect()
+    }
+
     pub fn total_resource_size_in_bytes(&self) -> u64 {
         self.total_resource_size_in_bytes
             .load(std::sync::atomic::Ordering::Relaxed)

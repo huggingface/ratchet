@@ -4,7 +4,7 @@ use crate::Module;
 
 #[derive(derive_new::new, Debug)]
 pub struct Linear {
-    w: Tensor,
+    pub w: Tensor,
     b: Option<Tensor>,
 }
 
