@@ -31,9 +31,10 @@ impl DType {
         }
     }
 
-    //TODO: alignof?
-
-    //TODO: use a different method, total_bytes won't work with padding
+    //TODO: this is stupid
+    // We take in the total_bytes of the buffer
+    // but if the buffer is not completely filled with data
+    // then the calculation of the segments is wrong
     pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
         let total_bytes = if total_bytes < MIN_STORAGE_BUFFER_SIZE {
             MIN_STORAGE_BUFFER_SIZE
@@ -43,14 +44,17 @@ impl DType {
 
         match self {
             DType::WQ8 => {
+                println!("WQ8 Total Bytes: {}", total_bytes);
                 let weights_size = total_bytes / 5 * 4;
                 assert!(weights_size % 256 == 0); //storage buffer alignment
                 let weights = BufferSegment::new(0, Some(weights_size as u64), true);
+                println!("WQ8 Weights Segment: {:?}", weights);
 
                 let absmax_size = total_bytes - weights_size;
                 assert!(absmax_size % 256 == 0); //storage buffer alignment
                 let absmax =
                     BufferSegment::new(weights_size as u64, Some(absmax_size as u64), true);
+                println!("WQ8 Absmax Segment: {:?}", absmax);
                 rvec![weights, absmax]
             }
             _ => {
