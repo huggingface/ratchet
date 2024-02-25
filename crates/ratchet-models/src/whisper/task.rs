@@ -86,6 +86,7 @@ impl DecodingTask {
         task
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn main_loop(
         &self,
         decoder: &mut WhisperDecoder,
@@ -107,6 +108,43 @@ impl DecodingTask {
             decoder.cache_mut().update(input.len());
 
             let mut logits = Self::slice_logits(logits.to(&Device::CPU)?);
+            let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
+            for m in &self.logit_mutators {
+                logits = m.apply(logits, Some(&token_t))?;
+            }
+
+            let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
+
+            tokens = new_tokens;
+            if completed {
+                break;
+            }
+        }
+        Ok(tokens)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn main_loop(
+        &self,
+        decoder: &mut WhisperDecoder,
+        audio_ctx: Tensor,
+        mut tokens: Vec<i32>,
+    ) -> Result<Vec<i32>, DecodeError> {
+        let device = audio_ctx.device().clone();
+
+        for idx in 0..self.sample_len {
+            device.try_gpu().unwrap().begin_pass(idx as _);
+            let input = if tokens.len() > self.initial_tokens_len.unwrap() {
+                &tokens[tokens.len() - 1..]
+            } else {
+                &tokens
+            };
+            let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
+
+            let logits = decoder.forward(&[audio_ctx.clone(), input_t])?.resolve()?;
+            decoder.cache_mut().update(input.len());
+
+            let mut logits = Self::slice_logits(logits.to(&Device::CPU).await?);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
                 logits = m.apply(logits, Some(&token_t))?;
@@ -213,6 +251,26 @@ impl DecodingTask {
         (segments, advance)
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub async fn run(
+        &self,
+        decoder: &mut WhisperDecoder,
+        audio_ctx: Tensor,
+        tokenizer: &WhisperTokenizer,
+    ) -> Result<Vec<i32>, DecodeError> {
+        let mut tokens = self
+            .main_loop(decoder, audio_ctx, self.get_initial_tokens(tokenizer))
+            .await?;
+
+        tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
+        let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);
+        if let Some(eot_index) = eot_index {
+            tokens.truncate(eot_index);
+        }
+        Ok(tokens)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn run(
         &self,
         decoder: &mut WhisperDecoder,

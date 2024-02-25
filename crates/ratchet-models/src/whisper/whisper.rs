@@ -173,6 +173,7 @@ impl Whisper {
         self.hparams.n_vocab == 51865
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
         let audio_ctx = self.encoder.forward(&mel)?.resolve()?;
         let sot = Tensor::from_data(&[WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
@@ -181,6 +182,22 @@ impl Whisper {
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU)?;
+        let logits = DecodingTask::slice_logits(cpu_logits);
+
+        let selector = SelectLanguage {};
+        let lang_t = selector.apply(logits, None).unwrap();
+        Ok(Language::Token(lang_t.item()))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
+        let audio_ctx = self.encoder.forward(&mel)?.resolve()?;
+        let sot = Tensor::from_data(&[WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
+
+        let logits = self.decoder.forward(&[audio_ctx, sot])?.resolve()?;
+        self.decoder.reset();
+
+        let cpu_logits = logits.to(&Device::CPU).await?;
         let logits = DecodingTask::slice_logits(cpu_logits);
 
         let selector = SelectLanguage {};
@@ -218,7 +235,7 @@ mod tests {
         let model_path = model.get("ggml-tiny.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_path = dataset.get("gb0.wav").unwrap();
+        let audio_path = dataset.get("mm0.wav").unwrap();
         let samples = load_sample(audio_path);
 
         let options = DecodingOptionsBuilder::new().build();

@@ -5,7 +5,7 @@ use tokenizers::Tokenizer;
 #[cfg(not(target_arch = "wasm32"))]
 use hf_hub::api::sync::Api;
 #[cfg(target_arch = "wasm32")]
-use {ratchet_client::ApiBuilder, ratchet_client::RepoType};
+use {ratchet_client::ApiBuilder, ratchet_client::RepoType, wasm_bindgen::JsError};
 
 lazy_static::lazy_static! {
     pub static ref LANGUAGES: [&'static str; 99] = {
@@ -89,10 +89,12 @@ impl WhisperTokenizer {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn load_inner(bytes: Option<Vec<u8>>) -> Tokenizer {
+        use wasm_bindgen::JsValue;
+
         if let Some(bytes) = bytes {
             Tokenizer::from_bytes(bytes).unwrap()
         } else {
-            Self::fetch().await
+            Self::fetch().await.map_err(JsValue::from).unwrap()
         }
     }
 
@@ -109,11 +111,11 @@ impl WhisperTokenizer {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn fetch() -> Result<Tokenizer, JSError> {
+    pub async fn fetch() -> Result<Tokenizer, JsError> {
         let model_repo = ApiBuilder::from_hf("openai/whisper-tiny", RepoType::Model).build();
         let model = model_repo.get("ggml-tiny.bin").await?;
         let model_data = model.to_uint8().await?;
-        Tokenizer::from_bytes(model_data).unwrap()
+        Ok(Tokenizer::from_bytes(model_data.to_vec()).unwrap())
     }
 
     pub fn set_language(&mut self, language: Language) {
