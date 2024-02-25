@@ -538,6 +538,13 @@ impl Tensor {
         Ok(Tensor::new(LazyOp::Const, meta, Some(storage), device))
     }
 
+    pub fn item<T: TensorDType>(&self) -> T {
+        assert!(self.is_scalar());
+        let storage_guard = self.storage();
+        let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
+        buffer.to_slice::<T>(self.shape())[0]
+    }
+
     /// # Bindings
     ///
     /// Only applicable to GPU tensors.
