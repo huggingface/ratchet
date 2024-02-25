@@ -240,8 +240,10 @@ impl BufferAllocator {
             }
             for source in t.op().srcs() {
                 let true_source = Self::determine_tensor_source(source);
-                if let Some(buf) = assignments.get(&true_source.id()) {
-                    assignments.insert(source.id(), buf.clone());
+                if true_source.id() != source.id() {
+                    if let Some(buf) = assignments.get(&true_source.id()) {
+                        assignments.insert(source.id(), buf.clone());
+                    }
                 }
             }
         }
