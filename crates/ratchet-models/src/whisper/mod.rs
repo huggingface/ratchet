@@ -10,6 +10,7 @@ mod spectrogram;
 mod task;
 mod tokenizer;
 mod transcribe;
+mod transcript;
 mod whisper;
 
 pub use decoder::*;
@@ -24,4 +25,5 @@ pub use spectrogram::*;
 pub use task::*;
 pub use tokenizer::*;
 pub use transcribe::*;
+pub use transcript::*;
 pub use whisper::*;
