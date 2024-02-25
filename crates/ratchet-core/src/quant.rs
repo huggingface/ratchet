@@ -23,7 +23,6 @@ impl Quantizer {
         assert!(numel % 4 == 0 && numel % 16 == 0);
         assert!(tensor.dt() == DType::F32); //TODO: f16, bf16
                                             //TODO: check if tensor is contiguous
-
         let pack_size = self.format.pack_size();
         let group_size = self.format.group_size();
 
@@ -59,12 +58,14 @@ impl Quantizer {
         }
     }
 
+    //TODO: this doesn't work
     pub fn sint8_dequantize(&self, quantized: Tensor) -> Tensor {
         assert!(quantized.dt() == DType::WQ8);
         let numel = quantized.shape().numel();
         let packed_numel = numel / self.format.pack_size() + numel / self.format.group_size();
         let pack_size = self.format.pack_size();
         let group_size = self.format.group_size();
+        //Line below is invalid
         let quantized_matrix = quantized.to_vec::<u32>().unwrap();
         let mut dequantized = vec![0.0f32; numel];
 
@@ -161,6 +162,6 @@ mod tests {
     pub fn test_sint8_qdq() {
         let ground = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
         let quantizer = Quantizer::new(Quantization::SInt8);
-        let _quantized = quantizer.sint8_quantize(ground.deep_clone());
+        let quantized = quantizer.sint8_quantize(ground.deep_clone());
     }
 }
