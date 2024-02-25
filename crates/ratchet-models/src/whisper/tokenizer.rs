@@ -5,7 +5,7 @@ use tokenizers::Tokenizer;
 #[cfg(not(target_arch = "wasm32"))]
 use hf_hub::api::sync::Api;
 #[cfg(target_arch = "wasm32")]
-use {ratchet_client::Api, ratchet_client::ApiBuilder, ratchet_client::RepoType};
+use {ratchet_client::ApiBuilder, ratchet_client::RepoType};
 
 lazy_static::lazy_static! {
     pub static ref LANGUAGES: [&'static str; 99] = {
@@ -58,17 +58,18 @@ impl WhisperTokenizer {
         49870, 50254,
     ];
 
-    pub fn load(
-        bytes: Option<Vec<u8>>,
-        _is_multilingual: bool,
-        language: Language,
-        task: Task,
-    ) -> Self {
-        let inner = if let Some(bytes) = bytes {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_inner(bytes: Option<Vec<u8>>) -> Tokenizer {
+        if let Some(bytes) = bytes {
             Tokenizer::from_bytes(bytes).unwrap()
         } else {
             Self::fetch()
-        };
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load(bytes: Option<Vec<u8>>, language: Language, task: Task) -> Self {
+        let inner = Self::load_inner(bytes);
         let mut tokenizer = Self {
             inner,
             language: -1,
@@ -87,10 +88,31 @@ impl WhisperTokenizer {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn fetch() -> Tokenizer {
+    pub async fn load_inner(bytes: Option<Vec<u8>>) -> Tokenizer {
+        if let Some(bytes) = bytes {
+            Tokenizer::from_bytes(bytes).unwrap()
+        } else {
+            Self::fetch().await
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn load(bytes: Option<Vec<u8>>, language: Language, task: Task) -> Self {
+        let inner = Self::load_inner(bytes).await;
+        let mut tokenizer = Self {
+            inner,
+            language: -1,
+            task,
+        };
+        tokenizer.set_language(language);
+        tokenizer
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn fetch() -> Result<Tokenizer, JSError> {
         let model_repo = ApiBuilder::from_hf("openai/whisper-tiny", RepoType::Model).build();
-        let model = model_repo.get("ggml-tiny.bin").await.unwrap();
-        let model_data = model.to_uint8().await.unwrap();
+        let model = model_repo.get("ggml-tiny.bin").await?;
+        let model_data = model.to_uint8().await?;
         Tokenizer::from_bytes(model_data).unwrap()
     }
 
