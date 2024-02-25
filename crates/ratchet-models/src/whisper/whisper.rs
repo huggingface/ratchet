@@ -185,8 +185,7 @@ impl Whisper {
 
         let selector = SelectLanguage {};
         let lang_t = selector.apply(logits, None).unwrap();
-        //TODO: extract from lang_t
-        Ok(Language::String("en".to_string()))
+        Ok(Language::Token(lang_t.item()))
     }
 }
 

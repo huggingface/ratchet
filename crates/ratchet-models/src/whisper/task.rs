@@ -110,6 +110,7 @@ impl DecodingTask {
 
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             let mut logits = Self::slice_logits(logits.to(&Device::CPU).unwrap());
+
             for m in &self.logit_mutators {
                 logits = m.apply(logits, Some(&token_t))?;
             }

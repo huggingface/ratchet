@@ -2,6 +2,11 @@ use crate::{Language, Task};
 use std::ops::RangeInclusive;
 use tokenizers::Tokenizer;
 
+#[cfg(not(target_arch = "wasm32"))]
+use hf_hub::api::sync::Api;
+#[cfg(target_arch = "wasm32")]
+use {ratchet_client::Api, ratchet_client::ApiBuilder, ratchet_client::RepoType};
+
 lazy_static::lazy_static! {
     pub static ref LANGUAGES: [&'static str; 99] = {
         [
@@ -62,7 +67,7 @@ impl WhisperTokenizer {
         let inner = if let Some(bytes) = bytes {
             Tokenizer::from_bytes(bytes).unwrap()
         } else {
-            Tokenizer::from_file("tokenizer.json").unwrap()
+            Self::fetch()
         };
         let mut tokenizer = Self {
             inner,
@@ -71,6 +76,22 @@ impl WhisperTokenizer {
         };
         tokenizer.set_language(language);
         tokenizer
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn fetch() -> Tokenizer {
+        let api = Api::new().unwrap();
+        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
+        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
+        Tokenizer::from_file(tokenizer_path).unwrap()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn fetch() -> Tokenizer {
+        let model_repo = ApiBuilder::from_hf("openai/whisper-tiny", RepoType::Model).build();
+        let model = model_repo.get("ggml-tiny.bin").await.unwrap();
+        let model_data = model.to_uint8().await.unwrap();
+        Tokenizer::from_bytes(model_data).unwrap()
     }
 
     pub fn set_language(&mut self, language: Language) {

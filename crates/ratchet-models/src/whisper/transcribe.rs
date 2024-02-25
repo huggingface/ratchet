@@ -1,12 +1,9 @@
-use std::{cmp::min, time::Instant};
-
-use ratchet::Device;
-use ratchet_nn::Module;
-
 use crate::{
     DecodingOptions, DecodingTask, Language, Prompt, TranscriptionResult, Whisper,
     WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,
 };
+use ratchet_nn::Module;
+use std::{cmp::min, time::Instant};
 
 pub fn transcribe(
     model: &mut Whisper,
@@ -14,13 +11,7 @@ pub fn transcribe(
     mut decode_options: DecodingOptions,
 ) -> anyhow::Result<TranscriptionResult> {
     let runtime = Instant::now();
-
-    #[cfg(not(target_arch = "wasm32"))]
     let mel = model.specgen.generate(audio)?.to(&model.device)?;
-    println!("mel shape: {:?}", mel.shape());
-    #[cfg(target_arch = "wasm32")]
-    let mel = model.specgen.generate(audio)?.to(&model.device).await?;
-
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
 
     if decode_options.language.is_none() {
