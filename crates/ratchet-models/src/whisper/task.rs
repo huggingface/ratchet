@@ -26,6 +26,8 @@ pub enum DecodeError {
     TokenizerError(#[from] tokenizers::Error),
     #[error("Unknown error: {0}")]
     UnknownError(#[from] anyhow::Error),
+    #[error("Failed to resolve tensor: {0}")]
+    TensorResolveError(#[from] ratchet::TensorError),
 }
 
 pub struct DecodingTask {
@@ -94,23 +96,18 @@ impl DecodingTask {
 
         for idx in 0..self.sample_len {
             device.try_gpu().unwrap().begin_pass(idx as _);
-            let input_tokens = if tokens.len() > self.initial_tokens_len.unwrap() {
+            let input = if tokens.len() > self.initial_tokens_len.unwrap() {
                 &tokens[tokens.len() - 1..]
             } else {
                 &tokens
             };
-            let input_t =
-                Tensor::from_data(input_tokens, shape![1, input_tokens.len()], device.clone());
+            let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
 
-            let logits = decoder
-                .forward(&[audio_ctx.clone(), input_t])?
-                .resolve()
-                .unwrap();
-            decoder.cache_mut().update(input_tokens.len());
+            let logits = decoder.forward(&[audio_ctx.clone(), input_t])?.resolve()?;
+            decoder.cache_mut().update(input.len());
 
+            let mut logits = Self::slice_logits(logits.to(&Device::CPU)?);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
-            let mut logits = Self::slice_logits(logits.to(&Device::CPU).unwrap());
-
             for m in &self.logit_mutators {
                 logits = m.apply(logits, Some(&token_t))?;
             }
@@ -143,26 +140,28 @@ impl DecodingTask {
     ) -> (Vec<Segment>, usize) {
         let content_tokens = tokens;
         let content_length = content_tokens.len();
-        let [penultimate, last] = [
-            content_tokens.get(content_length - 2),
-            content_tokens.get(content_length - 1),
-        ];
-        if penultimate.is_none() || last.is_none() {
+        if content_length < 2 {
+            log::error!("Failed to build segments.");
             return (Vec::new(), 0);
         }
-        let penultimate = penultimate.unwrap();
-        let last = last.unwrap();
+        let (penultimate, last) = (
+            content_tokens[content_length - 2],
+            content_tokens[content_length - 1],
+        );
 
         let single_timestamp_ending =
-            !WhisperTokenizer::is_timestamp(*penultimate) && WhisperTokenizer::is_timestamp(*last);
+            !WhisperTokenizer::is_timestamp(penultimate) && WhisperTokenizer::is_timestamp(last);
 
         let mut consecutive = content_tokens
             .windows(2)
             .enumerate()
-            .filter(|(_, x)| {
-                WhisperTokenizer::is_timestamp(x[0]) && WhisperTokenizer::is_timestamp(x[1])
+            .filter_map(|(i, x)| {
+                if WhisperTokenizer::is_timestamp(x[0]) && WhisperTokenizer::is_timestamp(x[1]) {
+                    Some(i + 1)
+                } else {
+                    None
+                }
             })
-            .map(|(i, _)| i + 1)
             .collect::<Vec<_>>();
 
         let advance;
@@ -174,33 +173,32 @@ impl DecodingTask {
             }
 
             let mut last_slice = 0;
-            segments = consecutive.iter().fold(Vec::new(), |mut segments, slice| {
-                let sliced_tokens = &content_tokens[last_slice..*slice];
-                segments.push(Segment::from_tokens(sliced_tokens, offset, false));
-                last_slice = *slice;
-                segments
-            });
+            (segments, last_slice) =
+                consecutive
+                    .iter()
+                    .fold((Vec::new(), 0), |(mut acc, last_slice), &slice| {
+                        let segment_tokens = &content_tokens[last_slice..slice];
+                        acc.push(Segment::from_tokens(segment_tokens, offset, false));
+                        (acc, slice)
+                    });
 
-            if single_timestamp_ending {
-                advance = segment_size;
+            advance = if single_timestamp_ending {
+                segment_size
             } else {
                 let last_timestamp_pos =
                     content_tokens[last_slice - 1] - WhisperTokenizer::TS_BEGIN;
-                advance = last_timestamp_pos as usize * input_stride;
+                last_timestamp_pos as usize * input_stride
             }
         } else {
-            let mut duration = segment_duration as f64;
-            let timestamps = content_tokens
+            let duration = content_tokens
                 .iter()
-                .filter(|x| WhisperTokenizer::is_timestamp(**x))
-                .collect::<Vec<_>>();
-            if !timestamps.is_empty() {
-                let last_timestamp_pos =
-                    timestamps[timestamps.len() - 1] - WhisperTokenizer::TS_BEGIN;
-                let time_precision: f64 =
-                    input_stride as f64 * (HOP_LENGTH as f64) / (SAMPLE_RATE as f64); // time per output token: 0.02 (seconds)
-                duration = last_timestamp_pos as f64 * time_precision;
-            }
+                .filter(|&x| WhisperTokenizer::is_timestamp(*x))
+                .last()
+                .map_or(segment_duration as f64, |&last_ts| {
+                    let last_timestamp_pos = last_ts - WhisperTokenizer::TS_BEGIN;
+                    last_timestamp_pos as f64 * input_stride as f64 * (HOP_LENGTH as f64)
+                        / (SAMPLE_RATE as f64)
+                });
 
             let segment_tokens = content_tokens.iter().map(|x| *x as u32).collect::<Vec<_>>();
             segments = vec![Segment::new(
