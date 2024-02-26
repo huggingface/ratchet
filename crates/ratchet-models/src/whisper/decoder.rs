@@ -79,7 +79,7 @@ impl Module for WhisperDecoder {
             x = block.forward(&block_input)?;
         }
         x = self.ln_post.forward(&x)?;
-        let logits = x.matmul(&self.stem.token_embed.weight.permute(&[1, 0])?)?;
+        let logits = x.matmul(&self.stem.token_embed.weight, true)?;
         Ok(logits)
     }
 }

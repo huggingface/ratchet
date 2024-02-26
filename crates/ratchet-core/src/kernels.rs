@@ -219,6 +219,10 @@ lazy_static! {
             include_str!(r"../kernels/index_write_scalar.wgsl"),
         );
         m.insert(
+            "qgemm_bt_vec4",
+            include_str!(r"../kernels/qgemm_bt_vec4.wgsl"),
+        );
+        m.insert(
             "wq8_index_select_scalar",
             include_str!(r"../kernels/wq8_index_select_scalar.wgsl"),
         );
@@ -230,6 +234,10 @@ lazy_static! {
         m.insert(
             "softmax_vec2",
             include_str!(r"../kernels/softmax_vec2.wgsl"),
+        );
+        m.insert(
+            "sgemm_bt_vec4",
+            include_str!(r"../kernels/sgemm_bt_vec4.wgsl"),
         );
         m.insert("sgemm_vec4", include_str!(r"../kernels/sgemm_vec4.wgsl"));
         m.insert(

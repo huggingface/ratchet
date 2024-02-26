@@ -48,16 +48,16 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
     }
 
     fn sdpa_cfg(case: &AttentionTest, device: Device) -> anyhow::Result<Tensor> {
-        let q_proj = case.input.matmul(&case.qw)?;
-        let k_proj = case.input.matmul(&case.kw)?;
-        let v_proj = case.input.matmul(&case.vw)?;
+        let q_proj = case.input.matmul(&case.qw, false)?;
+        let k_proj = case.input.matmul(&case.kw, false)?;
+        let v_proj = case.input.matmul(&case.vw, false)?;
 
         let scale_factor = 1f64 / (q_proj.shape()[2] as f64).sqrt();
         let scale_factor = Tensor::from_data([scale_factor as f32], shape![1], device);
         let kt = k_proj.permute(&[0, 2, 1])?;
 
-        let logits = q_proj.matmul(&kt)?.mul(&scale_factor)?;
-        logits.softmax(2)?.matmul(&v_proj)
+        let logits = q_proj.matmul(&kt, false)?.mul(&scale_factor)?;
+        logits.softmax(2)?.matmul(&v_proj, false)
     }
 
     #[test]
@@ -145,9 +145,9 @@ def qkv_attention(input, qw, kw, vw, n_heads):
     }
 
     fn mha_cfg(case: &AttentionTest, device: Device) -> anyhow::Result<Tensor> {
-        let q_proj = case.input.matmul(&case.qw)?;
-        let k_proj = case.input.matmul(&case.kw)?;
-        let v_proj = case.input.matmul(&case.vw)?;
+        let q_proj = case.input.matmul(&case.qw, false)?;
+        let k_proj = case.input.matmul(&case.kw, false)?;
+        let v_proj = case.input.matmul(&case.vw, false)?;
 
         let n_heads = case.n_heads.unwrap();
         let qdim = q_proj.shape()[2];
@@ -167,9 +167,9 @@ def qkv_attention(input, qw, kw, vw, n_heads):
             .view(shape![1, hdim, n_heads, hdim])?
             .permute(&[0, 2, 1, 3])?;
 
-        let qk = q.matmul(&k)?;
+        let qk = q.matmul(&k, false)?;
         let attn = qk.softmax(3)?;
-        attn.matmul(&v)?
+        attn.matmul(&v, false)?
             .permute(&[0, 2, 1, 3])?
             .view(shape![1, hdim, qdim])
     }

@@ -21,11 +21,12 @@ pub(crate) struct MatmulSpec {
     a_stack: usize,
     b_stack: usize,
     c_stack: usize,
+    trans_b: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
 }
 
 impl MatmulSpec {
-    pub fn new(A: &Tensor, B: &Tensor, C: &Tensor) -> Self {
+    pub fn new(A: &Tensor, B: &Tensor, C: &Tensor, trans_b: bool) -> Self {
         let mut a_shape = A.shape().clone();
         let mut b_shape = B.shape().clone();
         let mut c_shape = C.shape().clone();
@@ -85,6 +86,7 @@ impl MatmulSpec {
             a_stack,
             b_stack,
             c_stack,
+            trans_b,
             stack_shape,
         }
     }
@@ -114,19 +116,6 @@ impl MatmulSpec {
         }
     }
 
-    pub fn tile_sizes(&self) -> (Option<usize>, Option<usize>) {
-        let sizes = [32, 16];
-
-        let checker = |dims: [usize; 2]| {
-            sizes
-                .iter()
-                .find(|&size| dims.iter().all(|&dim| dim % size == 0))
-                .copied()
-        };
-
-        (checker([self.m(), self.k()]), checker([self.k(), self.n()]))
-    }
-
     pub fn m(&self) -> usize {
         self.a_shape[0]
     }
@@ -136,7 +125,11 @@ impl MatmulSpec {
     }
 
     pub fn n(&self) -> usize {
-        self.b_shape[1]
+        if self.trans_b {
+            self.b_shape[0]
+        } else {
+            self.b_shape[1]
+        }
     }
 
     pub fn a_stack(&self) -> usize {
@@ -183,6 +176,7 @@ impl MatmulSpec {
 pub struct Matmul {
     lhs: Tensor,
     rhs: Tensor,
+    trans_b: bool,
 }
 
 impl Matmul {
@@ -194,18 +188,17 @@ impl Matmul {
         }
     }
 
-    pub fn compute_c_shape(a: &Tensor, b: &Tensor) -> anyhow::Result<Shape> {
+    pub fn compute_c_shape(a: &Tensor, b: &Tensor, trans_b: bool) -> anyhow::Result<Shape> {
         let (mut ashape, mut bshape) = (a.shape().clone(), b.shape().clone());
 
-        let insert_one_if = |shape: &mut Shape, index: usize, condition: bool| {
-            if condition {
-                shape.insert(index, 1);
-            }
-        };
-        let arank = ashape.rank();
-        let brank = bshape.rank();
-        insert_one_if(&mut ashape, 0, arank < 2);
-        insert_one_if(&mut bshape, 1, brank < 2);
+        let implicit_m = ashape.rank() < 2;
+        let implicit_n = bshape.rank() < 2;
+        if implicit_m {
+            ashape.insert(0, 1);
+        }
+        if implicit_n {
+            bshape.insert(!trans_b as usize, 1);
+        }
 
         let equalize_rank = |shape: &mut Shape, target_rank: usize| {
             while shape.rank() < target_rank {
@@ -224,7 +217,11 @@ impl Matmul {
             })?;
 
         let (m, ka) = (ashape[arank - 2], ashape[arank - 1]);
-        let (kb, n) = (bshape[brank - 2], bshape[brank - 1]);
+        let (mut kb, mut n) = (bshape[brank - 2], bshape[brank - 1]);
+        if trans_b {
+            std::mem::swap(&mut kb, &mut n);
+        }
+
         if ka != kb {
             anyhow::bail!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape);
         }
@@ -282,7 +279,7 @@ impl OpMetadata for MatmulMeta {}
 impl Operation for Matmul {
     fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
         let (a, b) = (srcs[0], srcs[1]);
-        let c_shape = Matmul::compute_c_shape(a, b).unwrap();
+        let c_shape = Matmul::compute_c_shape(a, b, self.trans_b).unwrap();
         let c_strides = Strides::from(&c_shape);
         Ok(StorageView::new(c_shape, a.dt(), c_strides))
     }
@@ -306,10 +303,17 @@ impl MetaOperation for Matmul {
     type Meta = MatmulMeta;
 
     fn kernel_name(&self) -> &'static str {
-        match (self.lhs.dt(), self.rhs.dt()) {
-            (DType::F32, DType::F32) => "sgemm",
-            (DType::F32, DType::WQ8) => "qgemm",
-            _ => panic!("Unsupported dtypes"),
+        match (self.lhs.dt(), self.rhs.dt(), self.trans_b) {
+            (DType::F32, DType::F32, false) => "sgemm",
+            (DType::F32, DType::WQ8, false) => "qgemm",
+            (DType::F32, DType::F32, true) => "sgemm_bt",
+            (DType::F32, DType::WQ8, true) => "qgemm_bt",
+            _ => panic!(
+                "Unsupported matmul: {:?}, {:?}, transb:{:?}",
+                self.lhs.dt(),
+                self.rhs.dt(),
+                self.trans_b
+            ),
         }
     }
 
@@ -318,12 +322,12 @@ impl MetaOperation for Matmul {
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
-        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst);
+        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_b);
         spec.select_kernel_element()
     }
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let spec = MatmulSpec::new(&self.lhs, &self.rhs, &self.lhs);
+        let spec = MatmulSpec::new(&self.lhs, &self.rhs, &self.lhs, self.trans_b);
         let kernel_element = spec.select_kernel_element();
 
         let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
@@ -350,7 +354,7 @@ impl MetaOperation for Matmul {
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst);
+        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_b);
         let M = spec.m() as u32;
         let N = spec.n() as u32;
         let K = spec.k() as u32;
@@ -417,7 +421,7 @@ def matmul(a, b):
 
         let a_gpu = a.to(device)?;
         let b_gpu = b.to(device)?;
-        let c_gpu = a_gpu.matmul(&b_gpu)?.resolve()?;
+        let c_gpu = a_gpu.matmul(&b_gpu, false)?.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-4, 1e-4)?;
@@ -434,7 +438,7 @@ def matmul(a, b):
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = a.to(&device)?;
         let b_gpu = bq.to(&device)?;
-        let c_gpu = a_gpu.matmul(&b_gpu)?.resolve()?;
+        let c_gpu = a_gpu.matmul(&b_gpu, false)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET WQ8\n{:?}\n", ours);

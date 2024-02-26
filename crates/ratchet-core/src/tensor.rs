@@ -344,10 +344,11 @@ impl Tensor {
         ))
     }
 
-    pub fn matmul(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+    //TODO: horrific interface
+    pub fn matmul(&self, other: &Tensor, trans_b: bool) -> anyhow::Result<Tensor> {
         Matmul::check_invariants(&[self, other])?;
 
-        let matmul = Matmul::new(self.clone(), other.clone());
+        let matmul = Matmul::new(self.clone(), other.clone(), trans_b);
         let new_view = matmul.infer_output(&[self, other])?;
         Ok(Tensor::lazy(
             LazyOp::Matmul(matmul),
@@ -666,8 +667,8 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
-        let last = execution_order.last().unwrap();
-        crate::plot::render_to_file(last, "pre-allocations.svg").unwrap();
+        //let last = execution_order.last().unwrap();
+        //crate::plot::render_to_file(last, "pre-allocations.svg").unwrap();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;
@@ -694,10 +695,10 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        //let exec_order_ids = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
-        //println!("Execution order: {:?}", exec_order_ids);
-        //let last = execution_order.last().unwrap();
-        //crate::plot::render_to_file(last, "allocations.svg").unwrap();
+        let exec_order_ids = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
+        println!("Execution order: {:?}", exec_order_ids);
+        let last = execution_order.last().unwrap();
+        crate::plot::render_to_file(last, "allocations.svg").unwrap();
 
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
