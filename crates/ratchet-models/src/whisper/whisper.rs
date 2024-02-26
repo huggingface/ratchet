@@ -269,6 +269,7 @@ mod tests {
             "cross_attn.out.weight",
             "mlp.0.weight",
             "mlp.2.weight",
+            "token_embedding.weight",
         ]);
 
         Converter::convert::<_, Whisper>(path, Quantization::SInt8, to_quant).unwrap();
