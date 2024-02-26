@@ -219,8 +219,12 @@ lazy_static! {
             include_str!(r"../kernels/index_write_scalar.wgsl"),
         );
         m.insert(
-            "index_select_scalar",
-            include_str!(r"../kernels/index_select_scalar.wgsl"),
+            "wq8_index_select_scalar",
+            include_str!(r"../kernels/wq8_index_select_scalar.wgsl"),
+        );
+        m.insert(
+            "f32_index_select_scalar",
+            include_str!(r"../kernels/f32_index_select_scalar.wgsl"),
         );
         m.insert("sgemm_vec2", include_str!(r"../kernels/sgemm_vec2.wgsl"));
         m.insert(

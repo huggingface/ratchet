@@ -1,9 +1,12 @@
-use std::num::NonZeroU64;
+use std::{cmp::max, num::NonZeroU64};
 
 use half::{bf16, f16};
 use wgpu::{BufferAddress, BufferSize};
 
-use crate::{gpu::MIN_STORAGE_BUFFER_SIZE, rvec, RVec};
+use crate::{
+    gpu::{MIN_STORAGE_BUFFER_SIZE, STORAGE_BUFFER_ALIGN},
+    rvec, RVec, Shape,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -40,33 +43,24 @@ impl DType {
         }
     }
 
-    //TODO: this is stupid
-    // We take in the total_bytes of the buffer
-    // but if the buffer is not completely filled with data
-    // then the calculation of the segments is wrong
-    pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
-        let total_bytes = if total_bytes < MIN_STORAGE_BUFFER_SIZE {
-            MIN_STORAGE_BUFFER_SIZE
-        } else {
-            total_bytes
-        };
-
+    pub fn segments(&self, shape: &Shape) -> RVec<BufferSegment> {
         match self {
             DType::WQ8 => {
-                println!("WQ8 Total Bytes: {}", total_bytes);
-                let weights_size = total_bytes / 5 * 4;
-                assert!(weights_size % 256 == 0); //storage buffer alignment
+                let numel = shape.numel();
+                let weights_size = numel; //numel / 4 * 4
+                assert!(weights_size % STORAGE_BUFFER_ALIGN == 0);
                 let weights = BufferSegment::new(0, Some(weights_size as u64), true);
-                println!("WQ8 Weights Segment: {:?}", weights);
 
-                let absmax_size = total_bytes - weights_size;
-                assert!(absmax_size % 256 == 0); //storage buffer alignment
+                let absmax_size = numel / 4; //numel / 16 * 4
+                assert!(absmax_size % STORAGE_BUFFER_ALIGN == 0);
                 let absmax =
                     BufferSegment::new(weights_size as u64, Some(absmax_size as u64), true);
-                println!("WQ8 Absmax Segment: {:?}", absmax);
                 rvec![weights, absmax]
             }
             _ => {
+                let mut total_bytes = shape.numel() * self.size_of();
+                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
+
                 rvec![BufferSegment::new(0, Some(total_bytes as u64), false)]
             }
         }
