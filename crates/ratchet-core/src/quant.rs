@@ -14,6 +14,14 @@ pub struct Quantizer {
 }
 
 impl Quantizer {
+    pub fn quantize(&self, tensor: Tensor) -> Tensor {
+        match self.format {
+            Quantization::None => tensor,
+            Quantization::SInt8 => self.sint8_quantize(tensor),
+            Quantization::SInt4 => todo!(),
+        }
+    }
+
     /// Quantizes a float 32 tensor into a packed uint32 tensor.
     /// This is the rust equivalent of: https://www.w3.org/TR/WGSL/#pack4x8snorm-builtin
     /// This allows us to call `unpack4x8snorm` in the shader.

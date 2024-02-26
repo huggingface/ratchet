@@ -18,6 +18,15 @@ pub enum DType {
 }
 
 impl DType {
+    pub fn to_u32(self) -> u32 {
+        match self {
+            DType::F32 => 0,
+            DType::F16 => 1,
+            DType::WQ8 => 64,
+            _ => unimplemented!(),
+        }
+    }
+
     /// Returns the size of the type in bytes.
     pub fn size_of(self) -> usize {
         match self {

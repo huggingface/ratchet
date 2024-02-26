@@ -515,6 +515,19 @@ impl Tensor {
         Ok(Tensor::new(LazyOp::Const, meta, Some(storage), device))
     }
 
+    /// # Safety
+    ///
+    /// If the tensor has more than 1 reference, you die.
+    /// If the tensor has no storage, you die.
+    pub unsafe fn into_bytes(self) -> anyhow::Result<Vec<u8>> {
+        let inner = Arc::try_unwrap(self.inner).unwrap();
+        let storage = Arc::try_unwrap(inner.storage)
+            .unwrap()
+            .into_inner()
+            .unwrap();
+        Ok(storage.into_bytes())
+    }
+
     pub(crate) unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
         data: U,
         shape: Shape,

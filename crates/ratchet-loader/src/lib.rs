@@ -1,6 +1,8 @@
+mod converter;
 mod ggml;
 mod k_quants;
 
+pub use converter::*;
 pub use ggml::*;
 
 #[derive(Debug, thiserror::Error)]
