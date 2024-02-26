@@ -181,6 +181,7 @@ impl Tensor {
         &self.view.strides
     }
 
+    //WARNING: very wrong for quantized types!
     pub fn num_bytes(&self) -> usize {
         self.view.shape.numel() * self.view.dt.size_of()
     }

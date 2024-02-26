@@ -28,7 +28,9 @@ impl RawCPUBuffer {
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
-        unsafe { Vec::from_raw_parts(self.0, self.1.size(), self.1.size()) }
+        let x = unsafe { Vec::from_raw_parts(self.0, self.1.size(), self.1.size()) };
+        std::mem::forget(self);
+        x
     }
 
     pub fn uninitialized(size: usize, alignment: usize) -> Self {
