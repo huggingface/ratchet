@@ -211,6 +211,10 @@ lazy_static! {
         m.insert("conv_scalar", include_str!(r"../kernels/conv_scalar.wgsl"));
         m.insert("qgemm_vec4", include_str!(r"../kernels/qgemm_vec4.wgsl"));
         m.insert(
+            "sgemm_bt_scalar",
+            include_str!(r"../kernels/sgemm_bt_scalar.wgsl"),
+        );
+        m.insert(
             "sgemm_scalar",
             include_str!(r"../kernels/sgemm_scalar.wgsl"),
         );
@@ -229,6 +233,10 @@ lazy_static! {
         m.insert(
             "f32_index_select_scalar",
             include_str!(r"../kernels/f32_index_select_scalar.wgsl"),
+        );
+        m.insert(
+            "sgemm_bt_vec2",
+            include_str!(r"../kernels/sgemm_bt_vec2.wgsl"),
         );
         m.insert("sgemm_vec2", include_str!(r"../kernels/sgemm_vec2.wgsl"));
         m.insert(
