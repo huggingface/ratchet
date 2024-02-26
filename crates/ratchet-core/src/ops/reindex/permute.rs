@@ -2,7 +2,9 @@ use std::collections::HashSet;
 
 use derive_new::new;
 
-use crate::{Enforcer, InvariantError, Operation, OperationError, StorageView, Strides, Tensor};
+use crate::{
+    DType, Enforcer, InvariantError, Operation, OperationError, StorageView, Strides, Tensor,
+};
 
 #[derive(new, Debug, Clone)]
 pub struct Permute {
@@ -46,6 +48,7 @@ impl Operation for Permute {
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
         Enforcer::check_input_arity(srcs, 1)?;
+        Enforcer::assert_dtype(srcs[0], DType::F32)?;
         Ok(())
     }
 }
