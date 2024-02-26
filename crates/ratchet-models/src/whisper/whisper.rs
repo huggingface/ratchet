@@ -245,6 +245,7 @@ mod tests {
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
+        println!("About to load from disk");
         let mut whisper = Whisper::load(&gg_disk, &mut reader, &device).unwrap();
 
         let transcript = transcribe(&mut whisper, samples, options).unwrap();
