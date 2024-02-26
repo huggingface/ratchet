@@ -17,10 +17,10 @@ pub fn transcribe(
 
     if decode_options.language.is_none() {
         if !model.is_multilingual() {
-            log::error!("No language specified, using English");
+            log::warn!("No language specified, using English");
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
-            log::error!("No language specified, using language detection");
+            log::warn!("No language specified, using language detection");
             let mel = mel.slice(&[0..1, 0..80, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel)?);
         }
@@ -97,10 +97,10 @@ pub async fn transcribe(
 
     if decode_options.language.is_none() {
         if !model.is_multilingual() {
-            log::error!("No language specified, using English");
+            log::warn!("No language specified, using English");
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
-            log::error!("No language specified, using language detection");
+            log::warn!("No language specified, using language detection");
             let mel = mel.slice(&[0..1, 0..80, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel).await?);
         }

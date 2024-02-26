@@ -404,6 +404,7 @@ impl Tensor {
     }
 
     pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
+        Permute::check_invariants(&[self])?;
         let permute = Permute::new(dims.to_vec());
         let out_view = permute.infer_output(&[self])?;
 
@@ -665,8 +666,8 @@ impl Tensor {
         let device = self.device().try_gpu()?;
 
         let execution_order = self.execution_order();
-        //let last = execution_order.last().unwrap();
-        //crate::plot::render_to_file(last, "pre-allocations.svg").unwrap();
+        let last = execution_order.last().unwrap();
+        crate::plot::render_to_file(last, "pre-allocations.svg").unwrap();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let allocations = device.allocate_cfg(&execution_order, device)?;

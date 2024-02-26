@@ -190,6 +190,7 @@ impl GGMLLoader {
         let header = TensorHeader::new(name, dims.into(), dtype, start_offset);
         let data_size = header.data_size() as u64;
         reader.seek(SeekFrom::Start(start_offset + data_size))?;
+        log::info!("Loaded single tensor: {:?}", header);
         Ok(header)
     }
 }
@@ -198,7 +199,7 @@ impl GGMLLoader {
 ///
 /// Implement this for your Model if you want to load it from a GGML file.
 pub trait GGMLCompatible: Sized {
-    type ModelHeader;
+    type ModelHeader: std::fmt::Debug;
 
     fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError>;
     fn load_ggml<R: BufRead + Seek>(reader: &mut R) -> Result<GGMLModel<Self>, LoadError> {
@@ -224,7 +225,7 @@ pub trait GGMLCompatible: Sized {
     ) -> std::io::Result<usize> {
         let mut shape = tensor.shape().clone();
         let dtype = tensor.dt().to_u32();
-        let n_dims = shape.len();
+        let n_dims = shape.rank();
         writer.write_i32::<LittleEndian>(n_dims as i32)?;
         writer.write_i32::<LittleEndian>(name.len() as i32)?;
         writer.write_u32::<LittleEndian>(dtype)?;

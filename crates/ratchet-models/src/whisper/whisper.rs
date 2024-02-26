@@ -10,6 +10,7 @@ use crate::{
     WhisperEncoder, WhisperTokenizer,
 };
 
+#[derive(Debug)]
 pub struct WhisperGGMLHeader {
     pub format: GGMLFormat,
     pub hparams: HyperParameters,
@@ -232,7 +233,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("ggml-tiny.bin").unwrap();
+        let model_path = model.get("q.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("mm0.wav").unwrap();
