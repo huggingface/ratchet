@@ -36,7 +36,7 @@ impl DType {
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
-            DType::WQ8 => 4, //Only works because they're both 4 bytes
+            DType::WQ8 => 4,
         }
     }
 

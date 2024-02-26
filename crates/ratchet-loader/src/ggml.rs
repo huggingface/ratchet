@@ -107,7 +107,7 @@ impl TensorHeader {
         }
     }
 
-    fn data_size(&self) -> usize {
+    pub fn data_size(&self) -> usize {
         self.numel * self.dtype.type_size() / self.dtype.block_size()
     }
 
@@ -135,9 +135,11 @@ impl<M: GGMLCompatible> GGMLModel<M> {
             name: key.to_string(),
         })?;
         let mut data = header.read_data(reader)?;
+        log::info!("Loading tensor: {} with size: {} bytes", key, data.len());
         let shape = header.shape.clone();
         let mut dt: DType = header.dtype.into();
         if dt == DType::F16 {
+            log::info!("Casting {} from F16 to F32", key);
             //TODO: terrible cast whilst wgpu doesn't support F16
             let f16_data = bytemuck::cast_slice::<u8, f16>(&data);
             let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
@@ -219,28 +221,27 @@ pub trait GGMLCompatible: Sized {
         name: &str,
         tensor: Tensor,
         writer: &mut W,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<usize> {
         let mut shape = tensor.shape().clone();
-        let numel = shape.numel();
         let dtype = tensor.dt().to_u32();
         let n_dims = shape.len();
         writer.write_i32::<LittleEndian>(n_dims as i32)?;
         writer.write_i32::<LittleEndian>(name.len() as i32)?;
-        writer.write_u32::<LittleEndian>(dtype as u32)?;
+        writer.write_u32::<LittleEndian>(dtype)?;
 
         shape.reverse();
         for dim in shape.iter() {
             writer.write_u32::<LittleEndian>(*dim as _)?;
         }
         writer.write_all(name.as_bytes())?;
-        writer.write_all(&[0u8])?;
         let data = unsafe {
             tensor
                 .into_bytes()
                 .map_err(|_| std::io::ErrorKind::InvalidData)?
         };
+        log::info!("Writing tensor: {} with size {} bytes", name, data.len());
         writer.write_all(&data)?;
-        Ok(())
+        Ok(data.len())
     }
 }
 

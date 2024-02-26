@@ -10,7 +10,7 @@ impl Converter {
     pub fn convert<P: AsRef<Path>, M: GGMLCompatible>(
         src_path: P,
         dst_quant: Quantization,
-        to_quant: HashSet<String>,
+        to_quant: HashSet<&str>,
     ) -> anyhow::Result<()> {
         let mut reader = std::io::BufReader::new(std::fs::File::open(src_path).unwrap());
         let src = M::load_ggml(&mut reader)?;
@@ -20,16 +20,18 @@ impl Converter {
 
         let quantizer = Quantizer::new(dst_quant);
 
+        let mut total_write = 0;
         for (name, _) in &src.tensors {
             let loaded = src.load_tensor(&name, &mut reader, &Device::CPU)?;
-            let to_write = if to_quant.contains(name) {
+            let to_write = if to_quant.iter().any(|suffix| name.ends_with(suffix)) {
+                log::info!("Quantizing {}", name);
                 quantizer.quantize(loaded)
             } else {
                 loaded
             };
-            M::write_tensor(&name, to_write, &mut writer)?;
+            total_write += M::write_tensor(&name, to_write, &mut writer)?;
         }
-
+        log::info!("Total tensor data written: {} bytes", total_write);
         Ok(())
     }
 }
