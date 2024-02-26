@@ -27,6 +27,10 @@ impl RawCPUBuffer {
         unsafe { std::slice::from_raw_parts_mut(self.0, self.1.size()) }
     }
 
+    pub fn into_bytes(self) -> Vec<u8> {
+        unsafe { Vec::from_raw_parts(self.0, self.1.size(), self.1.size()) }
+    }
+
     pub fn uninitialized(size: usize, alignment: usize) -> Self {
         let layout = std::alloc::Layout::from_size_align(size, alignment).unwrap();
         let data = if size == 0 {
@@ -125,6 +129,10 @@ impl CPUBuffer {
         let mut raw = RawCPUBuffer::uninitialized(bytes.len(), alignment);
         raw.as_bytes_mut().copy_from_slice(bytes);
         Self::new(raw)
+    }
+
+    pub unsafe fn into_bytes(self) -> Vec<u8> {
+        Arc::try_unwrap(self.inner).unwrap().into_bytes()
     }
 
     pub fn deep_clone(&self) -> Result<Self, DeviceError> {

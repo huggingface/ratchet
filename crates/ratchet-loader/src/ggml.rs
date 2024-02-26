@@ -203,7 +203,7 @@ pub trait GGMLCompatible: Sized {
         GGMLLoader::load(reader)
     }
 
-    //Writing is optional
+    /// Writing is optional
     fn write_header<W: std::io::Write>(_: &Self::ModelHeader, _: &mut W) -> std::io::Result<()> {
         unimplemented!("Writing GGML files is unimplemented for this model")
     }
@@ -212,7 +212,35 @@ pub trait GGMLCompatible: Sized {
         model: &GGMLModel<Self>,
         writer: &mut W,
     ) -> std::io::Result<()> {
-        GGMLWriter::write(writer, model)
+        todo!()
+    }
+
+    fn write_tensor<W: std::io::Write>(
+        name: &str,
+        tensor: Tensor,
+        writer: &mut W,
+    ) -> std::io::Result<()> {
+        let mut shape = tensor.shape().clone();
+        let numel = shape.numel();
+        let dtype = tensor.dt().to_u32();
+        let n_dims = shape.len();
+        writer.write_i32::<LittleEndian>(n_dims as i32)?;
+        writer.write_i32::<LittleEndian>(name.len() as i32)?;
+        writer.write_u32::<LittleEndian>(dtype as u32)?;
+
+        shape.reverse();
+        for dim in shape.iter() {
+            writer.write_u32::<LittleEndian>(*dim as _)?;
+        }
+        writer.write_all(name.as_bytes())?;
+        writer.write_all(&[0u8])?;
+        let data = unsafe {
+            tensor
+                .into_bytes()
+                .map_err(|_| std::io::ErrorKind::InvalidData)?
+        };
+        writer.write_all(&data)?;
+        Ok(())
     }
 }
 
@@ -221,12 +249,8 @@ struct GGMLWriter;
 impl GGMLWriter {
     pub fn write<W: std::io::Write, M: GGMLCompatible>(
         writer: &mut W,
-        model: &GGMLModel<M>,
+        model: &M,
     ) -> std::io::Result<()> {
-        M::write_header(&model.header, writer)?;
-        for (_name, _tensor) in &model.tensors {
-            //Self::write_single(writer, tensor)?;
-        }
-        Ok(())
+        todo!()
     }
 }

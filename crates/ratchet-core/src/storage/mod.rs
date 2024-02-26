@@ -59,6 +59,13 @@ impl Storage {
         }
     }
 
+    pub unsafe fn into_bytes(self) -> Vec<u8> {
+        match self {
+            Storage::CPU(c) => unsafe { c.into_bytes() },
+            _ => todo!(),
+        }
+    }
+
     pub fn dump(&self, dt: DType, full: bool) -> String {
         match self {
             Storage::CPU(c) => c.dump(dt, full),
