@@ -76,14 +76,6 @@ impl GGMLFormat {
 
         Ok(())
     }
-
-    fn align32(&self) -> bool {
-        match self {
-            Self::GGML(_) => false,
-            Self::GGJT(_, _) => true,
-            _ => unreachable!(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,7 +100,7 @@ impl TensorHeader {
     }
 
     pub fn data_size(&self) -> usize {
-        self.numel * self.dtype.type_size() / self.dtype.block_size()
+        self.dtype.tensor_size(self.numel)
     }
 
     pub fn read_data<R: BufRead + Seek>(&self, reader: &mut R) -> std::io::Result<Vec<u8>> {

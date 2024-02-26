@@ -141,4 +141,23 @@ impl GgmlDType {
             Self::Q2K | Self::Q3K | Self::Q4K | Self::Q5K | Self::Q6K | Self::Q8K => k_quants::QK_K,
         }
     }
+
+    pub fn tensor_size(&self, numel: usize) -> usize {
+        match self {
+            Self::WQ8 => {
+                let aligner = |x: usize| -> usize {
+                    if x % 256 != 0 {
+                        x + 256 - x % 256
+                    } else {
+                        x
+                    }
+                };
+                let weight_size = numel; // numel / 4 * 4
+                let absmax_size = numel / 4;
+
+                aligner(weight_size) + aligner(absmax_size)
+            }
+            _ => numel * self.type_size() / self.block_size(),
+        }
+    }
 }

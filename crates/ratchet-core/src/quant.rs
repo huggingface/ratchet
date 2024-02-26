@@ -3,7 +3,7 @@ use num_traits::{AsPrimitive, Float};
 
 use std::fmt::Debug;
 
-use crate::{DType, Device, Tensor};
+use crate::{gpu::STORAGE_BUFFER_ALIGN, DType, Device, Tensor};
 
 /// Quantizer
 ///
@@ -34,8 +34,20 @@ impl Quantizer {
         let pack_size = self.format.pack_size();
         let group_size = self.format.group_size();
 
-        let mut quantized_matrix = vec![0u32; numel / pack_size];
-        let mut absmax_matrix = vec![0f32; numel / group_size];
+        let qmatrix_len = numel / pack_size;
+        let amatrix_len = numel / group_size;
+
+        let aligner = |x: usize| -> usize {
+            if x % STORAGE_BUFFER_ALIGN != 0 {
+                println!("Aligning: {}", x);
+                x + STORAGE_BUFFER_ALIGN - x % STORAGE_BUFFER_ALIGN
+            } else {
+                x
+            }
+        };
+
+        let mut quantized_matrix = vec![0u32; aligner(qmatrix_len)];
+        let mut absmax_matrix = vec![0f32; aligner(amatrix_len)];
 
         let sf = 127.0f32;
         let mut block_absmax = f32::NEG_INFINITY;
