@@ -10,6 +10,7 @@ use crate::{
     WhisperEncoder, WhisperTokenizer,
 };
 
+#[derive(Debug)]
 pub struct WhisperGGMLHeader {
     pub format: GGMLFormat,
     pub hparams: HyperParameters,
@@ -176,7 +177,7 @@ impl Whisper {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
         let audio_ctx = self.encoder.forward(&mel)?.resolve()?;
-        let sot = Tensor::from_data(&[WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
+        let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
 
         let logits = self.decoder.forward(&[audio_ctx, sot])?.resolve()?;
         self.decoder.reset();
@@ -208,12 +209,15 @@ impl Whisper {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::path::PathBuf;
+    use std::{
+        collections::{HashMap, HashSet},
+        path::PathBuf,
+    };
 
     use crate::{transcribe, DecodingOptionsBuilder, Whisper};
     use hf_hub::api::sync::Api;
-    use ratchet::{Device, DeviceRequest};
-    use ratchet_loader::GGMLCompatible;
+    use ratchet::{Device, DeviceRequest, Quantization};
+    use ratchet_loader::{Converter, GGMLCompatible};
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -249,5 +253,30 @@ mod tests {
         let transcript = transcribe(&mut whisper, samples, options).unwrap();
         println!("{}", transcript.formatted.unwrap());
         println!("Processing time: {:?}", transcript.processing_time);
+    }
+
+    #[test]
+    pub fn convert_ggml_f32_to_wq8() {
+        log_init();
+        let api = Api::new().unwrap();
+        let model = api.model("ggerganov/whisper.cpp".to_string());
+        let path = model.get("ggml-tiny.bin").unwrap();
+
+        let to_quant = HashSet::from([
+            "attn.query.weight",
+            "attn.key.weight",
+            "attn.value.weight",
+            "attn.out.weight",
+            "cross_attn.query.weight",
+            "cross_attn.key.weight",
+            "cross_attn.value.weight",
+            "cross_attn.out.weight",
+            "mlp.0.weight",
+            "mlp.2.weight",
+            "token_embedding.weight",
+        ]);
+
+        let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);
+        Converter::convert::<_, Whisper>(path, Quantization::SInt8, to_quant, to_pad).unwrap();
     }
 }

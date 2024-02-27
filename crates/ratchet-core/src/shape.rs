@@ -40,6 +40,10 @@ impl Shape {
         self.0.into_iter()
     }
 
+    pub fn reverse(&mut self) {
+        self.0.reverse();
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -173,6 +177,20 @@ impl From<&[usize]> for Shape {
 impl From<RVec<usize>> for Shape {
     fn from(shape: RVec<usize>) -> Self {
         Self(shape)
+    }
+}
+
+impl std::iter::Iterator for Shape {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.pop()
+    }
+}
+
+impl std::iter::DoubleEndedIterator for Shape {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.pop()
     }
 }
 

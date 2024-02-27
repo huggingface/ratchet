@@ -11,6 +11,7 @@ pub use uniform::*;
 pub use workload::*;
 
 pub const MIN_STORAGE_BUFFER_SIZE: usize = 16;
+pub const STORAGE_BUFFER_ALIGN: usize = 256;
 
 /// Usages we use everywhere
 pub trait BufferUsagesExt {

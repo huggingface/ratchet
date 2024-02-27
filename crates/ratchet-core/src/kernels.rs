@@ -211,6 +211,10 @@ lazy_static! {
         m.insert("conv_scalar", include_str!(r"../kernels/conv_scalar.wgsl"));
         m.insert("qgemm_vec4", include_str!(r"../kernels/qgemm_vec4.wgsl"));
         m.insert(
+            "sgemm_bt_scalar",
+            include_str!(r"../kernels/sgemm_bt_scalar.wgsl"),
+        );
+        m.insert(
             "sgemm_scalar",
             include_str!(r"../kernels/sgemm_scalar.wgsl"),
         );
@@ -219,13 +223,29 @@ lazy_static! {
             include_str!(r"../kernels/index_write_scalar.wgsl"),
         );
         m.insert(
-            "index_select_scalar",
-            include_str!(r"../kernels/index_select_scalar.wgsl"),
+            "qgemm_bt_vec4",
+            include_str!(r"../kernels/qgemm_bt_vec4.wgsl"),
+        );
+        m.insert(
+            "wq8_index_select_scalar",
+            include_str!(r"../kernels/wq8_index_select_scalar.wgsl"),
+        );
+        m.insert(
+            "f32_index_select_scalar",
+            include_str!(r"../kernels/f32_index_select_scalar.wgsl"),
+        );
+        m.insert(
+            "sgemm_bt_vec2",
+            include_str!(r"../kernels/sgemm_bt_vec2.wgsl"),
         );
         m.insert("sgemm_vec2", include_str!(r"../kernels/sgemm_vec2.wgsl"));
         m.insert(
             "softmax_vec2",
             include_str!(r"../kernels/softmax_vec2.wgsl"),
+        );
+        m.insert(
+            "sgemm_bt_vec4",
+            include_str!(r"../kernels/sgemm_bt_vec4.wgsl"),
         );
         m.insert("sgemm_vec4", include_str!(r"../kernels/sgemm_vec4.wgsl"));
         m.insert(

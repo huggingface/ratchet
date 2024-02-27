@@ -76,14 +76,6 @@ impl GGMLFormat {
 
         Ok(())
     }
-
-    fn align32(&self) -> bool {
-        match self {
-            Self::GGML(_) => false,
-            Self::GGJT(_, _) => true,
-            _ => unreachable!(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -107,8 +99,8 @@ impl TensorHeader {
         }
     }
 
-    fn data_size(&self) -> usize {
-        self.numel * self.dtype.type_size() / self.dtype.block_size()
+    pub fn data_size(&self) -> usize {
+        self.dtype.tensor_size(self.numel)
     }
 
     pub fn read_data<R: BufRead + Seek>(&self, reader: &mut R) -> std::io::Result<Vec<u8>> {
@@ -135,9 +127,11 @@ impl<M: GGMLCompatible> GGMLModel<M> {
             name: key.to_string(),
         })?;
         let mut data = header.read_data(reader)?;
+        log::info!("Loading tensor: {} with size: {} bytes", key, data.len());
         let shape = header.shape.clone();
         let mut dt: DType = header.dtype.into();
         if dt == DType::F16 {
+            log::info!("Casting {} from F16 to F32", key);
             //TODO: terrible cast whilst wgpu doesn't support F16
             let f16_data = bytemuck::cast_slice::<u8, f16>(&data);
             let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
@@ -196,23 +190,50 @@ impl GGMLLoader {
 ///
 /// Implement this for your Model if you want to load it from a GGML file.
 pub trait GGMLCompatible: Sized {
-    type ModelHeader;
+    type ModelHeader: std::fmt::Debug;
 
     fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError>;
     fn load_ggml<R: BufRead + Seek>(reader: &mut R) -> Result<GGMLModel<Self>, LoadError> {
         GGMLLoader::load(reader)
     }
 
-    //Writing is optional
+    /// Writing is optional
     fn write_header<W: std::io::Write>(_: &Self::ModelHeader, _: &mut W) -> std::io::Result<()> {
         unimplemented!("Writing GGML files is unimplemented for this model")
     }
 
     fn write_ggml<W: std::io::Write>(
-        model: &GGMLModel<Self>,
-        writer: &mut W,
+        _model: &GGMLModel<Self>,
+        _writer: &mut W,
     ) -> std::io::Result<()> {
-        GGMLWriter::write(writer, model)
+        todo!()
+    }
+
+    fn write_tensor<W: std::io::Write>(
+        name: &str,
+        tensor: Tensor,
+        writer: &mut W,
+    ) -> std::io::Result<usize> {
+        let mut shape = tensor.shape().clone();
+        let dtype = tensor.dt().to_u32();
+        let n_dims = shape.rank();
+        writer.write_i32::<LittleEndian>(n_dims as i32)?;
+        writer.write_i32::<LittleEndian>(name.len() as i32)?;
+        writer.write_u32::<LittleEndian>(dtype)?;
+
+        shape.reverse();
+        for dim in shape.iter() {
+            writer.write_u32::<LittleEndian>(*dim as _)?;
+        }
+        writer.write_all(name.as_bytes())?;
+        let data = unsafe {
+            tensor
+                .into_bytes()
+                .map_err(|_| std::io::ErrorKind::InvalidData)?
+        };
+        log::info!("Writing tensor: {} with size {} bytes", name, data.len());
+        writer.write_all(&data)?;
+        Ok(data.len())
     }
 }
 
@@ -220,13 +241,9 @@ struct GGMLWriter;
 
 impl GGMLWriter {
     pub fn write<W: std::io::Write, M: GGMLCompatible>(
-        writer: &mut W,
-        model: &GGMLModel<M>,
+        _writer: &mut W,
+        _model: &M,
     ) -> std::io::Result<()> {
-        M::write_header(&model.header, writer)?;
-        for (_name, _tensor) in &model.tensors {
-            //Self::write_single(writer, tensor)?;
-        }
-        Ok(())
+        todo!()
     }
 }

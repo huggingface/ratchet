@@ -112,22 +112,23 @@ impl MetaOperation for Reindex {
         let (input_shape, input_strides) = padder(self.input.shape().clone());
         let (dst_shape, dst_strides) = padder(dst.shape().clone());
 
-        let src_stride = UVec4::try_from(&input_strides).unwrap();
-        let dst_stride = UVec4::try_from(&dst_strides).unwrap();
+        let src_stride = UVec4::from(&input_strides);
+        let dst_stride = UVec4::from(&dst_strides);
         let src_numel = input_shape.numel() as u32;
         let dst_numel = dst_shape.numel() as u32;
 
-        let src_shape = UVec4::try_from(&input_shape).unwrap();
-        let dst_shape = UVec4::try_from(&dst_shape).unwrap();
+        let src_shape = UVec4::from(&input_shape);
+        let dst_shape = UVec4::from(&dst_shape);
 
         //TODO: move this to the inner ops
         //TODO: this is incredibly bad
         let permute = match &self.op {
             ReindexOp::Permute(p) => {
                 let dims = p.promote();
-                dims.iter().map(|&d| d as u32).collect::<Vec<_>>()
+                let vdims = dims.iter().map(|&d| d as u32).collect::<Vec<_>>();
+                vdims.try_into().unwrap()
             }
-            _ => vec![0, 0, 0, 0],
+            _ => [0, 0, 0, 0],
         };
         let src_offsets = match &self.op {
             ReindexOp::Slice(s) => {
@@ -141,13 +142,8 @@ impl MetaOperation for Reindex {
             }
             _ => [0, 0, 0, 0],
         };
-        let permute = glam::UVec4::new(permute[0], permute[1], permute[2], permute[3]);
-        let src_offsets = glam::UVec4::new(
-            src_offsets[0],
-            src_offsets[1],
-            src_offsets[2],
-            src_offsets[3],
-        );
+        let permute = glam::UVec4::from(permute);
+        let src_offsets = glam::UVec4::from(src_offsets);
         let meta = ReindexMeta {
             src_shape,
             dst_shape,
