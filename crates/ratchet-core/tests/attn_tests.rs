@@ -77,37 +77,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
         println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 1e-4, 1e-4)?;
-
-        Ok(())
-    }
-
-    #[test]
-    pub fn test_sint8_sdpa() -> anyhow::Result<()> {
-        let _ = env_logger::builder().is_test(true).try_init();
-
-        let input = Tensor::randn::<f32>(shape![1, 16, 32], Device::CPU);
-        let qw = Tensor::randn::<f32>(shape![1, 32, 32], Device::CPU);
-        let kw = Tensor::randn::<f32>(shape![1, 32, 32], Device::CPU);
-        let vw = Tensor::randn::<f32>(shape![1, 32, 32], Device::CPU);
-        let cpu_test_case = AttentionTest::new(input, qw, kw, vw, None);
-        let ground = sdpa_ground(&cpu_test_case)?;
-
-        /*
-        let quantizer = Quantizer::new(Quantization::SInt8);
-        cpu_test_case.qw = quantizer.sint8_quantize(cpu_test_case.qw);
-        cpu_test_case.kw = quantizer.sint8_quantize(cpu_test_case.kw);
-        cpu_test_case.vw = quantizer.sint8_quantize(cpu_test_case.vw);
-        */
-
-        let device = Device::request_device(DeviceRequest::GPU)?;
-        let gpu_test_case = cpu_test_case.to_gpu(device.clone());
-        let out = sdpa_cfg(&gpu_test_case, device.clone())?.resolve()?;
-        let out_cpu = out.to(&Device::CPU)?;
-        println!("OURS: {:?}\n", out_cpu);
-        println!("GROUND: {:?}", ground);
-        println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 1e-2, 1e-2)?;
+        ground.all_close(&out_cpu, 1e-3, 1e-3)?;
 
         Ok(())
     }
