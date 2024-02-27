@@ -239,7 +239,7 @@ mod tests {
         let model_path = model.get("ggml-tiny.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_path = dataset.get("gb0.wav").unwrap();
+        let audio_path = dataset.get("mm0.wav").unwrap();
         let samples = load_sample(audio_path);
 
         let options = DecodingOptionsBuilder::new().build();
