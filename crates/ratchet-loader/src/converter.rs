@@ -25,7 +25,7 @@ impl Converter {
         let quantizer = Quantizer::new(dst_quant);
 
         let mut total_write = 0;
-        for (name, _) in &src.tensors {
+        for name in src.tensors.keys() {
             let loaded = src.load_tensor(name, &mut reader, &Device::CPU)?;
 
             let maybe_padded = if let Some(pads) = to_pad.get(name.as_str()) {

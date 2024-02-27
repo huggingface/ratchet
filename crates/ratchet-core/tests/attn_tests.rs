@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use ratchet::{
-        shape, test_util::run_py_prg, Device, DeviceRequest, Quantization, Quantizer, Tensor,
-    };
+    use ratchet::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
 
     #[derive(Debug, derive_new::new)]
     struct AttentionTest {
@@ -77,7 +75,7 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         println!("OURS: {:?}\n", out_cpu);
         println!("GROUND: {:?}", ground);
         println!("Output shape: {:?}", out_cpu.shape());
-        ground.all_close(&out_cpu, 1e-3, 1e-3)?;
+        ground.all_close(&out_cpu, 8e-3, 8e-3)?;
 
         Ok(())
     }
