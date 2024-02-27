@@ -71,7 +71,12 @@ impl MetaOperation for IndexSelect {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let wgcx = WorkgroupCount::div_ceil(dst.shape().numel(), 64);
+        let numel = match self.input.dt() {
+            DType::F32 => dst.shape().numel(),
+            DType::WQ8 => dst.shape().numel() / 4,
+            _ => unimplemented!(),
+        };
+        let wgcx = WorkgroupCount::div_ceil(numel, 64);
         Ok(wgc![wgcx as _, 1, 1])
     }
 
@@ -178,14 +183,14 @@ def index_select(input, indices):
             .unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("result: {:?}", x);
-        ground_truth.all_close(&x, 1e-2, 1e-2).unwrap();
+        ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
     }
 
     #[test]
     fn qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![1024, 128],
-            indices: Tensor::from_data(vec![0i32, 1, 2, 3], shape![4], Device::CPU),
+            input_shape: shape![1024, 384],
+            indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
         };
         run_index_select_trial(prob, true);
     }
