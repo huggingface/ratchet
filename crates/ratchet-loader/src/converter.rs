@@ -29,7 +29,6 @@ impl Converter {
             let loaded = src.load_tensor(&name, &mut reader, &Device::CPU)?;
 
             let maybe_padded = if let Some(pads) = to_pad.get(name.as_str()) {
-                println!("Padding {}", name);
                 Tensor::from(loaded.into_ndarray().pad(pads.clone(), 0.))
             } else {
                 loaded

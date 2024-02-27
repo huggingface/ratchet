@@ -39,8 +39,8 @@ fn main(
     let cRow = global_id.x;
     let cCol = global_id.y;  
     
-    let absmax_stride = metadata.N / 16u;
-    let b_stride = metadata.N; //Solve 4 per iter a.k.a metadata.ND4 * 4u
+    let b_stride = metadata.K; //Solve 4 per iter 
+    let abs_stride = metadata.K / 16u;
 
     if (cRow < metadata.M && cCol < metadata.ND4) {
         var tmp = vec4<f32>(0.0);
@@ -48,17 +48,17 @@ fn main(
           let a = A[a_offset + cRow * metadata.KD4 + k];
 
           let bidx = b_offset + (cCol * b_stride) + k;
-          let absidx = (cCol * absmax_stride * 4u) + (k / 4u);
+          let absidx = (cCol * abs_stride * 4u) + (k / 4u);
 
           let b0 = unpack4x8snorm(B[bidx]) * absmax[absidx];
-          let b1 = unpack4x8snorm(B[bidx + (1u * metadata.ND4)]) * absmax[absidx + absmax_stride];
-          let b2 = unpack4x8snorm(B[bidx + (2u * metadata.ND4)]) * absmax[absidx + (2u * absmax_stride)];
-          let b3 = unpack4x8snorm(B[bidx + (3u * metadata.ND4)]) * absmax[absidx + (3u * absmax_stride)];
-
-          tmp = fma(vec4<f32>(a.x), b0, tmp);
-          tmp = fma(vec4<f32>(a.y), b1, tmp);
-          tmp = fma(vec4<f32>(a.z), b2, tmp);
-          tmp = fma(vec4<f32>(a.w), b3, tmp);
+          let b1 = unpack4x8snorm(B[bidx + metadata.KD4]) * absmax[absidx + abs_stride];
+          let b2 = unpack4x8snorm(B[bidx + (2u * metadata.KD4)]) * absmax[absidx + (2u * abs_stride)];
+          let b3 = unpack4x8snorm(B[bidx + (3u * metadata.KD4)]) * absmax[absidx + (3u * abs_stride)];
+        
+          tmp = fma(vec4<f32>(a.x), vec4<f32>(b0.x, b1.x, b2.x, b3.x), tmp);
+          tmp = fma(vec4<f32>(a.y), vec4<f32>(b0.y, b1.y, b2.y, b3.y), tmp);
+          tmp = fma(vec4<f32>(a.z), vec4<f32>(b0.z, b1.z, b2.z, b3.z), tmp);
+          tmp = fma(vec4<f32>(a.w), vec4<f32>(b0.w, b1.w, b2.w, b3.w), tmp);
         }
         C[c_offset + (cRow * metadata.ND4 + cCol)] = tmp;
     }

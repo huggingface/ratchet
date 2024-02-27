@@ -42,7 +42,7 @@ impl ComputePipelinePool {
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
             let kernel_key = desc.build_kernel_key();
-            //println!("Kernel key: {}", kernel_key);
+            log::info!("Kernel: {}", kernel_key);
             let shader = KERNELS
                 .get(kernel_key.as_str())
                 .unwrap_or_else(|| panic!("Kernel {} not found", kernel_key));

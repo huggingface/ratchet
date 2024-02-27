@@ -28,15 +28,20 @@ fn main(
         @builtin(workgroup_id) group_id: vec3<u32>,
         @builtin(num_workgroups) num_groups: vec3<u32>
 ) {
-    let tid = (group_id.x * 64u + local_index) / 4u;
-    if (tid >= metadata.dst_numel) {
+    let tid = (group_id.x * 64u + local_index);
+    let left_numel = metadata.left_numel / 4u;
+    let right_numel = metadata.right_numel/ 4u;
+    let src_dim_numel = metadata.src_dim_numel/ 4u;
+
+    if (tid >= metadata.dst_numel / 4u) {
         return;
     }
-    let id_i = (tid / metadata.right_numel) % metadata.ids_numel;
-    let input_i = min(u32(I[id_i]), metadata.src_dim_numel - 1u);
-    let right_rank_i = tid % metadata.right_numel;
-    let left_rank_i = tid / (metadata.right_numel * metadata.ids_numel);
 
-    let src_i = left_rank_i * metadata.src_dim_numel * metadata.right_numel + input_i * metadata.right_numel + right_rank_i;
+    let id_i = (tid / right_numel) % metadata.ids_numel;
+    let input_i = min(u32(I[id_i]), (src_dim_numel * 4u) - 1u);
+    let right_rank_i = tid % right_numel;
+    let left_rank_i = tid / (right_numel * metadata.ids_numel);
+
+    let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
     Y[tid] = unpack4x8snorm(X[src_i]) * A[src_i / 4u];
 }

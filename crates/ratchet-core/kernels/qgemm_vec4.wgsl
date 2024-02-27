@@ -49,6 +49,7 @@ fn main(
           
           let bidx = b_offset + (k * b_stride) + cCol;
           let absidx = (k * 4u) * absmax_stride + (cCol / 4u);
+
           let b0 = unpack4x8snorm(B[bidx]) * absmax[absidx];
           let b1 = unpack4x8snorm(B[bidx + (1u * metadata.ND4)]) * absmax[absidx + absmax_stride];
           let b2 = unpack4x8snorm(B[bidx + (2u * metadata.ND4)]) * absmax[absidx + (2u * absmax_stride)];

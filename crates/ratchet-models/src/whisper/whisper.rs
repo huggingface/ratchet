@@ -277,9 +277,8 @@ mod tests {
             "token_embedding.weight",
         ]);
 
-        //let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);
-        let to_pad = HashMap::new();
-
+        let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);
+        //let to_pad = HashMap::new();
         Converter::convert::<_, Whisper>(path, Quantization::SInt8, to_quant, to_pad).unwrap();
     }
 }
