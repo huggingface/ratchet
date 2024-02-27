@@ -93,7 +93,7 @@ impl MetaOperation for IndexWrite {
         }
 
         Ok(IndexWriteMeta {
-            dst_strides: glam::UVec4::try_from(&dst_strides).unwrap(),
+            dst_strides: glam::UVec4::from(&dst_strides),
             src_numel: src_shape.numel() as u32,
             write_start: start.into(),
         })
