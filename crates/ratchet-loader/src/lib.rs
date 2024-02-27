@@ -150,7 +150,7 @@ impl GgmlDType {
                 //Returns the aligned number of BYTES
                 let aligner = |numel: usize, size_t: usize| -> usize {
                     let nbytes = numel * size_t;
-                    
+
                     if nbytes % STORAGE_BUFFER_ALIGN != 0 {
                         nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
                     } else {
