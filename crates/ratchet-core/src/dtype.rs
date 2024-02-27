@@ -43,22 +43,28 @@ impl DType {
         }
     }
 
-    pub fn segments(&self, shape: &Shape) -> RVec<BufferSegment> {
+    pub fn segments(&self, numel: usize, buffer_bytes: usize) -> RVec<BufferSegment> {
         match self {
             DType::WQ8 => {
-                let numel = shape.numel();
-                let weights_size = numel; //numel / 4 * 4
-                assert!(weights_size % STORAGE_BUFFER_ALIGN == 0);
-                let weights = BufferSegment::new(0, Some(weights_size as u64), true);
+                let aligner = |numel: usize, size_t: usize| -> usize {
+                    let nbytes = numel * size_t;
+                    let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+                        nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
+                    } else {
+                        nbytes
+                    };
+                    aligned
+                };
+                let weight_size = aligner(numel / 4, std::mem::size_of::<u32>());
+                let absmax_size = aligner(numel / 16, std::mem::size_of::<f32>());
+                assert_eq!(weight_size + absmax_size, buffer_bytes);
 
-                let absmax_size = numel / 4; //numel / 16 * 4
-                assert!(absmax_size % STORAGE_BUFFER_ALIGN == 0);
-                let absmax =
-                    BufferSegment::new(weights_size as u64, Some(absmax_size as u64), true);
+                let weights = BufferSegment::new(0, Some(weight_size as u64), true);
+                let absmax = BufferSegment::new(weight_size as u64, Some(absmax_size as u64), true);
                 rvec![weights, absmax]
             }
             _ => {
-                let mut total_bytes = shape.numel() * self.size_of();
+                let mut total_bytes = numel * self.size_of();
                 total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
 
                 rvec![BufferSegment::new(0, Some(total_bytes as u64), false)]

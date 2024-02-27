@@ -167,6 +167,12 @@ impl GGMLLoader {
         let n_dims: usize = reader.read_i32::<LittleEndian>()?.try_into()?;
         let name_len = reader.read_i32::<LittleEndian>()?;
         let dtype = reader.read_u32::<LittleEndian>()?;
+        log::info!(
+            "Ndims, name_len, dtype: {}, {}, {}",
+            n_dims,
+            name_len,
+            dtype
+        );
 
         let mut dims = vec![0u32; n_dims];
         reader.read_u32_into::<LittleEndian>(&mut dims)?;

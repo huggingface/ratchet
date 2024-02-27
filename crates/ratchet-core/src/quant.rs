@@ -37,17 +37,19 @@ impl Quantizer {
         let qmatrix_len = numel / pack_size;
         let amatrix_len = numel / group_size;
 
-        let aligner = |x: usize| -> usize {
-            if x % STORAGE_BUFFER_ALIGN != 0 {
-                println!("Aligning: {}", x);
-                x + STORAGE_BUFFER_ALIGN - x % STORAGE_BUFFER_ALIGN
+        //returns the aligned number of ELEMENTS
+        let aligner = |numel: usize, size_t: usize| -> usize {
+            let nbytes = numel * size_t;
+            let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+                nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
             } else {
-                x
-            }
+                nbytes
+            };
+            aligned / size_t
         };
 
-        let mut quantized_matrix = vec![0u32; aligner(qmatrix_len)];
-        let mut absmax_matrix = vec![0f32; aligner(amatrix_len)];
+        let mut quantized_matrix = vec![0u32; aligner(qmatrix_len, std::mem::size_of::<u32>())];
+        let mut absmax_matrix = vec![0f32; aligner(amatrix_len, std::mem::size_of::<f32>())];
 
         let sf = 127.0f32;
         let mut block_absmax = f32::NEG_INFINITY;

@@ -575,7 +575,9 @@ impl Tensor {
             .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
-        let segments = self.dt().segments(self.shape());
+        let segments = self
+            .dt()
+            .segments(self.shape().numel(), gpu_buf.inner().size() as usize);
         segments.iter().fold(rvec![], |mut entries, segment| {
             let (offset, size) = (segment.offset, segment.size);
             entries.push(BindGroupEntry {
