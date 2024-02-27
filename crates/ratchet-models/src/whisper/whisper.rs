@@ -209,7 +209,10 @@ impl Whisper {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::{collections::HashSet, path::PathBuf};
+    use std::{
+        collections::{HashMap, HashSet},
+        path::PathBuf,
+    };
 
     use crate::{transcribe, DecodingOptionsBuilder, Whisper};
     use hf_hub::api::sync::Api;
@@ -233,7 +236,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("ggml-tiny.bin").unwrap();
+        let model_path = model.get("q.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("gb0.wav").unwrap();
@@ -274,6 +277,9 @@ mod tests {
             "token_embedding.weight",
         ]);
 
-        Converter::convert::<_, Whisper>(path, Quantization::SInt8, to_quant).unwrap();
+        //let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);
+        let to_pad = HashMap::new();
+
+        Converter::convert::<_, Whisper>(path, Quantization::SInt8, to_quant, to_pad).unwrap();
     }
 }

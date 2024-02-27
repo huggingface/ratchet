@@ -5,6 +5,8 @@ mod k_quants;
 pub use converter::*;
 pub use ggml::*;
 
+pub const STORAGE_BUFFER_ALIGN: usize = 256;
+
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
     #[error("Invalid GGML Format: {0:#x}")]
@@ -145,17 +147,21 @@ impl GgmlDType {
     pub fn tensor_size(&self, numel: usize) -> usize {
         match self {
             Self::WQ8 => {
-                let aligner = |x: usize| -> usize {
-                    if x % 256 != 0 {
-                        x + 256 - x % 256
+                //Returns the aligned number of BYTES
+                let aligner = |numel: usize, size_t: usize| -> usize {
+                    let nbytes = numel * size_t;
+                    let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+                        nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
                     } else {
-                        x
-                    }
+                        nbytes
+                    };
+                    aligned
                 };
-                let weight_size = numel; // numel / 4 * 4
-                let absmax_size = numel / 4;
+                let weight_size = numel / 4;
+                let absmax_size = numel / 16;
 
-                aligner(weight_size) + aligner(absmax_size)
+                aligner(weight_size, std::mem::size_of::<u32>())
+                    + aligner(absmax_size, std::mem::size_of::<f32>())
             }
             _ => numel * self.type_size() / self.block_size(),
         }
