@@ -181,6 +181,7 @@ impl Tensor {
         &self.view.strides
     }
 
+    //WARNING: very wrong for quantized types!
     pub fn num_bytes(&self) -> usize {
         self.view.shape.numel() * self.view.dt.size_of()
     }
@@ -343,10 +344,11 @@ impl Tensor {
         ))
     }
 
-    pub fn matmul(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+    //TODO: horrific interface
+    pub fn matmul(&self, other: &Tensor, trans_b: bool) -> anyhow::Result<Tensor> {
         Matmul::check_invariants(&[self, other])?;
 
-        let matmul = Matmul::new(self.clone(), other.clone());
+        let matmul = Matmul::new(self.clone(), other.clone(), trans_b);
         let new_view = matmul.infer_output(&[self, other])?;
         Ok(Tensor::lazy(
             LazyOp::Matmul(matmul),
@@ -403,6 +405,7 @@ impl Tensor {
     }
 
     pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
+        Permute::check_invariants(&[self])?;
         let permute = Permute::new(dims.to_vec());
         let out_view = permute.infer_output(&[self])?;
 
@@ -515,6 +518,19 @@ impl Tensor {
         Ok(Tensor::new(LazyOp::Const, meta, Some(storage), device))
     }
 
+    /// # Safety
+    ///
+    /// If the tensor has more than 1 reference, you die.
+    /// If the tensor has no storage, you die.
+    pub unsafe fn into_bytes(self) -> anyhow::Result<Vec<u8>> {
+        let inner = Arc::try_unwrap(self.inner).unwrap();
+        let storage = Arc::try_unwrap(inner.storage)
+            .unwrap()
+            .into_inner()
+            .unwrap();
+        Ok(storage.into_bytes())
+    }
+
     pub(crate) unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
         data: U,
         shape: Shape,
@@ -559,7 +575,9 @@ impl Tensor {
             .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
-        let segments = self.dt().segments(gpu_buf.inner().size() as usize);
+        let segments = self
+            .dt()
+            .segments(self.shape().numel(), gpu_buf.inner().size() as usize);
         segments.iter().fold(rvec![], |mut entries, segment| {
             let (offset, size) = (segment.offset, segment.size);
             entries.push(BindGroupEntry {
@@ -679,10 +697,9 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        //let exec_order_ids = execution_order.iter().map(|t| t.id()).collect::<Vec<_>>();
-        //println!("Execution order: {:?}", exec_order_ids);
-        //let last = execution_order.last().unwrap();
-        //crate::plot::render_to_file(last, "allocations.svg").unwrap();
+        let _last = execution_order.last().unwrap();
+        #[cfg(feature = "plotting")]
+        crate::plot::render_to_file(last, "allocations.svg").unwrap();
 
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();

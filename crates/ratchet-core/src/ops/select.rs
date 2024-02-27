@@ -39,7 +39,7 @@ impl Operation for IndexSelect {
         let mut output_shape = input_shape.clone();
         output_shape[self.dim] = indices_shape[0];
         let strides = Strides::from(&output_shape);
-        Ok(StorageView::new(output_shape, input.dt(), strides))
+        Ok(StorageView::new(output_shape, DType::F32, strides))
     }
 
     fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
@@ -59,7 +59,11 @@ impl MetaOperation for IndexSelect {
     }
 
     fn kernel_name(&self) -> &'static str {
-        self.name()
+        match self.input.dt() {
+            DType::F32 => "f32_index_select",
+            DType::WQ8 => "wq8_index_select",
+            _ => unimplemented!(),
+        }
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -67,7 +71,12 @@ impl MetaOperation for IndexSelect {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let wgcx = WorkgroupCount::div_ceil(dst.shape().numel(), 64);
+        let numel = match self.input.dt() {
+            DType::F32 => dst.shape().numel(),
+            DType::WQ8 => dst.shape().numel() / 4,
+            _ => unimplemented!(),
+        };
+        let wgcx = WorkgroupCount::div_ceil(numel, 64);
         Ok(wgc![wgcx as _, 1, 1])
     }
 
@@ -75,7 +84,11 @@ impl MetaOperation for IndexSelect {
         &self,
         _: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        Ok(BindGroupLayoutDescriptor::binary())
+        match self.input.dt() {
+            DType::F32 => Ok(BindGroupLayoutDescriptor::binary()),
+            DType::WQ8 => Ok(BindGroupLayoutDescriptor::ternary()),
+            _ => unimplemented!(),
+        }
     }
 
     fn metadata(
@@ -107,7 +120,7 @@ mod tests {
     use test_strategy::proptest;
 
     use crate::test_util::run_py_prg;
-    use crate::{rvec, shape, Device, DeviceRequest, Shape, Tensor};
+    use crate::{rvec, shape, Device, DeviceRequest, Quantization, Quantizer, Shape, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -144,17 +157,21 @@ def index_select(input, indices):
         run_py_prg(prg.to_string(), &[input, indices], &[])
     }
 
-    fn run_index_select_trial(problem: IndexSelectProblem) {
+    fn run_index_select_trial(problem: IndexSelectProblem, quantize: bool) {
         let device = GPU_DEVICE.with(|d| d.clone());
         let IndexSelectProblem {
             input_shape,
             indices,
         } = problem;
-        let input = Tensor::randn::<f32>(input_shape, Device::CPU);
+        let mut input = Tensor::randn::<f32>(input_shape, Device::CPU);
 
         let dim = 0;
         let ground_truth = ground_truth(&input, &indices, dim).unwrap();
         println!("ground_truth: {:?}", ground_truth);
+        if quantize {
+            let quantizer = Quantizer::new(Quantization::SInt8);
+            input = quantizer.quantize(input);
+        }
 
         let input = input.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
@@ -166,7 +183,16 @@ def index_select(input, indices):
             .unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("result: {:?}", x);
-        ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();
+        ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
+    }
+
+    #[test]
+    fn qindex_select() {
+        let prob = IndexSelectProblem {
+            input_shape: shape![1024, 384],
+            indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
+        };
+        run_index_select_trial(prob, true);
     }
 
     #[derive(Debug, Clone)]
@@ -177,6 +203,6 @@ def index_select(input, indices):
 
     #[proptest(cases = 16)]
     fn test_index_select(prob: IndexSelectProblem) {
-        run_index_select_trial(prob);
+        run_index_select_trial(prob, false);
     }
 }

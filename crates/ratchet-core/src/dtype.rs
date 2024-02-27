@@ -1,9 +1,12 @@
-use std::num::NonZeroU64;
+use std::{cmp::max, num::NonZeroU64};
 
 use half::{bf16, f16};
 use wgpu::{BufferAddress, BufferSize};
 
-use crate::{gpu::MIN_STORAGE_BUFFER_SIZE, rvec, RVec};
+use crate::{
+    gpu::{MIN_STORAGE_BUFFER_SIZE, STORAGE_BUFFER_ALIGN},
+    rvec, RVec,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -18,6 +21,15 @@ pub enum DType {
 }
 
 impl DType {
+    pub fn to_u32(self) -> u32 {
+        match self {
+            DType::F32 => 0,
+            DType::F16 => 1,
+            DType::WQ8 => 64,
+            _ => unimplemented!(),
+        }
+    }
+
     /// Returns the size of the type in bytes.
     pub fn size_of(self) -> usize {
         match self {
@@ -27,33 +39,34 @@ impl DType {
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
-            DType::WQ8 => 4, //Only works because they're both 4 bytes
+            DType::WQ8 => 4,
         }
     }
 
-    //TODO: alignof?
-
-    //TODO: use a different method, total_bytes won't work with padding
-    pub fn segments(&self, total_bytes: usize) -> RVec<BufferSegment> {
-        let total_bytes = if total_bytes < MIN_STORAGE_BUFFER_SIZE {
-            MIN_STORAGE_BUFFER_SIZE
-        } else {
-            total_bytes
-        };
-
+    pub fn segments(&self, numel: usize, buffer_bytes: usize) -> RVec<BufferSegment> {
         match self {
             DType::WQ8 => {
-                let weights_size = total_bytes / 5 * 4;
-                assert!(weights_size % 256 == 0); //storage buffer alignment
-                let weights = BufferSegment::new(0, Some(weights_size as u64), true);
+                let aligner = |numel: usize, size_t: usize| -> usize {
+                    let nbytes = numel * size_t;
 
-                let absmax_size = total_bytes - weights_size;
-                assert!(absmax_size % 256 == 0); //storage buffer alignment
-                let absmax =
-                    BufferSegment::new(weights_size as u64, Some(absmax_size as u64), true);
+                    if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+                        nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
+                    } else {
+                        nbytes
+                    }
+                };
+                let weight_size = aligner(numel / 4, std::mem::size_of::<u32>());
+                let absmax_size = aligner(numel / 16, std::mem::size_of::<f32>());
+                assert_eq!(weight_size + absmax_size, buffer_bytes);
+
+                let weights = BufferSegment::new(0, Some(weight_size as u64), true);
+                let absmax = BufferSegment::new(weight_size as u64, Some(absmax_size as u64), true);
                 rvec![weights, absmax]
             }
             _ => {
+                let mut total_bytes = numel * self.size_of();
+                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
+
                 rvec![BufferSegment::new(0, Some(total_bytes as u64), false)]
             }
         }

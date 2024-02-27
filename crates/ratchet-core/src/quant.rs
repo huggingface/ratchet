@@ -3,7 +3,7 @@ use num_traits::{AsPrimitive, Float};
 
 use std::fmt::Debug;
 
-use crate::{DType, Device, Tensor};
+use crate::{gpu::STORAGE_BUFFER_ALIGN, DType, Device, Tensor};
 
 /// Quantizer
 ///
@@ -14,6 +14,14 @@ pub struct Quantizer {
 }
 
 impl Quantizer {
+    pub fn quantize(&self, tensor: Tensor) -> Tensor {
+        match self.format {
+            Quantization::None => tensor,
+            Quantization::SInt8 => self.sint8_quantize(tensor),
+            Quantization::SInt4 => todo!(),
+        }
+    }
+
     /// Quantizes a float 32 tensor into a packed uint32 tensor.
     /// This is the rust equivalent of: https://www.w3.org/TR/WGSL/#pack4x8snorm-builtin
     /// This allows us to call `unpack4x8snorm` in the shader.
@@ -23,12 +31,25 @@ impl Quantizer {
         assert!(numel % 4 == 0 && numel % 16 == 0);
         assert!(tensor.dt() == DType::F32); //TODO: f16, bf16
                                             //TODO: check if tensor is contiguous
-
         let pack_size = self.format.pack_size();
         let group_size = self.format.group_size();
 
-        let mut quantized_matrix = vec![0u32; numel / pack_size];
-        let mut absmax_matrix = vec![0f32; numel / group_size];
+        let qmatrix_len = numel / pack_size;
+        let amatrix_len = numel / group_size;
+
+        //returns the aligned number of ELEMENTS
+        let aligner = |numel: usize, size_t: usize| -> usize {
+            let nbytes = numel * size_t;
+            let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+                nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
+            } else {
+                nbytes
+            };
+            aligned / size_t
+        };
+
+        let mut quantized_matrix = vec![0u32; aligner(qmatrix_len, std::mem::size_of::<u32>())];
+        let mut absmax_matrix = vec![0f32; aligner(amatrix_len, std::mem::size_of::<f32>())];
 
         let sf = 127.0f32;
         let mut block_absmax = f32::NEG_INFINITY;
@@ -59,12 +80,14 @@ impl Quantizer {
         }
     }
 
+    //TODO: this doesn't work
     pub fn sint8_dequantize(&self, quantized: Tensor) -> Tensor {
         assert!(quantized.dt() == DType::WQ8);
         let numel = quantized.shape().numel();
         let packed_numel = numel / self.format.pack_size() + numel / self.format.group_size();
         let pack_size = self.format.pack_size();
         let group_size = self.format.group_size();
+        //Line below is invalid
         let quantized_matrix = quantized.to_vec::<u32>().unwrap();
         let mut dequantized = vec![0.0f32; numel];
 
