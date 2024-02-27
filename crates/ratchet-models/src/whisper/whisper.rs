@@ -236,7 +236,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("q.bin").unwrap();
+        let model_path = model.get("ggml-tiny.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("gb0.wav").unwrap();
@@ -248,7 +248,6 @@ mod tests {
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
-        println!("About to load from disk");
         let mut whisper = Whisper::load(&gg_disk, &mut reader, &device).unwrap();
 
         let transcript = transcribe(&mut whisper, samples, options).unwrap();

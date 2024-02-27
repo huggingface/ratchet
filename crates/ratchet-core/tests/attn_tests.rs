@@ -90,16 +90,15 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
         let qw = Tensor::randn::<f32>(shape![1, 32, 32], Device::CPU);
         let kw = Tensor::randn::<f32>(shape![1, 32, 32], Device::CPU);
         let vw = Tensor::randn::<f32>(shape![1, 32, 32], Device::CPU);
-        let mut cpu_test_case = AttentionTest::new(input, qw, kw, vw, None);
+        let cpu_test_case = AttentionTest::new(input, qw, kw, vw, None);
         let ground = sdpa_ground(&cpu_test_case)?;
 
+        /*
         let quantizer = Quantizer::new(Quantization::SInt8);
         cpu_test_case.qw = quantizer.sint8_quantize(cpu_test_case.qw);
         cpu_test_case.kw = quantizer.sint8_quantize(cpu_test_case.kw);
         cpu_test_case.vw = quantizer.sint8_quantize(cpu_test_case.vw);
-        println!("QW: {:?}", cpu_test_case.qw.shape());
-        println!("KW: {:?}", cpu_test_case.kw.shape());
-        println!("VW: {:?}", cpu_test_case.vw.shape());
+        */
 
         let device = Device::request_device(DeviceRequest::GPU)?;
         let gpu_test_case = cpu_test_case.to_gpu(device.clone());
