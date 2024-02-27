@@ -5,7 +5,7 @@ use wgpu::{BufferAddress, BufferSize};
 
 use crate::{
     gpu::{MIN_STORAGE_BUFFER_SIZE, STORAGE_BUFFER_ALIGN},
-    rvec, RVec, Shape,
+    rvec, RVec,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
@@ -48,12 +48,12 @@ impl DType {
             DType::WQ8 => {
                 let aligner = |numel: usize, size_t: usize| -> usize {
                     let nbytes = numel * size_t;
-                    let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+                    
+                    if nbytes % STORAGE_BUFFER_ALIGN != 0 {
                         nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
                     } else {
                         nbytes
-                    };
-                    aligned
+                    }
                 };
                 let weight_size = aligner(numel / 4, std::mem::size_of::<u32>());
                 let absmax_size = aligner(numel / 16, std::mem::size_of::<f32>());

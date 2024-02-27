@@ -26,7 +26,7 @@ impl Converter {
 
         let mut total_write = 0;
         for (name, _) in &src.tensors {
-            let loaded = src.load_tensor(&name, &mut reader, &Device::CPU)?;
+            let loaded = src.load_tensor(name, &mut reader, &Device::CPU)?;
 
             let maybe_padded = if let Some(pads) = to_pad.get(name.as_str()) {
                 Tensor::from(loaded.into_ndarray().pad(pads.clone(), 0.))
@@ -40,7 +40,7 @@ impl Converter {
             } else {
                 maybe_padded
             };
-            total_write += M::write_tensor(&name, to_write, &mut writer)?;
+            total_write += M::write_tensor(name, to_write, &mut writer)?;
         }
         log::info!("Total tensor data written: {} bytes", total_write);
         Ok(())

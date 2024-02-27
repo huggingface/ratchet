@@ -697,7 +697,7 @@ impl Tensor {
                 compiled_ops.push(compiled_op);
             }
         }
-        let last = execution_order.last().unwrap();
+        let _last = execution_order.last().unwrap();
         #[cfg(feature = "plotting")]
         crate::plot::render_to_file(last, "allocations.svg").unwrap();
 

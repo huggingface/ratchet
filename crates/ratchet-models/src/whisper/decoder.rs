@@ -252,10 +252,7 @@ def ground(options):
         let all_equal = all_logits
             .iter()
             .zip(ground_logits.iter())
-            .all(|(our, their)| match their.all_close(our, 1e-4, 1e-4) {
-                Ok(_) => true,
-                Err(_) => false,
-            });
+            .all(|(our, their)| their.all_close(our, 1e-4, 1e-4).is_ok());
 
         assert!(all_equal);
 
