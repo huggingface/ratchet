@@ -125,7 +125,6 @@ pub struct BlockQ8K {
     pub(crate) bsums: [i16; QK_K / 16],
 }
 const _: () = assert!(4 + QK_K + QK_K / 16 * 2 == std::mem::size_of::<BlockQ8K>());
-
 /// --- OURS CUSTOM ---
 
 #[derive(Debug, Clone, PartialEq)]

@@ -28,7 +28,7 @@ pub fn transcribe(
 
     let language = decode_options.language.as_ref().unwrap();
     let task = decode_options.task;
-    let tokenizer = WhisperTokenizer::load(None, language.clone(), task.clone());
+    let tokenizer = WhisperTokenizer::load(None, language.clone(), task);
 
     let mut seek = 0;
     let input_stride = N_FRAMES / N_AUDIO_CTX;
