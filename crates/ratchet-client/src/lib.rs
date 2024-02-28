@@ -6,11 +6,12 @@ use web_sys::{Cache, Request, RequestInit, RequestMode, Response};
 mod db;
 mod util;
 
-#[cfg(test)]
-use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
-
-#[cfg(test)]
-wasm_bindgen_test_configure!(run_in_browser);
+#[wasm_bindgen(start)]
+pub fn start() {
+    console_error_panic_hook::set_once();
+    log::set_max_level(log::LevelFilter::Off);
+    console_log::init_with_level(log::Level::Warn).unwrap();
+}
 
 pub type ProgressBar = dyn Fn(u32);
 
@@ -164,11 +165,19 @@ impl ApiResponse {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+    fn log_init() {
+        console_error_panic_hook::set_once();
+        log::set_max_level(log::LevelFilter::Off);
+        console_log::init_with_level(log::Level::Warn).unwrap();
+    }
+
     use super::*;
     #[wasm_bindgen_test]
-    async fn pass() -> Result<(), JsValue> {
+    async fn pull_from_hf() -> Result<(), JsValue> {
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
         let model = model_repo.get("model.safetensors").await?;
         let bytes = model.to_uint8().await?;
