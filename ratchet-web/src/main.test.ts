@@ -1,6 +1,5 @@
-// sum.test.js
 import { expect, test, describe, beforeAll, it } from "vitest";
-import { ApiBuilder, Api, default as init } from "@ratchet/ratchet-client";
+import { ApiBuilder, Api, default as init } from "@ratchet/ratchet-hub";
 
 beforeAll(async () => {
   await init(); // Init wasm
