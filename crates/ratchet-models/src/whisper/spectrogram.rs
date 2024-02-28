@@ -31,6 +31,12 @@ pub struct SpectrogramGenerator {
     mels: Array2<f32>,
 }
 
+impl std::fmt::Debug for SpectrogramGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpectrogramGenerator").finish()
+    }
+}
+
 impl SpectrogramGenerator {
     pub fn new(mels: Vec<f32>) -> Self {
         let mut planner = RealFftPlanner::new();

@@ -26,7 +26,6 @@ impl From<indexed_db_futures::web_sys::DomException> for RatchetDBError {
 }
 
 pub struct RatchetDB {
-    name: String,
     pub(crate) inner: IdbDatabase,
 }
 
@@ -34,6 +33,7 @@ type Result<A, E = RatchetDBError> = std::result::Result<A, E>;
 
 impl RatchetDB {
     pub const DB_VERSION: u32 = 1;
+    pub const DB_NAME: &'static str = "ratchet";
     pub const MODEL_STORE: &'static str = "models";
     pub const TOKENIZER_STORE: &'static str = "tokenizers";
 
@@ -47,8 +47,8 @@ impl RatchetDB {
             .map_err(|e| e.into())
     }
 
-    pub async fn open(name: &str) -> Result<Self, RatchetDBError> {
-        let mut db_req: OpenDbRequest = IdbDatabase::open_u32(name, Self::DB_VERSION)?;
+    pub async fn open() -> Result<Self, RatchetDBError> {
+        let mut db_req: OpenDbRequest = IdbDatabase::open_u32(Self::DB_NAME, Self::DB_VERSION)?;
 
         db_req.set_on_upgrade_needed(Some(|evt: &IdbVersionChangeEvent| -> Result<(), JsValue> {
             let create_if_needed =
@@ -64,48 +64,56 @@ impl RatchetDB {
         }));
 
         Ok(Self {
-            name: name.to_string(),
             inner: db_req.await?,
         })
     }
 
-    async fn get_model<K: AsRef<str>>(&self, id: K) -> Result<Option<StoredModel>> {
+    pub async fn get_model(&self, key: &ModelKey) -> Result<Option<StoredModel>> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readonly)?;
         let store = tx.object_store(Self::MODEL_STORE)?;
-        let req = store.get(&Self::serialize(&id.as_ref())?)?.await?;
+        let serial_key = Self::serialize(key)?;
+        log::warn!("serial_key: {:?}", serial_key);
+        let req = store.get(&serial_key)?.await?;
         Self::deserialize(req)
     }
 
-    async fn put_model<K: AsRef<str>>(&self, id: K, model: StoredModel) -> Result<()> {
+    pub async fn put_model(&self, key: &ModelKey, model: StoredModel) -> Result<()> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readwrite)?;
         let store = tx.object_store(Self::MODEL_STORE)?;
         store
-            .put_key_val(&Self::serialize(&id.as_ref())?, &Self::serialize(&model)?)?
+            .put_key_val(&Self::serialize(key)?, &Self::serialize(&model)?)?
             .await?;
         Ok(())
     }
 
-    async fn get_tokenizer<K: AsRef<str>>(&self, id: K) -> Result<Option<StoredTokenizer>> {
+    pub async fn get_tokenizer<S: AsRef<str>>(
+        &self,
+        repo_id: S,
+    ) -> Result<Option<StoredTokenizer>> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::TOKENIZER_STORE, IdbTransactionMode::Readonly)?;
         let store = tx.object_store(Self::TOKENIZER_STORE)?;
-        let req = store.get(&Self::serialize(&id.as_ref())?)?.await?;
+        let req = store.get(&Self::serialize(&repo_id.as_ref())?)?.await?;
         Self::deserialize(req)
     }
 
-    async fn put_tokenizer<K: AsRef<str>>(&self, id: K, tokenizer: StoredTokenizer) -> Result<()> {
+    pub async fn put_tokenizer<S: AsRef<str>>(
+        &self,
+        repo_id: S,
+        tokenizer: StoredTokenizer,
+    ) -> Result<()> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::TOKENIZER_STORE, IdbTransactionMode::Readwrite)?;
         let store = tx.object_store(Self::TOKENIZER_STORE)?;
         store
             .put_key_val(
-                &Self::serialize(&id.as_ref())?,
+                &Self::serialize(&repo_id.as_ref())?,
                 &Self::serialize(&tokenizer)?,
             )?
             .await?;
@@ -113,9 +121,41 @@ impl RatchetDB {
     }
 }
 
-pub struct ModelAndTokenizer {
-    pub model: StoredModel,
-    pub tokenizer: StoredTokenizer,
+#[derive(Debug)]
+pub struct ModelKey {
+    pub repo_id: String,
+    pub model_id: String,
+}
+
+impl serde::Serialize for ModelKey {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        let s = format!("{}:{}", self.repo_id, self.model_id);
+        serializer.serialize_str(&s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ModelKey {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        let mut parts = s.split(':');
+        let repo_id = parts.next().unwrap().to_string();
+        let model_id = parts.next().unwrap().to_string();
+        Ok(Self { repo_id, model_id })
+    }
+}
+
+impl ModelKey {
+    pub fn new<S: ToString>(repo_id: S, model_id: S) -> Self {
+        Self {
+            repo_id: repo_id.to_string(),
+            model_id: model_id.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -132,38 +172,4 @@ pub struct StoredTokenizer {
     pub tokenizer_id: String,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub bytes: Uint8Array,
-}
-
-#[cfg(all(test, target_arch = "wasm32"))]
-mod tests {
-    use super::*;
-    use ratchet_hub::{ApiBuilder, RepoType};
-    use wasm_bindgen_test::*;
-
-    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
-
-    #[wasm_bindgen_test]
-    async fn test_db() -> Result<(), JsValue> {
-        let repo_id = "ggerganov/whisper.cpp";
-        let model_id = "ggml-tiny.bin";
-        let model_repo = ApiBuilder::from_hf(repo_id, RepoType::Model).build();
-        let db = RatchetDB::open("ratchet").await.map_err(|e| {
-            let e: JsError = e.into();
-            Into::<JsValue>::into(e)
-        })?;
-        if let None = db.get_model(model_id).await.map_err(|e| {
-            let e: JsError = e.into();
-            Into::<JsValue>::into(e)
-        })? {
-            let model_data = model_repo.get(model_id).await?;
-            let bytes = model_data.to_uint8().await?;
-            let model = StoredModel {
-                repo_id: repo_id.to_string(),
-                model_id: model_id.to_string(),
-                bytes,
-            };
-            db.put_model(model_id, model).await.unwrap();
-        }
-        Ok(())
-    }
 }

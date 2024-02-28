@@ -3,6 +3,7 @@ mod whisper;
 pub use whisper::*;
 
 /// Required as `[wasm_bindgen]` does not support generics
+#[derive(Debug)]
 pub enum WebModel {
     Whisper(whisper::Whisper),
 }
