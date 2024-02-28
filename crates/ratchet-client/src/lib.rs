@@ -167,6 +167,8 @@ impl ApiResponse {
 
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
+    use super::*;
+    use wasm_bindgen_test::*;
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
     fn log_init() {
@@ -175,7 +177,6 @@ mod tests {
         console_log::init_with_level(log::Level::Warn).unwrap();
     }
 
-    use super::*;
     #[wasm_bindgen_test]
     async fn pull_from_hf() -> Result<(), JsValue> {
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
