@@ -4,7 +4,7 @@ wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 use ndarray::{s, Axis};
 use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, DeviceRequest, Tensor};
-use ratchet_client::{ApiBuilder, RepoType};
+use ratchet_hub::{ApiBuilder, RepoType};
 use ratchet_loader::GGMLCompatible;
 use ratchet_models::{DecodingOptionsBuilder, Whisper, WhisperDecoder, WhisperEncoder};
 use ratchet_nn::Module;
