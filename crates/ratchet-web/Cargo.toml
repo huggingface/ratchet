@@ -25,6 +25,7 @@ wasm-opt = ['-O3', '--enable-simd']
 [dependencies]
 ratchet = { path = "../ratchet-core" }
 ratchet-models = { path = "../ratchet-models" }
+ratchet-hub = { path = "../ratchet-hub" }
 wasm-bindgen = "0.2.84"
 wasm-bindgen-futures = "0.4.39"
 js-sys = "0.3.64"
