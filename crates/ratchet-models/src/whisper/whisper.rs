@@ -106,6 +106,7 @@ impl MelFilters {
     }
 }
 
+#[derive(Debug)]
 pub struct Whisper {
     pub specgen: SpectrogramGenerator,
     pub encoder: WhisperEncoder,
