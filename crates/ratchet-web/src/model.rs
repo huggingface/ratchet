@@ -57,3 +57,36 @@ impl ModelBuilder {
         Ok(m)
     }
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests {
+    use super::*;
+    use crate::db::*;
+    use ratchet_hub::{ApiBuilder, RepoType};
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    async fn test_db() -> Result<(), JsValue> {
+        let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp", RepoType::Model).build();
+        let db = RatchetDB::open("ratchet").await.map_err(|e| {
+            let e: JsError = e.into();
+            Into::<JsValue>::into(e)
+        })?;
+        let model_id = "FL33TW00D-hf/whisper-tiny";
+        if let None = db.get_model(model_id).await.map_err(|e| {
+            let e: JsError = e.into();
+            Into::<JsValue>::into(e)
+        })? {
+            let model_data = model_repo.get("ggml-tiny.bin").await?;
+            let bytes = model_data.to_uint8().await?;
+            let model = StoredModel {
+                id: model_id.to_string(),
+                bytes,
+            };
+            db.put_model(model_id, model).await.unwrap();
+        }
+        Ok(())
+    }
+}

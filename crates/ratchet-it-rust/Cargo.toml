@@ -1,9 +1,0 @@
-[package]
-name = "ratchet-it-rust"
-version = "0.0.0" # Not to be published
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dev-dependencies]
-wasm-bindgen-test.workspace = true

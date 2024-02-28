@@ -1,16 +1,26 @@
 {
   "name": "ratchet-web",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
-    "@types/node": "^20.11.21",
-    "typescript": "^5.2.2"
+    "@vitest/browser": "^1.2.2",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8",
+    "vite-plugin-top-level-await": "^1.4.1",
+    "vite-plugin-wasm": "^3.3.0",
+    "vitest": "^1.2.2",
+    "webdriverio": "^8.29.7"
+  },
+  "dependencies": {
+    "@ratchet/ratchet-hub": "link:../target/pkg/ratchet-hub"
+    "@ratchet/ratchet-web": "link:../target/pkg/ratchet-web"
   }
 }

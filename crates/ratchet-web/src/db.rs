@@ -119,22 +119,22 @@ impl RatchetDB {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoredModel {
-    id: String, //"FL33TW00D/whisper-tiny"
+    pub id: String, //"FL33TW00D/whisper-tiny"
     #[serde(with = "serde_wasm_bindgen::preserve")]
-    bytes: Uint8Array,
+    pub bytes: Uint8Array,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoredTokenizer {
-    id: String, //"FL33TW00D/whisper-tiny"
+    pub id: String, //"FL33TW00D/whisper-tiny"
     #[serde(with = "serde_wasm_bindgen::preserve")]
-    bytes: Uint8Array,
+    pub bytes: Uint8Array,
 }
 
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use crate::{ApiBuilder, RepoType};
+    use ratchet_hub::{ApiBuilder, RepoType};
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);

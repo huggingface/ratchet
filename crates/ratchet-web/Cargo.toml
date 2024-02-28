@@ -10,6 +10,9 @@ repository = "https://github.com/FL33TW00D/ratchet"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[package.metadata.docs.rs]
+default-target = "wasm32-unknown-unknown"
+
 [package.metadata.wasm-pack.profile.dev.wasm-bindgen]
 debug-js-glue = true
 demangle-name-section = true
@@ -61,4 +64,5 @@ version = "0.3.64"
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true
+ratchet-hub = { path = "../ratchet-hub" }
 
