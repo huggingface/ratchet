@@ -3,6 +3,7 @@ use util::{js_error, js_to_js_error, to_future};
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
 use web_sys::{Cache, Request, RequestInit, RequestMode, Response};
 
+mod db;
 mod util;
 
 #[cfg(test)]
@@ -17,7 +18,6 @@ pub type ProgressBar = dyn Fn(u32);
 #[derive(Debug, Clone, Copy)]
 pub enum RepoType {
     /// This is a model, usually it consists of weight files and some configuration
-    /// files
     Model,
     /// This is a dataset, usually contains data within parquet files
     Dataset,
@@ -162,17 +162,6 @@ impl ApiResponse {
     pub fn is_cached(&self) -> bool {
         self.cached
     }
-
-    // #[wasm_bindgen]
-    // pub async fn stream(&self) -> Result<ApiStream, JsError> {
-    //     let raw_body = self.raw.body().ok_or(js_error("Failed to open body"))?;
-
-    //     let mut body: ReadableStream = ReadableStream::from_raw(raw_body);
-    //     let reader: ReadableStreamBYOBReader<'_> = body.get_byob_reader();
-    //     let mut async_read = reader.into_async_read();
-
-    //     return Ok(ApiStream { async_read });
-    // }
 }
 
 #[cfg(test)]
