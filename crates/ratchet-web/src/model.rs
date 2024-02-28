@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 use crate::db::*;
+use crate::WebModel;
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_models::WebModel;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -29,20 +29,13 @@ impl Model {
             log::warn!("Model not found in db, fetching from remote");
             let model_data = model_repo.get(&key.model_id).await?;
             let bytes = model_data.to_uint8().await?;
-            let model = StoredModel {
-                repo_id: key.repo_id.to_string(),
-                model_id: key.model_id.to_string(),
-                bytes,
-            };
+            let model = StoredModel::new(&key, bytes);
             db.put_model(&key, model).await.unwrap();
         }
         let model = db.get_model(&key).await.unwrap().unwrap();
-        Ok(Model::from_bytes(&model.bytes.to_vec()).await.unwrap())
-    }
-
-    async fn from_bytes(bytes: &[u8]) -> Result<Model, anyhow::Error> {
-        let inner = WebModel::from_bytes(bytes).await.unwrap();
-        Ok(Model { inner })
+        Ok(Model {
+            inner: WebModel::from_stored(model).await.unwrap(),
+        })
     }
 }
 
@@ -65,7 +58,7 @@ mod tests {
         log_init();
         let key = ModelKey::new("ggerganov/whisper.cpp", "ggml-tiny.bin");
         let model = Model::load(key).await.unwrap();
-        println!("{:?}", model);
+        log::warn!("Model: {:?}", model);
         Ok(())
     }
 }

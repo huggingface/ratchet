@@ -74,7 +74,6 @@ impl RatchetDB {
             .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readonly)?;
         let store = tx.object_store(Self::MODEL_STORE)?;
         let serial_key = Self::serialize(key)?;
-        log::warn!("serial_key: {:?}", serial_key);
         let req = store.get(&serial_key)?.await?;
         Self::deserialize(req)
     }
@@ -164,6 +163,16 @@ pub struct StoredModel {
     pub model_id: String,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub bytes: Uint8Array,
+}
+
+impl StoredModel {
+    pub fn new(key: &ModelKey, bytes: Uint8Array) -> Self {
+        Self {
+            repo_id: key.repo_id.clone(),
+            model_id: key.model_id.clone(),
+            bytes,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
