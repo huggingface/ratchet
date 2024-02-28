@@ -1,4 +1,3 @@
-# pnpm-workspace.yaml
 packages:
-  # executable/launchable applications
+  - "ratchet-web"
   - "crates/ratchet-it-ts"

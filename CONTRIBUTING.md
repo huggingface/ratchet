@@ -1,4 +1,3 @@
-
 # Running Tests for the Ratchet Rust Package
 
 This guide outlines the steps necessary to set up and run tests for the Ratchet Rust package. Please follow these steps carefully to ensure a smooth testing process.
@@ -131,8 +130,7 @@ cargo test
 To run WASM tests (e.g., the whisper test) run:
 
 ```sh
-cd crates/ratchet-models/
-wasm-pack test --chrome
+just wasm-test ratchet-models chrome
 ```
 
 And check the result in:
