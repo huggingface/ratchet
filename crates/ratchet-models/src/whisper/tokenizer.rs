@@ -5,7 +5,7 @@ use tokenizers::Tokenizer;
 #[cfg(not(target_arch = "wasm32"))]
 use hf_hub::api::sync::Api;
 #[cfg(target_arch = "wasm32")]
-use {ratchet_client::ApiBuilder, ratchet_client::RepoType, wasm_bindgen::JsError};
+use {ratchet_hub::ApiBuilder, ratchet_hub::RepoType, wasm_bindgen::JsError};
 
 lazy_static::lazy_static! {
     pub static ref LANGUAGES: [&'static str; 99] = {
