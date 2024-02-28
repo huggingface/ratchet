@@ -69,7 +69,7 @@ impl RatchetDB {
         })
     }
 
-    pub async fn get_model<K: AsRef<str>>(&self, id: K) -> Result<Option<StoredModel>> {
+    async fn get_model<K: AsRef<str>>(&self, id: K) -> Result<Option<StoredModel>> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readonly)?;
@@ -78,7 +78,7 @@ impl RatchetDB {
         Self::deserialize(req)
     }
 
-    pub async fn put_model<K: AsRef<str>>(&self, id: K, model: StoredModel) -> Result<()> {
+    async fn put_model<K: AsRef<str>>(&self, id: K, model: StoredModel) -> Result<()> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readwrite)?;
@@ -89,7 +89,7 @@ impl RatchetDB {
         Ok(())
     }
 
-    pub async fn get_tokenizer<K: AsRef<str>>(&self, id: K) -> Result<Option<StoredTokenizer>> {
+    async fn get_tokenizer<K: AsRef<str>>(&self, id: K) -> Result<Option<StoredTokenizer>> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::TOKENIZER_STORE, IdbTransactionMode::Readonly)?;
@@ -98,11 +98,7 @@ impl RatchetDB {
         Self::deserialize(req)
     }
 
-    pub async fn put_tokenizer<K: AsRef<str>>(
-        &self,
-        id: K,
-        tokenizer: StoredTokenizer,
-    ) -> Result<()> {
+    async fn put_tokenizer<K: AsRef<str>>(&self, id: K, tokenizer: StoredTokenizer) -> Result<()> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::TOKENIZER_STORE, IdbTransactionMode::Readwrite)?;
@@ -117,16 +113,23 @@ impl RatchetDB {
     }
 }
 
+pub struct ModelAndTokenizer {
+    pub model: StoredModel,
+    pub tokenizer: StoredTokenizer,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoredModel {
-    pub id: String, //"FL33TW00D/whisper-tiny"
+    pub repo_id: String,
+    pub model_id: String,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub bytes: Uint8Array,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoredTokenizer {
-    pub id: String, //"FL33TW00D/whisper-tiny"
+    pub repo_id: String,
+    pub tokenizer_id: String,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub bytes: Uint8Array,
 }
@@ -141,20 +144,22 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_db() -> Result<(), JsValue> {
-        let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp", RepoType::Model).build();
+        let repo_id = "ggerganov/whisper.cpp";
+        let model_id = "ggml-tiny.bin";
+        let model_repo = ApiBuilder::from_hf(repo_id, RepoType::Model).build();
         let db = RatchetDB::open("ratchet").await.map_err(|e| {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
         })?;
-        let model_id = "FL33TW00D-hf/whisper-tiny";
         if let None = db.get_model(model_id).await.map_err(|e| {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
         })? {
-            let model_data = model_repo.get("ggml-tiny.bin").await?;
+            let model_data = model_repo.get(model_id).await?;
             let bytes = model_data.to_uint8().await?;
             let model = StoredModel {
-                id: model_id.to_string(),
+                repo_id: repo_id.to_string(),
+                model_id: model_id.to_string(),
                 bytes,
             };
             db.put_model(model_id, model).await.unwrap();
