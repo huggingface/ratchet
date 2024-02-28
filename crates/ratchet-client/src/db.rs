@@ -36,12 +36,12 @@ impl RatchetDB {
     pub const MODEL_STORE: &'static str = "models";
     pub const TOKENIZER_STORE: &'static str = "tokenizers";
 
-    fn serialize_key(k: &impl Serialize) -> Result<JsValue> {
-        serde_wasm_bindgen::to_value(k).map_err(|e| e.into())
+    fn serialize(o: &impl Serialize) -> Result<JsValue> {
+        serde_wasm_bindgen::to_value(o).map_err(|e| e.into())
     }
 
-    fn deserialize_value<T: for<'de> Deserialize<'de>>(v: Option<JsValue>) -> Result<Option<T>> {
-        v.map(serde_wasm_bindgen::from_value)
+    fn deserialize<T: for<'de> Deserialize<'de>>(o: Option<JsValue>) -> Result<Option<T>> {
+        o.map(serde_wasm_bindgen::from_value)
             .transpose()
             .map_err(|e| e.into())
     }
@@ -68,13 +68,44 @@ impl RatchetDB {
         })
     }
 
-    pub async fn get_model(&self, key: String) -> Result<Option<StoredModel>> {
+    pub async fn get_model(&self, id: String) -> Result<Option<StoredModel>> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readonly)?;
         let store = tx.object_store(Self::MODEL_STORE)?;
-        let req = store.get(&Self::serialize_key(&key)?)?.await?;
-        Self::deserialize_value(req)
+        let req = store.get(&Self::serialize(&id)?)?.await?;
+        Self::deserialize(req)
+    }
+
+    pub async fn put_model(&self, id: String, model: StoredModel) -> Result<()> {
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readwrite)?;
+        let store = tx.object_store(Self::MODEL_STORE)?;
+        store
+            .put_key_val(&Self::serialize(&id)?, &Self::serialize(&model)?)?
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_tokenizer(&self, id: String) -> Result<Option<StoredTokenizer>> {
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::TOKENIZER_STORE, IdbTransactionMode::Readonly)?;
+        let store = tx.object_store(Self::TOKENIZER_STORE)?;
+        let req = store.get(&Self::serialize(&id)?)?.await?;
+        Self::deserialize(req)
+    }
+
+    pub async fn put_tokenizer(&self, id: String, tokenizer: StoredTokenizer) -> Result<()> {
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::TOKENIZER_STORE, IdbTransactionMode::Readwrite)?;
+        let store = tx.object_store(Self::TOKENIZER_STORE)?;
+        store
+            .put_key_val(&Self::serialize(&id)?, &Self::serialize(&tokenizer)?)?
+            .await?;
+        Ok(())
     }
 }
 
@@ -83,4 +114,39 @@ pub struct StoredModel {
     id: String, //"FL33TW00D/whisper-tiny"
     #[serde(with = "serde_bytes")]
     bytes: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StoredTokenizer {
+    id: String, //"FL33TW00D/whisper-tiny"
+    #[serde(with = "serde_bytes")]
+    bytes: Vec<u8>,
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests {
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    #[wasm_bindgen_test]
+    async fn test_db() {
+        let db = RatchetDB::open("test_db").await.unwrap();
+        db.put_model(
+            "FL33TW00D/whisper-tiny".to_string(),
+            StoredModel {
+                id: "FL33TW00D/whisper-tiny".to_string(),
+                bytes: vec![1, 2, 3, 4],
+            },
+        )
+        .await
+        .unwrap();
+        let model = db
+            .get_model("FL33TW00D/whisper-tiny".to_string())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(model.bytes, vec![1, 2, 3, 4]);
+    }
 }
