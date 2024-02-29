@@ -1,5 +1,5 @@
 {
-  "name": "ratchet-it-ts",
+  "name": "ratchet-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -20,6 +20,7 @@
     "webdriverio": "^8.29.7"
   },
   "dependencies": {
-    "@ratchet/ratchet-client": "link:../../target/pkg/ratchet-client"
+    "@ratchet/ratchet-hub": "link:../target/pkg/ratchet-hub",
+    "@ratchet/ratchet-web": "link:../target/pkg/ratchet-web"
   }
 }

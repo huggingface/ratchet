@@ -5,7 +5,7 @@ use tokenizers::Tokenizer;
 #[cfg(not(target_arch = "wasm32"))]
 use hf_hub::api::sync::Api;
 #[cfg(target_arch = "wasm32")]
-use {ratchet_client::ApiBuilder, ratchet_client::RepoType, wasm_bindgen::JsError};
+use {ratchet_hub::ApiBuilder, ratchet_hub::RepoType, wasm_bindgen::JsError};
 
 lazy_static::lazy_static! {
     pub static ref LANGUAGES: [&'static str; 99] = {
@@ -113,7 +113,7 @@ impl WhisperTokenizer {
     #[cfg(target_arch = "wasm32")]
     pub async fn fetch() -> Result<Tokenizer, JsError> {
         let model_repo = ApiBuilder::from_hf("openai/whisper-tiny", RepoType::Model).build();
-        let model = model_repo.get("ggml-tiny.bin").await?;
+        let model = model_repo.get("tokenizer.json").await?;
         let model_data = model.to_uint8().await?;
         Ok(Tokenizer::from_bytes(model_data.to_vec()).unwrap())
     }

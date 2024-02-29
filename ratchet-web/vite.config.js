@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
+import config from "./webdriver.json";
 
 const wasmContentTypePlugin = {
   name: "wasm-content-type-plugin",
@@ -21,7 +22,11 @@ export default defineConfig({
       enabled: true,
       headless: true,
       name: "chrome",
+      providerOptions: {
+        capabilities: config, 
+      }
     },
+    testTimeout: 30000,
   },
   server: {
     fs: {
