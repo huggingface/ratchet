@@ -40,6 +40,7 @@ console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 log.workspace = true
 async-trait = "0.1.77"
+hound = "3.5.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.6", features = ["js"] }

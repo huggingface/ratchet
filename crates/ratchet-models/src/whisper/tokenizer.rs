@@ -113,7 +113,7 @@ impl WhisperTokenizer {
     #[cfg(target_arch = "wasm32")]
     pub async fn fetch() -> Result<Tokenizer, JsError> {
         let model_repo = ApiBuilder::from_hf("openai/whisper-tiny", RepoType::Model).build();
-        let model = model_repo.get("ggml-tiny.bin").await?;
+        let model = model_repo.get("tokenizer.json").await?;
         let model_data = model.to_uint8().await?;
         Ok(Tokenizer::from_bytes(model_data.to_vec()).unwrap())
     }

@@ -13,11 +13,15 @@ pub enum WebModel {
 }
 
 impl WebModel {
-    pub async fn run(&self, input: JsValue) -> Result<JsValue, anyhow::Error> {
+    pub async fn run(&mut self, input: JsValue) -> Result<JsValue, JsValue> {
         match self {
             WebModel::Whisper(model) => {
                 let input: WhisperInputs = serde_wasm_bindgen::from_value(input)?;
-                model.run(input).await
+
+                let result = transcribe(model, input.audio, input.decode_options)
+                    .await
+                    .unwrap();
+                serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
             }
         }
     }
@@ -33,28 +37,8 @@ impl WebModel {
     }
 }
 
-#[async_trait::async_trait]
-pub trait WebCompatible {
-    type Input: serde::de::DeserializeOwned;
-
-    async fn run(&mut self, input: Self::Input) -> Result<JsValue, JsValue>;
-}
-
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct WhisperInputs {
     pub audio: Vec<f32>,
     pub decode_options: DecodingOptions,
-}
-
-impl WebCompatible for Whisper {
-    type Input = WhisperInputs;
-
-    async fn run(&mut self, input: Self::Input) -> Result<JsValue, JsValue> {
-        let WhisperInputs {
-            audio,
-            decode_options,
-        } = input;
-        let result = transcribe(self, audio, decode_options).await.unwrap();
-        serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
-    }
 }

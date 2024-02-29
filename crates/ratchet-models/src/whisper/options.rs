@@ -36,7 +36,11 @@ impl From<Task> for i32 {
 }
 
 #[allow(dead_code)]
-#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    target_arch = "wasm32",
+    wasm_bindgen,
+    derive(serde::Serialize, serde::Deserialize)
+)]
 #[derive(Debug, Clone)]
 pub struct DecodingOptions {
     pub(crate) task: Task,                         // default: "transcribe"
@@ -197,7 +201,7 @@ impl DecodingOptionsBuilder {
         self
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    //#[cfg(not(target_arch = "wasm32"))]
     pub fn build(&self) -> DecodingOptions {
         DecodingOptions {
             task: self.task.unwrap_or(Task::Transcribe),
@@ -217,7 +221,7 @@ impl DecodingOptionsBuilder {
             time_offset: self.time_offset,
         }
     }
-
+    /*
     #[cfg(target_arch = "wasm32")]
     pub fn build(&self) -> JsValue {
         let options = DecodingOptions {
@@ -239,6 +243,7 @@ impl DecodingOptionsBuilder {
         };
         serde_wasm_bindgen::to_value(&options).unwrap()
     }
+    */
 }
 
 cfg_if::cfg_if! {
