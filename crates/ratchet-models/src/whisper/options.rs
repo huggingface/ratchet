@@ -201,7 +201,6 @@ impl DecodingOptionsBuilder {
         self
     }
 
-    //#[cfg(not(target_arch = "wasm32"))]
     pub fn build(&self) -> DecodingOptions {
         DecodingOptions {
             task: self.task.unwrap_or(Task::Transcribe),
@@ -221,29 +220,6 @@ impl DecodingOptionsBuilder {
             time_offset: self.time_offset,
         }
     }
-    /*
-    #[cfg(target_arch = "wasm32")]
-    pub fn build(&self) -> JsValue {
-        let options = DecodingOptions {
-            task: self.task.clone().unwrap_or(Task::Transcribe),
-            language: self.language.clone().map(|l| Language::String(l)),
-            temperature: self.temperature.unwrap_or(0.0),
-            sample_len: self.sample_len,
-            best_of: self.best_of,
-            beam_size: self.beam_size,
-            patience: self.patience,
-            length_penalty: self.length_penalty,
-            prompt: self.prompt.clone().map(|p| Prompt::Text(p)),
-            prefix: self.prefix.clone(),
-            suppress_tokens: self.suppress_tokens.clone(),
-            suppress_blank: self.suppress_blank.unwrap_or(true),
-            without_timestamps: self.without_timestamps.unwrap_or(false),
-            max_initial_timestamp: self.max_initial_timestamp,
-            time_offset: self.time_offset,
-        };
-        serde_wasm_bindgen::to_value(&options).unwrap()
-    }
-    */
 }
 
 cfg_if::cfg_if! {

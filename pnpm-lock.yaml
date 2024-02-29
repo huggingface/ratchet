@@ -11,6 +11,9 @@ importers:
       '@ratchet/ratchet-hub':
         specifier: link:../target/pkg/ratchet-hub
         version: link:../target/pkg/ratchet-hub
+      '@ratchet/ratchet-web':
+        specifier: link:../target/pkg/ratchet-web
+        version: link:../target/pkg/ratchet-web
     devDependencies:
       '@vitest/browser':
         specifier: ^1.2.2
