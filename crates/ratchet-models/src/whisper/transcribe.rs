@@ -3,7 +3,8 @@ use crate::{
     WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,
 };
 use ratchet_nn::Module;
-use std::{cmp::min, time::Instant};
+use std::cmp::min;
+use web_time::Instant;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn transcribe(
