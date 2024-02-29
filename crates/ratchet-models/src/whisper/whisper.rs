@@ -106,6 +106,7 @@ impl MelFilters {
     }
 }
 
+#[derive(Debug)]
 pub struct Whisper {
     pub specgen: SpectrogramGenerator,
     pub encoder: WhisperEncoder,
@@ -118,10 +119,10 @@ impl Whisper {
     pub fn load<R: BufRead + Seek>(
         disk_model: &GGMLModel<Whisper>,
         reader: &mut R,
-        device: &Device,
+        device: Device,
     ) -> anyhow::Result<Self> {
-        let encoder = WhisperEncoder::load(disk_model, reader, device)?;
-        let decoder = WhisperDecoder::load(disk_model, reader, device)?;
+        let encoder = WhisperEncoder::load(disk_model, reader, &device)?;
+        let decoder = WhisperDecoder::load(disk_model, reader, &device)?;
         //TODO: remove clones
         let generator = crate::SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
         Ok(Self {
@@ -129,8 +130,16 @@ impl Whisper {
             encoder,
             decoder,
             hparams: disk_model.header.hparams.clone(),
-            device: device.clone(),
+            device,
         })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
+        let disk_model = Whisper::load_ggml(&mut reader)?;
+        Self::load(&disk_model, &mut reader, device)
     }
 }
 
@@ -248,7 +257,7 @@ mod tests {
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
-        let mut whisper = Whisper::load(&gg_disk, &mut reader, &device).unwrap();
+        let mut whisper = Whisper::load(&gg_disk, &mut reader, device).unwrap();
 
         let transcript = transcribe(&mut whisper, samples, options).unwrap();
         println!("{}", transcript.formatted.unwrap());

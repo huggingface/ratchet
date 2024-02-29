@@ -20,7 +20,6 @@ wasm-opt = ['-O3', '--enable-simd']
 ratchet = { path = "../ratchet-core" }
 ratchet-nn = { path = "../ratchet-nn" }
 ratchet-loader = { path = "../ratchet-loader" }
-ratchet-client = { path = "../ratchet-client" }
 byteorder.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
@@ -102,10 +101,12 @@ cfg-if = "1.0.0"
 serde = "1.0.197"
 tokenizers = { version = "0.13.4", default-features = false, features=["unstable_wasm"] }
 lazy_static = "1.4.0"
+web-time = "1.0.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }  
 serde-wasm-bindgen = "0.4.5"
+ratchet-hub = { path = "../ratchet-hub" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hf-hub = "0.3.2"
@@ -114,7 +115,6 @@ hf-hub = "0.3.2"
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 wasm-bindgen-test = "0.3.41"
-ratchet-client = { path = "../ratchet-client" }
 wasm-bindgen = "0.2.91"
 wasm-bindgen-futures = "0.4.41"
 npyz = { workspace = true }

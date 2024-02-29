@@ -5,11 +5,28 @@ use web_sys::{Cache, Request, RequestInit, RequestMode, Response};
 
 mod util;
 
-#[cfg(test)]
-use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
-
-#[cfg(test)]
-wasm_bindgen_test_configure!(run_in_browser);
+#[wasm_bindgen(start)]
+pub fn start() {
+    console_error_panic_hook::set_once();
+    let logger = fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level_for("tokenizers", log::LevelFilter::Off)
+        .level(log::LevelFilter::Info)
+        .chain(fern::Output::call(console_log::log))
+        .apply();
+    match logger {
+        Ok(_) => log::info!("Logging initialized."),
+        Err(error) => eprintln!("Error initializing logging: {:?}", error),
+    }
+}
 
 pub type ProgressBar = dyn Fn(u32);
 
@@ -17,7 +34,6 @@ pub type ProgressBar = dyn Fn(u32);
 #[derive(Debug, Clone, Copy)]
 pub enum RepoType {
     /// This is a model, usually it consists of weight files and some configuration
-    /// files
     Model,
     /// This is a dataset, usually contains data within parquet files
     Dataset,
@@ -162,24 +178,16 @@ impl ApiResponse {
     pub fn is_cached(&self) -> bool {
         self.cached
     }
-
-    // #[wasm_bindgen]
-    // pub async fn stream(&self) -> Result<ApiStream, JsError> {
-    //     let raw_body = self.raw.body().ok_or(js_error("Failed to open body"))?;
-
-    //     let mut body: ReadableStream = ReadableStream::from_raw(raw_body);
-    //     let reader: ReadableStreamBYOBReader<'_> = body.get_byob_reader();
-    //     let mut async_read = reader.into_async_read();
-
-    //     return Ok(ApiStream { async_read });
-    // }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::*;
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
     #[wasm_bindgen_test]
-    async fn pass() -> Result<(), JsValue> {
+    async fn pull_from_hf() -> Result<(), JsValue> {
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
         let model = model_repo.get("model.safetensors").await?;
         let bytes = model.to_uint8().await?;
