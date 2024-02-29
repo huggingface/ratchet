@@ -1,5 +1,5 @@
-import { expect, test, describe, beforeAll, it } from "vitest";
-import { ApiBuilder, Api, default as init } from "@ratchet/ratchet-hub";
+import { expect, describe, beforeAll, it } from "vitest";
+import { ApiBuilder, Api, RepoType, default as init } from "@ratchet/ratchet-hub";
 import { ModelKey, Model, default as web_init } from "@ratchet/ratchet-web";
 
 beforeAll(async () => {
@@ -9,7 +9,7 @@ beforeAll(async () => {
 
 describe("The ApiBuilder", () => {
   it("should download a model from HF hub with caching", async () => {
-    const api: Api = ApiBuilder.from_hf(`jantxu/ratchet-test`).build();
+    const api: Api = ApiBuilder.from_hf(`jantxu/ratchet-test`, RepoType.Model).build();
 
     console.log(`Getting model first time.`);
     const modelStream = await api.get("model.safetensors");
