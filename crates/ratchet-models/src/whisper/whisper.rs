@@ -125,6 +125,7 @@ impl Whisper {
         let decoder = WhisperDecoder::load(disk_model, reader, &device)?;
         //TODO: remove clones
         let generator = crate::SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
+        log::info!("Sucessfully loaded Whisper model");
         Ok(Self {
             specgen: generator,
             encoder,

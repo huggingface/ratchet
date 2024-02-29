@@ -13,10 +13,10 @@ impl WebModel {
     pub async fn run(&mut self, input: JsValue) -> Result<JsValue, JsValue> {
         match self {
             WebModel::Whisper(model) => {
+                log::info!("INPUTS: {:?}", input);
                 let input: WhisperInputs = serde_wasm_bindgen::from_value(input)?;
-                let result = transcribe(model, input.audio, input.decode_options)
-                    .await
-                    .unwrap();
+                let options = serde_wasm_bindgen::from_value(input.decode_options)?;
+                let result = transcribe(model, input.audio, options).await.unwrap();
                 serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
             }
         }
@@ -35,7 +35,8 @@ impl WebModel {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct WhisperInputs {
     pub audio: Vec<f32>,
-    pub decode_options: DecodingOptions,
+    #[serde(with = "serde_wasm_bindgen::preserve")]
+    pub decode_options: JsValue,
 }
 
 #[wasm_bindgen]
@@ -78,6 +79,7 @@ impl Model {
     ///
     /// Untyped input is required unfortunately.
     pub async fn run(&mut self, input: JsValue) -> Result<JsValue, JsValue> {
+        log::info!("INPUT: {:?}", input);
         self.inner.run(input).await
     }
 }
