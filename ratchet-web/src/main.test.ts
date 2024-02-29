@@ -1,8 +1,10 @@
 import { expect, test, describe, beforeAll, it } from "vitest";
 import { ApiBuilder, Api, default as init } from "@ratchet/ratchet-hub";
+import { ModelKey, Model, default as web_init } from "@ratchet/ratchet-web";
 
 beforeAll(async () => {
   await init(); // Init wasm
+  await web_init(); // Init wasm
 });
 
 describe("The ApiBuilder", () => {
@@ -26,5 +28,13 @@ describe("The ApiBuilder", () => {
     const cached2 = modelStream2.is_cached();
     console.log(`Cached ${cached2}.`);
     expect(cached2).toBe(true);
+  });
+});
+
+describe("Whisper", () => {
+  it("should transcribe JFK.", async () => {
+      let key = new ModelKey(`ggerganov/whisper.cpp`, `ggml-tiny.bin`);
+      let model = await Model.load(key); 
+      console.log(`Model loaded: ${model}`);
   });
 });

@@ -120,10 +120,11 @@ impl RatchetDB {
     }
 }
 
+#[wasm_bindgen]
 #[derive(Debug)]
 pub struct ModelKey {
-    pub repo_id: String,
-    pub model_id: String,
+    repo_id: String,
+    model_id: String,
 }
 
 impl serde::Serialize for ModelKey {
@@ -148,12 +149,21 @@ impl<'de> serde::Deserialize<'de> for ModelKey {
     }
 }
 
+#[wasm_bindgen]
 impl ModelKey {
-    pub fn new<S: ToString>(repo_id: S, model_id: S) -> Self {
-        Self {
-            repo_id: repo_id.to_string(),
-            model_id: model_id.to_string(),
-        }
+    #[wasm_bindgen(constructor)]
+    pub fn new(repo_id: String, model_id: String) -> Self {
+        Self { repo_id, model_id }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn repo_id(&self) -> String {
+        self.repo_id.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn model_id(&self) -> String {
+        self.model_id.clone()
     }
 }
 

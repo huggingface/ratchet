@@ -8,8 +8,24 @@ mod util;
 #[wasm_bindgen(start)]
 pub fn start() {
     console_error_panic_hook::set_once();
-    log::set_max_level(log::LevelFilter::Off);
-    console_log::init_with_level(log::Level::Warn).unwrap();
+    let logger = fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level_for("tokenizers", log::LevelFilter::Off)
+        .level(log::LevelFilter::Info)
+        .chain(fern::Output::call(console_log::log))
+        .apply();
+    match logger {
+        Ok(_) => log::info!("Logging initialized."),
+        Err(error) => eprintln!("Error initializing logging: {:?}", error),
+    }
 }
 
 pub type ProgressBar = dyn Fn(u32);
@@ -169,12 +185,6 @@ mod tests {
     use super::*;
     use wasm_bindgen_test::*;
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
-
-    fn log_init() {
-        console_error_panic_hook::set_once();
-        log::set_max_level(log::LevelFilter::Off);
-        console_log::init_with_level(log::Level::Warn).unwrap();
-    }
 
     #[wasm_bindgen_test]
     async fn pull_from_hf() -> Result<(), JsValue> {

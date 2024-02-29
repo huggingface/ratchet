@@ -20,7 +20,7 @@
     "webdriverio": "^8.29.7"
   },
   "dependencies": {
-    "@ratchet/ratchet-hub": "link:../target/pkg/ratchet-hub"
+    "@ratchet/ratchet-hub": "link:../target/pkg/ratchet-hub",
     "@ratchet/ratchet-web": "link:../target/pkg/ratchet-web"
   }
 }
