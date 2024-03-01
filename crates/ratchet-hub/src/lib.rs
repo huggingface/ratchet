@@ -19,7 +19,7 @@ pub fn start() {
             ))
         })
         .level_for("tokenizers", log::LevelFilter::Off)
-        .level(log::LevelFilter::Info)
+        .level(log::LevelFilter::Warn)
         .chain(fern::Output::call(console_log::log))
         .apply();
     match logger {

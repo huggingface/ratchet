@@ -21,3 +21,4 @@ fixtures/
 
 /node_modules/
 **/*.bin
+ffmpeg-wasm

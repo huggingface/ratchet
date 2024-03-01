@@ -228,3 +228,9 @@
     transform: rotate(0deg);
   }
 }
+
+.buttonsContainer {
+    display: flex;
+    justify-content: center; /* Center buttons horizontally */
+    gap: 10px; /* Add some space between the buttons */
+}
