@@ -22,11 +22,10 @@ export default function Home() {
 
     const loadFFMPEG = async () => {
         console.log("Loading FFmpeg");
-        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-        //const baseURL = 'https://unpkg.com/@ratchet-ml/ffmpeg-core@0.0.7/dist/umd';
+        const baseURL = 'https://unpkg.com/@ratchet-ml/ffmpeg-core@0.0.12/dist/umd';
         const ffmpeg = ffmpegRef.current;
         ffmpeg.on('log', ({ message }) => {
-            //console.log(message);
+            console.log(message);
         });
         // toBlobURL is used to bypass CORS issue, urls with the same
         // domain can be used directly.
@@ -105,14 +104,14 @@ export default function Home() {
     return (
         <main className={styles.main}>
             <h1 className={styles.title}>WHISPER TURBO IS BACK</h1>
-            <input
-                type="file"
-                className="hidden"
-                name="audioFile"
-                id="audioFile"
-                onChange={handleAudioFile()}
-            />
             <div className={styles.buttonsContainer}>
+                <input
+                    type="file"
+                    className="hidden"
+                    name="audioFile"
+                    id="audioFile"
+                    onChange={handleAudioFile()}
+                />
                 <button onClick={loadModel}>Load Model</button>
                 <button onClick={runModel}>Run Model</button>
             </div>
