@@ -170,5 +170,5 @@ jobs:
         run: |
           just wasm-test ratchet-models chrome
           pnpm install -r
-          just vite-headless 
+          just vitest 
 
