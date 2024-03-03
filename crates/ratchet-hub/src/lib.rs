@@ -123,6 +123,7 @@ impl Api {
 
     async fn get_internal(&self, file_name: &str) -> Result<ApiResponse, JsValue> {
         let file_url = format!("{}/{}", self.endpoint, file_name);
+        log::info!("Fetching file: {}", file_url);
 
         let caches = web_sys::window()
             .ok_or(js_error("Couldn't get window handle"))?

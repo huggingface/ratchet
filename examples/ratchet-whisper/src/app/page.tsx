@@ -1,23 +1,40 @@
 'use client'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
-import { useRef, useState } from "react";
-import styles from "./page.module.css";
-import { ModelKey, Model, DecodingOptionsBuilder, default as init } from "@ratchet-ml/ratchet";
+import { toBlobURL } from '@ffmpeg/util';
+import { useEffect, useRef, useState } from "react";
+import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization } from "@ratchet-ml/ratchet";
+import ConfigModal, { ConfigOptions } from './components/configModal';
+import ModelSelector from './components/modelSelector';
 
 export default function Home() {
-    const [model, setModel] = useState<any>(null);
-    const [loaded, setLoaded] = useState(false);
+    const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WHISPER_TINY);
+    const [model, setModel] = useState<Model | null>(null);
     const ffmpegRef = useRef(new FFmpeg());
-    const [blobURL, setBlobURL] = useState("");
+    const [ffmpegLoaded, setFFmpegLoaded] = useState(false);
+    const [blobURL, setBlobURL] = useState<string>();
     const [audio, setAudio] = useState(null);
     const [transcript, setTranscript] = useState(null);
+    const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
+    const [configOptions, setConfigOptions] = useState<ConfigOptions>({
+        language: null,
+        task: Task.Transcribe,
+        suppress_non_speech: true,
+    });
+
+    useEffect(() => {
+        (async () => {
+            await init();
+        })();
+    }, [])
+
+    useEffect(() => {
+        console.log("Selected model: ", selectedModel);
+    }, [selectedModel]);
 
     async function loadModel() {
-        if (model) return;
-        await init();
-        let key = new ModelKey(`ggerganov/whisper.cpp`, `ggml-tiny.bin`);
-        setModel(await Model.load(key));
+        console.log("LOADING MODEL: ", selectedModel);
+        let toLoad = AvailableModels[selectedModel] as unknown as AvailableModels;
+        setModel(await Model.load(toLoad, Quantization.Q8));
     }
 
     const loadFFMPEG = async () => {
@@ -27,17 +44,15 @@ export default function Home() {
         ffmpeg.on('log', ({ message }) => {
             console.log(message);
         });
-        // toBlobURL is used to bypass CORS issue, urls with the same
-        // domain can be used directly.
         await ffmpeg.load({
             coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
             wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
         });
         console.log("Successfully loaded FFmpeg");
-        setLoaded(true);
+        setFFmpegLoaded(true);
     }
 
-    function pcm16ToIntFloat32(pcmData) {
+    function pcm16ToIntFloat32(pcmData: Uint8Array) {
         let int16Array = new Int16Array(pcmData);
         let float32Array = new Float32Array(int16Array.length);
         for (let i = 0; i < int16Array.length; i++) {
@@ -47,17 +62,16 @@ export default function Home() {
     }
 
     const transcode = async (audioData: Uint8Array) => {
-        if (!loaded) {
+        if (!ffmpegLoaded) {
             await loadFFMPEG();
         }
         const ffmpeg = ffmpegRef.current;
-        await ffmpeg.writeFile('input.wav', audioData);
+        await ffmpeg.writeFile('input', audioData);
 
-        // Adjusting the command according to your specifications
         const cmd = [
             "-nostdin",
             "-threads", "0",
-            "-i", "input.wav",
+            "-i", "input",
             "-f", "s16le",
             "-ac", "1",
             "-acodec", "pcm_s16le",
@@ -75,15 +89,21 @@ export default function Home() {
 
 
     async function runModel() {
-        if (!model) {
+        if (!model || !audio) {
             return
         }
         let floatArray = pcm16ToIntFloat32(audio);
-        let options = new DecodingOptionsBuilder().build();
+        let builder = new DecodingOptionsBuilder();
+        let options = builder
+            .setLanguage(configOptions.language ? configOptions.language : "en")
+            .setTask(configOptions.task)
+            .setSuppressBlank(configOptions.suppress_non_speech)
+            .build();
         console.log("Options: ", options);
         let result = await model.run({ audio: floatArray, decode_options: options });
+        console.log("Result: ", result);
         console.log("Processing time: ", result.processing_time);
-        setTranscript(result.formatted);
+        setTranscript(result);
     }
 
     const handleAudioFile = () => async (event: any) => {
@@ -102,25 +122,73 @@ export default function Home() {
 
 
     return (
-        <main className={styles.main}>
-            <h1 className={styles.title}>WHISPER TURBO IS BACK</h1>
-            <div className={styles.buttonsContainer}>
-                <input
-                    type="file"
-                    className="hidden"
-                    name="audioFile"
-                    id="audioFile"
-                    onChange={handleAudioFile()}
-                />
-                <button onClick={loadModel}>Load Model</button>
-                <button onClick={runModel}>Run Model</button>
+        <>
+            <ConfigModal
+                isModalOpen={isConfigOpen}
+                setIsModalOpen={setIsConfigOpen}
+                configOptions={configOptions}
+                setConfigOptions={setConfigOptions}
+            />
+            <div className="flex gap-8 flex-row h-screen">
+                <div className="flex-1 w-1/2 h-full flex flex-col relative z-10 overflow-hidden">
+                    <div className="h-full px-4 xl:pl-32 my-4">
+                        <h1 className="text-blue-500 text-4xl font-semibold mx-auto">Whisper + Ratchet</h1>
+                        <div className="flex flex-col mx-auto gap-6">
+                            <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
+                            <input
+                                type="file"
+                                name="audioFile"
+                                id="audioFile"
+                                onChange={handleAudioFile()}
+                            />
+                            <div className="flex flex-row justify-between gap-4">
+                                <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button>
+                                <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={runModel}>Run Model</button>
+                            </div>
+                        </div>
+                        <audio controls key={blobURL}>
+                            <source key={blobURL} src={blobURL} type="audio/wav" />
+                        </audio>
+                        <button
+                            className="text-2xl outline outline-white text-black font-semibold py-1 px-4 cursor-pointer active:bg-pop-orange-dark"
+                            onClick={() => setIsConfigOpen(true)}
+                        >
+                            Options
+                        </button>
+                    </div>
+                </div>
+                <div className="flex-1 w-1/2 h-full flex flex-col relative z-10">
+                    <div className="h-full flex flex-col mx-auto px-4 xl:pr-32 overflow-scroll py-12 w-full">
+                        <div className="flex flex-col h-full">
+                            {transcript &&
+                                transcript.segments.map(
+                                    (segment: Segment) => {
+                                        return (
+                                            <div
+                                                key={segment.start}
+                                                className="flex w-full py-4"
+                                            >
+                                                <div
+                                                    className={`rounded p-4 bg-white outline outline-2 outline-black shadow-lg align-right`}
+                                                >
+                                                    <div className=" text-lg mb-2">
+                                                        {segment.start}
+                                                        {" -> "}
+                                                        {segment.stop}
+                                                    </div>
+                                                    <div className="mb-2 text-2xl text-slate-900 text-right">
+                                                        {segment.text}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                )}
+                        </div>
+                    </div>
+                </div>
+
             </div>
-            <audio controls key={blobURL}>
-                <source key={blobURL} src={blobURL} type="audio/wav" />
-            </audio>
-            {transcript && transcript.split("\n").map((line, index) => {
-                return <p key={`t-${index}`}>{line}</p>
-            })}
-        </main>
+        </>
     );
 }
