@@ -8,7 +8,9 @@ import ModelSelector from './components/modelSelector';
 
 export default function Home() {
     const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WHISPER_TINY);
+    const [loadedModel, setLoadedModel] = useState<AvailableModels | null>(null);
     const [model, setModel] = useState<Model | null>(null);
+
     const ffmpegRef = useRef(new FFmpeg());
     const [ffmpegLoaded, setFFmpegLoaded] = useState(false);
     const [blobURL, setBlobURL] = useState<string>();
@@ -28,13 +30,17 @@ export default function Home() {
     }, [])
 
     useEffect(() => {
+        if (model) {
+            console.log("Model loaded: ", model);
+        }
         console.log("Selected model: ", selectedModel);
-    }, [selectedModel]);
+        console.log("Loaded model: ", loadedModel);
+    }, [model, selectedModel, loadedModel])
 
     async function loadModel() {
-        console.log("LOADING MODEL: ", selectedModel);
         let toLoad = AvailableModels[selectedModel] as unknown as AvailableModels;
         setModel(await Model.load(toLoad, Quantization.Q8));
+        setLoadedModel(selectedModel);
     }
 
     const loadFFMPEG = async () => {
@@ -135,26 +141,25 @@ export default function Home() {
                         <h1 className="text-blue-500 text-4xl font-semibold mx-auto">Whisper + Ratchet</h1>
                         <div className="flex flex-col mx-auto gap-6">
                             <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
-                            <input
-                                type="file"
-                                name="audioFile"
-                                id="audioFile"
-                                onChange={handleAudioFile()}
-                            />
-                            <div className="flex flex-row justify-between gap-4">
-                                <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button>
+                            {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
+                                <></>}
+                            <div className="flex flex-row gap-4 justify-between items-center">
+                                <input
+                                    type="file"
+                                    name="audioFile"
+                                    id="audioFile"
+                                    onChange={handleAudioFile()}
+                                />
+                                <audio controls key={blobURL}>
+                                    <source key={blobURL} src={blobURL} type="audio/wav" />
+                                </audio>
+                            </div>
+
+                            <div className="flex flex-row gap-4 justify-end items-center">
+                                <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={() => setIsConfigOpen(true)}>Options</button>
                                 <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={runModel}>Run Model</button>
                             </div>
                         </div>
-                        <audio controls key={blobURL}>
-                            <source key={blobURL} src={blobURL} type="audio/wav" />
-                        </audio>
-                        <button
-                            className="text-2xl outline outline-white text-black font-semibold py-1 px-4 cursor-pointer active:bg-pop-orange-dark"
-                            onClick={() => setIsConfigOpen(true)}
-                        >
-                            Options
-                        </button>
                     </div>
                 </div>
                 <div className="flex-1 w-1/2 h-full flex flex-col relative z-10">
