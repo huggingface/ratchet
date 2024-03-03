@@ -272,7 +272,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let src_path = model.get("ggml-medium.bin").unwrap();
+        let src_path = model.get("ggml-large-v2.bin").unwrap();
 
         let to_quant = HashSet::from([
             "attn.query.weight",
@@ -289,7 +289,7 @@ mod tests {
         ]);
         let mut dst_path = src_path.clone();
         dst_path.pop();
-        dst_path = dst_path.join("medium_q8.bin");
+        dst_path = dst_path.join("large-v2_q8.bin");
         println!("DST: {:?}", dst_path);
 
         let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);

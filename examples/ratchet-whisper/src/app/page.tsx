@@ -2,7 +2,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL } from '@ffmpeg/util';
 import { useEffect, useRef, useState } from "react";
-import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization } from "@ratchet-ml/ratchet";
+import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization, Segment } from "@ratchet-ml/ratchet";
 import ConfigModal, { ConfigOptions } from './components/configModal';
 import ModelSelector from './components/modelSelector';
 
@@ -15,7 +15,7 @@ export default function Home() {
     const [ffmpegLoaded, setFFmpegLoaded] = useState(false);
     const [blobURL, setBlobURL] = useState<string>();
     const [audio, setAudio] = useState(null);
-    const [transcript, setTranscript] = useState(null);
+    const [segments, setSegments] = useState<Segment[]>([]);
     const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
     const [configOptions, setConfigOptions] = useState<ConfigOptions>({
         language: null,
@@ -106,10 +106,13 @@ export default function Home() {
             .setSuppressBlank(configOptions.suppress_non_speech)
             .build();
         console.log("Options: ", options);
-        let result = await model.run({ audio: floatArray, decode_options: options });
+        let callback = (segment: Segment) => {
+            console.log("Segment: ", segment);
+            setSegments((currentSegments) => [...currentSegments, segment]);
+        };
+        let result = await model.run({ audio: floatArray, decode_options: options, callback: callback });
         console.log("Result: ", result);
         console.log("Processing time: ", result.processing_time);
-        setTranscript(result);
     }
 
     const handleAudioFile = () => async (event: any) => {
@@ -165,8 +168,8 @@ export default function Home() {
                 <div className="flex-1 w-1/2 h-full flex flex-col relative z-10">
                     <div className="h-full flex flex-col mx-auto px-4 xl:pr-32 overflow-scroll py-12 w-full">
                         <div className="flex flex-col h-full">
-                            {transcript &&
-                                transcript.segments.map(
+                            {segments &&
+                                segments.map(
                                     (segment: Segment) => {
                                         return (
                                             <div
@@ -181,7 +184,7 @@ export default function Home() {
                                                         {" -> "}
                                                         {segment.stop}
                                                     </div>
-                                                    <div className="mb-2 text-2xl text-slate-900 text-right">
+                                                    <div className="mb-2 text-lg text-slate-900 text-right">
                                                         {segment.text}
                                                     </div>
                                                 </div>

@@ -1,9 +1,9 @@
+use crate::{WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE};
 use num::integer::div_floor;
 use serde::{Deserialize, Serialize};
-
 use std::time::Duration;
-
-use crate::{WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE};
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
 #[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, derive_new::new)]
@@ -88,5 +88,53 @@ impl Segment {
         let st = (st * 100.).round() / 100.;
         let et = (et * 100.).round() / 100.;
         Segment::new(st, et, segment_tokens, last)
+    }
+}
+
+#[cfg_attr(
+    target_arch = "wasm32",
+    wasm_bindgen(getter_with_clone, js_name = Segment),
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[derive(Debug, derive_new::new)]
+pub struct StreamedSegment {
+    pub start: f64,
+    pub stop: f64,
+    pub text: String,
+    pub last: bool,
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl StreamedSegment {
+    pub fn start(&self) -> f64 {
+        self.start
+    }
+
+    pub fn stop(&self) -> f64 {
+        self.stop
+    }
+
+    pub fn text(&self) -> String {
+        self.text.clone()
+    }
+
+    pub fn last(&self) -> bool {
+        self.last
+    }
+
+    pub(crate) fn from_tokens(
+        tokenizer: &WhisperTokenizer,
+        sliced_tokens: &[i32],
+        offset: f64,
+        last: bool,
+    ) -> Self {
+        let segment = Segment::from_tokens(sliced_tokens, offset, last);
+        let segment_tokens = segment
+            .tokens
+            .into_iter()
+            .filter(|t| *t < WhisperTokenizer::TS_BEGIN as _)
+            .collect::<Vec<_>>();
+        let segment_text = tokenizer.decode(segment_tokens.as_slice(), true).unwrap();
+        StreamedSegment::new(segment.start, segment.stop, segment_text, last)
     }
 }

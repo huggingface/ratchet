@@ -1,3 +1,4 @@
+use crate::StreamedSegment;
 use crate::{
     DecodingOptions, DecodingTask, Language, Prompt, TranscriptionResult, Whisper,
     WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,
@@ -91,6 +92,7 @@ pub async fn transcribe(
     model: &mut Whisper,
     audio: Vec<f32>,
     mut decode_options: DecodingOptions,
+    callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
     let runtime = Instant::now();
     let mel = model.specgen.generate(audio)?.to(&model.device).await?;
@@ -141,7 +143,10 @@ pub async fn transcribe(
         let hs = model.encoder.forward(&mel_segment)?.resolve()?;
 
         let task = DecodingTask::new(decode_options, &tokenizer);
-        let decoded = task.run(&mut model.decoder, hs, &tokenizer).await?;
+        let decoded = task
+            .run(&mut model.decoder, hs, &tokenizer, &callback)
+            .await?;
+
         let (segments, advance) = DecodingTask::build_segments(
             decoded,
             time_offset,
@@ -159,6 +164,15 @@ pub async fn transcribe(
         model.decoder.reset();
         seek += advance;
         pass_idx += 1;
+    }
+
+    if let Some(cb) = callback {
+        cb(StreamedSegment::from_tokens(
+            &tokenizer,
+            &[WhisperTokenizer::EOT],
+            content_frames as f64 / 100.,
+            true,
+        ));
     }
 
     let mut t = TranscriptionResult::new(runtime.elapsed(), all_segments, None);
