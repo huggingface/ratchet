@@ -138,7 +138,7 @@ const LanguageDropdown = (props: LanguageDropdownProps) => {
                 </label>
                 <button
                     onClick={toggleOpen}
-                    className="relative z-10 block px-4 py-1.5 bg-white text-left w-full rounded-md font-medium text-gray-700"
+                    className="relative z-10 block px-4 py-1.5 bg-white text-left w-full rounded-md font-medium text-slate-900 outline"
                 >
                     {selectedLanguage || "Select a language"}
                     <span className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
@@ -172,7 +172,7 @@ const LanguageDropdown = (props: LanguageDropdownProps) => {
                                 <a
                                     key={lang}
                                     href="#"
-                                    className="block px-4 py-2 text-gray-700 hover:bg-gray-100"
+                                    className="block px-4 py-2 text-slate-900 hover:bg-gray-100"
                                     role="menuitem"
                                     onClick={() => selectLanguage(lang)}
                                 >
