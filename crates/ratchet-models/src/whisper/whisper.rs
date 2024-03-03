@@ -140,7 +140,9 @@ impl Whisper {
         let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
         let disk_model = Whisper::load_ggml(&mut reader)?;
-        Self::load(&disk_model, &mut reader, device)
+        let result = Self::load(&disk_model, &mut reader, device);
+        log::warn!("Successfully loaded Whisper model");
+        result
     }
 }
 

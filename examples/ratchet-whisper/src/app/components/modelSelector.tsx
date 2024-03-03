@@ -43,7 +43,7 @@ const ModelSelector = (props: ModelSelectorProps) => {
         return modelNames.map((model, idx) => (
             <li key={model as string}>
                 <a
-                    className={`bg-orange-500 hover:bg-pop-orange py-2 px-8 font-semibold text-xl block whitespace-no-wrap cursor-pointer ${idx === modelNames.length - 1 ? "rounded-b-md" : ""
+                    className={`bg-white hover:bg-slate-100 py-2 px-8 font-semibold text-xl block whitespace-no-wrap cursor-pointer ${idx === modelNames.length - 1 ? "rounded-b-md" : ""
                         }`}
                     onClick={() => {
                         setSelectedModel(modelValues[idx] as number);
@@ -67,7 +67,7 @@ const ModelSelector = (props: ModelSelectorProps) => {
             </div>
             <div className="group inline-block relative w-full">
                 <button
-                    className="bg-pop-orange font-semibold text-xl py-2.5 px-8 w-full inline-flex items-center outline outline-white"
+                    className="font-semibold text-xl py-2.5 px-8 w-full inline-flex items-center outline outline-black"
                     onClick={() => setDropdownOpen(!dropdownOpen)}
                 >
                     <span className="mr-1">
@@ -84,7 +84,7 @@ const ModelSelector = (props: ModelSelectorProps) => {
                     </svg>
                 </button>
                 <ul
-                    className="absolute text-white group-hover:block z-10 w-full"
+                    className="absolute outline group-hover:block z-10 w-full"
                     style={{
                         display: dropdownOpen ? "block" : "none",
                     }}
