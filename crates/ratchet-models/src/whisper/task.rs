@@ -11,6 +11,7 @@ use crate::GreedySampler;
 use crate::LogitMutator;
 use crate::Prompt;
 use crate::Segment;
+use crate::StreamedSegment;
 use crate::WhisperDecoder;
 use crate::WhisperTokenizer;
 use crate::CHUNK_LENGTH;
@@ -129,8 +130,11 @@ impl DecodingTask {
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
         mut tokens: Vec<i32>,
+        tokenizer: &WhisperTokenizer,
+        callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
         let device = audio_ctx.device().clone();
+        let mut timestamps_seen = 0;
 
         for idx in 0..self.sample_len {
             device.try_gpu().unwrap().begin_pass(idx as _);
@@ -152,12 +156,41 @@ impl DecodingTask {
 
             let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
 
+            if let Some(ref cb) = callback {
+                self.handle_callback(tokenizer, &new_tokens, &mut timestamps_seen, cb);
+            }
+
             tokens = new_tokens;
             if completed {
                 break;
             }
         }
         Ok(tokens)
+    }
+
+    fn handle_callback(
+        &self,
+        tokenizer: &WhisperTokenizer,
+        new_tokens: &[i32],
+        timestamps_seen: &mut i32,
+        callback: impl Fn(StreamedSegment),
+    ) {
+        if WhisperTokenizer::is_timestamp(new_tokens[new_tokens.len() - 1]) {
+            *timestamps_seen += 1;
+            if *timestamps_seen % 2 == 0 {
+                let previous_timestamp = new_tokens[..new_tokens.len() - 2]
+                    .iter()
+                    .rposition(|x| WhisperTokenizer::is_timestamp(*x));
+                if let Some(previous_timestamp) = previous_timestamp {
+                    callback(StreamedSegment::from_tokens(
+                        tokenizer,
+                        &new_tokens[previous_timestamp..],
+                        self.options.time_offset.unwrap_or(0.0),
+                        false,
+                    ));
+                }
+            }
+        }
     }
 
     /// Slice logits from [1xnum_tokensx51872] -> [1x1x51865]
@@ -257,9 +290,16 @@ impl DecodingTask {
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
         tokenizer: &WhisperTokenizer,
+        callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
         let mut tokens = self
-            .main_loop(decoder, audio_ctx, self.get_initial_tokens(tokenizer))
+            .main_loop(
+                decoder,
+                audio_ctx,
+                self.get_initial_tokens(tokenizer),
+                tokenizer,
+                &callback,
+            )
             .await?;
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();

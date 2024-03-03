@@ -1,8 +1,8 @@
-#![cfg(target_arch = "wasm32")]
+//#![cfg(target_arch = "wasm32")]
 use crate::db::*;
 use crate::registry::*;
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_models::{transcribe, Whisper};
+use ratchet_models::{transcribe, StreamedSegment, Whisper};
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug)]
@@ -16,7 +16,22 @@ impl WebModel {
             WebModel::Whisper(model) => {
                 let input: WhisperInputs = serde_wasm_bindgen::from_value(input)?;
                 let options = serde_wasm_bindgen::from_value(input.decode_options)?;
-                let result = transcribe(model, input.audio, options).await.unwrap();
+
+                let callback = if !input.callback.is_null() {
+                    let rs_callback = |decoded: StreamedSegment| {
+                        input.callback.call1(
+                            &JsValue::NULL,
+                            &serde_wasm_bindgen::to_value(&decoded).unwrap(),
+                        );
+                    };
+                    Some(rs_callback)
+                } else {
+                    None
+                };
+
+                let result = transcribe(model, input.audio, options, callback)
+                    .await
+                    .unwrap();
                 serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
             }
         }
@@ -37,6 +52,8 @@ pub struct WhisperInputs {
     pub audio: Vec<f32>,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub decode_options: JsValue,
+    #[serde(with = "serde_wasm_bindgen::preserve")]
+    pub callback: js_sys::Function,
 }
 
 #[wasm_bindgen]
