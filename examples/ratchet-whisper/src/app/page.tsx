@@ -138,7 +138,7 @@ export default function Home() {
             <div className="flex gap-8 flex-row h-screen">
                 <div className="flex-1 w-1/2 h-full flex flex-col relative z-10 overflow-hidden">
                     <div className="h-full px-4 xl:pl-32 my-4">
-                        <h1 className="text-blue-500 text-4xl font-semibold mx-auto">Whisper + Ratchet</h1>
+                        <h1 className="text-blue-700 text-4xl font-semibold mx-auto">Whisper + Ratchet</h1>
                         <div className="flex flex-col mx-auto gap-6">
                             <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
                             {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
