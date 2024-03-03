@@ -272,7 +272,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let src_path = model.get("ggml-large-v2.bin").unwrap();
+        let src_path = model.get("ggml-tiny.bin").unwrap();
 
         let to_quant = HashSet::from([
             "attn.query.weight",
