@@ -72,6 +72,7 @@ impl Model {
     pub async fn load(
         model: AvailableModels,
         quantization: Quantization,
+        progress: Option<js_sys::Function>,
     ) -> Result<Model, JsValue> {
         log::warn!("Loading model: {:?} {:?}", model, quantization);
         let key = model.as_key(quantization);
