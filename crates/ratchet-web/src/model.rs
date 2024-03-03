@@ -1,7 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 use crate::db::*;
+use crate::registry::*;
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_models::{transcribe, DecodingOptions, Whisper};
+use ratchet_models::{transcribe, Whisper};
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug)]
@@ -23,7 +24,7 @@ impl WebModel {
 
     pub async fn from_stored(stored: StoredModel) -> Result<WebModel, anyhow::Error> {
         match stored.repo_id.as_str() {
-            "ggerganov/whisper.cpp" => Ok(WebModel::Whisper(
+            "FL33TW00D-HF/ratchet-whisper" => Ok(WebModel::Whisper(
                 Whisper::from_bytes(&stored.bytes.to_vec()).await?,
             )),
             _ => Err(anyhow::anyhow!("Unknown model type")),
@@ -51,7 +52,12 @@ impl Model {
     /// Loads a model with the provided ID.
     /// This key should be an enum of supported models.
     #[wasm_bindgen]
-    pub async fn load(key: ModelKey) -> Result<Model, JsValue> {
+    pub async fn load(
+        model: AvailableModels,
+        quantization: Quantization,
+    ) -> Result<Model, JsValue> {
+        log::warn!("Loading model: {:?} {:?}", model, quantization);
+        let key = model.as_key(quantization);
         let model_repo = ApiBuilder::from_hf(&key.repo_id(), RepoType::Model).build();
         let db = RatchetDB::open().await.map_err(|e| {
             let e: JsError = e.into();

@@ -246,7 +246,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("ggml-tiny.bin").unwrap();
+        let model_path = model.get("tiny_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("mm0.wav").unwrap();
@@ -270,7 +270,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
+        let src_path = model.get("ggml-medium.bin").unwrap();
 
         let to_quant = HashSet::from([
             "attn.query.weight",
@@ -285,8 +285,13 @@ mod tests {
             "mlp.2.weight",
             "token_embedding.weight",
         ]);
+        let mut dst_path = src_path.clone();
+        dst_path.pop();
+        dst_path = dst_path.join("medium_q8.bin");
+        println!("DST: {:?}", dst_path);
 
         let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);
-        Converter::convert::<_, Whisper>(path, Quantization::SInt8, to_quant, to_pad).unwrap();
+        Converter::convert::<_, Whisper>(src_path, dst_path, Quantization::SInt8, to_quant, to_pad)
+            .unwrap();
     }
 }
