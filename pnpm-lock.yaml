@@ -14,9 +14,9 @@ importers:
       '@ffmpeg/util':
         specifier: ^0.12.1
         version: 0.12.1
-      '@ratchet-ml/ratchet':
-        specifier: link:../../target/pkg/ratchet-web
-        version: link:../../target/pkg/ratchet-web
+      '@ratchet-ml/ratchet-web':
+        specifier: 0.1.0
+        version: 0.1.0
       next:
         specifier: 14.1.0
         version: 14.1.0(react-dom@18.2.0)(react@18.2.0)
@@ -534,6 +534,10 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: true
+
+  /@ratchet-ml/ratchet-web@0.1.0:
+    resolution: {integrity: sha512-KO1ZwhklkanWsRpbQ7f2Y4F4y5ADSi9Lp00et6wZicRsI8OkiWV19f5fSeFdyiI3Ux9+UsXCRnpy6pBCjieEtw==}
+    dev: false
 
   /@rollup/plugin-virtual@3.0.2:
     resolution: {integrity: sha512-10monEYsBp3scM4/ND4LNH5Rxvh3e/cVeL3jWTgZ2SrQ+BmUoQcopVQvnaMcOnykb1VkxUFuDAN+0FnpTFRy2A==}

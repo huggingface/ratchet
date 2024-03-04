@@ -3,7 +3,7 @@ import Modal from "react-responsive-modal";
 import LanguageDropdown from "./languageDropdown";
 import SuppressComponent from "./suppressSelector";
 import TaskComponent from "./taskSelector";
-import { Task } from "@ratchet-ml/ratchet";
+import { Task } from "@ratchet-ml/ratchet-web";
 
 interface ConfigModalProps {
     isModalOpen: boolean;

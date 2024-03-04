@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ConfigOptions } from "./configModal";
-import { Task } from "@ratchet-ml/ratchet";
+import { Task } from "@ratchet-ml/ratchet-web";
 
 interface TaskComponentProps {
     configOptions: ConfigOptions;
