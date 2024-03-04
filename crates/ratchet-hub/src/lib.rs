@@ -102,13 +102,30 @@ pub struct Api {
 
 #[wasm_bindgen]
 impl Api {
+    #[wasm_bindgen]
+    pub async fn get_with_progress(
+        &self,
+        file_name: &str,
+        callback: &js_sys::Function,
+    ) -> Result<Uint8Array, JsError> {
+        self.get_internal(file_name, Some(callback))
+            .await
+            .map_err(js_to_js_error)
+    }
+
     /// Get a file from the repository
     #[wasm_bindgen]
     pub async fn get(&self, file_name: &str) -> Result<Uint8Array, JsError> {
-        self.get_internal(file_name).await.map_err(js_to_js_error)
+        self.get_internal(file_name, None)
+            .await
+            .map_err(js_to_js_error)
     }
 
-    async fn get_internal(&self, file_name: &str) -> Result<Uint8Array, JsValue> {
+    async fn get_internal(
+        &self,
+        file_name: &str,
+        progress: Option<&js_sys::Function>,
+    ) -> Result<Uint8Array, JsValue> {
         let file_url = format!("{}/{}", self.endpoint, file_name);
         log::debug!("Fetching file: {}", file_url);
 
@@ -154,10 +171,11 @@ impl Api {
                 let chunk_array: Uint8Array = chunk.dyn_into()?;
                 buf.set(&chunk_array, recv_len);
                 recv_len += chunk_array.length();
-                log::warn!(
-                    "{}% downloaded",
-                    (recv_len as f64 / content_len as f64) * 100.0
-                );
+                let req_progress = (recv_len as f64 / content_len as f64) * 100.0;
+                log::info!("{}% downloaded", req_progress);
+                if let Some(progress) = progress.as_ref() {
+                    progress.call1(&JsValue::NULL, &req_progress.into())?;
+                }
             }
         }
         Ok(buf)
@@ -196,7 +214,13 @@ mod tests {
     async fn pull_from_hf() -> Result<(), JsValue> {
         log_init();
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
-        let model_bytes = model_repo.get("model.safetensors").await?;
+        let cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
+            log::info!("Provided closure got progress: {}", p);
+        });
+        let js_cb: &js_sys::Function = cb.as_ref().unchecked_ref();
+        let model_bytes = model_repo
+            .get_with_progress("model.safetensors", js_cb)
+            .await?;
         let length = model_bytes.length();
         assert!(length == 8388776, "Length was {length}");
         Ok(())
