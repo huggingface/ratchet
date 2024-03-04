@@ -1,7 +1,9 @@
-use js_sys::Uint8Array;
+use gloo_net::http::Request;
+use js_sys::{Boolean, Object, Uint8Array};
 use util::{js_error, js_to_js_error, to_future};
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
-use web_sys::{Cache, Request, RequestInit, RequestMode, Response};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{Cache, ReadableStreamDefaultReader, RequestInit, RequestMode, Response};
 
 mod util;
 
@@ -123,34 +125,56 @@ impl Api {
 
     async fn get_internal(&self, file_name: &str) -> Result<ApiResponse, JsValue> {
         let file_url = format!("{}/{}", self.endpoint, file_name);
-        log::info!("Fetching file: {}", file_url);
+        log::warn!("Fetching file: {}", file_url);
 
-        let caches = web_sys::window()
-            .ok_or(js_error("Couldn't get window handle"))?
-            .caches()?;
-        let cache: Cache = to_future(caches.open("ratchet-cache")).await?;
+        let response = Request::get(&file_url)
+            .mode(RequestMode::Cors)
+            .send()
+            .await
+            .unwrap();
+        log::warn!("Response: {:?}", response);
+        if !response.ok() {
+            return Err(
+                js_error(format!("Failed to fetch file: {}", response.status()).as_str()).into(),
+            );
+        }
 
-        let mut opts = RequestInit::new();
-        opts.method("GET");
-        opts.mode(RequestMode::Cors);
+        let content_len = response
+            .headers()
+            .get("Content-Length")
+            .ok_or(js_error("No content length"))?
+            .parse::<u32>()
+            .map_err(|p| js_error(format!("Failed to parse content length: {}", p).as_str()))?;
 
-        let request = Request::new_with_str_and_init(&file_url, &opts)?;
+        let reader = response
+            .body()
+            .ok_or(js_error("No body"))?
+            .get_reader()
+            .dyn_into::<web_sys::ReadableStreamDefaultReader>()?;
 
-        let promise = cache.match_with_request(&request);
-        let cache_hit: JsValue = to_future(promise).await?;
+        let mut recv_len = 0;
+        let buf = Uint8Array::new_with_length(content_len as u32);
+        loop {
+            let next = JsFuture::from(reader.read()).await?.dyn_into::<Object>()?;
+            let done = js_sys::Reflect::get(&next, &JsValue::from_str("done")).unwrap();
 
-        let (raw, cached) = if cache_hit.is_undefined() || !self.cached {
-            let raw_response = util::fetch(file_url.as_str()).await?;
-            let _ =
-                to_future::<JsValue>(cache.put_with_str(file_url.as_str(), &raw_response.clone()?))
-                    .await;
-            (raw_response, false)
-        } else {
-            let raw_response: Response = cache_hit.dyn_into()?;
-            (raw_response, true)
-        };
+            if done.is_truthy() {
+                break;
+            }
 
-        Ok(ApiResponse { raw, cached })
+            let chunk_value = js_sys::Reflect::get(&next, &JsValue::from_str("value")).unwrap();
+            let chunk_array: Uint8Array = chunk_value.dyn_into().unwrap();
+            buf.set(&chunk_array, recv_len);
+            recv_len += chunk_array.length();
+
+            log::warn!(
+                "{}% downloaded",
+                (recv_len as f32 / content_len as f32) * 100.0
+            );
+        }
+        let raw = response.into();
+
+        Ok(ApiResponse { raw, cached: false })
     }
 }
 
@@ -187,9 +211,34 @@ mod tests {
     use wasm_bindgen_test::*;
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
+    fn log_init() {
+        console_error_panic_hook::set_once();
+        let logger = fern::Dispatch::new()
+            .format(|out, message, record| {
+                out.finish(format_args!(
+                    "{}[{}][{}] {}",
+                    chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                    record.target(),
+                    record.level(),
+                    message
+                ))
+            })
+            .level_for("tokenizers", log::LevelFilter::Off)
+            .level(log::LevelFilter::Info)
+            .chain(fern::Output::call(console_log::log))
+            .apply();
+        match logger {
+            Ok(_) => log::info!("Logging initialized."),
+            Err(error) => eprintln!("Error initializing logging: {:?}", error),
+        }
+    }
+
     #[wasm_bindgen_test]
     async fn pull_from_hf() -> Result<(), JsValue> {
+        log_init();
+        log::info!("Pulling from HF");
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
+        log::info!("Built model repo");
         let model = model_repo.get("model.safetensors").await?;
         let bytes = model.to_uint8().await?;
         let length = bytes.length();
