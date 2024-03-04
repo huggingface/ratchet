@@ -87,9 +87,8 @@ impl Model {
             Into::<JsValue>::into(e)
         })? {
             log::warn!("Model not found in db, fetching from remote");
-            let model_data = model_repo.get(&key.model_id()).await?;
-            let bytes = model_data.to_uint8().await?;
-            let model = StoredModel::new(&key, bytes);
+            let model_bytes = model_repo.get(&key.model_id()).await?;
+            let model = StoredModel::new(&key, model_bytes);
             db.put_model(&key, model).await.unwrap();
         }
         let model = db.get_model(&key).await.unwrap().unwrap();
@@ -156,8 +155,7 @@ mod tests {
         log::warn!("Model: {:?}", model);
 
         let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-        let response = data_repo.get("jfk.wav").await?;
-        let audio_bytes = response.to_uint8().await?;
+        let audio_bytes = data_repo.get("jfk.wav").await?;
         let sample = load_sample(&audio_bytes.to_vec());
 
         let decode_options = DecodingOptionsBuilder::default().build();

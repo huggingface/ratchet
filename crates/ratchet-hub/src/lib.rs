@@ -1,9 +1,9 @@
 use gloo_net::http::Request;
-use js_sys::{Boolean, Object, Uint8Array};
-use util::{js_error, js_to_js_error, to_future};
+use js_sys::{Object, Reflect, Uint8Array};
+use util::{js_error, js_to_js_error};
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Cache, ReadableStreamDefaultReader, RequestInit, RequestMode, Response};
+use web_sys::RequestMode;
 
 mod util;
 
@@ -46,7 +46,6 @@ pub enum RepoType {
 #[wasm_bindgen]
 pub struct ApiBuilder {
     endpoint: String,
-    cached: bool,
 }
 
 #[wasm_bindgen]
@@ -55,7 +54,6 @@ impl ApiBuilder {
     #[wasm_bindgen]
     pub fn from_hf(repo_id: &str, ty: RepoType) -> Self {
         Self {
-            cached: true,
             endpoint: Self::endpoint(repo_id, ty),
         }
     }
@@ -78,7 +76,6 @@ impl ApiBuilder {
     #[wasm_bindgen]
     pub fn from_hf_with_revision(repo_id: String, revision: String) -> Self {
         Self {
-            cached: true,
             endpoint: format!("https://huggingface.co/{repo_id}/resolve/{revision}"),
         }
     }
@@ -86,17 +83,7 @@ impl ApiBuilder {
     /// Build an Api from a custom URL.
     #[wasm_bindgen]
     pub fn from_custom(endpoint: String) -> Self {
-        Self {
-            cached: true,
-            endpoint,
-        }
-    }
-
-    /// Disable caching
-    #[wasm_bindgen]
-    pub fn uncached(mut self) -> Self {
-        self.cached = false;
-        self
+        Self { endpoint }
     }
 
     /// Build the Api.
@@ -104,7 +91,6 @@ impl ApiBuilder {
     pub fn build(&self) -> Api {
         Api {
             endpoint: self.endpoint.clone(),
-            cached: self.cached,
         }
     }
 }
@@ -112,27 +98,25 @@ impl ApiBuilder {
 #[wasm_bindgen]
 pub struct Api {
     endpoint: String,
-    cached: bool,
 }
 
 #[wasm_bindgen]
 impl Api {
     /// Get a file from the repository
     #[wasm_bindgen]
-    pub async fn get(&self, file_name: &str) -> Result<ApiResponse, JsError> {
+    pub async fn get(&self, file_name: &str) -> Result<Uint8Array, JsError> {
         self.get_internal(file_name).await.map_err(js_to_js_error)
     }
 
-    async fn get_internal(&self, file_name: &str) -> Result<ApiResponse, JsValue> {
+    async fn get_internal(&self, file_name: &str) -> Result<Uint8Array, JsValue> {
         let file_url = format!("{}/{}", self.endpoint, file_name);
-        log::warn!("Fetching file: {}", file_url);
+        log::debug!("Fetching file: {}", file_url);
 
         let response = Request::get(&file_url)
             .mode(RequestMode::Cors)
             .send()
             .await
             .unwrap();
-        log::warn!("Response: {:?}", response);
         if !response.ok() {
             return Err(
                 js_error(format!("Failed to fetch file: {}", response.status()).as_str()).into(),
@@ -153,55 +137,30 @@ impl Api {
             .dyn_into::<web_sys::ReadableStreamDefaultReader>()?;
 
         let mut recv_len = 0;
-        let buf = Uint8Array::new_with_length(content_len as u32);
-        loop {
-            let next = JsFuture::from(reader.read()).await?.dyn_into::<Object>()?;
-            let done = js_sys::Reflect::get(&next, &JsValue::from_str("done")).unwrap();
-
-            if done.is_truthy() {
+        let buf = Uint8Array::new_with_length(content_len);
+        while let Some(result) = JsFuture::from(reader.read())
+            .await?
+            .dyn_into::<Object>()
+            .ok()
+        {
+            let done = Reflect::get(&result, &"done".into())?
+                .as_bool()
+                .unwrap_or(true);
+            if done {
                 break;
             }
 
-            let chunk_value = js_sys::Reflect::get(&next, &JsValue::from_str("value")).unwrap();
-            let chunk_array: Uint8Array = chunk_value.dyn_into().unwrap();
-            buf.set(&chunk_array, recv_len);
-            recv_len += chunk_array.length();
-
-            log::warn!(
-                "{}% downloaded",
-                (recv_len as f32 / content_len as f32) * 100.0
-            );
+            if let Ok(chunk) = Reflect::get(&result, &"value".into()) {
+                let chunk_array: Uint8Array = chunk.dyn_into()?;
+                buf.set(&chunk_array, recv_len);
+                recv_len += chunk_array.length();
+                log::warn!(
+                    "{}% downloaded",
+                    (recv_len as f64 / content_len as f64) * 100.0
+                );
+            }
         }
-        let raw = response.into();
-
-        Ok(ApiResponse { raw, cached: false })
-    }
-}
-
-#[wasm_bindgen]
-pub struct ApiResponse {
-    raw: Response,
-    cached: bool,
-}
-
-#[wasm_bindgen]
-impl ApiResponse {
-    /// Get the response as bytes
-    #[wasm_bindgen]
-    pub async fn to_uint8(&self) -> Result<Uint8Array, JsError> {
-        let promise = self.raw.array_buffer().map_err(js_to_js_error)?;
-
-        let buf_js = util::to_future::<wasm_bindgen::JsValue>(promise)
-            .await
-            .map_err(js_to_js_error)?;
-
-        let buffer = Uint8Array::new(&buf_js);
-        Ok(buffer)
-    }
-
-    #[wasm_bindgen]
-    pub fn is_cached(&self) -> bool {
-        self.cached
+        Ok(buf)
     }
 }
 
@@ -236,12 +195,9 @@ mod tests {
     #[wasm_bindgen_test]
     async fn pull_from_hf() -> Result<(), JsValue> {
         log_init();
-        log::info!("Pulling from HF");
         let model_repo = ApiBuilder::from_hf("jantxu/ratchet-test", RepoType::Model).build();
-        log::info!("Built model repo");
-        let model = model_repo.get("model.safetensors").await?;
-        let bytes = model.to_uint8().await?;
-        let length = bytes.length();
+        let model_bytes = model_repo.get("model.safetensors").await?;
+        let length = model_bytes.length();
         assert!(length == 8388776, "Length was {length}");
         Ok(())
     }
