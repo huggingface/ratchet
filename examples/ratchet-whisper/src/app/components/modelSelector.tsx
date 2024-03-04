@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AvailableModels } from "@ratchet-ml/ratchet";
+import { AvailableModels } from "@ratchet-ml/ratchet-web";
 
 interface ModelSelectorProps {
     selectedModel: AvailableModels | null;
