@@ -103,6 +103,7 @@ export default function Home() {
         if (!model || !audio || generating) {
             return
         }
+        setSegments([]);
         let floatArray = pcm16ToIntFloat32(audio);
         let builder = new DecodingOptionsBuilder();
         let options = builder
