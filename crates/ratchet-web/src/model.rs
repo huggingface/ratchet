@@ -72,7 +72,7 @@ impl Model {
     pub async fn load(
         model: AvailableModels,
         quantization: Quantization,
-        progress: js_sys::Function,
+        progress: &js_sys::Function,
     ) -> Result<Model, JsValue> {
         log::warn!("Loading model: {:?} {:?}", model, quantization);
         let key = model.as_key(quantization);
@@ -153,12 +153,14 @@ mod tests {
     #[wasm_bindgen_test]
     async fn browser_end_to_end() -> Result<(), JsValue> {
         log_init();
-        let key = ModelKey::new(
-            "ggerganov/whisper.cpp".to_string(),
-            "ggml-tiny.bin".to_string(),
-        );
-        let mut model = Model::load(key).await.unwrap();
-        log::warn!("Model: {:?}", model);
+        let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
+            log::info!("Provided closure got progress: {}", p);
+        });
+        let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
+
+        let mut model = Model::load(AvailableModels::WHISPER_TINY, Quantization::Q8, js_cb)
+            .await
+            .unwrap();
 
         let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
         let audio_bytes = data_repo.get("jfk.wav").await?;
@@ -166,9 +168,15 @@ mod tests {
 
         let decode_options = DecodingOptionsBuilder::default().build();
 
+        let cb: Closure<dyn Fn(JsValue)> = Closure::new(|s| {
+            log::info!("GENERATED SEGMENT: {:?}", s);
+        });
+        let js_cb: &js_sys::Function = cb.as_ref().unchecked_ref();
+
         let input = WhisperInputs {
             audio: sample,
             decode_options,
+            callback: js_cb.clone(),
         };
         let input = serde_wasm_bindgen::to_value(&input).unwrap();
         let result = model.run(input).await.unwrap();

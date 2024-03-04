@@ -124,7 +124,7 @@ impl Api {
     async fn get_internal(
         &self,
         file_name: &str,
-        progress: Option<&js_sys::Function>,
+        progress_cb: Option<&js_sys::Function>,
     ) -> Result<Uint8Array, JsValue> {
         let file_url = format!("{}/{}", self.endpoint, file_name);
         log::debug!("Fetching file: {}", file_url);
@@ -172,8 +172,7 @@ impl Api {
                 buf.set(&chunk_array, recv_len);
                 recv_len += chunk_array.length();
                 let req_progress = (recv_len as f64 / content_len as f64) * 100.0;
-                log::info!("{}% downloaded", req_progress);
-                if let Some(progress) = progress.as_ref() {
+                if let Some(progress) = progress_cb.as_ref() {
                     progress.call1(&JsValue::NULL, &req_progress.into())?;
                 }
             }
