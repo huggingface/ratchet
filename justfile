@@ -12,4 +12,4 @@ wasm-test CRATE BROWSER:
 vitest:
     pnpm run -r test
 push-example EXAMPLE:
-    git push {{ EXAMPLE }} `git subtree split --prefix=examples/{{EXAMPLE}}/out master`:main --force
+    git push {{ EXAMPLE }} `git subtree split --prefix=examples/{{EXAMPLE}}/out chore/release`:main 
