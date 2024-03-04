@@ -12,6 +12,7 @@ pub struct Converter;
 impl Converter {
     pub fn convert<P: AsRef<Path>, M: GGMLCompatible>(
         src_path: P,
+        dst_path: P,
         dst_quant: Quantization,
         to_quant: HashSet<&str>,
         to_pad: HashMap<&str, Vec<[usize; 2]>>,
@@ -19,7 +20,7 @@ impl Converter {
         let mut reader = std::io::BufReader::new(std::fs::File::open(src_path).unwrap());
         let src = M::load_ggml(&mut reader)?;
 
-        let mut writer = std::io::BufWriter::new(std::fs::File::create("q.bin")?);
+        let mut writer = std::io::BufWriter::new(std::fs::File::create(dst_path)?);
         M::write_header(&src.header, &mut writer)?;
 
         let quantizer = Quantizer::new(dst_quant);

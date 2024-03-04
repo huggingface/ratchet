@@ -1,2 +1,3 @@
 packages:
-  - "ratchet-web"
+  - "ratchet-vite"
+  - "examples/ratchet-whisper"

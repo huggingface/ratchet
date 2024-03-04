@@ -1,7 +1,8 @@
-#![cfg(target_arch = "wasm32")]
+//#![cfg(target_arch = "wasm32")]
 use crate::db::*;
+use crate::registry::*;
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_models::{transcribe, DecodingOptions, Whisper};
+use ratchet_models::{transcribe, StreamedSegment, Whisper};
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug)]
@@ -14,7 +15,21 @@ impl WebModel {
         match self {
             WebModel::Whisper(model) => {
                 let input: WhisperInputs = serde_wasm_bindgen::from_value(input)?;
-                let result = transcribe(model, input.audio, input.decode_options)
+                let options = serde_wasm_bindgen::from_value(input.decode_options)?;
+
+                let callback = if !input.callback.is_null() {
+                    let rs_callback = |decoded: StreamedSegment| {
+                        input.callback.call1(
+                            &JsValue::NULL,
+                            &serde_wasm_bindgen::to_value(&decoded).unwrap(),
+                        );
+                    };
+                    Some(rs_callback)
+                } else {
+                    None
+                };
+
+                let result = transcribe(model, input.audio, options, callback)
                     .await
                     .unwrap();
                 serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
@@ -24,7 +39,7 @@ impl WebModel {
 
     pub async fn from_stored(stored: StoredModel) -> Result<WebModel, anyhow::Error> {
         match stored.repo_id.as_str() {
-            "ggerganov/whisper.cpp" => Ok(WebModel::Whisper(
+            "FL33TW00D-HF/ratchet-whisper" => Ok(WebModel::Whisper(
                 Whisper::from_bytes(&stored.bytes.to_vec()).await?,
             )),
             _ => Err(anyhow::anyhow!("Unknown model type")),
@@ -35,7 +50,10 @@ impl WebModel {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct WhisperInputs {
     pub audio: Vec<f32>,
-    pub decode_options: DecodingOptions,
+    #[serde(with = "serde_wasm_bindgen::preserve")]
+    pub decode_options: JsValue,
+    #[serde(with = "serde_wasm_bindgen::preserve")]
+    pub callback: js_sys::Function,
 }
 
 #[wasm_bindgen]
@@ -51,7 +69,13 @@ impl Model {
     /// Loads a model with the provided ID.
     /// This key should be an enum of supported models.
     #[wasm_bindgen]
-    pub async fn load(key: ModelKey) -> Result<Model, JsValue> {
+    pub async fn load(
+        model: AvailableModels,
+        quantization: Quantization,
+        progress: &js_sys::Function,
+    ) -> Result<Model, JsValue> {
+        log::warn!("Loading model: {:?} {:?}", model, quantization);
+        let key = model.as_key(quantization);
         let model_repo = ApiBuilder::from_hf(&key.repo_id(), RepoType::Model).build();
         let db = RatchetDB::open().await.map_err(|e| {
             let e: JsError = e.into();
@@ -63,9 +87,14 @@ impl Model {
             Into::<JsValue>::into(e)
         })? {
             log::warn!("Model not found in db, fetching from remote");
-            let model_data = model_repo.get(&key.model_id()).await?;
-            let bytes = model_data.to_uint8().await?;
-            let model = StoredModel::new(&key, bytes);
+            let model_bytes = if progress.is_undefined() {
+                model_repo.get(&key.model_id()).await?
+            } else {
+                model_repo
+                    .get_with_progress(&key.model_id(), progress)
+                    .await?
+            };
+            let model = StoredModel::new(&key, model_bytes);
             db.put_model(&key, model).await.unwrap();
         }
         let model = db.get_model(&key).await.unwrap().unwrap();
@@ -124,23 +153,30 @@ mod tests {
     #[wasm_bindgen_test]
     async fn browser_end_to_end() -> Result<(), JsValue> {
         log_init();
-        let key = ModelKey::new(
-            "ggerganov/whisper.cpp".to_string(),
-            "ggml-tiny.bin".to_string(),
-        );
-        let mut model = Model::load(key).await.unwrap();
-        log::warn!("Model: {:?}", model);
+        let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
+            log::info!("Provided closure got progress: {}", p);
+        });
+        let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
+
+        let mut model = Model::load(AvailableModels::WHISPER_TINY, Quantization::Q8, js_cb)
+            .await
+            .unwrap();
 
         let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-        let response = data_repo.get("jfk.wav").await?;
-        let audio_bytes = response.to_uint8().await?;
+        let audio_bytes = data_repo.get("jfk.wav").await?;
         let sample = load_sample(&audio_bytes.to_vec());
 
         let decode_options = DecodingOptionsBuilder::default().build();
 
+        let cb: Closure<dyn Fn(JsValue)> = Closure::new(|s| {
+            log::info!("GENERATED SEGMENT: {:?}", s);
+        });
+        let js_cb: &js_sys::Function = cb.as_ref().unchecked_ref();
+
         let input = WhisperInputs {
             audio: sample,
             decode_options,
+            callback: js_cb.clone(),
         };
         let input = serde_wasm_bindgen::to_value(&input).unwrap();
         let result = model.run(input).await.unwrap();
