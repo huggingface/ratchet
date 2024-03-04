@@ -72,7 +72,7 @@ impl Model {
     pub async fn load(
         model: AvailableModels,
         quantization: Quantization,
-        progress: Option<js_sys::Function>,
+        progress: js_sys::Function,
     ) -> Result<Model, JsValue> {
         log::warn!("Loading model: {:?} {:?}", model, quantization);
         let key = model.as_key(quantization);
@@ -87,7 +87,13 @@ impl Model {
             Into::<JsValue>::into(e)
         })? {
             log::warn!("Model not found in db, fetching from remote");
-            let model_bytes = model_repo.get(&key.model_id()).await?;
+            let model_bytes = if progress.is_undefined() {
+                model_repo.get(&key.model_id()).await?
+            } else {
+                model_repo
+                    .get_with_progress(&key.model_id(), progress)
+                    .await?
+            };
             let model = StoredModel::new(&key, model_bytes);
             db.put_model(&key, model).await.unwrap();
         }
