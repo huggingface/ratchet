@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization, Segment } from "@ratchet-ml/ratchet";
 import ConfigModal, { ConfigOptions } from './components/configModal';
 import ModelSelector from './components/modelSelector';
+import ProgressBar from './components/progressBar';
 
 export default function Home() {
     const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WHISPER_TINY);
@@ -22,6 +23,9 @@ export default function Home() {
         task: Task.Transcribe,
         suppress_non_speech: true,
     });
+    const [generating, setGenerating] = useState<boolean>(false);
+    const [progress, setProgress] = useState<number>(0);
+
 
     useEffect(() => {
         (async () => {
@@ -39,8 +43,9 @@ export default function Home() {
 
     async function loadModel() {
         let toLoad = AvailableModels[selectedModel] as unknown as AvailableModels;
-        setModel(await Model.load(toLoad, Quantization.Q8));
+        setModel(await Model.load(toLoad, Quantization.Q8, (p: number) => setProgress(p)));
         setLoadedModel(selectedModel);
+        setProgress(0);
     }
 
     const loadFFMPEG = async () => {
@@ -95,7 +100,7 @@ export default function Home() {
 
 
     async function runModel() {
-        if (!model || !audio) {
+        if (!model || !audio || generating) {
             return
         }
         let floatArray = pcm16ToIntFloat32(audio);
@@ -107,9 +112,12 @@ export default function Home() {
             .build();
         console.log("Options: ", options);
         let callback = (segment: Segment) => {
-            console.log("Segment: ", segment);
+            if (segment.last) {
+                setGenerating(false);
+            }
             setSegments((currentSegments) => [...currentSegments, segment]);
         };
+        setGenerating(true);
         let result = await model.run({ audio: floatArray, decode_options: options, callback: callback });
         console.log("Result: ", result);
         console.log("Processing time: ", result.processing_time);
@@ -144,6 +152,7 @@ export default function Home() {
                         <h1 className="text-blue-700 text-4xl font-semibold mx-auto">Whisper + Ratchet</h1>
                         <div className="flex flex-col mx-auto gap-6">
                             <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
+                            {progress > 0 && progress < 100 ? <ProgressBar progress={progress} /> : <></>}
                             {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
                                 <></>}
                             <div className="flex flex-row gap-4 justify-between items-center">
@@ -159,8 +168,16 @@ export default function Home() {
                             </div>
 
                             <div className="flex flex-row gap-4 justify-end items-center">
-                                <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={() => setIsConfigOpen(true)}>Options</button>
-                                <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={runModel}>Run Model</button>
+                                <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={() => setIsConfigOpen(true)}>Options</button>
+                                <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={runModel}>
+                                    {
+                                        generating ?
+                                            <div className="flex p-4">
+                                                <span className="loader"></span>
+                                            </div>
+                                            : "Run Model"
+                                    }
+                                </button>
                             </div>
                         </div>
                     </div>
