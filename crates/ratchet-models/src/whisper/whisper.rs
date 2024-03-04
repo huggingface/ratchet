@@ -125,6 +125,7 @@ impl Whisper {
         let decoder = WhisperDecoder::load(disk_model, reader, &device)?;
         //TODO: remove clones
         let generator = crate::SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
+        log::info!("Sucessfully loaded Whisper model");
         Ok(Self {
             specgen: generator,
             encoder,
@@ -139,7 +140,9 @@ impl Whisper {
         let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
         let disk_model = Whisper::load_ggml(&mut reader)?;
-        Self::load(&disk_model, &mut reader, device)
+        let result = Self::load(&disk_model, &mut reader, device);
+        log::warn!("Successfully loaded Whisper model");
+        result
     }
 }
 
@@ -244,8 +247,8 @@ mod tests {
     pub fn whisper_end_to_end() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("ggml-tiny.bin").unwrap();
+        let model = api.model("FL33TW00D-HF/ratchet-whisper".to_string());
+        let model_path = model.get("tiny_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("mm0.wav").unwrap();
@@ -269,7 +272,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
+        let src_path = model.get("ggml-tiny.bin").unwrap();
 
         let to_quant = HashSet::from([
             "attn.query.weight",
@@ -284,8 +287,13 @@ mod tests {
             "mlp.2.weight",
             "token_embedding.weight",
         ]);
+        let mut dst_path = src_path.clone();
+        dst_path.pop();
+        dst_path = dst_path.join("large-v2_q8.bin");
+        println!("DST: {:?}", dst_path);
 
         let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);
-        Converter::convert::<_, Whisper>(path, Quantization::SInt8, to_quant, to_pad).unwrap();
+        Converter::convert::<_, Whisper>(src_path, dst_path, Quantization::SInt8, to_quant, to_pad)
+            .unwrap();
     }
 }

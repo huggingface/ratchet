@@ -22,8 +22,7 @@ fn log_init() {
 async fn tiny_encoder() -> Result<(), JsValue> {
     log_init();
     let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp", RepoType::Model).build();
-    let model = model_repo.get("ggml-tiny.bin").await?;
-    let model_data = model.to_uint8().await?;
+    let model_data = model_repo.get("ggml-tiny.bin").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
     let input_npy = ground_repo.get("jfk_tiny_encoder_input.npy").await?;
@@ -34,11 +33,9 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
 
-    let input_data = &input_npy.to_uint8().await?.to_vec();
+    let input_data = &input_npy.to_vec();
     let input = Tensor::from_npy_bytes::<f32>(input_data, &device).unwrap();
-    let ground =
-        Tensor::from_npy_bytes::<f32>(&ground_npy.to_uint8().await?.to_vec(), &Device::CPU)
-            .unwrap();
+    let ground = Tensor::from_npy_bytes::<f32>(&ground_npy.to_vec(), &Device::CPU).unwrap();
 
     let encoder = WhisperEncoder::load(&gg, &mut reader, &device).unwrap();
     let result = encoder.forward(&input).unwrap().resolve().unwrap();
@@ -50,12 +47,10 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 #[wasm_bindgen_test]
 async fn tiny_decoder() -> Result<(), JsValue> {
     let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp", RepoType::Model).build();
-    let model = model_repo.get("ggml-tiny.bin").await?;
-    let model_data = model.to_uint8().await?;
+    let model_data = model_repo.get("ggml-tiny.bin").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-    let hs = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;
-    let hs_data = hs.to_uint8().await?;
+    let hs_data = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;
 
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(model_data.to_vec()));
     let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
