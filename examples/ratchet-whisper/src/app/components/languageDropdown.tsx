@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ConfigOptions } from "./configModal";
-import { DecodingOptionsBuilder } from "@ratchet-ml/ratchet";
+import { DecodingOptionsBuilder } from "@ratchet-ml/ratchet-web";
 
 const AvailableLanguages = {
     en: "English",

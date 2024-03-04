@@ -2,7 +2,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL } from '@ffmpeg/util';
 import { useEffect, useRef, useState } from "react";
-import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization, Segment } from "@ratchet-ml/ratchet";
+import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization, Segment } from "@ratchet-ml/ratchet-web";
 import ConfigModal, { ConfigOptions } from './components/configModal';
 import ModelSelector from './components/modelSelector';
 import ProgressBar from './components/progressBar';
