@@ -5,13 +5,16 @@ use wgpu::BufferUsages;
 use crate::{
     gpu::{
         BufferDescriptor, BufferPool, BufferUsagesExt, CpuUniform, GpuBufferHandle,
-        PooledGPUBuffer, TensorUsageRecords, WgpuDevice, UNIFORM_ALIGN,
+        PooledGPUBuffer, SizeDistPriorityInfo, TensorUsageRecords, WgpuDevice, UNIFORM_ALIGN,
     },
     DeviceError, Tensor, TensorId,
 };
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
-use super::{OpProfile, TensorUsageRecord};
+use super::{BufferId, BufferRequest, OpProfile, TensorUsageRecord};
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AllocatorError {
@@ -160,6 +163,8 @@ impl BufferAllocator {
                     .or_insert_with(|| TensorUsageRecord {
                         id: None,
                         producer: None,
+                        #[cfg(debug_assertions)]
+                        producer_op: None,
                         last_consumer: topo_len - iter,
                         #[cfg(debug_assertions)]
                         last_consumer_id: t.id(),
@@ -170,6 +175,10 @@ impl BufferAllocator {
             if let Some(record) = records.get_mut(&t.id()) {
                 record.id = Some(t.id());
                 record.producer = Some(topo_len - iter);
+                #[cfg(debug_assertions)]
+                {
+                    record.producer_op = Some(t.op().name().to_string());
+                }
             }
         }
         records
@@ -183,7 +192,30 @@ impl BufferAllocator {
                 op_profiles[o].push(record.clone());
             }
         }
+
+        for profile in op_profiles.iter_mut() {
+            profile.sort();
+        }
+
         op_profiles
+    }
+
+    fn calculate_positional_maximums(
+        usage_records: &TensorUsageRecords,
+        num_ops: usize,
+    ) -> Vec<usize> {
+        let profiles = Self::calculate_op_profiles(usage_records, num_ops);
+        let num_positions = profiles.iter().map(|p| p.len()).max().unwrap();
+        log::info!("Num positions: {}", num_positions);
+        let mut positional_maximums = vec![0; num_positions];
+
+        for profile in profiles {
+            for (idx, record) in profile.iter().enumerate() {
+                positional_maximums[idx] = std::cmp::max(positional_maximums[idx], record.size);
+            }
+        }
+        log::info!("Postional maximums: {:#?}", positional_maximums);
+        positional_maximums
     }
 
     //https://arxiv.org/pdf/2001.03288.pdf + inplace support
@@ -191,9 +223,9 @@ impl BufferAllocator {
     pub fn greedy_by_size(
         &self,
         execution_order: &[&Tensor],
-        assignments: &mut FxHashMap<TensorId, PooledGPUBuffer>,
         device: &WgpuDevice,
-    ) -> Result<(), DeviceError> {
+    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
+        let mut assignments = FxHashMap::default();
         let record_map = Self::calculate_usage_records(execution_order);
         let records = TensorUsageRecords::from(record_map);
         let mut shared_objects: Vec<PooledGPUBuffer> = Vec::with_capacity(records.0.len());
@@ -212,7 +244,7 @@ impl BufferAllocator {
                     let max_first =
                         std::cmp::max(record.producer.unwrap(), inner_r.producer.unwrap());
                     let min_last = std::cmp::min(record.last_consumer, inner_r.last_consumer);
-                    if assignments.get(&inner_r.id.unwrap()) == Some(obj) && max_first <= min_last {
+                    if max_first <= min_last && assignments.get(&inner_r.id.unwrap()) == Some(obj) {
                         suitable = false;
                         break;
                     }
@@ -233,21 +265,177 @@ impl BufferAllocator {
             }
         }
 
-        //Loop through and add inplace assignments
-        for t in execution_order.iter() {
-            if t.resolved() {
+        Ok(assignments)
+    }
+
+    fn determine_best_info(
+        priority_info: &[SizeDistPriorityInfo],
+        assignments: &FxHashMap<TensorId, BufferRequest>,
+    ) -> SizeDistPriorityInfo {
+        let mut best_info = None;
+
+        for (info_index, info) in priority_info.iter().enumerate() {
+            if assignments.contains_key(&info.tensor_usage_id) {
                 continue;
             }
-            for source in t.op().srcs() {
-                let true_source = Self::determine_tensor_source(source);
-                if true_source.id() != source.id() {
-                    if let Some(buf) = assignments.get(&true_source.id()) {
-                        assignments.insert(source.id(), buf.clone());
+            best_info = match best_info {
+                None => Some(info),
+                Some(current_best) => {
+                    if info > current_best {
+                        Some(info)
+                    } else {
+                        Some(current_best)
+                    }
+                }
+            };
+        }
+        best_info.unwrap().clone()
+    }
+
+    // Assigns given tensors to shared objects, using the following greedy
+    // algorithm:
+    // - Input: TensorUsageRecords of all intermediate tensors.
+    // Distance between two usage intervals is the absolute difference between
+    // closest tasks in their intervals. If two usage intervals don't intersect,
+    // than the distance between them is positive;
+    //
+    // - Calculate positional maximums vector, e.g. the vector of lower bounds on
+    // size of each shared object;
+    // - For each tensor find the rightmost positional maximum, that is greater or
+    // equal, than current tensor's size (call it position);
+    // - Iterate through all tensors in increasing order of their
+    // SizeDistPriority
+    pub fn greedy_by_size_improved(
+        &self,
+        execution_order: &[&Tensor],
+        device: &WgpuDevice,
+    ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
+        let mut assignments = FxHashMap::default();
+        let record_map = Self::calculate_usage_records(execution_order);
+        let tensor_usage_records = TensorUsageRecords::from(record_map.clone());
+        let positional_maximums =
+            Self::calculate_positional_maximums(&tensor_usage_records, execution_order.len());
+
+        let mut priority_info = tensor_usage_records.iter().enumerate().fold(
+            Vec::with_capacity(tensor_usage_records.len()),
+            |mut acc, (record_index, record)| {
+                let position = positional_maximums
+                    .iter()
+                    .position(|&x| x >= record.size)
+                    .expect("No suitable position found");
+
+                acc.push(SizeDistPriorityInfo {
+                    position,
+                    tensor_size: record.size,
+                    record_index,
+                    tensor_usage_id: record.id.unwrap(),
+                    dist: HashMap::new(),
+                    best_dist: None,
+                    best_buffer: None,
+                });
+                acc
+            },
+        );
+
+        for (record_index, record) in tensor_usage_records.iter().enumerate() {
+            let best_info = Self::determine_best_info(&priority_info, &assignments);
+
+            let mut new_object = None;
+            if best_info.best_dist.is_none() {
+                let request = BufferRequest {
+                    id: BufferId::new(),
+                    size: best_info.tensor_size,
+                };
+                new_object = Some(request.clone());
+                assignments.insert(best_info.tensor_usage_id, request);
+            } else {
+                let current_assignment = assignments.get(&best_info.tensor_usage_id).unwrap();
+                let request = BufferRequest {
+                    id: current_assignment.id,
+                    size: std::cmp::max(best_info.tensor_size, current_assignment.size),
+                };
+                assignments.insert(best_info.tensor_usage_id, request);
+            }
+
+            //Update dists for all other priority infos with new information
+            for (info_index, info) in priority_info.iter_mut().enumerate() {
+                if assignments.contains_key(&info.tensor_usage_id) {
+                    continue;
+                }
+
+                if new_object.is_none() && !info.dist.contains_key(&best_info.best_buffer.unwrap())
+                {
+                    continue;
+                }
+
+                let best_record = record_map.get(&best_info.tensor_usage_id).unwrap();
+                let current_record = record_map.get(&info.tensor_usage_id).unwrap();
+
+                let dist = if current_record.last_consumer < best_record.producer.unwrap() {
+                    Some(best_record.producer.unwrap() - current_record.last_consumer)
+                } else if best_record.last_consumer < current_record.producer.unwrap() {
+                    Some(current_record.producer.unwrap() - best_record.last_consumer)
+                } else {
+                    None
+                };
+
+                if dist.is_none() {
+                    if let Some(best_buffer_id) = best_info.best_buffer {
+                        info.dist.insert(best_buffer_id, usize::MAX);
+                    }
+                    if let Some(current_info_best_id) = info.best_buffer {
+                        if let Some(best_buffer_id) = best_info.best_buffer {
+                            if current_info_best_id == best_buffer_id {
+                                info.recalc_best_dist();
+                            }
+                        }
+                    }
+                } else if new_object.is_some() {
+                    info.dist
+                        .insert(new_object.clone().unwrap().id, dist.unwrap());
+                } else {
+                    let dist = dist.unwrap();
+                    let best_buffer_id = best_info.best_buffer.unwrap();
+                    info.dist.insert(
+                        best_buffer_id,
+                        std::cmp::min(dist, *info.dist.get(&best_buffer_id).unwrap_or(&usize::MAX)),
+                    );
+                }
+                if let Some(cur_dist) = info.best_dist {
+                    if let Some(calc_dist) = dist {
+                        if calc_dist < cur_dist {
+                            info.best_dist = Some(calc_dist);
+                            info.best_buffer = Some(best_info.best_buffer.unwrap());
+                        }
                     }
                 }
             }
         }
-        Ok(())
+
+        println!("ASSIGNMENTS: {:#?}", assignments);
+
+        //Now, we have a map from TensorId to BufferRequest
+        //We need to convert BufferRequest to PooledGPUBuffer
+
+        let unique_requests: HashSet<BufferRequest> = assignments.values().cloned().collect();
+        let buffer_map = unique_requests
+            .into_iter()
+            .map(|req| {
+                let buf = self.create_buffer(
+                    &BufferDescriptor::new(req.size as _, BufferUsages::standard(), false),
+                    device,
+                );
+                (req.id, buf)
+            })
+            .collect::<FxHashMap<BufferId, PooledGPUBuffer>>();
+        let mut intermediate_assignments: FxHashMap<TensorId, PooledGPUBuffer> =
+            FxHashMap::default();
+        for (tensor_id, request) in assignments {
+            let buf = buffer_map.get(&request.id).unwrap();
+            intermediate_assignments.insert(tensor_id, buf.clone());
+        }
+
+        Ok(intermediate_assignments)
     }
 
     /// # Graph memory allocation
@@ -285,8 +473,6 @@ impl BufferAllocator {
         //The output never gets allocated in the below loop, because it is not a source.
         //We know we need an allocation for the output.
         //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
-        //It's also handy to treat output as different, as we can handle getting data back to CPU
-        //more efficiently in future.
         let output = execution_order.last().unwrap();
         let output_source = Self::determine_tensor_source(output);
         let output_buffer = assignments
@@ -305,8 +491,36 @@ impl BufferAllocator {
             });
         assignments.insert(output.id(), output_buffer);
 
-        //Allocate intermediates
-        self.greedy_by_size(execution_order, &mut assignments, device)?;
+        let intermediate_assignments = match std::env::var("RATCHET_MEM_ALLOC_STRAT") {
+            Ok(s) => match s.as_str() {
+                "GREEDY_BY_SIZE" => self.greedy_by_size(execution_order, device)?,
+                _ => panic!("Invalid memory allocation strategy"),
+            },
+            Err(_) => {
+                //default
+                self.greedy_by_size_improved(execution_order, device)?
+                //self.greedy_by_size(execution_order, device)?
+            }
+        };
+
+        println!("INTERMEDIATE ASSIGNMENTS: {:#?}", intermediate_assignments);
+
+        assignments.extend(intermediate_assignments);
+
+        //Loop through and add inplace assignments O(n)
+        for t in execution_order.iter() {
+            if t.resolved() {
+                continue;
+            }
+            for source in t.op().srcs() {
+                let true_source = Self::determine_tensor_source(source);
+                if true_source.id() != source.id() {
+                    if let Some(buf) = assignments.get(&true_source.id()) {
+                        assignments.insert(source.id(), buf.clone());
+                    }
+                }
+            }
+        }
 
         log::info!(
             "Total bytes allocated: {}kb",
