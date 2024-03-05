@@ -224,8 +224,10 @@ impl BufferAllocator {
             if let Some(obj) = best_obj {
                 assignments.insert(record.id.unwrap(), (*obj).clone());
             } else {
+                //let rounded_size = (record.size - 1).next_power_of_two();
+                let rounded_size = record.size;
                 let buf = self.create_buffer(
-                    &BufferDescriptor::new(record.size as _, BufferUsages::standard(), false),
+                    &BufferDescriptor::new(rounded_size as _, BufferUsages::standard(), false),
                     device,
                 );
                 shared_objects.push(buf.clone());

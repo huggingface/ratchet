@@ -218,6 +218,7 @@ def ground(options):
         let mut all_tokens = tokens.clone();
         let mut all_logits = vec![];
         let mut iters = 0;
+        let start = std::time::Instant::now();
         while tokens[tokens.len() - 1] != 50257 {
             decoder.device.try_gpu()?.begin_pass(iters);
             let token_t =
@@ -239,6 +240,7 @@ def ground(options):
             all_tokens.extend(tokens.clone());
             iters += 1;
         }
+        println!("Took: {:?}", start.elapsed());
 
         let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
