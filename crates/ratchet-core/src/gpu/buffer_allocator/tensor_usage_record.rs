@@ -45,6 +45,20 @@ impl TensorUsageRecords {
     }
 }
 
+impl std::ops::Index<usize> for TensorUsageRecords {
+    type Output = TensorUsageRecord;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl std::ops::IndexMut<usize> for TensorUsageRecords {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
 /// The set of all tensor usage records within which an operation lies.
 #[derive(Debug, Clone)]
 pub struct OpProfile(RVec<TensorUsageRecord>);

@@ -34,3 +34,18 @@ impl BufferId {
         Self(COUNTER.fetch_add(1, atomic::Ordering::Relaxed))
     }
 }
+
+#[derive(Debug)]
+pub struct ObjectAssignment {
+    pub object_ids: Vec<usize>,
+    pub object_sizes: Vec<usize>,
+}
+
+impl ObjectAssignment {
+    pub fn new(num_records: usize) -> Self {
+        Self {
+            object_ids: vec![usize::MAX; num_records],
+            object_sizes: Vec::new(),
+        }
+    }
+}

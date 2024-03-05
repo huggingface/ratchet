@@ -1,18 +1,26 @@
-use std::{cmp::Ordering, collections::HashMap};
-
-use crate::TensorId;
-
-use super::BufferId;
+use std::cmp::Ordering;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SizeDistPriorityInfo {
     pub position: usize,
     pub tensor_size: usize,
-    pub dist: HashMap<BufferId, usize>,
-    pub best_dist: Option<usize>,
-    pub best_buffer: Option<BufferId>,
-    pub record_index: usize, //index into tensor_usage_records
-    pub tensor_usage_id: TensorId,
+    pub dist: Vec<usize>,
+    pub best_dist: usize,
+    pub best_object: usize,
+    pub tensor_usage_id: usize, //INDEX
+}
+
+impl Default for SizeDistPriorityInfo {
+    fn default() -> Self {
+        Self {
+            position: 0,
+            tensor_size: 0,
+            dist: Vec::new(),
+            best_dist: usize::MAX,
+            best_object: usize::MAX,
+            tensor_usage_id: 0,
+        }
+    }
 }
 
 impl PartialOrd for SizeDistPriorityInfo {
@@ -23,16 +31,13 @@ impl PartialOrd for SizeDistPriorityInfo {
 
 impl SizeDistPriorityInfo {
     pub fn recalc_best_dist(&mut self) {
-        let mut best_dist = 0;
-        let mut best_buffer = None;
-        for (buffer_id, dist) in self.dist.iter() {
-            if *dist < best_dist {
-                best_dist = *dist;
-                best_buffer = Some(buffer_id.clone());
+        self.best_dist = std::usize::MAX;
+        for (obj_id, dist) in self.dist.iter().enumerate() {
+            if *dist < self.best_dist {
+                self.best_dist = *dist;
+                self.best_object = obj_id;
             }
         }
-        self.best_dist = Some(best_dist);
-        self.best_buffer = best_buffer;
     }
 }
 
