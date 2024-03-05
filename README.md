@@ -18,10 +18,17 @@ let model = await Model.load(AvailableModels.WHISPER_TINY, Quantization.Q8, (p: 
 let result = await model.run({ input });
 ```
 
-## Key Features
-- Lazy computation
-- In-place by default
-- First-class quantized support
+## Philosophy
+
+We want a toolkit for developers to make integrating performant AI functionality into existing production applications easy.
+The following principles will help us accomplish this:
+1. **Inference only**
+2. **WebGPU/CPU only**
+3. First class quantization support
+4. Lazy computation
+5. Inplace by default
+
+Any issues regarding training or different backends will be closed!
 
 ## Supported Models
 - Whisper
