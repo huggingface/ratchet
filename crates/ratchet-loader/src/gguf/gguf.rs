@@ -6,9 +6,12 @@
 
 use crate::error::{Error, Result};
 use crate::gguf::ggml::GgmlDType;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use crate::gguf::k_quants::{K_SCALE_SIZE, QK_K};
+use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use half::f16;
 use ratchet::{shape, Device, Shape, Tensor};
 use std::collections::HashMap;
+use std::io::Cursor;
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -57,6 +60,13 @@ pub struct TensorInfo {
     pub offset: u64,
 }
 
+pub fn read_f16<R: std::io::Seek + std::io::Read>(reader: &mut R) -> Result<f16> {
+    let mut d = [0u8; 2];
+    reader.read_exact(&mut d)?;
+    let f16_value = half::f16::from_le_bytes(d);
+    Ok(f16_value)
+}
+
 impl TensorInfo {
     pub fn read<R: std::io::Seek + std::io::Read>(
         &self,
@@ -76,11 +86,27 @@ impl TensorInfo {
         println!("tensor_elems={:?}", tensor_elems);
         println!("block_size={:?}", block_size);
         println!("shape={:?} ggml_dtype={:?}", self.shape, self.ggml_dtype);
-        let size_in_bytes = tensor_elems / block_size * self.ggml_dtype.type_size();
+        let tensor_blocks = tensor_elems / block_size;
+        let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
         let mut raw_data = vec![0u8; size_in_bytes];
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
-        reader.read_exact(&mut raw_data)?;
+        // reader.read_exact(&mut raw_data)?;
 
+        let mut ds = vec![0f32; tensor_blocks];
+        let mut dmins = vec![0f32; tensor_blocks];
+        let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
+        let mut scales_cursor = Cursor::new(scales);
+        for _idx in 0..tensor_blocks {
+            // reader.seek(std::io::SeekFrom::Current(_idx)
+            ds[_idx] = read_f16(reader)?.to_f32();
+            dmins[_idx] = read_f16(reader)?.to_f32();
+
+            // TODO implement
+            reader.seek(std::io::SeekFrom::Current((K_SCALE_SIZE + QK_K / 2) as i64))?;
+        }
+
+        println!("ds {:?}", ds);
+        println!("dmins {:?}", dmins);
         // [TODO]
 
         // [TODO] Implement
