@@ -6,6 +6,7 @@ import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, 
 import ConfigModal, { ConfigOptions } from './components/configModal';
 import ModelSelector from './components/modelSelector';
 import ProgressBar from './components/progressBar';
+import MicButton from './components/micButton';
 
 export default function Home() {
     const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WHISPER_TINY);
@@ -15,7 +16,7 @@ export default function Home() {
     const ffmpegRef = useRef(new FFmpeg());
     const [ffmpegLoaded, setFFmpegLoaded] = useState(false);
     const [blobURL, setBlobURL] = useState<string>();
-    const [audio, setAudio] = useState(null);
+    const [audio, setAudio] = useState<Uint8Array | null>(null);
     const [segments, setSegments] = useState<Segment[]>([]);
     const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
     const [configOptions, setConfigOptions] = useState<ConfigOptions>({
@@ -150,35 +151,36 @@ export default function Home() {
             <h1 className="text-blue-700 text-4xl font-extrabold pb-6">Whisper + Ratchet</h1>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="flex flex-col gap-6 w-full">
-                            <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
-                            {progress > 0 && progress < 100 ? <ProgressBar progress={progress} /> : <></>}
-                            {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
-                                <></>}
-                            <div className="flex flex-row gap-2 items-center">
-                                <input
-                                    className="flex-1"
-                                    type="file"
-                                    name="audioFile"
-                                    id="audioFile"
-                                    onChange={handleAudioFile()}
-                                />
-                                <audio controls key={blobURL} className="flex-1 p-2 rounded-lg bg-white">
-                                    <source key={blobURL} src={blobURL} type="audio/wav" />
-                                </audio>
-                            </div>
+                    <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
+                    {progress > 0 && progress < 100 ? <ProgressBar progress={progress} /> : <></>}
+                    {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
+                        <></>}
+                    <div className="flex flex-row gap-2 items-center">
+                        <input
+                            className="flex-1"
+                            type="file"
+                            name="audioFile"
+                            id="audioFile"
+                            onChange={handleAudioFile()}
+                        />
+                        <audio controls key={blobURL} className="flex-1 p-2 rounded-lg bg-white">
+                            <source key={blobURL} src={blobURL} type="audio/wav" />
+                        </audio>
+                        <MicButton setBlobURL={setBlobURL} setAudioData={setAudio} />
+                    </div>
 
-                            <div className="flex flex-row gap-4 justify-end items-center">
-                                <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={() => setIsConfigOpen(true)}>Options</button>
-                                <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={runModel}>
-                                    {
-                                        generating ?
-                                            <div className="flex p-4">
-                                                <span className="loader"></span>
-                                            </div>
-                                            : "Run Model"
-                                    }
-                                </button>
-                            </div>
+                    <div className="flex flex-row gap-4 justify-end items-center">
+                        <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={() => setIsConfigOpen(true)}>Options</button>
+                        <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={runModel}>
+                            {
+                                generating ?
+                                    <div className="flex p-4">
+                                        <span className="loader"></span>
+                                    </div>
+                                    : "Run Model"
+                            }
+                        </button>
+                    </div>
                 </div>
                 <div className="flex flex-col relative w-full z-10 min-h-screen">
                     <div className="flex gap-4 flex-col">

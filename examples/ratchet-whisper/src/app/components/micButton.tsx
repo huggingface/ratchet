@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { MicRecorder } from "whisper-turbo";
+import MicRecorder from "../audio";
 
 const SAMPLE_RATE = 16000;
 
 interface MicButtonProps {
-    setBlobUrl: (blobUrl: string) => void;
-    setAudioData: (audioData: Uint8Array) => void;
+    setBlobUrl: React.Dispatch<React.SetStateAction<string | undefined>>;
+    setAudioData: React.Dispatch<React.SetStateAction<Uint8Array | undefined>>;
     setAudioMetadata: (audioMetadata: AudioMetadata) => void;
 }
 
@@ -54,7 +54,7 @@ const MicButton = (props: MicButtonProps) => {
         <div className="flex flex-col">
             <label className="text-white text-xl font-semibold">Record</label>
             <button
-                className="bg-pop-orange text-xl outline outline-white text-white font-semibold px-6 mx-auto cursor-pointer active:bg-pop-orange-dark h-full"
+                className="text-xl outline outline-white text-black font-semibold px-6 mx-auto cursor-pointer h-full"
                 onClick={handleClick}
             >
                 {isRecording ? (
