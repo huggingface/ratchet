@@ -73,6 +73,8 @@ impl TensorInfo {
         )
         }
 
+        println!("tensor_elems={:?}", tensor_elems);
+        println!("block_size={:?}", block_size);
         println!("shape={:?} ggml_dtype={:?}", self.shape, self.ggml_dtype);
         let size_in_bytes = tensor_elems / block_size * self.ggml_dtype.type_size();
         let mut raw_data = vec![0u8; size_in_bytes];
@@ -84,7 +86,7 @@ impl TensorInfo {
         // [TODO] Implement
         let tensor = match self.ggml_dtype {
             GgmlDType::Q4K => {
-                println!("Got Q4K type");
+                println!("Got Q4K type {}", size_in_bytes);
                 ratchet::Tensor::randn::<f32>(shape![1, 2], device.clone())
             }
             _ => ratchet::Tensor::randn::<f32>(shape![1, 2], device.clone()),

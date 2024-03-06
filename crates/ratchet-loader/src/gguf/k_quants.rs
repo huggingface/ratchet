@@ -23,6 +23,7 @@ pub const QK8_1: usize = 32;
 pub trait GgmlType: Sized + Clone + Send + Sync {
     const DTYPE: GgmlDType;
     const BLCK_SIZE: usize;
+    const TYPE_SIZE: usize;
     type VecDotType: GgmlType;
 
     // This is only safe for types that include immediate values such as float/int/...
@@ -146,6 +147,7 @@ pub struct BlockQ8K {
 impl GgmlType for BlockQ4_0 {
     const DTYPE: GgmlDType = GgmlDType::Q4_0;
     const BLCK_SIZE: usize = QK4_0;
+    const TYPE_SIZE: usize = 2 + QK4_0 / 2;
     type VecDotType = BlockQ8_0;
 
     // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1525
@@ -246,6 +248,7 @@ impl GgmlType for BlockQ4_0 {
 impl GgmlType for BlockQ4_1 {
     const DTYPE: GgmlDType = GgmlDType::Q4_1;
     const BLCK_SIZE: usize = QK4_1;
+    const TYPE_SIZE: usize = 2 + 2 + QK4_1 / 2;
     type VecDotType = BlockQ8_1;
 
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
@@ -341,6 +344,7 @@ impl GgmlType for BlockQ4_1 {
 impl GgmlType for BlockQ5_0 {
     const DTYPE: GgmlDType = GgmlDType::Q5_0;
     const BLCK_SIZE: usize = QK5_0;
+    const TYPE_SIZE: usize = 2 + 4 + QK5_0 / 2;
     type VecDotType = BlockQ8_0;
 
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
@@ -443,6 +447,7 @@ impl GgmlType for BlockQ5_0 {
 impl GgmlType for BlockQ5_1 {
     const DTYPE: GgmlDType = GgmlDType::Q5_1;
     const BLCK_SIZE: usize = QK5_1;
+    const TYPE_SIZE: usize = 2 + 2 + 4 + QK5_1 / 2;
     type VecDotType = BlockQ8_1;
 
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
@@ -551,6 +556,7 @@ impl GgmlType for BlockQ5_1 {
 impl GgmlType for BlockQ8_0 {
     const DTYPE: GgmlDType = GgmlDType::Q8_0;
     const BLCK_SIZE: usize = QK8_0;
+    const TYPE_SIZE: usize = 2 + QK8_0;
     type VecDotType = BlockQ8_0;
 
     // // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1619
@@ -641,6 +647,7 @@ impl GgmlType for BlockQ8_0 {
 impl GgmlType for BlockQ8_1 {
     const DTYPE: GgmlDType = GgmlDType::Q8_1;
     const BLCK_SIZE: usize = QK8_1;
+    const TYPE_SIZE: usize = 2 + 2 + QK8_1;
     type VecDotType = BlockQ8_1;
 
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
@@ -687,6 +694,7 @@ impl GgmlType for BlockQ8_1 {
 impl GgmlType for BlockQ2K {
     const DTYPE: GgmlDType = GgmlDType::Q2K;
     const BLCK_SIZE: usize = QK_K;
+    const TYPE_SIZE: usize = QK_K / 16 + QK_K / 4 + 2 + 2;
     type VecDotType = BlockQ8K;
 
     // #[allow(unreachable_code)]
@@ -863,6 +871,7 @@ impl GgmlType for BlockQ2K {
 impl GgmlType for BlockQ3K {
     const DTYPE: GgmlDType = GgmlDType::Q3K;
     const BLCK_SIZE: usize = QK_K;
+    const TYPE_SIZE: usize = QK_K / 8 + QK_K / 4 + 12 + 2;
     type VecDotType = BlockQ8K;
 
     // #[allow(unreachable_code)]
@@ -1141,6 +1150,7 @@ impl GgmlType for BlockQ3K {
 impl GgmlType for BlockQ4K {
     const DTYPE: GgmlDType = GgmlDType::Q4K;
     const BLCK_SIZE: usize = QK_K;
+    const TYPE_SIZE: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 2;
     type VecDotType = BlockQ8K;
 
     // #[allow(unreachable_code)]
@@ -1334,6 +1344,7 @@ impl GgmlType for BlockQ4K {
 impl GgmlType for BlockQ5K {
     const DTYPE: GgmlDType = GgmlDType::Q5K;
     const BLCK_SIZE: usize = QK_K;
+    const TYPE_SIZE: usize = QK_K / 8 + QK_K / 2 + 2 * 2 + K_SCALE_SIZE;
     type VecDotType = BlockQ8K;
 
     // #[allow(unreachable_code)]
@@ -1555,6 +1566,7 @@ impl GgmlType for BlockQ5K {
 impl GgmlType for BlockQ6K {
     const DTYPE: GgmlDType = GgmlDType::Q6K;
     const BLCK_SIZE: usize = QK_K;
+    const TYPE_SIZE: usize = 3 * QK_K / 4 + QK_K / 16 + 2;
     type VecDotType = BlockQ8K;
 
     // #[allow(unreachable_code)]
@@ -1738,6 +1750,7 @@ impl GgmlType for BlockQ6K {
 impl GgmlType for BlockQ8K {
     const DTYPE: GgmlDType = GgmlDType::Q8K;
     const BLCK_SIZE: usize = QK_K;
+    const TYPE_SIZE: usize = 4 + QK_K + QK_K / 16 * 2;
     type VecDotType = BlockQ8K;
 
     // #[allow(unreachable_code)]
@@ -1874,6 +1887,7 @@ impl GgmlType for BlockQ8K {
 impl GgmlType for f32 {
     const DTYPE: GgmlDType = GgmlDType::F32;
     const BLCK_SIZE: usize = 1;
+    const TYPE_SIZE: usize = 4;
     type VecDotType = f32;
 
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {

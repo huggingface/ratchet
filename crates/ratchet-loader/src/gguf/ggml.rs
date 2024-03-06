@@ -93,19 +93,19 @@ impl GgmlDType {
         match self {
             Self::F32 => 4,
             Self::F16 => 4, // 2, [TODO] Think about this. Currently WASM doesn't support F16
-            Self::Q4_0 => std::mem::size_of::<BlockQ4_0>(),
-            Self::Q4_1 => std::mem::size_of::<BlockQ4_1>(),
-            Self::Q5_0 => std::mem::size_of::<BlockQ5_0>(),
-            Self::Q5_1 => std::mem::size_of::<BlockQ5_1>(),
+            Self::Q4_0 => BlockQ4_0::TYPE_SIZE,
+            Self::Q4_1 => BlockQ4_1::TYPE_SIZE,
+            Self::Q5_0 => BlockQ5_0::TYPE_SIZE,
+            Self::Q5_1 => BlockQ5_1::TYPE_SIZE,
             // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L932
-            Self::Q8_0 => std::mem::size_of::<BlockQ8_0>(),
-            Self::Q8_1 => std::mem::size_of::<BlockQ8_1>(),
-            Self::Q2K => std::mem::size_of::<BlockQ2K>(),
-            Self::Q3K => std::mem::size_of::<BlockQ3K>(),
-            Self::Q4K => std::mem::size_of::<BlockQ4K>(),
-            Self::Q5K => std::mem::size_of::<BlockQ5K>(),
-            Self::Q6K => std::mem::size_of::<BlockQ6K>(),
-            Self::Q8K => std::mem::size_of::<BlockQ8K>(),
+            Self::Q8_0 => BlockQ8_0::TYPE_SIZE,
+            Self::Q8_1 => BlockQ8_1::TYPE_SIZE,
+            Self::Q2K => BlockQ2K::TYPE_SIZE,
+            Self::Q3K => BlockQ3K::TYPE_SIZE,
+            Self::Q4K => BlockQ4K::TYPE_SIZE,
+            Self::Q5K => BlockQ5K::TYPE_SIZE,
+            Self::Q6K => BlockQ6K::TYPE_SIZE,
+            Self::Q8K => BlockQ8K::TYPE_SIZE,
         }
     }
 
