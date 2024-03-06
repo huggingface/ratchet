@@ -1,32 +1,13 @@
-mod converter;
-mod error;
-mod ggml;
-mod gguf;
-mod k_quants;
-pub use converter::*;
-pub use ggml::*;
+// Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/mod.rs
+//
 
-pub const STORAGE_BUFFER_ALIGN: usize = 256;
+use crate::error::Result;
 
-#[derive(Debug, thiserror::Error)]
-pub enum LoadError {
-    #[error("Invalid GGML Format: {0:#x}")]
-    InvalidFormat(u32),
-    #[error("non-specific I/O error")]
-    Io(#[from] std::io::Error),
-    #[error("could not convert bytes to a UTF-8 string")]
-    InvalidUtf8(#[from] std::string::FromUtf8Error),
-    #[error("invalid integer conversion")]
-    InvalidIntegerConversion(#[from] std::num::TryFromIntError),
-    #[error("Unsupported tensor type {dtype} for tensor {name}")]
-    UnsupportedDType { name: String, dtype: u32 },
-    #[error("invariant broken: {0}")]
-    InvariantBroken(String),
-    #[error("invalid data type {0}")]
-    InvalidDType(u32),
-    #[error("Missing tensor {name}")]
-    MissingTensor { name: String },
-}
+use super::k_quants;
+use super::k_quants::{
+    BlockQ2K, BlockQ3K, BlockQ4K, BlockQ4_0, BlockQ4_1, BlockQ5K, BlockQ5_0, BlockQ5_1, BlockQ6K,
+    BlockQ8K, BlockQ8_0, BlockQ8_1, GgmlType,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GgmlDType {
@@ -44,25 +25,10 @@ pub enum GgmlDType {
     Q5K,
     Q6K,
     Q8K,
-    //--- OURS ---
-    WQ8,
 }
 
-impl From<GgmlDType> for ratchet::DType {
-    fn from(val: GgmlDType) -> Self {
-        match val {
-            GgmlDType::F32 => ratchet::DType::F32,
-            GgmlDType::F16 => ratchet::DType::F16,
-            GgmlDType::WQ8 => ratchet::DType::WQ8,
-            _ => unimplemented!(),
-        }
-    }
-}
-
-impl TryFrom<u32> for GgmlDType {
-    type Error = LoadError;
-
-    fn try_from(u: u32) -> Result<Self, Self::Error> {
+impl GgmlDType {
+    pub(crate) fn from_u32(u: u32) -> Result<Self> {
         let dtype = match u {
             0 => Self::F32,
             1 => Self::F16,
@@ -78,14 +44,11 @@ impl TryFrom<u32> for GgmlDType {
             13 => Self::Q5K,
             14 => Self::Q6K,
             15 => Self::Q8K,
-            64 => Self::WQ8,
-            _ => return Err(LoadError::InvalidDType(u)),
+            _ => crate::bail!("unknown dtype for tensor {u}"),
         };
         Ok(dtype)
     }
-}
 
-impl GgmlDType {
     pub(crate) fn to_u32(self) -> u32 {
         match self {
             Self::F32 => 0,
@@ -102,16 +65,34 @@ impl GgmlDType {
             Self::Q5K => 13,
             Self::Q6K => 14,
             Self::Q8K => 15,
-            Self::WQ8 => 64,
         }
     }
 
+    //     // /// The block dtype
+    //     // pub fn cpu_zeros(&self, elem_count: usize) -> Box<dyn QuantizedType> {
+    //     //     match self {
+    //     //         Self::F32 => Box::new(vec![f32::zeros(); elem_count]),
+    //     //         Self::F16 => Box::new(vec![f16::zeros(); elem_count]),
+    //     //         Self::Q4_0 => Box::new(vec![BlockQ4_0::zeros(); elem_count / BlockQ4_0::BLCK_SIZE]),
+    //     //         Self::Q4_1 => Box::new(vec![BlockQ4_1::zeros(); elem_count / BlockQ4_1::BLCK_SIZE]),
+    //     //         Self::Q5_0 => Box::new(vec![BlockQ5_0::zeros(); elem_count / BlockQ5_0::BLCK_SIZE]),
+    //     //         Self::Q5_1 => Box::new(vec![BlockQ5_1::zeros(); elem_count / BlockQ5_1::BLCK_SIZE]),
+    //     //         Self::Q8_0 => Box::new(vec![BlockQ8_0::zeros(); elem_count / BlockQ8_0::BLCK_SIZE]),
+    //     //         Self::Q8_1 => Box::new(vec![BlockQ8_1::zeros(); elem_count / BlockQ8_1::BLCK_SIZE]),
+    //     //         Self::Q2K => Box::new(vec![BlockQ2K::zeros(); elem_count / BlockQ2K::BLCK_SIZE]),
+    //     //         Self::Q3K => Box::new(vec![BlockQ3K::zeros(); elem_count / BlockQ3K::BLCK_SIZE]),
+    //     //         Self::Q4K => Box::new(vec![BlockQ4K::zeros(); elem_count / BlockQ4K::BLCK_SIZE]),
+    //     //         Self::Q5K => Box::new(vec![BlockQ5K::zeros(); elem_count / BlockQ5K::BLCK_SIZE]),
+    //     //         Self::Q6K => Box::new(vec![BlockQ6K::zeros(); elem_count / BlockQ6K::BLCK_SIZE]),
+    //     //         Self::Q8K => Box::new(vec![BlockQ8K::zeros(); elem_count / BlockQ8K::BLCK_SIZE]),
+    //     //     }
+    //     // }
     /// The type size for blocks in bytes.
     pub fn type_size(&self) -> usize {
         use k_quants::*;
         match self {
             Self::F32 => 4,
-            Self::F16 => 2,
+            Self::F16 => 4, // 2, [TODO] Think about this. Currently WASM doesn't support F16
             Self::Q4_0 => std::mem::size_of::<BlockQ4_0>(),
             Self::Q4_1 => std::mem::size_of::<BlockQ4_1>(),
             Self::Q5_0 => std::mem::size_of::<BlockQ5_0>(),
@@ -125,7 +106,6 @@ impl GgmlDType {
             Self::Q5K => std::mem::size_of::<BlockQ5K>(),
             Self::Q6K => std::mem::size_of::<BlockQ6K>(),
             Self::Q8K => std::mem::size_of::<BlockQ8K>(),
-            Self::WQ8 => std::mem::size_of::<BlockWQ8>(),
         }
     }
 
@@ -134,7 +114,6 @@ impl GgmlDType {
         match self {
             Self::F32 => 1,
             Self::F16 => 1,
-            Self::WQ8 => 16,
             Self::Q4_0 => k_quants::QK4_0,
             Self::Q4_1 => k_quants::QK4_1,
             Self::Q5_0 => k_quants::QK5_0,
@@ -142,29 +121,6 @@ impl GgmlDType {
             Self::Q8_0 => k_quants::QK8_0,
             Self::Q8_1 => k_quants::QK8_1,
             Self::Q2K | Self::Q3K | Self::Q4K | Self::Q5K | Self::Q6K | Self::Q8K => k_quants::QK_K,
-        }
-    }
-
-    pub fn tensor_size(&self, numel: usize) -> usize {
-        match self {
-            Self::WQ8 => {
-                //Returns the aligned number of BYTES
-                let aligner = |numel: usize, size_t: usize| -> usize {
-                    let nbytes = numel * size_t;
-
-                    if nbytes % STORAGE_BUFFER_ALIGN != 0 {
-                        nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
-                    } else {
-                        nbytes
-                    }
-                };
-                let weight_size = numel / 4;
-                let absmax_size = numel / 16;
-
-                aligner(weight_size, std::mem::size_of::<u32>())
-                    + aligner(absmax_size, std::mem::size_of::<f32>())
-            }
-            _ => numel * self.type_size() / self.block_size(),
         }
     }
 }
