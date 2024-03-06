@@ -3,6 +3,7 @@ use derive_new::new;
 use half::f16;
 use ratchet::{DType, Device, Shape, Tensor};
 use std::{
+    cell::Cell,
     collections::HashMap,
     io::{BufRead, Seek, SeekFrom},
     mem::MaybeUninit,
@@ -110,13 +111,24 @@ impl TensorHeader {
     }
 }
 
-#[derive(Debug, new)]
+#[derive(Debug)]
 pub struct GGMLModel<M: GGMLCompatible> {
     pub header: M::ModelHeader,
     pub tensors: HashMap<String, TensorHeader>,
+    pub total_bytes_loaded: Cell<usize>,
+    pub total_loaded: Cell<usize>,
 }
 
 impl<M: GGMLCompatible> GGMLModel<M> {
+    pub fn new(header: M::ModelHeader, tensors: HashMap<String, TensorHeader>) -> Self {
+        Self {
+            header,
+            tensors,
+            total_bytes_loaded: Cell::new(0),
+            total_loaded: Cell::new(0),
+        }
+    }
+
     pub fn load_tensor<R: BufRead + Seek>(
         &self,
         key: &str,
@@ -138,6 +150,14 @@ impl<M: GGMLCompatible> GGMLModel<M> {
             data = bytemuck::cast_slice::<f32, u8>(&f32_data).to_vec();
             dt = DType::F32;
         }
+        self.total_bytes_loaded
+            .set(self.total_bytes_loaded.get() + data.len());
+        self.total_loaded.set(self.total_loaded.get() + 1);
+        log::info!(
+            "Total bytes loaded: {} bytes",
+            self.total_bytes_loaded.get()
+        );
+        log::info!("Total tensors loaded: {}", self.total_loaded.get());
         Ok(Tensor::from_bytes(&data, dt, shape, device.clone()).unwrap())
     }
 }
@@ -159,7 +179,7 @@ impl GGMLLoader {
             total_size += header.data_size() as u64;
             tensor_map.insert(header.name.clone(), header);
         }
-        log::info!("GGML Model size: {}kb", total_size / 1024);
+        log::info!("GGML Model size: {}b", total_size);
         Ok(GGMLModel::new(model_header, tensor_map))
     }
 
