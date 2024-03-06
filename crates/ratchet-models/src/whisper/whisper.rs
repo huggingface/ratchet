@@ -248,7 +248,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/ratchet-whisper".to_string());
-        let model_path = model.get("medium_q8.bin").unwrap();
+        let model_path = model.get("tiny_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("mm0.wav").unwrap();
