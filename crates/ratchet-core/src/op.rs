@@ -192,6 +192,7 @@ pub trait MetaOperation: Debug + 'static {
             workgroup_count,
             storage_bind_groups,
             offset as _,
+            self.kernel_name().to_string(),
         ))
     }
 }

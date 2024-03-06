@@ -2,7 +2,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL } from '@ffmpeg/util';
 import { useEffect, useRef, useState } from "react";
-import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization, Segment } from "@ratchet-ml/ratchet";
+import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization, Segment } from "@ratchet-ml/ratchet-web";
 import ConfigModal, { ConfigOptions } from './components/configModal';
 import ModelSelector from './components/modelSelector';
 import ProgressBar from './components/progressBar';
@@ -147,23 +147,22 @@ export default function Home() {
                 configOptions={configOptions}
                 setConfigOptions={setConfigOptions}
             />
-            <div className="flex gap-8 flex-row h-screen">
-                <div className="flex-1 w-1/2 h-full flex flex-col relative z-10 overflow-hidden">
-                    <div className="h-full px-4 xl:pl-32 my-4">
-                        <h1 className="text-blue-700 text-4xl font-semibold mx-auto">Whisper + Ratchet</h1>
-                        <div className="flex flex-col mx-auto gap-6">
+            <h1 className="text-blue-700 text-4xl font-extrabold pb-6">Whisper + Ratchet</h1>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="flex flex-col gap-6 w-full">
                             <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
                             {progress > 0 && progress < 100 ? <ProgressBar progress={progress} /> : <></>}
                             {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
                                 <></>}
-                            <div className="flex flex-row gap-4 justify-between items-center">
+                            <div className="flex flex-row gap-2 items-center">
                                 <input
+                                    className="flex-1"
                                     type="file"
                                     name="audioFile"
                                     id="audioFile"
                                     onChange={handleAudioFile()}
                                 />
-                                <audio controls key={blobURL}>
+                                <audio controls key={blobURL} className="flex-1 p-2 rounded-lg bg-white">
                                     <source key={blobURL} src={blobURL} type="audio/wav" />
                                 </audio>
                             </div>
@@ -180,37 +179,29 @@ export default function Home() {
                                     }
                                 </button>
                             </div>
-                        </div>
-                    </div>
                 </div>
-                <div className="flex-1 w-1/2 h-full flex flex-col relative z-10">
-                    <div className="h-full flex flex-col mx-auto px-4 xl:pr-32 overflow-scroll py-12 w-full">
-                        <div className="flex flex-col h-full">
-                            {segments &&
-                                segments.map(
-                                    (segment: Segment) => {
-                                        return (
-                                            <div
-                                                key={segment.start}
-                                                className="flex w-full py-4"
-                                            >
-                                                <div
-                                                    className={`rounded p-4 bg-white outline outline-2 outline-black shadow-lg align-right`}
-                                                >
-                                                    <div className=" text-lg mb-2">
-                                                        {segment.start}
-                                                        {" -> "}
-                                                        {segment.stop}
-                                                    </div>
-                                                    <div className="mb-2 text-lg text-slate-900 text-right">
-                                                        {segment.text}
-                                                    </div>
-                                                </div>
+                <div className="flex flex-col relative w-full z-10 min-h-screen">
+                    <div className="flex gap-4 flex-col">
+                        {segments &&
+                            segments.map(
+                                (segment: Segment) => {
+                                    return (
+                                        <div
+                                            key={segment.start}
+                                            className={`rounded p-4 bg-white outline outline-2 outline-black shadow-lg align-right`}
+                                        >
+                                            <div className=" text-lg mb-2">
+                                                {segment.start}
+                                                {" -> "}
+                                                {segment.stop}
                                             </div>
-                                        );
-                                    }
-                                )}
-                        </div>
+                                            <div className="mb-2 text-lg text-slate-900 text-right">
+                                                {segment.text}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                            )}
                     </div>
                 </div>
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AvailableModels } from "@ratchet-ml/ratchet";
+import { AvailableModels } from "@ratchet-ml/ratchet-web";
 
 interface ModelSelectorProps {
     selectedModel: AvailableModels | null;
@@ -58,13 +58,13 @@ const ModelSelector = (props: ModelSelectorProps) => {
 
     return (
         <>
-            <div className="flex flex-row justify-between">
-                {progress > 0 && !loaded && (
+            {progress > 0 && !loaded && (
+                <div className="flex flex-row justify-between">
                     <label className="text-white text-xl font-semibold text-right">
                         {progress.toFixed(2)}%
                     </label>
-                )}
-            </div>
+                </div>
+            )}
             <div className="group inline-block relative w-full">
                 <button
                     className="font-semibold text-xl py-2.5 px-8 w-full inline-flex items-center outline outline-black"
@@ -84,7 +84,7 @@ const ModelSelector = (props: ModelSelectorProps) => {
                     </svg>
                 </button>
                 <ul
-                    className="absolute outline group-hover:block z-10 w-full"
+                    className="absolute outline group-hover:block z-50 w-full shadow-lg shadow-black"
                     style={{
                         display: dropdownOpen ? "block" : "none",
                     }}
