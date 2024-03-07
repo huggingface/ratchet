@@ -11,7 +11,7 @@ use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use half::f16;
 use ratchet::{shape, Device, Shape, Tensor};
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -60,12 +60,24 @@ pub struct TensorInfo {
     pub offset: u64,
 }
 
-pub fn read_f16<R: std::io::Seek + std::io::Read>(reader: &mut R) -> Result<f16> {
-    let mut d = [0u8; 2];
-    reader.read_exact(&mut d)?;
-    let f16_value = half::f16::from_le_bytes(d);
-    Ok(f16_value)
+trait ReadHalf {
+    fn read_f16(&mut self) -> Result<f16>;
 }
+
+impl<R: std::io::Seek + std::io::Read> ReadHalf for R {
+    fn read_f16(&mut self) -> Result<f16> {
+        let mut d = [0u8; 2];
+        self.read_exact(&mut d)?;
+        let f16_value = half::f16::from_le_bytes(d);
+        Ok(f16_value)
+    }
+}
+// fn read_f16<R: std::io::Seek + std::io::Read>(reader: &mut R) -> Result<f16> {
+//     let mut d = [0u8; 2];
+//     reader.read_exact(&mut d)?;
+//     let f16_value = half::f16::from_le_bytes(d);
+//     Ok(f16_value)
+// }
 
 impl TensorInfo {
     pub fn read<R: std::io::Seek + std::io::Read>(
@@ -95,18 +107,29 @@ impl TensorInfo {
         let mut ds = vec![0f32; tensor_blocks];
         let mut dmins = vec![0f32; tensor_blocks];
         let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
-        let mut scales_cursor = Cursor::new(scales);
+        let mut scales_cursor = Cursor::new(&mut scales);
+
+        let mut qs = vec![0u8; tensor_blocks * QK_K / 2];
+        let mut qs_cursor = Cursor::new(&mut qs);
+
         for _idx in 0..tensor_blocks {
             // reader.seek(std::io::SeekFrom::Current(_idx)
-            ds[_idx] = read_f16(reader)?.to_f32();
-            dmins[_idx] = read_f16(reader)?.to_f32();
+            ds[_idx] = reader.read_f16()?.to_f32();
+            dmins[_idx] = reader.read_f16()?.to_f32();
 
-            // TODO implement
-            reader.seek(std::io::SeekFrom::Current((K_SCALE_SIZE + QK_K / 2) as i64))?;
+            let mut current_scales = vec![0u8; K_SCALE_SIZE];
+            reader.read_exact(&mut current_scales)?;
+            scales_cursor.write_all(&mut current_scales)?;
+
+            let mut current_qs = vec![0u8; QK_K / 2];
+            reader.read_exact(&mut current_qs)?;
+            qs_cursor.write_all(&mut current_qs)?;
         }
 
-        println!("ds {:?}", ds);
-        println!("dmins {:?}", dmins);
+        // println!("ds {:?}", ds);
+        // println!("dmins {:?}", dmins);
+        println!("scales {:?}", scales);
+        println!("qs {:?}", qs);
         // [TODO]
 
         // [TODO] Implement
