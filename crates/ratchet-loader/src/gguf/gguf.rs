@@ -9,7 +9,7 @@ use crate::gguf::ggml::GgmlDType;
 use crate::gguf::k_quants::{K_SCALE_SIZE, QK_K};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use half::f16;
-use ratchet::{shape, Device, Shape, Tensor};
+use ratchet::{shape, Device, Shape, Tensor, TensorDType};
 use std::collections::HashMap;
 use std::io::{Cursor, Write};
 
@@ -72,12 +72,18 @@ impl<R: std::io::Seek + std::io::Read> ReadHalf for R {
         Ok(f16_value)
     }
 }
-// fn read_f16<R: std::io::Seek + std::io::Read>(reader: &mut R) -> Result<f16> {
-//     let mut d = [0u8; 2];
-//     reader.read_exact(&mut d)?;
-//     let f16_value = half::f16::from_le_bytes(d);
-//     Ok(f16_value)
-// }
+trait ReadInto<Other> {
+    fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()>;
+}
+
+impl<R: std::io::Seek + std::io::Read, Other: std::io::Write> ReadInto<Other> for R {
+    fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()> {
+        let mut temp = vec![0u8; length];
+        self.read_exact(&mut temp)?;
+        other.write_all(&mut temp)?;
+        Ok(())
+    }
+}
 
 impl TensorInfo {
     pub fn read<R: std::io::Seek + std::io::Read>(
@@ -85,12 +91,12 @@ impl TensorInfo {
         reader: &mut R,
         tensor_data_offset: u64,
         device: &Device,
-    ) -> Result<Tensor> {
+    ) -> anyhow::Result<Tensor> {
         // let tensor_elems = self.shape.elem_count();
         let tensor_elems = self.shape.numel();
         let block_size = self.ggml_dtype.block_size();
         if tensor_elems % block_size != 0 {
-            crate::bail!(
+            anyhow::bail!(
             "the number of elements {tensor_elems} is not divisible by the block size {block_size}"
         )
         }
@@ -100,9 +106,8 @@ impl TensorInfo {
         println!("shape={:?} ggml_dtype={:?}", self.shape, self.ggml_dtype);
         let tensor_blocks = tensor_elems / block_size;
         let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
-        let mut raw_data = vec![0u8; size_in_bytes];
+
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
-        // reader.read_exact(&mut raw_data)?;
 
         let mut ds = vec![0f32; tensor_blocks];
         let mut dmins = vec![0f32; tensor_blocks];
@@ -113,25 +118,38 @@ impl TensorInfo {
         let mut qs_cursor = Cursor::new(&mut qs);
 
         for _idx in 0..tensor_blocks {
-            // reader.seek(std::io::SeekFrom::Current(_idx)
             ds[_idx] = reader.read_f16()?.to_f32();
             dmins[_idx] = reader.read_f16()?.to_f32();
 
-            let mut current_scales = vec![0u8; K_SCALE_SIZE];
-            reader.read_exact(&mut current_scales)?;
-            scales_cursor.write_all(&mut current_scales)?;
-
-            let mut current_qs = vec![0u8; QK_K / 2];
-            reader.read_exact(&mut current_qs)?;
-            qs_cursor.write_all(&mut current_qs)?;
+            reader.read_u8s_into(&mut scales_cursor, K_SCALE_SIZE)?;
+            reader.read_u8s_into(&mut qs_cursor, QK_K / 2)?;
         }
 
-        // println!("ds {:?}", ds);
-        // println!("dmins {:?}", dmins);
-        println!("scales {:?}", scales);
-        println!("qs {:?}", qs);
-        // [TODO]
+        let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
+        let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
 
+        let scales_tensor = Tensor::from_bytes(
+            scales.as_ref(),
+            ratchet::DType::Q8,
+            shape![tensor_blocks, K_SCALE_SIZE],
+            device.clone(),
+        );
+
+        let qs_tensor = Tensor::from_bytes(
+            qs.as_ref(),
+            ratchet::DType::Q8,
+            shape![tensor_blocks, QK_K / 2],
+            device.clone(),
+        );
+        println!("ds_tensor={:?}", ds_tensor);
+        println!("dmins_tensor={:?}", dmins_tensor);
+        println!("scales_tensor={:?}", scales_tensor);
+        println!("qs_tensor={:?}", qs_tensor);
+
+        let ds2 = ds_tensor.to(&Device::CPU)?.to_vec::<f32>()?;
+
+        println!("{:?}", &ds2);
+        assert_eq!(ds, ds2);
         // [TODO] Implement
         let tensor = match self.ggml_dtype {
             GgmlDType::Q4K => {
@@ -493,10 +511,10 @@ impl Content {
         reader: &mut R,
         name: &str,
         device: &Device,
-    ) -> Result<Tensor> {
+    ) -> anyhow::Result<Tensor> {
         let tensor_info = match self.tensor_infos.get(name) {
             Some(tensor_info) => tensor_info,
-            None => crate::bail!("cannot find tensor info for {name}"),
+            None => anyhow::bail!("cannot find tensor info for {name}"),
         };
         tensor_info.read(reader, self.tensor_data_offset, device)
     }

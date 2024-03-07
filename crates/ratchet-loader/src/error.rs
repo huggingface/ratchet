@@ -13,6 +13,7 @@ pub enum Error {
     #[error("{0}")]
     Msg(String),
 }
+
 impl Error {
     pub fn wrap(err: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::Wrapped(Box::new(err))
