@@ -17,6 +17,9 @@ importers:
       '@ratchet-ml/ratchet-web':
         specifier: 0.1.0
         version: 0.1.0
+      fix-webm-duration:
+        specifier: ^1.0.5
+        version: 1.0.5
       next:
         specifier: 14.1.0
         version: 14.1.0(react-dom@18.2.0)(react@18.2.0)
@@ -1721,6 +1724,10 @@ packages:
     dependencies:
       to-regex-range: 5.0.1
     dev: true
+
+  /fix-webm-duration@1.0.5:
+    resolution: {integrity: sha512-b6oula3OfSknx0aWoLsxvp4DVIYbwsf+UAkr6EDAK3iuMYk/OSNKzmeSI61GXK0MmFTEuzle19BPvTxMIKjkZg==}
+    dev: false
 
   /foreground-child@3.1.1:
     resolution: {integrity: sha512-TMKDUnIte6bfb5nWv7V/caI169OHgvwjb7V4WkeUvbQQdjr5rWKqHFiKWb/fcOwB+CzBT+qbWjvj+DVwRskpIg==}
