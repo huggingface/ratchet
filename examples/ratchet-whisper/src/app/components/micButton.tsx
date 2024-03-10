@@ -4,8 +4,8 @@ import MicRecorder from "../audio";
 const SAMPLE_RATE = 16000;
 
 interface MicButtonProps {
-    setBlobUrl: React.Dispatch<React.SetStateAction<string | undefined>>;
-    setAudioData: React.Dispatch<React.SetStateAction<Uint8Array | undefined>>;
+    setBlobUrl: (blobUrl: string) => void;
+    setAudioData: (audioData: Float32Array) => void;
     setAudioMetadata: (audioMetadata: AudioMetadata) => void;
 }
 
@@ -30,7 +30,7 @@ const MicButton = (props: MicButtonProps) => {
         let ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
         let resampled = await ctx.decodeAudioData(recording.buffer);
         let ch0 = resampled.getChannelData(0);
-        props.setAudioData(new Uint8Array(ch0.buffer));
+        props.setAudioData(new Float32Array(ch0.buffer));
 
         let blob = recording.blob;
         props.setAudioMetadata({
@@ -52,9 +52,8 @@ const MicButton = (props: MicButtonProps) => {
 
     return (
         <div className="flex flex-col">
-            <label className="text-white text-xl font-semibold">Record</label>
             <button
-                className="text-xl outline outline-white text-black font-semibold px-6 mx-auto cursor-pointer h-full"
+                className="text-xl outline outline-white text-black font-semibold px-6 mx-auto cursor-pointer h-full pt-6"
                 onClick={handleClick}
             >
                 {isRecording ? (

@@ -27,10 +27,12 @@ export class MicRecorder {
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: true,
         });
+        let mimeType = MicRecorder.supportedMimes.find((mime: string) =>
+            MediaRecorder.isTypeSupported(mime)
+        );
+        console.log("SELECTED MIME TYPE: ", mimeType);
         const inner = new MediaRecorder(stream, {
-            mimeType: MicRecorder.supportedMimes.find((mime: string) =>
-                MediaRecorder.isTypeSupported(mime)
-            ),
+            mimeType
         });
         const recorder = new MicRecorder(inner);
         recorder.currentStream = stream;

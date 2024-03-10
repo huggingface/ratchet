@@ -4,9 +4,9 @@ import { toBlobURL } from '@ffmpeg/util';
 import { useEffect, useRef, useState } from "react";
 import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization, Segment } from "@ratchet-ml/ratchet-web";
 import ConfigModal, { ConfigOptions } from './components/configModal';
-import ModelSelector from './components/modelSelector';
+import ModelSelector, { humanFileSize } from './components/modelSelector';
 import ProgressBar from './components/progressBar';
-import MicButton from './components/micButton';
+import MicButton, { AudioMetadata } from './components/micButton';
 
 export default function Home() {
     const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WHISPER_TINY);
@@ -16,7 +16,8 @@ export default function Home() {
     const ffmpegRef = useRef(new FFmpeg());
     const [ffmpegLoaded, setFFmpegLoaded] = useState(false);
     const [blobURL, setBlobURL] = useState<string>();
-    const [audio, setAudio] = useState<Uint8Array | null>(null);
+    const [audioData, setAudioData] = useState<Float32Array | null>(null);
+    const [audioMetadata, setAudioMetadata] = useState<AudioMetadata | null>(null);
     const [segments, setSegments] = useState<Segment[]>([]);
     const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
     const [configOptions, setConfigOptions] = useState<ConfigOptions>({
@@ -101,11 +102,12 @@ export default function Home() {
 
 
     async function runModel() {
-        if (!model || !audio || generating) {
+        if (!model || !audioData || generating) {
             return
         }
         setSegments([]);
-        let floatArray = pcm16ToIntFloat32(audio);
+        let floatArray = audioData;
+        console.log("Float array: ", floatArray);
         let builder = new DecodingOptionsBuilder();
         let options = builder
             .setLanguage(configOptions.language ? configOptions.language : "en")
@@ -116,6 +118,7 @@ export default function Home() {
         let callback = (segment: Segment) => {
             if (segment.last) {
                 setGenerating(false);
+                return;
             }
             setSegments((currentSegments) => [...currentSegments, segment]);
         };
@@ -133,7 +136,11 @@ export default function Home() {
         const reader = new FileReader();
         reader.onload = async () => {
             let audioBytes = new Uint8Array(reader.result as ArrayBuffer);
-            setAudio(await transcode(audioBytes));
+            setAudioData(pcm16ToIntFloat32(await transcode(audioBytes)));
+            setAudioMetadata({
+                file: file,
+                fromMic: false,
+            });
             setBlobURL(URL.createObjectURL(file));
         };
         reader.readAsArrayBuffer(file);
@@ -155,19 +162,56 @@ export default function Home() {
                     {progress > 0 && progress < 100 ? <ProgressBar progress={progress} /> : <></>}
                     {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
                         <></>}
-                    <div className="flex flex-row gap-2 items-center">
-                        <input
-                            className="flex-1"
-                            type="file"
-                            name="audioFile"
-                            id="audioFile"
-                            onChange={handleAudioFile()}
+                    <div className="flex flex-row gap-4">
+                        <div className="flex flex-col w-full">
+                            <label className="text-black font-semibold">
+                                Upload Audio
+                            </label>
+                            <label
+                                className="text-lg outline outline-black  w-full font-semibold py-2.5 px-8 mx-auto cursor-pointer w-full"
+                                htmlFor="audioFile"
+                            >
+                                <div className="flex flex-row justify-between">
+                                    <span className="">
+                                        {audioMetadata
+                                            ? audioMetadata.file.name
+                                            : `Select Audio File`}
+                                    </span>
+                                </div>
+                            </label>
+                            <input
+                                type="file"
+                                className="hidden"
+                                name="audioFile"
+                                id="audioFile"
+                                onChange={handleAudioFile()}
+                                accept=".wav,.aac,.m4a,.mp4,.mp3"
+                            />
+                        </div>
+                        <MicButton
+                            setBlobUrl={setBlobURL}
+                            setAudioData={setAudioData}
+                            setAudioMetadata={setAudioMetadata}
                         />
-                        <audio controls key={blobURL} className="flex-1 p-2 rounded-lg bg-white">
-                            <source key={blobURL} src={blobURL} type="audio/wav" />
-                        </audio>
-                        <MicButton setBlobURL={setBlobURL} setAudioData={setAudio} />
                     </div>
+                    {blobURL && (
+                        <div>
+                            <label className="text-white text-xl font-semibold">
+                                Your Audio
+                            </label>
+                            <audio
+                                controls
+                                key={blobURL}
+                                className="mx-auto w-full"
+                            >
+                                <source
+                                    key={blobURL}
+                                    src={blobURL}
+                                    type="audio/wav"
+                                />
+                            </audio>
+                        </div>
+                    )}
 
                     <div className="flex flex-row gap-4 justify-end items-center">
                         <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={() => setIsConfigOpen(true)}>Options</button>
