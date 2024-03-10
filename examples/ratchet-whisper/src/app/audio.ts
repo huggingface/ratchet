@@ -30,7 +30,6 @@ export class MicRecorder {
         let mimeType = MicRecorder.supportedMimes.find((mime: string) =>
             MediaRecorder.isTypeSupported(mime)
         );
-        console.log("SELECTED MIME TYPE: ", mimeType);
         const inner = new MediaRecorder(stream, {
             mimeType
         });

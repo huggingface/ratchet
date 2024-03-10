@@ -4,7 +4,7 @@ import { toBlobURL } from '@ffmpeg/util';
 import { useEffect, useRef, useState } from "react";
 import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, Quantization, Segment } from "@ratchet-ml/ratchet-web";
 import ConfigModal, { ConfigOptions } from './components/configModal';
-import ModelSelector, { humanFileSize } from './components/modelSelector';
+import ModelSelector from './components/modelSelector';
 import ProgressBar from './components/progressBar';
 import MicButton, { AudioMetadata } from './components/micButton';
 
@@ -35,14 +35,6 @@ export default function Home() {
         })();
     }, [])
 
-    useEffect(() => {
-        if (model) {
-            console.log("Model loaded: ", model);
-        }
-        console.log("Selected model: ", selectedModel);
-        console.log("Loaded model: ", loadedModel);
-    }, [model, selectedModel, loadedModel])
-
     async function loadModel() {
         let toLoad = AvailableModels[selectedModel] as unknown as AvailableModels;
         setModel(await Model.load(toLoad, Quantization.Q8, (p: number) => setProgress(p)));
@@ -61,7 +53,6 @@ export default function Home() {
             coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
             wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
         });
-        console.log("Successfully loaded FFmpeg");
         setFFmpegLoaded(true);
     }
 
@@ -92,7 +83,6 @@ export default function Home() {
             "-ar", "16000",
             "output.pcm"
         ];
-        console.log("Running command: ", cmd);
 
         await ffmpeg.exec(cmd);
         const data = (await ffmpeg.readFile('output.pcm')) as any;
@@ -106,8 +96,6 @@ export default function Home() {
             return
         }
         setSegments([]);
-        let floatArray = audioData;
-        console.log("Float array: ", floatArray);
         let builder = new DecodingOptionsBuilder();
         let options = builder
             .setLanguage(configOptions.language ? configOptions.language : "en")
@@ -123,7 +111,7 @@ export default function Home() {
             setSegments((currentSegments) => [...currentSegments, segment]);
         };
         setGenerating(true);
-        let result = await model.run({ audio: floatArray, decode_options: options, callback: callback });
+        let result = await model.run({ audio: audioData, decode_options: options, callback: callback });
         console.log("Result: ", result);
         console.log("Processing time: ", result.processing_time);
     }
