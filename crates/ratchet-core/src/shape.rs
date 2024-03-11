@@ -1,6 +1,9 @@
 use crate::{shape, RVec};
 use encase::impl_wrapper;
-use std::ops::{RangeFrom, RangeTo};
+use std::{
+    ops::{RangeFrom, RangeTo},
+    slice::Iter,
+};
 
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct Shape(RVec<usize>);
@@ -32,12 +35,8 @@ impl Shape {
         self.0.to_vec()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &usize> {
+    pub fn iter(&self) -> Iter<'_, usize> {
         self.0.iter()
-    }
-
-    pub fn into_iter(self) -> impl Iterator<Item = usize> {
-        self.0.into_iter()
     }
 
     pub fn reverse(&mut self) {

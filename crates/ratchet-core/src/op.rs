@@ -7,7 +7,7 @@ use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
     PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
 };
-use crate::{ops::*, rvec, CompiledOp, InvariantError, KernelElement, RVec, StorageView, Tensor};
+use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -34,7 +34,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.name(),
             LazyOp::Unary(u) => u.name(),
             LazyOp::Reindex(r) => r.name(),
-            LazyOp::Norm(n) => n.name(),
+            LazyOp::Norm(n) => n.kernel_name(),
             LazyOp::Conv(c) => c.name(),
             LazyOp::Select(s) => s.name(),
             LazyOp::IndexWrite(iw) => iw.name(),
@@ -77,6 +77,23 @@ impl LazyOp {
 
     pub fn is_const(&self) -> bool {
         matches!(self, LazyOp::Const)
+    }
+
+    #[track_caller]
+    pub fn check_invariants(&self) {
+        match self {
+            LazyOp::Binary(b) => b.check_invariants(),
+            LazyOp::Matmul(m) => m.check_invariants(),
+            LazyOp::Softmax(s) => s.check_invariants(),
+            LazyOp::Unary(u) => u.check_invariants(),
+            LazyOp::Reindex(r) => r.check_invariants(),
+            LazyOp::Norm(n) => n.check_invariants(),
+            LazyOp::Conv(c) => c.check_invariants(),
+            LazyOp::Select(s) => s.check_invariants(),
+            LazyOp::IndexWrite(iw) => iw.check_invariants(),
+            LazyOp::View(v) => v.check_invariants(),
+            LazyOp::Const => {}
+        }
     }
 }
 
@@ -197,24 +214,46 @@ pub trait MetaOperation: Debug + 'static {
     }
 }
 
+/// # Operation Guards - Runtime guards for operation correctness.
+///
+/// Guards should be implemented for all types that will be a node on the high-level CFG.
+/// It is used to ensure that the operation is valid and that the resultant tensor is correctly
+/// shaped.
+///
+/// The Rust type system is not sufficient to check all invariants at compile time (we need
+/// dependent types). Therefore, we move the checks to runtime.
+///
+/// All of these methods panic, as they're unrecoverable errors.
+pub trait OpGuards {
+    #[track_caller]
+    fn check_shapes(&self);
+
+    #[track_caller]
+    fn check_dtypes(&self);
+
+    // Some operations may have custom invariants to be upheld.
+    // e.g reduction dimension being within rank
+    #[track_caller]
+    fn check_custom(&self) {}
+}
+
 /// # Operation
 ///
-/// An operation is a user facing type that represents a computation.
-/// It checks the invariants that must be true before this operation can be executed.
+/// Operation should be implemented for all types that will be a node on the high-level CFG.
 ///
 /// An Operation is a member of a family of operations, called a MetaOperation, it may be the only
 /// member.
-///
-/// Some types may implement both Operation and MetaOperation, if there is no variance
-/// in output shape or invariants between the members of the family.
-pub trait Operation: Debug + 'static {
-    //These 2 methods below should be moved to another trait
-    //They're unrelated
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
-
-    /// # Output Inference
+pub trait Operation: OpGuards + Debug + 'static {
+    /// # Check Invariants
     ///
-    /// Inference is an overloaded term, in this context it means to determine
-    /// the metadata of the output tensor given the input tensors.
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError>;
+    /// All operations have some invariants that must be upheld to ensure correctness.
+    fn check_invariants(&self) {
+        self.check_shapes();
+        self.check_dtypes();
+        self.check_custom();
+    }
+    /// # Compute View
+    ///
+    /// Determine the type, shape & strides of the resultant tensor.
+    fn compute_view(&self) -> Result<StorageView, OperationError>;
 }

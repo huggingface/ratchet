@@ -3,11 +3,12 @@ use std::collections::HashSet;
 use derive_new::new;
 
 use crate::{
-    DType, Enforcer, InvariantError, Operation, OperationError, StorageView, Strides, Tensor,
+    DType, InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
 pub struct Permute {
+    pub input: Tensor,
     pub dims: Vec<usize>,
 }
 
@@ -25,14 +26,8 @@ impl Permute {
 }
 
 impl Operation for Permute {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let input_shape = srcs[0].shape();
-        if input_shape.rank() != self.dims.len() {
-            return Err(InvariantError::RankMismatch {
-                accepted: input_shape.rank()..=input_shape.rank(),
-                actual: self.dims.len(),
-            })?;
-        }
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let input_shape = self.input.shape();
         let dup_set: HashSet<usize> = HashSet::from_iter(self.dims.iter().cloned());
         if dup_set.len() != self.dims.len() {
             return Err(InvariantError::DuplicateDims)?;
@@ -43,13 +38,17 @@ impl Operation for Permute {
             output_shape[i] = input_shape[self.dims[i]];
         }
         let strides = Strides::from(&output_shape);
-        Ok(StorageView::new(output_shape, srcs[0].dt(), strides))
+        Ok(StorageView::new(output_shape, self.input.dt(), strides))
+    }
+}
+
+impl OpGuards for Permute {
+    fn check_shapes(&self) {
+        assert!(self.input.shape().rank() == self.dims.len());
     }
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Enforcer::assert_dtype(srcs[0], DType::F32)?;
-        Ok(())
+    fn check_dtypes(&self) {
+        assert!(self.input.dt() == DType::F32);
     }
 }
 

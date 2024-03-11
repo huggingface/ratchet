@@ -5,7 +5,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, DType, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata,
+    rvec, wgc, DType, Enforcer, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata,
     Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 
@@ -277,25 +277,28 @@ impl MatmulMeta {
 impl OpMetadata for MatmulMeta {}
 
 impl Operation for Matmul {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let (a, b) = (srcs[0], srcs[1]);
-        let c_shape = Matmul::compute_c_shape(a, b, self.trans_b).unwrap();
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let c_shape = Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_b).unwrap();
         let c_strides = Strides::from(&c_shape);
-        Ok(StorageView::new(c_shape, a.dt(), c_strides))
+        Ok(StorageView::new(c_shape, self.lhs.dt(), c_strides))
+    }
+}
+
+impl OpGuards for Matmul {
+    fn check_shapes(&self) {
+        let c_shape = Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_b);
+        assert!(c_shape.is_ok());
     }
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 2)?;
+    fn check_dtypes(&self) {
         let allowed_pairs = [(DType::F32, DType::F32), (DType::F32, DType::WQ8)];
-        if !allowed_pairs.contains(&(srcs[0].dt(), srcs[1].dt())) {
-            //TODO: invariantError
+        if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
             panic!(
                 "Failed to validate DTypes: {:?}, {:?}",
-                srcs[0].dt(),
-                srcs[1].dt()
+                self.lhs.dt(),
+                self.rhs.dt()
             );
         }
-        Ok(())
     }
 }
 

@@ -53,6 +53,7 @@ impl Tensor {
     }
 
     fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
+        op.check_invariants();
         Self::new(op, meta, None, device)
     }
 
@@ -290,58 +291,37 @@ impl Tensor {
     impl_unary_op!(ceil, UnaryOp::Ceil);
 
     pub fn layer_norm(
-        &self,
-        weight: &Tensor,
-        bias: Option<&Tensor>,
+        self,
+        weight: Tensor,
+        bias: Option<Tensor>,
         eps: f32,
     ) -> anyhow::Result<Tensor> {
-        let srcs = match bias {
-            Some(b) => rvec![self, weight, b],
-            None => rvec![self, weight],
-        };
-        LayerNorm::check_invariants(&srcs)?;
-        let layer_norm = LayerNorm::new(weight.clone(), bias.cloned(), eps);
-        let new_view = layer_norm.infer_output(&srcs)?;
-        let norm = Norm::new(self.clone(), NormOp::LayerNorm(layer_norm));
-        Ok(Tensor::lazy(
-            LazyOp::Norm(norm),
-            new_view,
-            self.device.clone(),
-        ))
+        let device = self.device.clone();
+        let layer_norm = LayerNorm::new(self, weight, bias, eps);
+        let new_view = layer_norm.compute_view()?;
+        let op = LazyOp::Norm(Norm::LayerNorm(layer_norm));
+        Ok(Tensor::lazy(op, new_view, device))
     }
 
     pub fn conv1d(
-        &self,
-        weight: &Tensor,
-        bias: Option<&Tensor>,
+        self,
+        weight: Tensor,
+        bias: Option<Tensor>,
         stride: usize,
         padding: usize,
     ) -> anyhow::Result<Tensor> {
-        let srcs = match bias {
-            Some(b) => rvec![self, weight, b],
-            None => rvec![self, weight],
-        };
-        Conv::check_invariants(&srcs)?;
-        let conv = Conv::new(self.clone(), weight.clone(), bias.cloned(), stride, padding);
-        let new_view = conv.infer_output(&[self, weight])?;
-        Ok(Tensor::lazy(
-            LazyOp::Conv(conv),
-            new_view,
-            self.device.clone(),
-        ))
+        let device = self.device.clone();
+        let conv = Conv::new(self, weight, bias, stride, padding);
+        let new_view = conv.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Conv(conv), new_view, device))
     }
 
     //TODO: switch dim to isize and allow negative indexing
-    pub fn softmax(&self, dim: usize) -> anyhow::Result<Tensor> {
-        Softmax::check_invariants(&[self])?;
-
-        let softmax = Softmax::new(self.clone(), dim);
-        let new_view = softmax.infer_output(&[self])?;
-        Ok(Tensor::lazy(
-            LazyOp::Softmax(softmax),
-            new_view,
-            self.device.clone(),
-        ))
+    pub fn softmax(self, dim: usize) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let softmax = Softmax::new(self, dim);
+        let new_view = softmax.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Softmax(softmax), new_view, device))
     }
 
     //TODO: horrific interface
@@ -673,22 +653,21 @@ impl Tensor {
         //crate::plot::render_to_file(last, "pre-allocations.svg").unwrap();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
-        let allocations = device.allocate_cfg(&execution_order, device)?;
+        let mut allocations = device.allocate_cfg(&execution_order, device)?;
         //println!("Allocations: {:#?}", allocations);
 
         for t in execution_order.iter() {
+            assert!(t.device().is_gpu());
             if t.resolved() {
                 continue;
             }
 
             let id = t.id();
-            let buf = allocations.get(&id).ok_or(TensorError::NoStorage(id))?;
-            assert!(t.device().is_gpu());
-            let storage = GPUBuffer {
-                inner: (*buf).clone(),
+            let inner = allocations.remove(&id).ok_or(TensorError::NoStorage(id))?;
+            t.update_storage(Storage::GPU(GPUBuffer {
+                inner,
                 alignment: t.dt().size_of(),
-            };
-            t.update_storage(Storage::GPU(storage));
+            }));
 
             //Can inplace && only 1 consumer
             let can_inplace = t.op().supports_inplace() && Arc::strong_count(&t.inner) == 1;

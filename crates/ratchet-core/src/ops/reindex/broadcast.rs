@@ -1,9 +1,10 @@
 use derive_new::new;
 
-use crate::{Enforcer, Operation, OperationError, Shape, StorageView, Strides, Tensor};
+use crate::{OpGuards, Operation, OperationError, Shape, StorageView, Strides, Tensor};
 
 #[derive(new, Debug, Clone)]
 pub struct Broadcast {
+    src: Tensor,
     to: Shape,
 }
 
@@ -13,25 +14,42 @@ impl Broadcast {
     }
 }
 
-impl Operation for Broadcast {
-    //For rules, see https://numpy.org/doc/stable/user/basics.broadcasting.html
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let src = srcs[0];
-        let src_shape = src.shape();
+impl OpGuards for Broadcast {
+    fn check_shapes(&self) {
+        let src_shape = self.src.shape();
+        let dst_shape = self.to.clone();
 
-        //Check if shapes are compatible
-        if *src_shape == self.to {
-            return Ok(src.storage_view().clone());
+        let length_difference = src_shape.len().saturating_sub(dst_shape.len());
+
+        for (i, &src_dim) in src_shape.iter().enumerate().rev() {
+            let dst_dim = dst_shape[length_difference + i];
+
+            if src_dim != dst_dim && src_dim > 1 && dst_dim > 1 {
+                panic!(
+                    "Incompatible shapes for broadcasting: {:?} and {:?}.
+                    Failed at dimension {}.",
+                    src_shape, dst_shape, i
+                );
+            }
         }
-
-        //TODO: actually validate the shapes, currently faith based system
-        let strides = Strides::from(&self.to);
-        Ok(StorageView::new(self.to.clone(), src.dt(), strides))
     }
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
+    fn check_dtypes(&self) {
+        todo!()
+    }
+}
+
+impl Operation for Broadcast {
+    //For rules, see https://numpy.org/doc/stable/user/basics.broadcasting.html
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let src_shape = self.src.shape();
+
+        if *src_shape == self.to {
+            return Ok(self.src.storage_view().clone());
+        }
+
+        let strides = Strides::from(&self.to);
+        Ok(StorageView::new(self.to.clone(), self.src.dt(), strides))
     }
 }
 

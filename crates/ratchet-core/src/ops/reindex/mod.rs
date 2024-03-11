@@ -16,37 +16,11 @@ use crate::{
 };
 use glam::UVec4;
 
-#[derive(Debug, Clone)]
-pub enum ReindexOp {
+#[derive(new, Debug, Clone)]
+pub enum Reindex {
     Permute(Permute),
     Slice(Slice),
     Broadcast(Broadcast),
-}
-
-impl ReindexOp {
-    pub fn kernel_name(&self) -> &'static str {
-        match self {
-            ReindexOp::Permute(_) => "permute",
-            ReindexOp::Slice(_) => "slice",
-            ReindexOp::Broadcast(_) => "broadcast",
-        }
-    }
-}
-
-#[derive(new, Debug, Clone)]
-pub struct Reindex {
-    input: Tensor,
-    op: ReindexOp,
-}
-
-impl Reindex {
-    pub fn name(&self) -> &'static str {
-        self.op.kernel_name()
-    }
-
-    pub fn op(&self) -> &ReindexOp {
-        &self.op
-    }
 }
 
 #[derive(Debug, ShaderType)]
@@ -68,7 +42,11 @@ impl MetaOperation for Reindex {
     type Meta = ReindexMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.input]
+        match self {
+            Reindex::Permute(p) => rvec![&p],
+            Reindex::Slice(s) => rvec![&s.src],
+            Reindex::Broadcast(b) => rvec![&b.src],
+        }
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
