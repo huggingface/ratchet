@@ -144,7 +144,7 @@ impl WhisperTokenizer {
 
     #[inline]
     pub fn is_multilingual(&self) -> bool {
-        self.inner.get_vocab_size(true) == Self::SIZE
+        return self.inner.get_vocab_size(true) >= Self::SIZE;
     }
 
     pub fn encode(&self, text: &str, skip_special: bool) -> Result<Vec<i32>, tokenizers::Error> {

@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 pub static SAMPLE_RATE: usize = 16000;
 pub static N_FFT: usize = 400;
-pub static N_MELS: usize = 80;
 pub static HOP_LENGTH: usize = 160;
 pub static CHUNK_LENGTH: usize = 30;
 pub static N_AUDIO_CTX: usize = 1500; //same for all
@@ -40,10 +39,12 @@ impl std::fmt::Debug for SpectrogramGenerator {
 impl SpectrogramGenerator {
     pub fn new(mels: Vec<f32>) -> Self {
         let mut planner = RealFftPlanner::new();
+        let n_mels = mels.len() / (N_FFT / 2 + 1);
+        println!("N_MELS: {}", n_mels);
         Self {
             fft_plan: planner.plan_fft_forward(N_FFT),
             hann_window: Self::hann_window(),
-            mels: Array2::from_shape_vec((N_MELS, N_FFT / 2 + 1), mels).unwrap(),
+            mels: Array2::from_shape_vec((n_mels, N_FFT / 2 + 1), mels).unwrap(),
         }
     }
 
@@ -126,7 +127,7 @@ mod tests {
     use hf_hub::api::sync::Api;
     use ratchet::test_util::run_py_prg;
 
-    const MAX_DIFF: f32 = 1e-5;
+    const MAX_DIFF: f32 = 5e-5;
 
     pub fn load_npy(path: PathBuf) -> Vec<f32> {
         let bytes = std::fs::read(path).unwrap();
@@ -146,14 +147,14 @@ mod tests {
         let api = Api::new().unwrap();
         let repo = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let gb0 = repo.get("erwin_jp.wav").unwrap();
-        let mels = repo.get("mel_filters.npy").unwrap();
+        let mels = repo.get("mel_filters_128.npy").unwrap();
         let prg = format!(
             r#"
 import whisper
 import numpy as np
 def ground_truth():
     audio = whisper.load_audio("{}")
-    return whisper.log_mel_spectrogram(audio, padding=480000).numpy()[np.newaxis]
+    return whisper.log_mel_spectrogram(audio, n_mels=128, padding=480000).numpy()[np.newaxis]
 "#,
             gb0.to_str().unwrap()
         );

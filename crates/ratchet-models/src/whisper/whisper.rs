@@ -247,11 +247,11 @@ mod tests {
     pub fn whisper_end_to_end() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("FL33TW00D-HF/ratchet-whisper".to_string());
-        let model_path = model.get("tiny_q8.bin").unwrap();
+        let model = api.model("ggerganov/whisper.cpp".to_string());
+        let model_path = model.get("ggml-large-v3.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_path = dataset.get("mm0.wav").unwrap();
+        let audio_path = dataset.get("jfk.wav").unwrap();
         let samples = load_sample(audio_path);
 
         let options = DecodingOptionsBuilder::new().build();
@@ -271,8 +271,8 @@ mod tests {
     pub fn convert_ggml_f32_to_wq8() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let src_path = model.get("ggml-tiny.bin").unwrap();
+        let model = api.model("".to_string());
+        let src_path = model.get("ggml-distil-large-v3.fp32.bin").unwrap();
 
         let to_quant = HashSet::from([
             "attn.query.weight",
