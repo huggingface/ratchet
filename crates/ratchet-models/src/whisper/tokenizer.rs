@@ -8,7 +8,7 @@ use hf_hub::api::sync::Api;
 use {ratchet_hub::ApiBuilder, ratchet_hub::RepoType, wasm_bindgen::JsError};
 
 lazy_static::lazy_static! {
-    pub static ref LANGUAGES: [&'static str; 99] = {
+    pub static ref LANGUAGES: [&'static str; 100] = {
         [
             "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar",
             "sv", "it", "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu",
@@ -17,7 +17,7 @@ lazy_static::lazy_static! {
             "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc",
             "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo", "ht", "ps", "tk", "nn",
             "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw",
-            "su",
+            "su", "yue",
         ]
     };
 }
@@ -33,19 +33,7 @@ pub struct WhisperTokenizer {
 impl WhisperTokenizer {
     pub const SOT: i32 = 50258;
     pub const EOT: i32 = 50257;
-    pub const TRANSLATE: i32 = 50358;
-    pub const TRANSCRIBE: i32 = 50359;
-    pub const START_OF_PREV: i32 = 50361;
-    pub const NO_CAPTIONS: i32 = 50362;
-    pub const NO_TIMESTAMPS: i32 = 50363;
-    pub const TS_BEGIN: i32 = 50364;
-    pub const TS_END: i32 = 51864;
-    pub const TIMESTAMPS: RangeInclusive<i32> = 50364..=51864;
-    pub const LANGUAGES_BEGIN: i32 = 50259;
-    pub const LANGUAGES_END: i32 = 50357;
-    pub const LANGUAGES: RangeInclusive<i32> = 50259..=50357;
-    pub const SIZE: usize = 51865;
-    pub const PADDED_SIZE: usize = 51872; //we pad to nearest 16
+    pub const LANGUAGES_BEGIN: usize = 50259;
     pub const BLANK: i32 = 220;
 
     //https://github.com/openai/whisper/blob/1cea4357687b676b293cb5473e1ade25f5b1cef7/whisper/tokenizer.py#L242
@@ -82,7 +70,7 @@ impl WhisperTokenizer {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn fetch() -> Tokenizer {
         let api = Api::new().unwrap();
-        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
+        let tokenizer_repo = api.model("openai/whisper-large".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         Tokenizer::from_file(tokenizer_path).unwrap()
     }
@@ -133,18 +121,57 @@ impl WhisperTokenizer {
     }
 
     #[inline]
-    pub fn sot_sequence(&self) -> Vec<i32> {
-        vec![Self::SOT, self.language, self.task.into()]
+    pub fn sot_prev(&self) -> i32 {
+        self.inner
+            .encode("<|startofprev|>", false)
+            .unwrap()
+            .get_ids()[0] as i32
     }
 
     #[inline]
-    pub fn is_timestamp(token: i32) -> bool {
-        Self::TIMESTAMPS.contains(&token)
+    pub fn sot_sequence(&self) -> Vec<i32> {
+        vec![Self::SOT, self.language, self.task.as_token(self)]
+    }
+
+    #[inline]
+    pub fn transcribe(&self) -> i32 {
+        self.inner
+            .encode("<|transcribe|>", false)
+            .unwrap()
+            .get_ids()[0] as i32
+    }
+
+    #[inline]
+    pub fn translate(&self) -> i32 {
+        self.inner.encode("<|translate|>", false).unwrap().get_ids()[0] as i32
+    }
+
+    #[inline]
+    pub fn notimestamps(&self) -> i32 {
+        self.inner
+            .encode("<|notimestamps|>", false)
+            .unwrap()
+            .get_ids()[0] as i32
+    }
+
+    #[inline]
+    pub fn timestamp_begin(&self) -> i32 {
+        self.inner.encode("<|0.00|>", false).unwrap().get_ids()[0] as i32
+    }
+
+    #[inline]
+    pub fn is_timestamp(&self, token: i32) -> bool {
+        (self.timestamp_begin()..=self.vocab_size() as i32).contains(&token)
     }
 
     #[inline]
     pub fn is_multilingual(&self) -> bool {
-        return self.inner.get_vocab_size(true) >= Self::SIZE;
+        return self.inner.get_vocab_size(true) >= 51865;
+    }
+
+    #[inline]
+    pub fn vocab_size(&self) -> usize {
+        self.inner.get_vocab_size(true)
     }
 
     pub fn encode(&self, text: &str, skip_special: bool) -> Result<Vec<i32>, tokenizers::Error> {

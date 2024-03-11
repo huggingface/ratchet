@@ -61,9 +61,10 @@ pub fn transcribe(
 
         let hs = model.encoder.forward(&mel_segment)?.resolve()?;
 
-        let task = DecodingTask::new(decode_options, &tokenizer);
-        let decoded = task.run(&mut model.decoder, hs, &tokenizer)?;
+        let task = DecodingTask::new(decode_options, tokenizer.clone());
+        let decoded = task.run(&mut model.decoder, hs)?;
         let (segments, advance) = DecodingTask::build_segments(
+            &tokenizer,
             decoded,
             time_offset,
             segment_size,

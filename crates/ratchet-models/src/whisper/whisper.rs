@@ -5,9 +5,12 @@ use ratchet::{shape, Device, Tensor};
 use ratchet_loader::{GGMLCompatible, GGMLFormat, GGMLModel, LoadError};
 use ratchet_nn::Module;
 
+use ndarray::{s, Dimension};
+use ndarray_stats::QuantileExt;
+use ratchet::NDArrayExt;
+
 use crate::{
-    DecodingTask, Language, LogitMutator, SelectLanguage, SpectrogramGenerator, WhisperDecoder,
-    WhisperEncoder, WhisperTokenizer,
+    DecodingTask, Language, SpectrogramGenerator, WhisperDecoder, WhisperEncoder, WhisperTokenizer,
 };
 
 #[derive(Debug)]
@@ -183,7 +186,7 @@ impl GGMLCompatible for Whisper {
 
 impl Whisper {
     pub fn is_multilingual(&self) -> bool {
-        self.hparams.n_vocab == 51865
+        self.hparams.n_vocab >= 51865
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -195,26 +198,72 @@ impl Whisper {
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU)?;
-        let logits = DecodingTask::slice_logits(cpu_logits);
+        let logits = DecodingTask::slice_logits(cpu_logits, self.hparams.n_vocab as usize);
 
-        let selector = SelectLanguage {};
-        let lang_t = selector.apply(logits, None).unwrap();
+        let device = logits.device().clone();
+        let mut nd_logits = logits.into_ndarray::<f32>();
+
+        let languages_end = if self.hparams.n_vocab == 51865 {
+            50358
+        } else if self.hparams.n_vocab == 51866 {
+            50359
+        } else {
+            panic!("Unsupported number of tokens")
+        };
+
+        nd_logits
+            .slice_mut(s![.., ..WhisperTokenizer::LANGUAGES_BEGIN])
+            .map_inplace(move |el| *el = f32::NEG_INFINITY);
+
+        nd_logits
+            .slice_mut(s![.., languages_end..])
+            .map_inplace(move |el| *el = f32::NEG_INFINITY);
+
+        let language_tokens_probs = nd_logits.softmax(nd_logits.ndim() - 1);
+
+        let argmax_dims = language_tokens_probs.argmax_skipnan().unwrap();
+        let argmax: u32 = argmax_dims[argmax_dims.ndim() - 1] as _;
+        let lang_t = Tensor::from_data([argmax], shape![1], device);
+
         Ok(Language::Token(lang_t.item()))
     }
 
     #[cfg(target_arch = "wasm32")]
     pub async fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
         let audio_ctx = self.encoder.forward(&mel)?.resolve()?;
-        let sot = Tensor::from_data(&[WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
+        let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
 
         let logits = self.decoder.forward(&[audio_ctx, sot])?.resolve()?;
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU).await?;
-        let logits = DecodingTask::slice_logits(cpu_logits);
+        let logits = DecodingTask::slice_logits(cpu_logits, self.hparams.n_vocab as usize);
 
-        let selector = SelectLanguage {};
-        let lang_t = selector.apply(logits, None).unwrap();
+        let device = logits.device().clone();
+        let mut nd_logits = logits.into_ndarray::<f32>();
+
+        let languages_end = if self.hparams.n_vocab == 51865 {
+            50358
+        } else if self.hparams.n_vocab == 51866 {
+            50359
+        } else {
+            panic!("Unsupported number of tokens")
+        };
+
+        nd_logits
+            .slice_mut(s![.., ..WhisperTokenizer::LANGUAGES_BEGIN])
+            .map_inplace(move |el| *el = f32::NEG_INFINITY);
+
+        nd_logits
+            .slice_mut(s![.., languages_end..])
+            .map_inplace(move |el| *el = f32::NEG_INFINITY);
+
+        let language_tokens_probs = nd_logits.softmax(nd_logits.ndim() - 1);
+
+        let argmax_dims = language_tokens_probs.argmax_skipnan().unwrap();
+        let argmax: u32 = argmax_dims[argmax_dims.ndim() - 1] as _;
+        let lang_t = Tensor::from_data([argmax], shape![1], device);
+
         Ok(Language::Token(lang_t.item()))
     }
 }

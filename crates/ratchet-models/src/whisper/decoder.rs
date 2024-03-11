@@ -158,13 +158,7 @@ mod tests {
     use ratchet::{shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
-    use std::path::PathBuf;
     use tokenizers::Tokenizer;
-
-    pub fn load_npy(path: PathBuf) -> Vec<f32> {
-        let bytes = std::fs::read(path).unwrap();
-        npyz::NpyFile::new(&bytes[..]).unwrap().into_vec().unwrap()
-    }
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -199,22 +193,25 @@ def ground(options):
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
+        let path = model.get("ggml-large-v3.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
-        let hs_npy = load_npy(dataset.get("jfk_tiny_encoder_hs.npy").unwrap());
+        let hs_npy = dataset.get("jfk_large_v3_encoder_hs.npy").unwrap();
         let audio_path = dataset.get("jfk.wav").unwrap();
+
+        let tokenizer_repo = api.model("openai/whisper-large-v3".to_string());
+        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
+        let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
-        assert_eq!(gg_disk.tensors.len(), 167);
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let audio_ctx = Tensor::from_data(hs_npy, shape![1, 1500, 384], device.clone());
+        let audio_ctx = Tensor::from_npy_path::<f32, _>(hs_npy, &device)?;
         let mut decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
 
-        let mut tokens = vec![50258, 50259, 50359];
+        let mut tokens = vec![50258, 50259, 50360];
         let mut all_tokens = tokens.clone();
         let mut all_logits = vec![];
         let mut iters = 0;
@@ -228,7 +225,9 @@ def ground(options):
             let our_logits = result.to(&Device::CPU)?;
             all_logits.push(our_logits.clone());
             let nd_logits = our_logits.to_ndarray_view::<f32>();
-            let sliced = nd_logits.slice(s![.., -1.., ..51865]).remove_axis(Axis(1));
+            let sliced = nd_logits
+                .slice(s![.., -1.., ..tokenizer.get_vocab_size(true)])
+                .remove_axis(Axis(1));
             decoder.cache_mut().update(tokens.len());
 
             tokens = sliced
@@ -242,9 +241,6 @@ def ground(options):
         }
         println!("Took: {:?}", start.elapsed());
 
-        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
-        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
-        let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
         let u32_tokens: Vec<_> = all_tokens.iter().map(|&x| x as u32).collect();
         let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
         println!("Decoded: {}", decoded);

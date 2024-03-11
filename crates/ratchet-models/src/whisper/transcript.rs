@@ -74,12 +74,18 @@ pub struct Segment {
 }
 
 impl Segment {
-    pub fn from_tokens(sliced_tokens: &[i32], offset: f64, last: bool) -> Self {
+    pub fn from_tokens(
+        tokenizer: &WhisperTokenizer,
+        sliced_tokens: &[i32],
+        offset: f64,
+        last: bool,
+    ) -> Self {
         let input_stride = N_FRAMES / N_AUDIO_CTX; // mel frames per output token: 2
         let time_precision: f64 = input_stride as f64 * (HOP_LENGTH as f64) / (SAMPLE_RATE as f64); // time per output token: 0.02 (seconds)
 
-        let start_timestamp_pos = sliced_tokens[0] - WhisperTokenizer::TS_BEGIN;
-        let end_timestamp_pos = sliced_tokens[sliced_tokens.len() - 1] - WhisperTokenizer::TS_BEGIN;
+        let start_timestamp_pos = sliced_tokens[0] - tokenizer.timestamp_begin();
+        let end_timestamp_pos =
+            sliced_tokens[sliced_tokens.len() - 1] - tokenizer.timestamp_begin();
 
         let segment_tokens = sliced_tokens.iter().map(|x| *x as u32).collect::<Vec<_>>();
 
@@ -128,11 +134,11 @@ impl StreamedSegment {
         offset: f64,
         last: bool,
     ) -> Self {
-        let segment = Segment::from_tokens(sliced_tokens, offset, last);
+        let segment = Segment::from_tokens(&tokenizer, sliced_tokens, offset, last);
         let segment_tokens = segment
             .tokens
             .into_iter()
-            .filter(|t| *t < WhisperTokenizer::TS_BEGIN as _)
+            .filter(|t| *t < tokenizer.timestamp_begin() as _)
             .collect::<Vec<_>>();
         let segment_text = tokenizer.decode(segment_tokens.as_slice(), true).unwrap();
         StreamedSegment::new(segment.start, segment.stop, segment_text, last)
