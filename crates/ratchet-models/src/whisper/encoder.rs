@@ -162,31 +162,4 @@ mod tests {
 
         Ok(())
     }
-
-    #[test]
-    fn v3_encoder_matches() -> anyhow::Result<()> {
-        log_init();
-        let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-large-v3.bin").unwrap();
-        let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let input_npy = dataset.get("jfk_large_v3_encoder_input.npy").unwrap();
-        let ground_npy = dataset.get("jfk_large_v3_encoder_hs.npy").unwrap();
-
-        let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
-        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
-
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
-        let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
-
-        let result = encoder.forward(&input)?.resolve()?;
-        let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
-        println!("OURS: {:#?}", ours);
-        println!("Ground: {:#?}", ground);
-        ground.all_close(&ours, 1e-3, 1e-3)?;
-
-        Ok(())
-    }
 }

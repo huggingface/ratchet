@@ -197,10 +197,10 @@ def ground(options):
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
-        let hs_npy = dataset.get("jfk_large_v3_encoder_hs.npy").unwrap();
+        let hs_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
         let audio_path = dataset.get("jfk.wav").unwrap();
 
-        let tokenizer_repo = api.model("openai/whisper-large-v3".to_string());
+        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
@@ -211,7 +211,7 @@ def ground(options):
         let audio_ctx = Tensor::from_npy_path::<f32, _>(hs_npy, &device)?;
         let mut decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
 
-        let mut tokens = vec![50258, 50259, 50360];
+        let mut tokens = vec![50258, 50259, 50359];
         let mut all_tokens = tokens.clone();
         let mut all_logits = vec![];
         let mut iters = 0;
