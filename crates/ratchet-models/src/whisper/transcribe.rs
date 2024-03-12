@@ -13,6 +13,7 @@ pub fn transcribe(
     audio: Vec<f32>,
     mut decode_options: DecodingOptions,
 ) -> anyhow::Result<TranscriptionResult> {
+    let n_mels = model.hparams.n_mels as usize;
     let runtime = Instant::now();
     let mel = model.specgen.generate(audio)?.to(&model.device)?;
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
@@ -23,7 +24,7 @@ pub fn transcribe(
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
             log::warn!("No language specified, using language detection");
-            let mel = mel.slice(&[0..1, 0..80, 0..3000])?;
+            let mel = mel.slice(&[0..1, 0..n_mels, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel)?);
         }
     }
@@ -45,7 +46,7 @@ pub fn transcribe(
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
-        let mel_segment = mel.slice(&[0..1, 0..80, seek..(seek + N_FRAMES)])?;
+        let mel_segment = mel.slice(&[0..1, 0..n_mels, seek..(seek + N_FRAMES)])?;
         log::info!(
             "processing segment - from: {}, to: {}",
             seek,

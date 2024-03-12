@@ -70,7 +70,7 @@ impl WhisperTokenizer {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn fetch() -> Tokenizer {
         let api = Api::new().unwrap();
-        let tokenizer_repo = api.model("openai/whisper-large".to_string());
+        let tokenizer_repo = api.model("openai/whisper-large-v3".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         Tokenizer::from_file(tokenizer_path).unwrap()
     }
