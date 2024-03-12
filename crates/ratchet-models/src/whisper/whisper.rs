@@ -296,8 +296,8 @@ mod tests {
     pub fn whisper_end_to_end() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("ggml-large-v3.bin").unwrap();
+        let model = api.model("FL33TW00D-HF/ratchet-whisper".to_string());
+        let model_path = model.get("tiny_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("jfk.wav").unwrap();
@@ -320,8 +320,8 @@ mod tests {
     pub fn convert_ggml_f32_to_wq8() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("".to_string());
-        let src_path = model.get("ggml-distil-large-v3.fp32.bin").unwrap();
+        let model = api.model("ggerganov/whisper.cpp".to_string());
+        let src_path = model.get("ggml-tiny.bin").unwrap();
 
         let to_quant = HashSet::from([
             "attn.query.weight",
@@ -338,10 +338,15 @@ mod tests {
         ]);
         let mut dst_path = src_path.clone();
         dst_path.pop();
-        dst_path = dst_path.join("large-v2_q8.bin");
+        dst_path = dst_path.join("distil-large-v3_q8.bin");
         println!("DST: {:?}", dst_path);
 
-        let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);
+        let v3 = true;
+        let pad_size = if v3 { 6 } else { 7 };
+        let to_pad = HashMap::from([(
+            "decoder.token_embedding.weight",
+            vec![[0, pad_size], [0, 0]],
+        )]);
         Converter::convert::<_, Whisper>(src_path, dst_path, Quantization::SInt8, to_quant, to_pad)
             .unwrap();
     }

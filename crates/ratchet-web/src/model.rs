@@ -1,9 +1,22 @@
-//#![cfg(target_arch = "wasm32")]
 use crate::db::*;
 use crate::registry::*;
 use ratchet_hub::{ApiBuilder, RepoType};
 use ratchet_models::{transcribe, StreamedSegment, Whisper};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ModelKind {
+    Whisper,
+}
+
+impl From<AvailableModels> for ModelKind {
+    fn from(av: AvailableModels) -> Self {
+        match av {
+            _ => ModelKind::Whisper,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum WebModel {
@@ -38,8 +51,8 @@ impl WebModel {
     }
 
     pub async fn from_stored(stored: StoredModel) -> Result<WebModel, anyhow::Error> {
-        match stored.repo_id.as_str() {
-            "FL33TW00D-HF/ratchet-whisper" => Ok(WebModel::Whisper(
+        match stored.kind {
+            ModelKind::Whisper => Ok(WebModel::Whisper(
                 Whisper::from_bytes(&stored.bytes.to_vec()).await?,
             )),
             _ => Err(anyhow::anyhow!("Unknown model type")),
@@ -94,7 +107,7 @@ impl Model {
                     .get_with_progress(&key.model_id(), progress)
                     .await?
             };
-            let model = StoredModel::new(&key, model_bytes);
+            let model = StoredModel::new(&key, model_bytes, model.into());
             db.put_model(&key, model).await.unwrap();
         }
         let model = db.get_model(&key).await.unwrap().unwrap();
@@ -158,7 +171,7 @@ mod tests {
         });
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
-        let mut model = Model::load(AvailableModels::WHISPER_TINY, Quantization::Q8, js_cb)
+        let mut model = Model::load(AvailableModels::WhisperTiny, Quantization::Q8, js_cb)
             .await
             .unwrap();
 

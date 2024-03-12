@@ -47,17 +47,17 @@ impl WhisperTokenizer {
     ];
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn load_inner(bytes: Option<Vec<u8>>) -> Tokenizer {
+    pub fn load_inner(bytes: Option<Vec<u8>>, v3: bool) -> Tokenizer {
         if let Some(bytes) = bytes {
             Tokenizer::from_bytes(bytes).unwrap()
         } else {
-            Self::fetch()
+            Self::fetch(v3)
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn load(bytes: Option<Vec<u8>>, language: Language, task: Task) -> Self {
-        let inner = Self::load_inner(bytes);
+    pub fn load(bytes: Option<Vec<u8>>, v3: bool, language: Language, task: Task) -> Self {
+        let inner = Self::load_inner(bytes, v3);
         let mut tokenizer = Self {
             inner,
             language: -1,
@@ -68,27 +68,35 @@ impl WhisperTokenizer {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn fetch() -> Tokenizer {
+    pub fn fetch(v3: bool) -> Tokenizer {
         let api = Api::new().unwrap();
-        let tokenizer_repo = api.model("openai/whisper-large-v3".to_string());
+
+        //TODO: dumb hack
+        let repo_name = match v3 {
+            true => "openai/whisper-large-v3",
+            false => "openai/whisper-tiny",
+        };
+        println!("LOADING TOKENIZER: {}", repo_name);
+
+        let tokenizer_repo = api.model(repo_name.to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         Tokenizer::from_file(tokenizer_path).unwrap()
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn load_inner(bytes: Option<Vec<u8>>) -> Tokenizer {
+    pub async fn load_inner(bytes: Option<Vec<u8>>, v3: bool) -> Tokenizer {
         use wasm_bindgen::JsValue;
 
         if let Some(bytes) = bytes {
             Tokenizer::from_bytes(bytes).unwrap()
         } else {
-            Self::fetch().await.map_err(JsValue::from).unwrap()
+            Self::fetch(v3).await.map_err(JsValue::from).unwrap()
         }
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn load(bytes: Option<Vec<u8>>, language: Language, task: Task) -> Self {
-        let inner = Self::load_inner(bytes).await;
+    pub async fn load(bytes: Option<Vec<u8>>, v3: bool, language: Language, task: Task) -> Self {
+        let inner = Self::load_inner(bytes, v3).await;
         let mut tokenizer = Self {
             inner,
             language: -1,
@@ -99,8 +107,13 @@ impl WhisperTokenizer {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn fetch() -> Result<Tokenizer, JsError> {
-        let model_repo = ApiBuilder::from_hf("openai/whisper-tiny", RepoType::Model).build();
+    pub async fn fetch(v3: bool) -> Result<Tokenizer, JsError> {
+        let repo_name = match v3 {
+            true => "openai/whisper-large-v3",
+            false => "openai/whisper-tiny",
+        };
+
+        let model_repo = ApiBuilder::from_hf(repo_name, RepoType::Model).build();
         let model_bytes = model_repo.get("tokenizer.json").await?;
         Ok(Tokenizer::from_bytes(model_bytes.to_vec()).unwrap())
     }

@@ -134,10 +134,10 @@ impl DecodingTask {
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
         mut tokens: Vec<i32>,
-        tokenizer: &WhisperTokenizer,
         callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
         let device = audio_ctx.device().clone();
+        let sliced_vocab_size = self.tokenizer.vocab_size();
         let mut timestamps_seen = 0;
 
         for idx in 0..self.sample_len {
@@ -152,16 +152,16 @@ impl DecodingTask {
             let logits = decoder.forward(&[audio_ctx.clone(), input_t])?.resolve()?;
             decoder.cache_mut().update(input.len());
 
-            let mut logits = Self::slice_logits(logits.to(&Device::CPU).await?);
+            let mut logits = Self::slice_logits(logits.to(&Device::CPU).await?, sliced_vocab_size);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
-                logits = m.apply(logits, Some(&token_t))?;
+                logits = m.apply(logits, &self.tokenizer, Some(&token_t))?;
             }
 
             let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
 
             if let Some(ref cb) = callback {
-                self.handle_callback(tokenizer, &new_tokens, &mut timestamps_seen, cb);
+                self.handle_callback(&self.tokenizer, &new_tokens, &mut timestamps_seen, cb);
             }
 
             tokens = new_tokens;
@@ -299,17 +299,10 @@ impl DecodingTask {
         &self,
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
-        tokenizer: &WhisperTokenizer,
         callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
         let mut tokens = self
-            .main_loop(
-                decoder,
-                audio_ctx,
-                self.get_initial_tokens(),
-                tokenizer,
-                &callback,
-            )
+            .main_loop(decoder, audio_ctx, self.get_initial_tokens(), &callback)
             .await?;
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();

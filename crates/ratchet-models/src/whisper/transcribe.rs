@@ -31,7 +31,7 @@ pub fn transcribe(
 
     let language = decode_options.language.as_ref().unwrap();
     let task = decode_options.task;
-    let tokenizer = WhisperTokenizer::load(None, language.clone(), task);
+    let tokenizer = WhisperTokenizer::load(None, n_mels == 128, language.clone(), task);
 
     let mut seek = 0;
     let input_stride = N_FRAMES / N_AUDIO_CTX;
@@ -97,6 +97,7 @@ pub async fn transcribe(
     callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
     let runtime = Instant::now();
+    let n_mels = model.hparams.n_mels as usize;
     let mel = model.specgen.generate(audio)?.to(&model.device).await?;
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
 
@@ -106,14 +107,15 @@ pub async fn transcribe(
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
             log::warn!("No language specified, using language detection");
-            let mel = mel.slice(&[0..1, 0..80, 0..3000])?;
+            let mel = mel.slice(&[0..1, 0..n_mels, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel).await?);
         }
     }
 
     let language = decode_options.language.as_ref().unwrap();
     let task = decode_options.task;
-    let tokenizer = WhisperTokenizer::load(None, language.clone(), task.clone()).await;
+    let tokenizer =
+        WhisperTokenizer::load(None, n_mels == 128, language.clone(), task.clone()).await;
 
     let mut seek = 0;
     let input_stride = N_FRAMES / N_AUDIO_CTX;
@@ -128,7 +130,7 @@ pub async fn transcribe(
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
-        let mel_segment = mel.slice(&[0..1, 0..80, seek..(seek + N_FRAMES)])?;
+        let mel_segment = mel.slice(&[0..1, 0..n_mels, seek..(seek + N_FRAMES)])?;
         log::info!(
             "processing segment - from: {}, to: {}",
             seek,
@@ -144,12 +146,11 @@ pub async fn transcribe(
 
         let hs = model.encoder.forward(&mel_segment)?.resolve()?;
 
-        let task = DecodingTask::new(decode_options, &tokenizer);
-        let decoded = task
-            .run(&mut model.decoder, hs, &tokenizer, &callback)
-            .await?;
+        let task = DecodingTask::new(decode_options, tokenizer.clone());
+        let decoded = task.run(&mut model.decoder, hs, &callback).await?;
 
         let (segments, advance) = DecodingTask::build_segments(
+            &tokenizer,
             decoded,
             time_offset,
             segment_size,
