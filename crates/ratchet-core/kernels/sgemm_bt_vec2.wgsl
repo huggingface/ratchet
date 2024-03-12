@@ -38,7 +38,7 @@ fn main(
     let cCol = global_id.y;  
     if (cRow < metadata.M && cCol < metadata.ND2) {
         var tmp = vec2<f32>();
-        for (var k = 0u; k < metadata.KD4; k++) {
+        for (var k = 0u; k < metadata.KD2; k++) {
           let a = A[a_offset + (cRow * metadata.KD2 + k)];
           let bidx = (cCol * metadata.K) + k;  //2 rows per iter
           let b_stride = metadata.KD2;

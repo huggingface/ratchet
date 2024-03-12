@@ -8,6 +8,7 @@ wasm-all:
 wasm CRATE:
     wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --release
 wasm-test CRATE BROWSER:
+    cp ./config/webdriver-macos.json ./crates/{{CRATE}}/webdriver.json
     wasm-pack test --{{BROWSER}} --headless `pwd`/crates/{{CRATE}}
 vitest:
     pnpm run -r test

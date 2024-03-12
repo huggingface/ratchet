@@ -3,6 +3,8 @@ use js_sys::Uint8Array;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::model::ModelKind;
+
 #[derive(Debug, thiserror::Error)]
 pub enum RatchetDBError {
     #[error("DomException {name} ({code}): {message}")]
@@ -173,14 +175,16 @@ pub struct StoredModel {
     pub model_id: String,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub bytes: Uint8Array,
+    pub kind: ModelKind,
 }
 
 impl StoredModel {
-    pub fn new(key: &ModelKey, bytes: Uint8Array) -> Self {
+    pub fn new(key: &ModelKey, bytes: Uint8Array, kind: ModelKind) -> Self {
         Self {
             repo_id: key.repo_id.clone(),
             model_id: key.model_id.clone(),
             bytes,
+            kind,
         }
     }
 }
