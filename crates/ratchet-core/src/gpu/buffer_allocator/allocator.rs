@@ -172,6 +172,10 @@ impl BufferAllocator {
                 record.producer = Some(topo_len - iter);
             }
         }
+
+        //filter records with no producer
+        //TODO: Warning: could be a bug here
+        records.retain(|_, v| v.producer.is_some());
         records
     }
 
@@ -212,7 +216,7 @@ impl BufferAllocator {
                     let max_first =
                         std::cmp::max(record.producer.unwrap(), inner_r.producer.unwrap());
                     let min_last = std::cmp::min(record.last_consumer, inner_r.last_consumer);
-                    if assignments.get(&inner_r.id.unwrap()) == Some(obj) && max_first <= min_last {
+                    if max_first <= min_last && assignments.get(&inner_r.id.unwrap()) == Some(obj) {
                         suitable = false;
                         break;
                     }
