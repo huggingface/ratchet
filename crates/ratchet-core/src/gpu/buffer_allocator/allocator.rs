@@ -172,6 +172,10 @@ impl BufferAllocator {
                 record.producer = Some(topo_len - iter);
             }
         }
+
+        //filter records with no producer
+        //TODO: Warning: could be a bug here
+        records.retain(|_, v| v.producer.is_some());
         records
     }
 
@@ -199,20 +203,14 @@ impl BufferAllocator {
         let mut shared_objects: Vec<PooledGPUBuffer> = Vec::with_capacity(records.0.len());
 
         for record in records.0.iter() {
-            if record.producer.is_none() {
-                continue;
-            }
             let mut best_obj = None;
             for obj in shared_objects.iter() {
                 let mut suitable = true;
                 for inner_r in records.0.iter() {
-                    if inner_r.producer.is_none() {
-                        continue;
-                    }
                     let max_first =
                         std::cmp::max(record.producer.unwrap(), inner_r.producer.unwrap());
                     let min_last = std::cmp::min(record.last_consumer, inner_r.last_consumer);
-                    if assignments.get(&inner_r.id.unwrap()) == Some(obj) && max_first <= min_last {
+                    if max_first <= min_last && assignments.get(&inner_r.id.unwrap()) == Some(obj) {
                         suitable = false;
                         break;
                     }
