@@ -1,23 +1,7 @@
-use ndarray::s;
-use ndarray::Axis;
-use ratchet::prelude::shape;
-use ratchet::Device;
-use ratchet::Tensor;
+use crate::*;
+use ndarray::{s, Axis};
+use ratchet::{shape, Device, Tensor};
 use ratchet_nn::Module;
-
-use crate::ApplyTimestampRules;
-use crate::DecodingOptions;
-use crate::GreedySampler;
-use crate::LogitMutator;
-use crate::Prompt;
-use crate::Segment;
-use crate::StreamedSegment;
-use crate::WhisperDecoder;
-use crate::WhisperTokenizer;
-use crate::CHUNK_LENGTH;
-use crate::HOP_LENGTH;
-use crate::N_AUDIO_CTX;
-use crate::SAMPLE_RATE;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
@@ -172,6 +156,7 @@ impl DecodingTask {
         Ok(tokens)
     }
 
+    #[cfg(target_arch = "wasm32")]
     fn handle_callback(
         &self,
         tokenizer: &WhisperTokenizer,
@@ -248,6 +233,7 @@ impl DecodingTask {
                 consecutive.push(content_length);
             }
 
+            #[allow(unused_assignments)]
             let mut last_slice = 0;
             (segments, last_slice) =
                 consecutive

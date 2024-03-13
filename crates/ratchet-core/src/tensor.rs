@@ -1,10 +1,9 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    InvariantError, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage,
-    Strides, TensorDType, TensorId,
+    InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape,
+    Storage, Strides, TensorDType, TensorId,
 };
-use crate::{BinaryOp, LazyOp};
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::collections::HashSet;
@@ -222,6 +221,7 @@ impl Tensor {
 
 macro_rules! impl_binary_op {
     ($method_name:ident, $op:expr) => {
+        #[allow(clippy::should_implement_trait)]
         pub fn $method_name(self, other: Tensor) -> anyhow::Result<Tensor> {
             let device = self.device.clone();
             //TODO: avoid broadcasting if either operand is scalar

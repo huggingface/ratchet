@@ -1,8 +1,6 @@
-use std::{cmp::Reverse, ops::Range};
-
+use crate::TensorId;
 use rustc_hash::FxHashMap;
-
-use crate::{rvec, RVec, TensorId};
+use std::cmp::Reverse;
 
 /// Records the interval for which a tensor is used
 /// produce & last_consumer as indices into the topologically sorted execution order
@@ -16,9 +14,17 @@ pub struct TensorUsageRecord {
     pub size: usize,
 }
 
-impl TensorUsageRecord {
-    pub fn op_range(&self) -> Range<usize> {
-        self.producer.unwrap_or(self.last_consumer)..self.last_consumer
+impl std::ops::Index<usize> for TensorUsageRecords {
+    type Output = TensorUsageRecord;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl std::ops::IndexMut<usize> for TensorUsageRecords {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }
 
@@ -30,29 +36,5 @@ impl From<FxHashMap<TensorId, TensorUsageRecord>> for TensorUsageRecords {
         let mut records = map.drain().map(|(_, v)| v).collect::<Vec<_>>();
         records.sort_unstable_by_key(|r| Reverse(r.size));
         TensorUsageRecords(records)
-    }
-}
-
-/// The set of all tensor usage records within which an operation lies.
-#[derive(Debug, Clone)]
-pub struct OpProfile(RVec<TensorUsageRecord>);
-
-impl Default for OpProfile {
-    fn default() -> Self {
-        OpProfile(rvec![])
-    }
-}
-
-impl OpProfile {
-    pub fn push(&mut self, record: TensorUsageRecord) {
-        self.0.push(record);
-    }
-}
-
-impl std::ops::Index<usize> for OpProfile {
-    type Output = TensorUsageRecord;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
     }
 }
