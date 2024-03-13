@@ -9,13 +9,14 @@ pub struct Embedding {
 impl Module for Embedding {
     type Input = Tensor;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut output_shape = input.shape().clone();
         let weight_rank = self.weight.rank();
         output_shape.push(self.weight.shape()[weight_rank - 1]);
 
-        let flat = input.view(shape![input.shape().numel()])?;
-        let indexed = self.weight.index_select(&flat, 0)?;
+        let flat_shape = shape![input.shape().numel()];
+        let flat = input.view(flat_shape)?;
+        let indexed = self.weight.clone().index_select(flat, 0)?;
         let x = indexed.view(output_shape)?;
         Ok(x)
     }
@@ -84,7 +85,7 @@ def embedding(input, indices):
         let indices = indices.to(&device).unwrap();
 
         let embedding = Embedding::new(weight);
-        let result = embedding.forward(&indices).unwrap().resolve().unwrap();
+        let result = embedding.forward(indices).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("OURS: {:?}", x);
         ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();

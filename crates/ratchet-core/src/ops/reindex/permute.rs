@@ -3,11 +3,12 @@ use std::collections::HashSet;
 use derive_new::new;
 
 use crate::{
-    DType, Enforcer, InvariantError, Operation, OperationError, StorageView, Strides, Tensor,
+    DType, InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
 pub struct Permute {
+    pub src: Tensor,
     pub dims: Vec<usize>,
 }
 
@@ -25,14 +26,8 @@ impl Permute {
 }
 
 impl Operation for Permute {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let input_shape = srcs[0].shape();
-        if input_shape.rank() != self.dims.len() {
-            return Err(InvariantError::RankMismatch {
-                accepted: input_shape.rank()..=input_shape.rank(),
-                actual: self.dims.len(),
-            })?;
-        }
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let input_shape = self.src.shape();
         let dup_set: HashSet<usize> = HashSet::from_iter(self.dims.iter().cloned());
         if dup_set.len() != self.dims.len() {
             return Err(InvariantError::DuplicateDims)?;
@@ -43,19 +38,24 @@ impl Operation for Permute {
             output_shape[i] = input_shape[self.dims[i]];
         }
         let strides = Strides::from(&output_shape);
-        Ok(StorageView::new(output_shape, srcs[0].dt(), strides))
+        Ok(StorageView::new(output_shape, self.src.dt(), strides))
+    }
+}
+
+impl OpGuards for Permute {
+    fn check_shapes(&self) {
+        assert!(self.src.shape().rank() == self.dims.len());
+        assert!(self.dims.iter().all(|&x| x < 4)); //Only support 4D for now
     }
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Enforcer::assert_dtype(srcs[0], DType::F32)?;
-        Ok(())
+    fn check_dtypes(&self) {
+        assert!(self.src.dt() == DType::F32);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Permute, Tensor};
+    use crate::{test_util::run_py_prg, Device, DeviceRequest, Permute, Shape, Tensor};
     use proptest::prelude::*;
     use test_strategy::{proptest, Arbitrary};
 
@@ -64,9 +64,12 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            Just(vec![0, 1, 2, 3])
-                .prop_shuffle()
-                .prop_map(Permute::new)
+            let ranges = vec![1..=2, 1..=4, 1..=256, 1..=256];
+            Shape::arbitrary_with(ranges)
+                .prop_flat_map(|shape| (Just(shape.clone()), Just(vec![0, 1, 2, 3]).prop_shuffle()))
+                .prop_map(|(shape, perm)| {
+                    Permute::new(Tensor::randn::<f32>(shape, Device::CPU), perm)
+                })
                 .boxed()
         }
     }
@@ -78,14 +81,6 @@ mod tests {
     #[derive(Arbitrary, Debug)]
     struct PermuteProblem {
         op: Permute,
-        #[strategy(1..=2usize)]
-        B: usize,
-        #[strategy(1..=4usize)]
-        M: usize,
-        #[strategy(1..=256usize)]
-        N: usize,
-        #[strategy(1..=256usize)]
-        K: usize,
     }
 
     fn ground_truth(a: &Tensor, args: &str) -> anyhow::Result<Tensor> {
@@ -102,11 +97,9 @@ def permute(a):
     }
 
     fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let PermuteProblem { op, B, M, N, K } = prob;
-        println!("Permute: {:?}, B: {}, M: {}, N: {}, K: {}", op, B, M, N, K);
-        let a = Tensor::randn::<f32>(shape![B, M, N, K], cpu_device.clone());
+        let PermuteProblem { op } = prob;
         let device = GPU_DEVICE.with(|d| d.clone());
+        let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
         let ground = ground_truth(&a, format!("{:?}", op.dims).as_str())?;

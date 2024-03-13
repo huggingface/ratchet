@@ -109,7 +109,7 @@ impl DecodingTask {
             };
             let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
 
-            let logits = decoder.forward(&[audio_ctx.clone(), input_t])?.resolve()?;
+            let logits = decoder.forward([audio_ctx.clone(), input_t])?.resolve()?;
             decoder.cache_mut().update(input.len());
 
             let mut logits = Self::slice_logits(logits.to(&Device::CPU)?, sliced_vocab_size);
@@ -149,7 +149,7 @@ impl DecodingTask {
             };
             let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
 
-            let logits = decoder.forward(&[audio_ctx.clone(), input_t])?.resolve()?;
+            let logits = decoder.forward([audio_ctx.clone(), input_t])?.resolve()?;
             decoder.cache_mut().update(input.len());
 
             let mut logits = Self::slice_logits(logits.to(&Device::CPU).await?, sliced_vocab_size);
@@ -255,7 +255,7 @@ impl DecodingTask {
                     .fold((Vec::new(), 0), |(mut acc, last_slice), &slice| {
                         let segment_tokens = &content_tokens[last_slice..slice];
                         acc.push(Segment::from_tokens(
-                            &tokenizer,
+                            tokenizer,
                             segment_tokens,
                             offset,
                             false,

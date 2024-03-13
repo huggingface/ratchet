@@ -39,7 +39,7 @@ pub struct MHAInputs {
 impl Module for MultiHeadAttention {
     type Input = MHAInputs;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let MHAInputs {
             x,
             xa,
@@ -47,12 +47,13 @@ impl Module for MultiHeadAttention {
             cache,
             is_causal,
         } = input;
+        let is_xattn = xa.is_some();
 
-        let q = self.q.forward(x)?;
+        let q = self.q.forward(x.clone())?;
         let [bs, n_ctx, n_state]: [usize; 3] = q.shape().try_into()?;
 
-        let to_project = xa.as_ref().unwrap_or(x);
-        let k = self.k.forward(to_project)?;
+        let to_project = xa.unwrap_or(x);
+        let k = self.k.forward(to_project.clone())?;
         let v = self.v.forward(to_project)?;
 
         let (k, v) = if let Some(kv) = cache {
@@ -60,18 +61,18 @@ impl Module for MultiHeadAttention {
             let new_entries = prev_entries + n_ctx;
             let k_cache = kv
                 .k_cache
-                .index_write(&k, rvec![0, prev_entries, 0])?
+                .index_write(k, rvec![0, prev_entries, 0])?
                 .view(shape![bs, new_entries, n_state])?;
             let v_cache = kv
                 .v_cache
-                .index_write(&v, rvec![0, prev_entries, 0])?
+                .index_write(v, rvec![0, prev_entries, 0])?
                 .view(shape![bs, new_entries, n_state])?;
             (k_cache, v_cache)
         } else {
             (k, v)
         };
 
-        self.qkv_attention(q, k, v, mask, xa.is_some(), *is_causal)
+        self.qkv_attention(q, k, v, mask, is_xattn, is_causal)
     }
 }
 
@@ -81,7 +82,7 @@ impl MultiHeadAttention {
         q: Tensor,
         k: Tensor,
         v: Tensor,
-        mask: &Option<Tensor>,
+        mask: Option<Tensor>,
         x_attn: bool,
         is_causal: bool,
     ) -> anyhow::Result<Tensor> {
@@ -95,32 +96,31 @@ impl MultiHeadAttention {
         let ks = shape![k0, k1, self.n_heads, hdim];
         let vs = shape![v0, v1, self.n_heads, hdim];
 
-        let q = q.view(qs)?.permute(&[0, 2, 1, 3])?.mul(&self.dk)?;
-        let k = k.view(ks)?.permute(&[0, 2, 3, 1])?.mul(&self.dk)?;
+        let q = q.view(qs)?.permute(&[0, 2, 1, 3])?.mul(self.dk.clone())?;
+        let k = k.view(ks)?.permute(&[0, 2, 3, 1])?.mul(self.dk.clone())?;
         let v = v.view(vs)?.permute(&[0, 2, 1, 3])?;
 
         if x_attn {
             //TODO: static caching
         }
 
-        let mut qk = q.matmul(&k, false)?;
+        let mut qk = q.matmul(k, false)?;
 
-        if let Some(ref m) = mask {
+        if let Some(m) = mask {
             let prepared_mask = if is_causal {
                 m.slice(&[0..n_ctx, 0..n_ctx])?
             } else {
                 m.clone()
             };
-            qk = qk.add(&prepared_mask)?;
+            qk = qk.add(prepared_mask)?;
         }
 
         let w = qk.softmax(3)?;
         let wv = w
-            .matmul(&v, false)?
+            .matmul(v, false)?
             .permute(&[0, 2, 1, 3])?
             .view(shape![bs, n_ctx, n_state])?;
 
-        let dbg = self.o.forward(&wv)?;
-        Ok(dbg)
+        self.o.forward(wv)
     }
 }

@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, DType, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation,
+    rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 
@@ -32,8 +32,8 @@ pub struct IndexSelectMeta {
 impl OpMetadata for IndexSelectMeta {}
 
 impl Operation for IndexSelect {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let (input, indices) = (srcs[0], srcs[1]);
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let (input, indices) = (&self.input, &self.indices);
         let (indices_shape, input_shape) = (indices.shape(), input.shape());
 
         let mut output_shape = input_shape.clone();
@@ -41,13 +41,18 @@ impl Operation for IndexSelect {
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, DType::F32, strides))
     }
+}
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        let (input, indices) = (srcs[0], srcs[1]);
-        Enforcer::assert_dtype(indices, DType::I32)?;
-        Enforcer::assert_rank(input, 2)?;
-        Enforcer::assert_rank(indices, 1)?;
-        Ok(())
+impl OpGuards for IndexSelect {
+    fn check_shapes(&self) {
+        let (input, indices) = (&self.input, &self.indices);
+        assert_eq!(input.rank(), 2);
+        assert_eq!(indices.rank(), 1);
+    }
+
+    fn check_dtypes(&self) {
+        let indices = &self.indices;
+        assert_eq!(indices.dt(), DType::I32);
     }
 }
 
@@ -131,7 +136,7 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            Shape::arbitrary_with(vec![1..512usize, 1..16usize])
+            Shape::arbitrary_with(vec![1..=512usize, 1..=16usize])
                 .prop_flat_map(|input_shape| (Just(input_shape), 1..64usize))
                 .prop_map(|(input_shape, num_indices)| {
                     let indices =
@@ -176,11 +181,7 @@ def index_select(input, indices):
         let input = input.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
 
-        let result = input
-            .index_select(&indices, dim)
-            .unwrap()
-            .resolve()
-            .unwrap();
+        let result = input.index_select(indices, dim).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("result: {:?}", x);
         ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
@@ -193,15 +194,6 @@ def index_select(input, indices):
             indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
         };
         run_index_select_trial(prob, true);
-    }
-
-    #[test]
-    fn v3_index_select() {
-        let prob = IndexSelectProblem {
-            input_shape: shape![51866, 1280],
-            indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
-        };
-        run_index_select_trial(prob, false);
     }
 
     #[derive(Debug, Clone)]

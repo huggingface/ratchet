@@ -1,6 +1,9 @@
 use crate::{shape, RVec};
 use encase::impl_wrapper;
-use std::ops::{RangeFrom, RangeTo};
+use std::{
+    ops::{RangeFrom, RangeTo},
+    slice::Iter,
+};
 
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct Shape(RVec<usize>);
@@ -32,12 +35,8 @@ impl Shape {
         self.0.to_vec()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &usize> {
+    pub fn iter(&self) -> Iter<'_, usize> {
         self.0.iter()
-    }
-
-    pub fn into_iter(self) -> impl Iterator<Item = usize> {
-        self.0.into_iter()
     }
 
     pub fn reverse(&mut self) {
@@ -233,11 +232,10 @@ impl_try_into_for_shape!(0, 1, 2, 3, 4);
 mod tests {
     use crate::Shape;
     use proptest::prelude::*;
-    use proptest::strategy::{BoxedStrategy, Strategy};
-    use std::ops::Range;
+    use std::ops::RangeInclusive;
 
     impl Arbitrary for Shape {
-        type Parameters = Vec<Range<usize>>;
+        type Parameters = Vec<RangeInclusive<usize>>;
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {

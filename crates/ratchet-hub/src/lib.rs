@@ -155,10 +155,9 @@ impl Api {
 
         let mut recv_len = 0;
         let buf = Uint8Array::new_with_length(content_len);
-        while let Some(result) = JsFuture::from(reader.read())
+        while let Ok(result) = JsFuture::from(reader.read())
             .await?
             .dyn_into::<Object>()
-            .ok()
         {
             let done = Reflect::get(&result, &"done".into())?
                 .as_bool()

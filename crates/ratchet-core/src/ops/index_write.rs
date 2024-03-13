@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec, Shape,
-    StorageView, Strides, Tensor,
+    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
+    Shape, StorageView, Strides, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
@@ -29,13 +29,15 @@ pub struct IndexWriteMeta {
 
 impl OpMetadata for IndexWriteMeta {}
 
-impl Operation for IndexWrite {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].storage_view().clone())
-    }
+impl OpGuards for IndexWrite {
+    fn check_shapes(&self) {}
 
-    fn check_invariants(_: &[&Tensor]) -> Result<(), OperationError> {
-        Ok(())
+    fn check_dtypes(&self) {}
+}
+
+impl Operation for IndexWrite {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        Ok(self.dst.storage_view().clone())
     }
 }
 
@@ -115,7 +117,7 @@ mod tests {
         let src = Tensor::from_data(vec![7., 8.], shape![1, 2], device.clone());
         let write_start = rvec![2, 0];
         let b = dst
-            .index_write(&src, write_start)
+            .index_write(src, write_start)
             .unwrap()
             .resolve()
             .unwrap();

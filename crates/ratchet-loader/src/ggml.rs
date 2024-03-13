@@ -1,5 +1,4 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use derive_new::new;
 use half::f16;
 use ratchet::{DType, Device, Shape, Tensor};
 use std::{

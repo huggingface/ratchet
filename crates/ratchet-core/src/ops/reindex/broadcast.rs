@@ -1,9 +1,10 @@
 use derive_new::new;
 
-use crate::{Enforcer, Operation, OperationError, Shape, StorageView, Strides, Tensor};
+use crate::{OpGuards, Operation, OperationError, Shape, StorageView, Strides, Tensor};
 
 #[derive(new, Debug, Clone)]
 pub struct Broadcast {
+    pub src: Tensor,
     to: Shape,
 }
 
@@ -13,25 +14,24 @@ impl Broadcast {
     }
 }
 
+impl OpGuards for Broadcast {
+    //TODO: check the broadcast is valid
+    fn check_shapes(&self) {}
+
+    fn check_dtypes(&self) {}
+}
+
 impl Operation for Broadcast {
     //For rules, see https://numpy.org/doc/stable/user/basics.broadcasting.html
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let src = srcs[0];
-        let src_shape = src.shape();
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let src_shape = self.src.shape();
 
-        //Check if shapes are compatible
         if *src_shape == self.to {
-            return Ok(src.storage_view().clone());
+            return Ok(self.src.storage_view().clone());
         }
 
-        //TODO: actually validate the shapes, currently faith based system
         let strides = Strides::from(&self.to);
-        Ok(StorageView::new(self.to.clone(), src.dt(), strides))
-    }
-
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
+        Ok(StorageView::new(self.to.clone(), self.src.dt(), strides))
     }
 }
 
@@ -54,15 +54,13 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: ()) -> Self::Strategy {
-            let original_ranges = vec![1..2, 1..8, 1..2, 1..128];
-
-            Shape::arbitrary_with(original_ranges)
+            Shape::arbitrary_with(vec![1..=2, 1..=8, 1..=2, 1..=128])
                 .prop_flat_map(|original_shape| {
                     let create_broadcast_range = |dim: usize| {
                         if original_shape[dim] == 1 {
-                            1..8
+                            1..=8
                         } else {
-                            original_shape[dim]..original_shape[dim] + 1
+                            original_shape[dim]..=original_shape[dim]
                         }
                     };
 
@@ -75,8 +73,7 @@ mod tests {
                     (Just(original_shape), to)
                 })
                 .prop_map(|(original_shape, to)| BroadcastProblem {
-                    original_shape,
-                    op: Broadcast::new(to),
+                    op: Broadcast::new(Tensor::randn::<f32>(original_shape, Device::CPU), to),
                 })
                 .boxed()
         }
@@ -84,7 +81,6 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct BroadcastProblem {
-        original_shape: Shape,
         op: Broadcast,
     }
 
@@ -103,10 +99,9 @@ def slice(a):
     }
 
     fn run_reindex_trial(prob: BroadcastProblem) -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         println!("Broadcast problem: {:?}", prob);
-        let BroadcastProblem { original_shape, op } = prob;
-        let a = Tensor::randn::<f32>(original_shape, cpu_device.clone());
+        let BroadcastProblem { op } = prob;
+        let a = op.src.clone();
         let device = GPU_DEVICE.with(|d| d.clone());
 
         let a_gpu = a.to(&device)?;

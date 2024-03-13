@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata, Operation,
+    rvec, wgc, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 #[cfg(test)]
@@ -53,9 +53,22 @@ pub struct BinaryMeta {
 
 impl OpMetadata for BinaryMeta {}
 
+impl OpGuards for Binary {
+    fn check_shapes(&self) {
+        let shapes = [self.lhs.shape(), self.rhs.shape()];
+        let broadcasted = Shape::multi_broadcast(&shapes);
+        assert!(broadcasted.is_some());
+    }
+
+    fn check_dtypes(&self) {
+        assert_eq!(self.lhs.dt(), self.rhs.dt());
+    }
+}
+
 impl Operation for Binary {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let (lhs, rhs) = (srcs[0], srcs[1]);
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let lhs = &self.lhs;
+        let rhs = &self.rhs;
         let shapes = &[lhs.shape(), rhs.shape()];
         if lhs.is_scalar() || rhs.is_scalar() {
             let other = if lhs.is_scalar() { rhs } else { lhs };
@@ -69,12 +82,6 @@ impl Operation for Binary {
         let broadcasted = broadcasted.unwrap();
         let ostrides = Strides::from(&broadcasted);
         Ok(StorageView::new(broadcasted, lhs.dt(), ostrides))
-    }
-
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 2)?;
-        Enforcer::check_dtype_match(srcs)?;
-        Ok(())
     }
 }
 
@@ -185,10 +192,10 @@ def {}(a, b):
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = match op {
-            BinaryOp::Add => a_gpu.add(&b_gpu)?,
-            BinaryOp::Sub => a_gpu.sub(&b_gpu)?,
-            BinaryOp::Mul => a_gpu.mul(&b_gpu)?,
-            BinaryOp::Div => a_gpu.div(&b_gpu)?,
+            BinaryOp::Add => a_gpu.add(b_gpu)?,
+            BinaryOp::Sub => a_gpu.sub(b_gpu)?,
+            BinaryOp::Mul => a_gpu.mul(b_gpu)?,
+            BinaryOp::Div => a_gpu.div(b_gpu)?,
         }
         .resolve()?;
 

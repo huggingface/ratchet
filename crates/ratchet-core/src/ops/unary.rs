@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
+    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
     StorageView, Tensor,
 };
 
@@ -67,14 +67,21 @@ pub struct UnaryMeta {
 
 impl OpMetadata for UnaryMeta {}
 
-impl Operation for Unary {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].storage_view().clone())
-    }
+impl OpGuards for Unary {
+    fn check_shapes(&self) {}
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
+    fn check_dtypes(&self) {
+        let a = &self.input;
+        assert!(matches!(
+            a.dt(),
+            crate::DType::F32 | crate::DType::F16 | crate::DType::WQ8
+        ));
+    }
+}
+
+impl Operation for Unary {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        Ok(self.input.storage_view().clone())
     }
 }
 
