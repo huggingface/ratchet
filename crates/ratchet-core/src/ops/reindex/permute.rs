@@ -55,7 +55,7 @@ impl OpGuards for Permute {
 
 #[cfg(test)]
 mod tests {
-    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Permute, Tensor};
+    use crate::{test_util::run_py_prg, Device, DeviceRequest, Permute, Shape, Tensor};
     use proptest::prelude::*;
     use test_strategy::{proptest, Arbitrary};
 
@@ -64,9 +64,12 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            Just(vec![0, 1, 2, 3])
-                .prop_shuffle()
-                .prop_map(Permute::new)
+            let ranges = vec![1..=2, 1..=4, 1..=256, 1..=256];
+            Shape::arbitrary_with(ranges)
+                .prop_flat_map(|shape| (Just(shape.clone()), Just(vec![0, 1, 2, 3]).prop_shuffle()))
+                .prop_map(|(shape, perm)| {
+                    Permute::new(Tensor::randn::<f32>(shape, Device::CPU), perm)
+                })
                 .boxed()
         }
     }
@@ -78,14 +81,6 @@ mod tests {
     #[derive(Arbitrary, Debug)]
     struct PermuteProblem {
         op: Permute,
-        #[strategy(1..=2usize)]
-        B: usize,
-        #[strategy(1..=4usize)]
-        M: usize,
-        #[strategy(1..=256usize)]
-        N: usize,
-        #[strategy(1..=256usize)]
-        K: usize,
     }
 
     fn ground_truth(a: &Tensor, args: &str) -> anyhow::Result<Tensor> {
@@ -102,11 +97,9 @@ def permute(a):
     }
 
     fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let PermuteProblem { op, B, M, N, K } = prob;
-        println!("Permute: {:?}, B: {}, M: {}, N: {}, K: {}", op, B, M, N, K);
-        let a = Tensor::randn::<f32>(shape![B, M, N, K], cpu_device.clone());
+        let PermuteProblem { op } = prob;
         let device = GPU_DEVICE.with(|d| d.clone());
+        let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
         let ground = ground_truth(&a, format!("{:?}", op.dims).as_str())?;

@@ -192,10 +192,10 @@ def {}(a, b):
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = match op {
-            BinaryOp::Add => a_gpu.add(&b_gpu)?,
-            BinaryOp::Sub => a_gpu.sub(&b_gpu)?,
-            BinaryOp::Mul => a_gpu.mul(&b_gpu)?,
-            BinaryOp::Div => a_gpu.div(&b_gpu)?,
+            BinaryOp::Add => a_gpu.add(b_gpu)?,
+            BinaryOp::Sub => a_gpu.sub(b_gpu)?,
+            BinaryOp::Mul => a_gpu.mul(b_gpu)?,
+            BinaryOp::Div => a_gpu.div(b_gpu)?,
         }
         .resolve()?;
 

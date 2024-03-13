@@ -26,10 +26,10 @@ pub struct ResidualAttentionBlockInputs {
 
 impl Module for ResidualAttentionBlock {
     type Input = ResidualAttentionBlockInputs;
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let ResidualAttentionBlockInputs { x, xa, mask, cache } = input;
-        let attn_ln = self.attn_ln.forward(x)?;
-        let self_attn = self.attn.forward(&MHAInputs::new(
+        let attn_ln = self.attn_ln.forward(x.clone())?;
+        let self_attn = self.attn.forward(MHAInputs::new(
             attn_ln,
             None,
             mask.clone(),
@@ -41,15 +41,15 @@ impl Module for ResidualAttentionBlock {
 
         if let Some(ref xa_blck) = self.x_attn {
             if let Some(xa_ln) = &self.x_attn_ln {
-                let x_attn_ln = xa_ln.forward(&attn)?;
+                let x_attn_ln = xa_ln.forward(attn.clone())?;
                 let x_attn =
-                    xa_blck.forward(&MHAInputs::new(x_attn_ln, xa.clone(), None, None, false))?;
-                attn = x_attn.add(&attn)?;
+                    xa_blck.forward(MHAInputs::new(x_attn_ln, xa.clone(), None, None, false))?;
+                attn = x_attn.add(attn.clone())?;
             }
         }
-        let mlp_ln = self.mlp_ln.forward(&attn)?;
-        let mlp = self.mlp.forward(&mlp_ln)?;
-        mlp.add(&attn)
+        let mlp_ln = self.mlp_ln.forward(attn.clone())?;
+        let mlp = self.mlp.forward(mlp_ln)?;
+        mlp.add(attn)
     }
 }
 

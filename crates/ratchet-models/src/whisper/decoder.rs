@@ -38,15 +38,16 @@ pub struct StemInput {
 impl Module for DecoderStem {
     type Input = StemInput;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let StemInput { tokens, offset } = input;
         let num_tokens = tokens.shape()[tokens.rank() - 1];
-        let start = *offset;
-        let end = *offset + num_tokens;
+        let start = offset;
+        let end = offset + num_tokens;
         let sliced = self
             .pos_embed
+            .clone()
             .slice(&[start..end, 0..self.pos_embed.shape()[1]])?;
-        self.token_embed.forward(tokens)?.add(&sliced)
+        self.token_embed.forward(tokens)?.add(sliced)
     }
 }
 
@@ -63,10 +64,10 @@ pub struct WhisperDecoder {
 impl Module for WhisperDecoder {
     type Input = [Tensor; 2];
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let [audio_ctx, tokens] = input;
-        let mut x = self.stem.forward(&StemInput {
-            tokens: tokens.clone(),
+        let mut x = self.stem.forward(StemInput {
+            tokens,
             offset: self.cache.entries(0),
         })?;
         for (block_idx, block) in self.blocks.iter().enumerate() {
@@ -76,10 +77,10 @@ impl Module for WhisperDecoder {
                 mask: Some(self.mask.clone()),
                 cache: Some(self.cache[block_idx].clone()),
             };
-            x = block.forward(&block_input)?;
+            x = block.forward(block_input)?;
         }
-        x = self.ln_post.forward(&x)?;
-        let logits = x.matmul(&self.stem.token_embed.weight, true)?;
+        x = self.ln_post.forward(x)?;
+        let logits = x.matmul(self.stem.token_embed.weight.clone(), true)?;
         Ok(logits)
     }
 }
@@ -220,7 +221,7 @@ def ground(options):
             decoder.device.try_gpu()?.begin_pass(iters);
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let result = decoder.forward(&[audio_ctx.clone(), token_t])?.resolve()?;
+            let result = decoder.forward([audio_ctx.clone(), token_t])?.resolve()?;
 
             let our_logits = result.to(&Device::CPU)?;
             all_logits.push(our_logits.clone());

@@ -48,7 +48,7 @@ impl Operation for Slice {
 
 #[cfg(test)]
 mod tests {
-    use crate::{rvec, Slice};
+    use crate::{rvec, Shape, Slice};
     use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
     use proptest::prelude::*;
     use test_strategy::proptest;
@@ -71,15 +71,9 @@ mod tests {
         }
     }
 
-    //TODO: instead of generating each index,
-    //just implement arbitrary for Shape and pass in 4 args
     #[derive(Debug)]
     struct SliceProblem {
         op: Slice,
-        B: usize,
-        M: usize,
-        N: usize,
-        K: usize,
     }
 
     impl Arbitrary for SliceProblem {
@@ -87,32 +81,13 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            let gen_range = |max: usize| {
-                // Ensure the range end is always less than max
-                (0..max, 0..max).prop_map(move |(start, end)| {
-                    let (start, end) = match (start, end) {
-                        (start, end) if start == end => (start, end + 1),
-                        (start, end) if start > end => (end, start),
-                        (start, end) => (start, end),
-                    };
-                    start..end
+            Shape::arbitrary_with(vec![0..=4, 0..=4, 0..=128, 0..=128])
+                .prop_map(|shape| {
+                    let indices = rvec![0..shape[0], 0..shape[1], 0..shape[2], 0..shape[3]];
+                    (shape, indices)
                 })
-            };
-
-            let B_range = gen_range(4);
-            let M_range = gen_range(4);
-            let N_range = gen_range(256);
-            let K_range = gen_range(256);
-
-            (B_range, M_range, N_range, K_range)
-                .prop_map(|(Br, Mr, Nr, Kr)| {
-                    //Adding 10 to ensure it works without matching range end
-                    //TODO: write a better generate strategy
-                    let (B, M, N, K) = (Br.end, Mr.end, Nr.end + 10, Kr.end + 10);
-                    let op = Slice {
-                        indices: rvec![Br, Mr, Nr, Kr],
-                    };
-                    SliceProblem { op, B, M, N, K }
+                .prop_map(|(shape, indices)| SliceProblem {
+                    op: Slice::new(Tensor::randn::<f32>(shape, Device::CPU), indices),
                 })
                 .boxed()
         }
@@ -133,12 +108,9 @@ def slice(a):
     }
 
     fn run_reindex_trial(prob: SliceProblem) -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        println!("slice problem: {:?}", prob);
-        let SliceProblem { op, B, M, N, K } = prob;
-        println!("Slice: {:?}, B: {}, M: {}, N: {}, K: {}", op, B, M, N, K);
-        let a = Tensor::randn::<f32>(shape![B, M, N, K], cpu_device.clone());
+        let SliceProblem { op } = prob;
         let device = GPU_DEVICE.with(|d| d.clone());
+        let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
         let ground = ground_truth(&a, &op.as_torch())?;

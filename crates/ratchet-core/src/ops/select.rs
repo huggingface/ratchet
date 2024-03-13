@@ -136,7 +136,7 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            Shape::arbitrary_with(vec![1..512usize, 1..16usize])
+            Shape::arbitrary_with(vec![1..=512usize, 1..=16usize])
                 .prop_flat_map(|input_shape| (Just(input_shape), 1..64usize))
                 .prop_map(|(input_shape, num_indices)| {
                     let indices =
@@ -181,11 +181,7 @@ def index_select(input, indices):
         let input = input.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
 
-        let result = input
-            .index_select(&indices, dim)
-            .unwrap()
-            .resolve()
-            .unwrap();
+        let result = input.index_select(indices, dim).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("result: {:?}", x);
         ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();

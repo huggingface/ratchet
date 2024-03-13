@@ -173,7 +173,7 @@ def conv(input, filters, bias, stride, padding):
         let weight = weight.to(device).unwrap();
         let bias = bias.to(device).unwrap();
         let ours = input
-            .conv1d(&weight, Some(&bias), stride, 1)
+            .conv1d(weight, Some(bias), stride, 1)
             .unwrap()
             .resolve()
             .unwrap();

@@ -85,7 +85,7 @@ def embedding(input, indices):
         let indices = indices.to(&device).unwrap();
 
         let embedding = Embedding::new(weight);
-        let result = embedding.forward(&indices).unwrap().resolve().unwrap();
+        let result = embedding.forward(indices).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("OURS: {:?}", x);
         ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();

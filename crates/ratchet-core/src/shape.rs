@@ -232,11 +232,10 @@ impl_try_into_for_shape!(0, 1, 2, 3, 4);
 mod tests {
     use crate::Shape;
     use proptest::prelude::*;
-    use proptest::strategy::{BoxedStrategy, Strategy};
-    use std::ops::Range;
+    use std::ops::RangeInclusive;
 
     impl Arbitrary for Shape {
-        type Parameters = Vec<Range<usize>>;
+        type Parameters = Vec<RangeInclusive<usize>>;
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {

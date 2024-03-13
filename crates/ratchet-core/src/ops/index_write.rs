@@ -117,7 +117,7 @@ mod tests {
         let src = Tensor::from_data(vec![7., 8.], shape![1, 2], device.clone());
         let write_start = rvec![2, 0];
         let b = dst
-            .index_write(&src, write_start)
+            .index_write(src, write_start)
             .unwrap()
             .resolve()
             .unwrap();
