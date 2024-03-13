@@ -12,16 +12,16 @@ mod tests {
     async fn test_read_q4k() -> anyhow::Result<()> {
         const Q4K_GGUF: &[u8] = include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/test-data/q4k_test.gguf"
+            "/test-data/nano-llama-q4k.gguf"
         ));
 
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(Q4K_GGUF.to_vec()));
 
         let result = gguf::Content::read(&mut reader)?;
 
-        println!("{:?}", result);
+        // println!("{:?}", result);
 
-        let tensor = result.tensor(&mut reader, "tensor1", &Device::CPU);
+        let tensor = result.tensor(&mut reader, "blk.0.attn_k.weight", &Device::CPU);
         // let model_data = file.gguf().await?;
 
         println!("{:?}", tensor);
