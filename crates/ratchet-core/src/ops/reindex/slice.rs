@@ -48,9 +48,9 @@ impl Operation for Slice {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::{Range, RangeInclusive};
+    use std::ops::{Range};
 
-    use crate::{rvec, RVec, Shape, Slice};
+    use crate::{Shape, Slice};
     use crate::{test_util::run_py_prg, Device, DeviceRequest, Tensor};
     use proptest::prelude::*;
     use test_strategy::proptest;

@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use crate::{DType, RVec, Shape, Tensor};
+use crate::{DType, Shape};
 
 #[derive(Debug, thiserror::Error)]
 pub enum InvariantError {
