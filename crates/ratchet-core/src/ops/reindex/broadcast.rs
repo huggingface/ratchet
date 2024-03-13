@@ -54,15 +54,13 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: ()) -> Self::Strategy {
-            let original_ranges = vec![1..=2, 1..=8, 1..=2, 1..=128];
-
-            Shape::arbitrary_with(original_ranges)
+            Shape::arbitrary_with(vec![1..=2, 1..=8, 1..=2, 1..=128])
                 .prop_flat_map(|original_shape| {
                     let create_broadcast_range = |dim: usize| {
                         if original_shape[dim] == 1 {
                             1..=8
                         } else {
-                            original_shape[dim]..=original_shape[dim] + 1
+                            original_shape[dim]..=original_shape[dim]
                         }
                     };
 

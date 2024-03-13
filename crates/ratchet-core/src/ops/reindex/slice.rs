@@ -48,7 +48,9 @@ impl Operation for Slice {
 
 #[cfg(test)]
 mod tests {
-    use crate::{rvec, Shape, Slice};
+    use std::ops::{Range, RangeInclusive};
+
+    use crate::{rvec, RVec, Shape, Slice};
     use crate::{test_util::run_py_prg, Device, DeviceRequest, Tensor};
     use proptest::prelude::*;
     use test_strategy::proptest;
@@ -71,6 +73,28 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Clone)]
+    pub struct SubSlice(pub Range<usize>);
+
+    impl Arbitrary for SubSlice {
+        type Parameters = (usize, usize);
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+            let (start, end) = args;
+            (start..=end, start..=end)
+                .prop_map(|generated| {
+                    let (start, end) = match generated {
+                        (start, end) if start == end => (start, end + 1),
+                        (start, end) if start > end => (end, start),
+                        (start, end) => (start, end),
+                    };
+                    SubSlice(start..end)
+                })
+                .boxed()
+        }
+    }
+
     #[derive(Debug)]
     struct SliceProblem {
         op: Slice,
@@ -81,13 +105,22 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            Shape::arbitrary_with(vec![0..=4, 0..=4, 0..=128, 0..=128])
-                .prop_map(|shape| {
-                    let indices = rvec![0..shape[0], 0..shape[1], 0..shape[2], 0..shape[3]];
-                    (shape, indices)
-                })
-                .prop_map(|(shape, indices)| SliceProblem {
-                    op: Slice::new(Tensor::randn::<f32>(shape, Device::CPU), indices),
+            Shape::arbitrary_with(vec![2..=16, 2..=16, 2..=16, 2..=128])
+                .prop_flat_map(|shape| {
+                    let slice_strategies = shape
+                        .iter()
+                        .map(|&dim| SubSlice::arbitrary_with((1, dim - 1)))
+                        .collect::<Vec<_>>();
+
+                    slice_strategies.prop_map(move |sub_slices| {
+                        let indices = sub_slices.into_iter().map(|sub| sub.0).collect();
+                        SliceProblem {
+                            op: Slice::new(
+                                Tensor::randn::<f32>(shape.clone(), Device::CPU),
+                                indices,
+                            ),
+                        }
+                    })
                 })
                 .boxed()
         }
@@ -109,6 +142,7 @@ def slice(a):
 
     fn run_reindex_trial(prob: SliceProblem) -> anyhow::Result<()> {
         let SliceProblem { op } = prob;
+        println!("SLICE PROBLEM: {:?}", op);
         let device = GPU_DEVICE.with(|d| d.clone());
         let a = op.src.clone();
 

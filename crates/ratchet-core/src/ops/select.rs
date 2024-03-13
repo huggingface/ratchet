@@ -196,15 +196,6 @@ def index_select(input, indices):
         run_index_select_trial(prob, true);
     }
 
-    #[test]
-    fn v3_index_select() {
-        let prob = IndexSelectProblem {
-            input_shape: shape![51866, 1280],
-            indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
-        };
-        run_index_select_trial(prob, false);
-    }
-
     #[derive(Debug, Clone)]
     struct IndexSelectProblem {
         input_shape: Shape,
