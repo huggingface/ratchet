@@ -6,6 +6,9 @@ use ratchet_nn::Module;
 use std::cmp::min;
 use web_time::Instant;
 
+#[cfg(target_arch = "wasm32")]
+use crate::StreamedSegment;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn transcribe(
     model: &mut Whisper,
@@ -108,7 +111,7 @@ pub async fn transcribe(
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
             log::warn!("No language specified, using language detection");
-            let mel = mel.slice(&[0..1, 0..n_mels, 0..3000])?;
+            let mel = mel.clone().slice(&[0..1, 0..n_mels, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel).await?);
         }
     }
@@ -131,7 +134,9 @@ pub async fn transcribe(
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
-        let mel_segment = mel.slice(&[0..1, 0..n_mels, seek..(seek + N_FRAMES)])?;
+        let mel_segment = mel
+            .clone()
+            .slice(&[0..1, 0..n_mels, seek..(seek + N_FRAMES)])?;
         log::info!(
             "processing segment - from: {}, to: {}",
             seek,
@@ -145,7 +150,7 @@ pub async fn transcribe(
             decode_options.prompt = Some(Prompt::Tokens(all_tokens[prompt_since_reset..].to_vec()));
         }
 
-        let hs = model.encoder.forward(&mel_segment)?.resolve()?;
+        let hs = model.encoder.forward(mel_segment)?.resolve()?;
 
         let task = DecodingTask::new(decode_options, tokenizer.clone());
         let decoded = task.run(&mut model.decoder, hs, &callback).await?;
