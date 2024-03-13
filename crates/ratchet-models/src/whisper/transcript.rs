@@ -134,7 +134,7 @@ impl StreamedSegment {
         offset: f64,
         last: bool,
     ) -> Self {
-        let segment = Segment::from_tokens(&tokenizer, sliced_tokens, offset, last);
+        let segment = Segment::from_tokens(tokenizer, sliced_tokens, offset, last);
         let segment_tokens = segment
             .tokens
             .into_iter()

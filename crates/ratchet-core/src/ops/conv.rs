@@ -4,7 +4,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, shape, wgc, Enforcer, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
+    rvec, shape, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 

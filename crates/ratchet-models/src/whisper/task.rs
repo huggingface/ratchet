@@ -255,7 +255,7 @@ impl DecodingTask {
                     .fold((Vec::new(), 0), |(mut acc, last_slice), &slice| {
                         let segment_tokens = &content_tokens[last_slice..slice];
                         acc.push(Segment::from_tokens(
-                            &tokenizer,
+                            tokenizer,
                             segment_tokens,
                             offset,
                             false,

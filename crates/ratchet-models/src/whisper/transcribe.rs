@@ -1,4 +1,3 @@
-use crate::StreamedSegment;
 use crate::{
     DecodingOptions, DecodingTask, Language, Prompt, TranscriptionResult, Whisper,
     WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,

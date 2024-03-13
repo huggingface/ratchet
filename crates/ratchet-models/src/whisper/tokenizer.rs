@@ -1,5 +1,4 @@
 use crate::{Language, Task};
-use std::ops::RangeInclusive;
 use tokenizers::Tokenizer;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -179,7 +178,7 @@ impl WhisperTokenizer {
 
     #[inline]
     pub fn is_multilingual(&self) -> bool {
-        return self.inner.get_vocab_size(true) >= 51865;
+        self.inner.get_vocab_size(true) >= 51865
     }
 
     #[inline]

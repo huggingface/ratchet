@@ -121,6 +121,6 @@ impl MultiHeadAttention {
             .permute(&[0, 2, 1, 3])?
             .view(shape![bs, n_ctx, n_state])?;
 
-        Ok(self.o.forward(wv)?)
+        self.o.forward(wv)
     }
 }

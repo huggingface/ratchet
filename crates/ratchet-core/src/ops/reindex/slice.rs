@@ -49,7 +49,7 @@ impl Operation for Slice {
 #[cfg(test)]
 mod tests {
     use crate::{rvec, Shape, Slice};
-    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use crate::{test_util::run_py_prg, Device, DeviceRequest, Tensor};
     use proptest::prelude::*;
     use test_strategy::proptest;
 
