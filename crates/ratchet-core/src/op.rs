@@ -86,8 +86,14 @@ impl LazyOp {
             LazyOp::Matmul(m) => m.check_invariants(),
             LazyOp::Softmax(s) => s.check_invariants(),
             LazyOp::Unary(u) => u.check_invariants(),
-            LazyOp::Reindex(r) => r.check_invariants(),
-            LazyOp::Norm(n) => n.check_invariants(),
+            LazyOp::Reindex(r) => match r {
+                Reindex::Permute(p) => p.check_invariants(),
+                Reindex::Slice(s) => s.check_invariants(),
+                Reindex::Broadcast(b) => b.check_invariants(),
+            },
+            LazyOp::Norm(n) => match n {
+                Norm::LayerNorm(ln) => ln.check_invariants(),
+            },
             LazyOp::Conv(c) => c.check_invariants(),
             LazyOp::Select(s) => s.check_invariants(),
             LazyOp::IndexWrite(iw) => iw.check_invariants(),

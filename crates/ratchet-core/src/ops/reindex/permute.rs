@@ -8,7 +8,7 @@ use crate::{
 
 #[derive(new, Debug, Clone)]
 pub struct Permute {
-    pub input: Tensor,
+    pub src: Tensor,
     pub dims: Vec<usize>,
 }
 
@@ -27,7 +27,7 @@ impl Permute {
 
 impl Operation for Permute {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        let input_shape = self.input.shape();
+        let input_shape = self.src.shape();
         let dup_set: HashSet<usize> = HashSet::from_iter(self.dims.iter().cloned());
         if dup_set.len() != self.dims.len() {
             return Err(InvariantError::DuplicateDims)?;
@@ -38,17 +38,18 @@ impl Operation for Permute {
             output_shape[i] = input_shape[self.dims[i]];
         }
         let strides = Strides::from(&output_shape);
-        Ok(StorageView::new(output_shape, self.input.dt(), strides))
+        Ok(StorageView::new(output_shape, self.src.dt(), strides))
     }
 }
 
 impl OpGuards for Permute {
     fn check_shapes(&self) {
-        assert!(self.input.shape().rank() == self.dims.len());
+        assert!(self.src.shape().rank() == self.dims.len());
+        assert!(self.dims.iter().all(|&x| x < 4)); //Only support 4D for now
     }
 
     fn check_dtypes(&self) {
-        assert!(self.input.dt() == DType::F32);
+        assert!(self.src.dt() == DType::F32);
     }
 }
 

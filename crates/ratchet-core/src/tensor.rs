@@ -57,7 +57,7 @@ impl Tensor {
         Self::new(op, meta, None, device)
     }
 
-    fn from_shallow(
+    fn shallow(
         op: LazyOp,
         meta: StorageView,
         storage: Arc<RwLock<Option<Storage>>>,
@@ -222,11 +222,10 @@ impl Tensor {
 
 macro_rules! impl_binary_op {
     ($method_name:ident, $op:expr) => {
-        pub fn $method_name(&self, other: &Tensor) -> anyhow::Result<Tensor> {
+        pub fn $method_name(self, other: Tensor) -> anyhow::Result<Tensor> {
+            let device = self.device.clone();
             //TODO: avoid broadcasting if either operand is scalar
-            Binary::check_invariants(&[self, other])?;
-
-            let (lhs, rhs) = (self, other);
+            let (mut lhs, mut rhs) = (self, other);
             let shapes = &[lhs.shape(), rhs.shape()];
             let broadcasted = Shape::multi_broadcast(shapes);
             if broadcasted.is_none() {
@@ -234,40 +233,32 @@ macro_rules! impl_binary_op {
                 return Err(InvariantError::BroadcastingFailed(failed).into());
             }
             let broadcasted = broadcasted.unwrap();
-            let left_required = self.shape() != &broadcasted;
-            let right_required = other.shape() != &broadcasted;
+            let left_required = shapes[0] != &broadcasted;
+            let right_required = shapes[1] != &broadcasted;
 
-            let (lhs, rhs) = if left_required {
-                (self.broadcast_to(broadcasted.clone())?, other.clone())
+            (lhs, rhs) = if left_required {
+                (lhs.broadcast_to(broadcasted.clone())?, rhs.clone())
             } else if right_required {
-                (self.clone(), other.broadcast_to(broadcasted.clone())?)
+                (lhs, rhs.broadcast_to(broadcasted.clone())?)
             } else {
-                (self.clone(), other.clone())
+                (lhs, rhs)
             };
-            let binary = Binary::new(lhs.clone(), rhs.clone(), $op);
-            let new_view = binary.infer_output(&[&lhs, &rhs])?;
 
-            Ok(Tensor::lazy(
-                LazyOp::Binary(binary),
-                new_view,
-                self.device.clone(),
-            ))
+            let binary = Binary::new(lhs, rhs, $op);
+            let new_view = binary.compute_view()?;
+
+            Ok(Tensor::lazy(LazyOp::Binary(binary), new_view, device))
         }
     };
 }
 
 macro_rules! impl_unary_op {
     ($method_name:ident, $op:expr) => {
-        pub fn $method_name(&self) -> anyhow::Result<Tensor> {
-            Unary::check_invariants(&[self])?;
-
+        pub fn $method_name(self) -> anyhow::Result<Tensor> {
+            let device = self.device.clone();
             let unary = Unary::new(self.clone(), $op);
-            let new_view = unary.infer_output(&[self])?;
-            Ok(Tensor::lazy(
-                LazyOp::Unary(unary),
-                new_view,
-                self.device.clone(),
-            ))
+            let new_view = unary.compute_view()?;
+            Ok(Tensor::lazy(LazyOp::Unary(unary), new_view, device))
         }
     };
 }
@@ -325,16 +316,11 @@ impl Tensor {
     }
 
     //TODO: horrific interface
-    pub fn matmul(&self, other: &Tensor, trans_b: bool) -> anyhow::Result<Tensor> {
-        Matmul::check_invariants(&[self, other])?;
-
-        let matmul = Matmul::new(self.clone(), other.clone(), trans_b);
-        let new_view = matmul.infer_output(&[self, other])?;
-        Ok(Tensor::lazy(
-            LazyOp::Matmul(matmul),
-            new_view,
-            self.device.clone(),
-        ))
+    pub fn matmul(self, other: Tensor, trans_b: bool) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let matmul = Matmul::new(self, other, trans_b);
+        let new_view = matmul.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
     }
 
     /// # Slice
@@ -342,7 +328,8 @@ impl Tensor {
     /// Current slice implementation requires specification of all dimensions.
     /// Currently very user hostile, but will be improved.
     /// TODO: should allow mixed range types
-    pub fn slice<D: std::ops::RangeBounds<usize>>(&self, ranges: &[D]) -> anyhow::Result<Tensor> {
+    pub fn slice<D: std::ops::RangeBounds<usize>>(self, ranges: &[D]) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
         let mut resolved_ranges = rvec![];
 
         for (ridx, r) in ranges.iter().enumerate() {
@@ -359,69 +346,56 @@ impl Tensor {
             resolved_ranges.push(start..end);
         }
 
-        let slice = Slice::new(resolved_ranges);
-        let out_view = slice.infer_output(&[self])?;
-
-        let lazy_op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Slice(slice)));
-        Ok(Tensor::lazy(lazy_op, out_view, self.device.clone()))
+        let slice = Slice::new(self, resolved_ranges);
+        let out_view = slice.compute_view()?;
+        let op = LazyOp::Reindex(Reindex::Slice(slice));
+        Ok(Tensor::lazy(op, out_view, device))
     }
 
     /// # View
     ///
     /// Creates a new tensor with the same data, but a different shape.
     /// The new shape must have the same number of elements as the original shape.
-    pub fn view(&self, shape: Shape) -> anyhow::Result<Tensor> {
-        let view = View::new(self.clone(), shape);
-        let out_view = view.infer_output(&[self])?;
-
+    pub fn view(self, shape: Shape) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
         let storage = self.storage.clone();
+        let op = View::new(self, shape);
+        let out_view = op.compute_view()?;
 
-        Ok(Tensor::from_shallow(
-            LazyOp::View(view),
-            out_view,
-            storage,
-            self.device.clone(),
-        ))
+        Ok(Tensor::shallow(LazyOp::View(op), out_view, storage, device))
     }
 
-    pub fn permute(&self, dims: &[usize]) -> anyhow::Result<Tensor> {
-        Permute::check_invariants(&[self])?;
-        let permute = Permute::new(dims.to_vec());
-        let out_view = permute.infer_output(&[self])?;
+    pub fn permute(self, dims: &[usize]) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let permute = Permute::new(self, dims.to_vec());
+        let out_view = permute.compute_view()?;
 
-        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Permute(permute)));
-        Ok(Tensor::lazy(op, out_view, self.device.clone()))
+        let op = LazyOp::Reindex(Reindex::Permute(permute));
+        Ok(Tensor::lazy(op, out_view, device))
     }
 
-    pub fn broadcast_to(&self, shape: Shape) -> anyhow::Result<Tensor> {
-        Broadcast::check_invariants(&[self])?;
-        let broadcast = Broadcast::new(shape);
-        let new_view = broadcast.infer_output(&[self])?;
-        let op = LazyOp::Reindex(Reindex::new(self.clone(), ReindexOp::Broadcast(broadcast)));
-        Ok(Tensor::lazy(op, new_view, self.device.clone()))
+    pub fn broadcast_to(self, shape: Shape) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let broadcast = Broadcast::new(self, shape);
+        let new_view = broadcast.compute_view()?;
+
+        let op = LazyOp::Reindex(Reindex::Broadcast(broadcast));
+        Ok(Tensor::lazy(op, new_view, device))
     }
 
-    pub fn index_select(&self, indices: &Tensor, dim: usize) -> anyhow::Result<Tensor> {
-        IndexSelect::check_invariants(&[self, indices])?;
-        let index_select = IndexSelect::new(self.clone(), indices.clone(), dim);
-        let new_view = index_select.infer_output(&[self, indices])?;
-        Ok(Tensor::lazy(
-            LazyOp::Select(index_select),
-            new_view,
-            self.device.clone(),
-        ))
+    pub fn index_select(self, indices: Tensor, dim: usize) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let index_select = IndexSelect::new(self, indices, dim);
+        let new_view = index_select.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Select(index_select), new_view, device))
     }
 
-    ///CAUTION: inplace but you need to use the resultant tensor
-    pub fn index_write(&self, src: &Tensor, write_start: RVec<usize>) -> anyhow::Result<Tensor> {
-        IndexWrite::check_invariants(&[self, src])?;
-        let index_write = IndexWrite::new(self.clone(), src.clone(), write_start);
-        let new_view = index_write.infer_output(&[self, src])?;
-        Ok(Tensor::lazy(
-            LazyOp::IndexWrite(index_write),
-            new_view,
-            self.device.clone(),
-        ))
+    pub fn index_write(self, src: Tensor, write_start: RVec<usize>) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let index_write = IndexWrite::new(self, src, write_start);
+        let new_view = index_write.compute_view()?;
+        let op = LazyOp::IndexWrite(index_write);
+        Ok(Tensor::lazy(op, new_view, device))
     }
 
     #[cfg(feature = "rand")]

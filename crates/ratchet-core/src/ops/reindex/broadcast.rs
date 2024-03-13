@@ -4,7 +4,7 @@ use crate::{OpGuards, Operation, OperationError, Shape, StorageView, Strides, Te
 
 #[derive(new, Debug, Clone)]
 pub struct Broadcast {
-    src: Tensor,
+    pub src: Tensor,
     to: Shape,
 }
 
@@ -34,9 +34,7 @@ impl OpGuards for Broadcast {
         }
     }
 
-    fn check_dtypes(&self) {
-        todo!()
-    }
+    fn check_dtypes(&self) {}
 }
 
 impl Operation for Broadcast {

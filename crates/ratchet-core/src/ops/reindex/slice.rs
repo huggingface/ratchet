@@ -1,5 +1,5 @@
-use crate::{prelude::*, OperationError, StorageView, Strides};
-use crate::{Enforcer, Operation, RVec};
+use crate::{prelude::*, OpGuards, OperationError, StorageView, Strides};
+use crate::{Operation, RVec};
 use std::ops::Range;
 
 /// # Slice
@@ -7,6 +7,7 @@ use std::ops::Range;
 /// This is a temporary, user hostile implementation.
 #[derive(derive_new::new, Debug, Clone)]
 pub struct Slice {
+    pub src: Tensor,
     indices: RVec<Range<usize>>,
 }
 
@@ -16,14 +17,24 @@ impl Slice {
     }
 }
 
-impl Operation for Slice {
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
+impl OpGuards for Slice {
+    fn check_shapes(&self) {
+        self.indices.iter().for_each(|range| {
+            assert!(range.start <= range.end);
+        });
+        self.indices
+            .iter()
+            .zip(self.src.shape().iter())
+            .for_each(|(range, &dim)| {
+                assert!(range.end <= dim);
+            });
     }
 
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        //TODO: Check if slice is valid
+    fn check_dtypes(&self) {}
+}
+
+impl Operation for Slice {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
         let output_shape = self
             .indices
             .iter()
@@ -31,7 +42,7 @@ impl Operation for Slice {
             .collect::<RVec<usize>>()
             .into();
         let strides = Strides::from(&output_shape);
-        Ok(StorageView::new(output_shape, srcs[0].dt(), strides))
+        Ok(StorageView::new(output_shape, self.src.dt(), strides))
     }
 }
 

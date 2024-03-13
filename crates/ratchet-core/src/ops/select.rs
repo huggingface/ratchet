@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, DType, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation,
+    rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 
@@ -32,8 +32,8 @@ pub struct IndexSelectMeta {
 impl OpMetadata for IndexSelectMeta {}
 
 impl Operation for IndexSelect {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let (input, indices) = (srcs[0], srcs[1]);
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let (input, indices) = (&self.input, &self.indices);
         let (indices_shape, input_shape) = (indices.shape(), input.shape());
 
         let mut output_shape = input_shape.clone();
@@ -41,13 +41,18 @@ impl Operation for IndexSelect {
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, DType::F32, strides))
     }
+}
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        let (input, indices) = (srcs[0], srcs[1]);
-        Enforcer::assert_dtype(indices, DType::I32)?;
-        Enforcer::assert_rank(input, 2)?;
-        Enforcer::assert_rank(indices, 1)?;
-        Ok(())
+impl OpGuards for IndexSelect {
+    fn check_shapes(&self) {
+        let (input, indices) = (&self.input, &self.indices);
+        assert_eq!(input.rank(), 2);
+        assert_eq!(indices.rank(), 1);
+    }
+
+    fn check_dtypes(&self) {
+        let indices = &self.indices;
+        assert_eq!(indices.dt(), DType::I32);
     }
 }
 
