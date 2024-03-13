@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata,
-    Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    rvec, wgc, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
+    OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
