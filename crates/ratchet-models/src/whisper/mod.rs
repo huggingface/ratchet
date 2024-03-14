@@ -1,3 +1,4 @@
+#[allow(clippy::module_inception)]
 mod decoder;
 mod encoder;
 mod logit_mutators;

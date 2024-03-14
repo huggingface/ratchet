@@ -1,4 +1,4 @@
-use crate::{db::ModelKey, model::ModelKind};
+use crate::db::ModelKey;
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug)]

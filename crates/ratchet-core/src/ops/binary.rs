@@ -147,9 +147,8 @@ impl MetaOperation for Binary {
 
 #[cfg(test)]
 mod tests {
+    use crate::{test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Shape, Tensor};
     use test_strategy::{proptest, Arbitrary};
-
-    use crate::{shape, test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -158,12 +157,8 @@ mod tests {
     #[derive(Arbitrary, Debug)]
     struct BinaryProblem {
         op: BinaryOp,
-        #[strategy(1..=4usize)]
-        B: usize,
-        #[strategy(1..=512usize)]
-        M: usize,
-        #[strategy(1..=512usize)]
-        N: usize,
+        #[any(vec![1..=4, 1..=4, 1..=256, 1..=256])]
+        shape: Shape,
     }
 
     fn ground_truth(a: &Tensor, b: &Tensor, op: &BinaryOp) -> anyhow::Result<Tensor> {
@@ -182,10 +177,10 @@ def {}(a, b):
     //TODO: more involved test generation strategy
     fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let BinaryProblem { op, B, M, N } = prob;
-        println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
-        let a = Tensor::randn::<f32>(shape![B, M, N], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![B, 1, N], cpu_device.clone());
+        let BinaryProblem { op, mut shape } = prob;
+        let a = Tensor::randn::<f32>(shape.clone(), cpu_device.clone());
+        shape[2] = 1;
+        let b = Tensor::randn::<f32>(shape, cpu_device.clone());
         let ground = ground_truth(&a, &b, &op)?;
         let device = GPU_DEVICE.with(|d| d.clone());
 

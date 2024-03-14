@@ -12,7 +12,6 @@ byteorder.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
 thiserror.workspace = true
-derive-new.workspace = true
 log.workspace = true
 
 [dev-dependencies]

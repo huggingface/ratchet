@@ -1,7 +1,4 @@
-use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
-use wgpu::BufferUsages;
-
+use super::TensorUsageRecord;
 use crate::{
     gpu::{
         BufferDescriptor, BufferPool, BufferUsagesExt, CpuUniform, GpuBufferHandle,
@@ -9,9 +6,10 @@ use crate::{
     },
     DeviceError, Tensor, TensorId,
 };
+use parking_lot::RwLock;
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
-
-use super::{OpProfile, TensorUsageRecord};
+use wgpu::BufferUsages;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AllocatorError {
@@ -177,17 +175,6 @@ impl BufferAllocator {
         //TODO: Warning: could be a bug here
         records.retain(|_, v| v.producer.is_some());
         records
-    }
-
-    fn calculate_op_profiles(usage_records: &TensorUsageRecords, num_ops: usize) -> Vec<OpProfile> {
-        //An operation profile is the set of all tensor usage records within which an operation lies.
-        let mut op_profiles: Vec<OpProfile> = vec![OpProfile::default(); num_ops];
-        for record in usage_records.0.iter() {
-            for o in record.op_range() {
-                op_profiles[o].push(record.clone());
-            }
-        }
-        op_profiles
     }
 
     //https://arxiv.org/pdf/2001.03288.pdf + inplace support

@@ -1,11 +1,9 @@
 use crate::{gpu::*, Tensor, TensorId};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
-use wgpu::{Adapter, DeviceType, Limits};
+use wgpu::{Adapter, Limits};
 
 use crate::DeviceError;
-
-use super::{BufferDescriptor, PoolError, PooledGPUBuffer};
 
 pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 
@@ -74,10 +72,7 @@ impl WgpuDevice {
         };
         let device_request = adapter.request_device(&device_descriptor, None).await;
         let (device, queue) = if let Err(e) = device_request {
-            log::error!(
-                "Failed to acq. device, trying again with reduced limits: {:?}",
-                e
-            );
+            log::error!("Failed to acq. device, trying with reduced limits: {:?}", e);
             device_descriptor.limits = adapter.limits();
             adapter.request_device(&device_descriptor, None).await
         } else {
@@ -120,6 +115,7 @@ impl WgpuDevice {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn select_adapter() -> Result<Adapter, DeviceError> {
+        use wgpu::DeviceType;
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
             ..Default::default()

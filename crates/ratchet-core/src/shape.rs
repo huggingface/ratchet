@@ -226,7 +226,7 @@ macro_rules! impl_try_into_for_shape {
     };
 }
 
-impl_try_into_for_shape!(0, 1, 2, 3, 4);
+impl_try_into_for_shape!(1, 2, 3, 4);
 
 #[cfg(test)]
 mod tests {
