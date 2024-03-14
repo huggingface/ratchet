@@ -21,10 +21,10 @@ mod tests {
 
         // println!("{:?}", result);
 
-        let tensor = result.tensor(&mut reader, "blk.0.attn_k.weight", &Device::CPU);
+        let q4k_block = result.tensor(&mut reader, "blk.0.attn_k.weight", &Device::CPU)?;
         // let model_data = file.gguf().await?;
 
-        println!("{:?}", tensor);
+        println!("{:?}", q4k_block);
         Ok(())
     }
 

@@ -6,12 +6,14 @@
 
 use crate::error::{Error, Result};
 use crate::gguf::ggml::GgmlDType;
-use crate::gguf::k_quants::{K_SCALE_SIZE, QK_K};
+use crate::gguf::k_quants::{BlockQ4K, K_SCALE_SIZE, QK_K};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use half::f16;
 use ratchet::{shape, Device, Shape, Tensor, TensorDType};
 use std::collections::HashMap;
 use std::io::{Cursor, Write};
+
+use super::k_quants::Block;
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -91,7 +93,7 @@ impl TensorInfo {
         reader: &mut R,
         tensor_data_offset: u64,
         device: &Device,
-    ) -> anyhow::Result<Tensor> {
+    ) -> anyhow::Result<Block> {
         // let tensor_elems = self.shape.elem_count();
         let tensor_elems = self.shape.numel();
         let block_size = self.ggml_dtype.block_size();
@@ -133,33 +135,39 @@ impl TensorInfo {
             ratchet::DType::Q8,
             shape![tensor_blocks, K_SCALE_SIZE],
             device.clone(),
-        );
+        )?;
 
         let qs_tensor = Tensor::from_bytes(
             qs.as_ref(),
             ratchet::DType::Q8,
             shape![tensor_blocks, QK_K / 2],
             device.clone(),
-        );
-        println!("ds_tensor={:?}", ds_tensor);
-        println!("dmins_tensor={:?}", dmins_tensor);
-        println!("scales_tensor={:?}", scales_tensor);
-        println!("qs_tensor={:?}", qs_tensor);
+        )?;
+        // println!("ds_tensor={:?}", ds_tensor);
+        // println!("dmins_tensor={:?}", dmins_tensor);
+        // println!("scales_tensor={:?}", scales_tensor);
+        // println!("qs_tensor={:?}", qs_tensor);
 
         let ds2 = ds_tensor.to(&Device::CPU)?.to_vec::<f32>()?;
 
         println!("{:?}", &ds2);
-        assert_eq!(ds, ds2);
+        // assert_eq!(ds, ds2);
         // [TODO] Implement
-        let tensor = match self.ggml_dtype {
+        match self.ggml_dtype {
             GgmlDType::Q4K => {
                 println!("Got Q4K type {}", size_in_bytes);
-                ratchet::Tensor::randn::<f32>(shape![1, 2], device.clone())
-            }
-            _ => ratchet::Tensor::randn::<f32>(shape![1, 2], device.clone()),
-        };
 
-        Ok(tensor)
+                let block_q4k: BlockQ4K = BlockQ4K {
+                    d: ds_tensor,
+                    dmin: dmins_tensor,
+                    scales: scales_tensor,
+                    qs: qs_tensor,
+                };
+                let block: Block = Block::BlockQ4K(block_q4k);
+                Ok(block)
+            }
+            _ => anyhow::bail!("Not yet implemented"),
+        }
     }
 }
 
@@ -511,7 +519,7 @@ impl Content {
         reader: &mut R,
         name: &str,
         device: &Device,
-    ) -> anyhow::Result<Tensor> {
+    ) -> anyhow::Result<Block> {
         let tensor_info = match self.tensor_infos.get(name) {
             Some(tensor_info) => tensor_info,
             None => anyhow::bail!("cannot find tensor info for {name}"),

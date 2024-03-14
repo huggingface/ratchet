@@ -1,6 +1,7 @@
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/k_quants.rs
 
 use byteorder::{ByteOrder, LittleEndian};
+use ratchet::Tensor;
 
 use crate::error::Result;
 
@@ -27,10 +28,10 @@ pub trait GgmlType: Sized + Clone + Send + Sync {
     type VecDotType: GgmlType;
 
     // This is only safe for types that include immediate values such as float/int/...
-    fn zeros() -> Self {
-        unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
-    }
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()>;
+    // fn zeros() -> Self {
+    //     unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
+    // }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()>;
     // fn from_float(xs: &[f32], ys: &mut [Self]) -> Result<()>;
 
     // /// Dot product used as a building block for quantized mat-mul.
@@ -39,6 +40,11 @@ pub trait GgmlType: Sized + Clone + Send + Sync {
 
     // /// Generic implementation of the dot product without simd optimizations.
     // fn vec_dot_unopt(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Block {
+    BlockQ4K(BlockQ4K),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -108,11 +114,17 @@ pub struct BlockQ3K {
 
 #[derive(Debug, Clone, PartialEq)]
 // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/k_quants.h#L82
+// pub struct BlockQ4K {
+//     pub(crate) d: f32,
+//     pub(crate) dmin: f32,
+//     pub(crate) scales: [u8; K_SCALE_SIZE],
+//     pub(crate) qs: [u8; QK_K / 2],
+// }
 pub struct BlockQ4K {
-    pub(crate) d: f32,
-    pub(crate) dmin: f32,
-    pub(crate) scales: [u8; K_SCALE_SIZE],
-    pub(crate) qs: [u8; QK_K / 2],
+    pub(crate) d: Tensor,
+    pub(crate) dmin: Tensor,
+    pub(crate) scales: Tensor,
+    pub(crate) qs: Tensor,
 }
 // const _: () = assert!(QK_K / 2 + K_SCALE_SIZE + 2 * 2 == std::mem::size_of::<BlockQ4K>());
 
@@ -151,27 +163,27 @@ impl GgmlType for BlockQ4_0 {
     type VecDotType = BlockQ8_0;
 
     // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1525
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        let k = ys.len();
-        let qk = Self::BLCK_SIZE;
-        if k % qk != 0 {
-            crate::bail!("dequantize_row_q4_0: {k} is not divisible by {qk}")
-        }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     let k = ys.len();
+    //     let qk = Self::BLCK_SIZE;
+    //     if k % qk != 0 {
+    //         crate::bail!("dequantize_row_q4_0: {k} is not divisible by {qk}")
+    //     }
 
-        let nb = k / qk;
-        for i in 0..nb {
-            let d = xs[i].d;
+    //     let nb = k / qk;
+    //     for i in 0..nb {
+    //         let d = xs[i].d;
 
-            for j in 0..(qk / 2) {
-                let x0 = (xs[i].qs[j] & 0x0F) as i16 - 8;
-                let x1 = (xs[i].qs[j] >> 4) as i16 - 8;
+    //         for j in 0..(qk / 2) {
+    //             let x0 = (xs[i].qs[j] & 0x0F) as i16 - 8;
+    //             let x1 = (xs[i].qs[j] >> 4) as i16 - 8;
 
-                ys[i * qk + j] = (x0 as f32) * d;
-                ys[i * qk + j + qk / 2] = (x1 as f32) * d;
-            }
-        }
-        Ok(())
-    }
+    //             ys[i * qk + j] = (x0 as f32) * d;
+    //             ys[i * qk + j + qk / 2] = (x1 as f32) * d;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
     // fn from_float(xs: &[f32], ys: &mut [Self]) -> Result<()> {
     //     // quantize_row_q4_0
@@ -318,27 +330,27 @@ impl GgmlType for BlockQ4_1 {
     // }
 
     // // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1545
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        let k = ys.len();
-        if k % QK4_1 != 0 {
-            crate::bail!("dequantize_row_q4_1: {k} is not divisible by {QK4_1}");
-        }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     let k = ys.len();
+    //     if k % QK4_1 != 0 {
+    //         crate::bail!("dequantize_row_q4_1: {k} is not divisible by {QK4_1}");
+    //     }
 
-        let nb = k / QK4_1;
-        for i in 0..nb {
-            let d = xs[i].d;
-            let m = xs[i].m;
+    //     let nb = k / QK4_1;
+    //     for i in 0..nb {
+    //         let d = xs[i].d;
+    //         let m = xs[i].m;
 
-            for j in 0..(QK4_1 / 2) {
-                let x0 = xs[i].qs[j] & 0x0F;
-                let x1 = xs[i].qs[j] >> 4;
+    //         for j in 0..(QK4_1 / 2) {
+    //             let x0 = xs[i].qs[j] & 0x0F;
+    //             let x1 = xs[i].qs[j] >> 4;
 
-                ys[i * QK4_1 + j] = (x0 as f32) * d + m;
-                ys[i * QK4_1 + j + QK4_1 / 2] = (x1 as f32) * d + m;
-            }
-        }
-        Ok(())
-    }
+    //             ys[i * QK4_1 + j] = (x0 as f32) * d + m;
+    //             ys[i * QK4_1 + j + QK4_1 / 2] = (x1 as f32) * d + m;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 impl GgmlType for BlockQ5_0 {
@@ -418,30 +430,30 @@ impl GgmlType for BlockQ5_0 {
     // }
 
     // // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1566
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        let k = ys.len();
-        if k % QK5_0 != 0 {
-            crate::bail!("dequantize_row_q5_0: {k} is not divisible by {QK5_0}");
-        }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     let k = ys.len();
+    //     if k % QK5_0 != 0 {
+    //         crate::bail!("dequantize_row_q5_0: {k} is not divisible by {QK5_0}");
+    //     }
 
-        let nb = k / QK5_0;
-        for i in 0..nb {
-            let d = xs[i].d;
-            let qh: u32 = LittleEndian::read_u32(&xs[i].qh);
+    //     let nb = k / QK5_0;
+    //     for i in 0..nb {
+    //         let d = xs[i].d;
+    //         let qh: u32 = LittleEndian::read_u32(&xs[i].qh);
 
-            for j in 0..(QK5_0 / 2) {
-                let xh_0 = (((qh >> j) << 4) & 0x10) as u8;
-                let xh_1 = ((qh >> (j + 12)) & 0x10) as u8;
+    //         for j in 0..(QK5_0 / 2) {
+    //             let xh_0 = (((qh >> j) << 4) & 0x10) as u8;
+    //             let xh_1 = ((qh >> (j + 12)) & 0x10) as u8;
 
-                let x0 = ((xs[i].qs[j] & 0x0F) | xh_0) as i32 - 16;
-                let x1 = ((xs[i].qs[j] >> 4) | xh_1) as i32 - 16;
+    //             let x0 = ((xs[i].qs[j] & 0x0F) | xh_0) as i32 - 16;
+    //             let x1 = ((xs[i].qs[j] >> 4) | xh_1) as i32 - 16;
 
-                ys[i * QK5_0 + j] = (x0 as f32) * d;
-                ys[i * QK5_0 + j + QK5_0 / 2] = (x1 as f32) * d;
-            }
-        }
-        Ok(())
-    }
+    //             ys[i * QK5_0 + j] = (x0 as f32) * d;
+    //             ys[i * QK5_0 + j + QK5_0 / 2] = (x1 as f32) * d;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 impl GgmlType for BlockQ5_1 {
@@ -526,31 +538,31 @@ impl GgmlType for BlockQ5_1 {
     // }
 
     // // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1592
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        let k = ys.len();
-        if k % QK5_1 != 0 {
-            crate::bail!("dequantize_row_q5_1: {k} is not divisible by {QK5_1}");
-        }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     let k = ys.len();
+    //     if k % QK5_1 != 0 {
+    //         crate::bail!("dequantize_row_q5_1: {k} is not divisible by {QK5_1}");
+    //     }
 
-        let nb = k / QK5_1;
-        for i in 0..nb {
-            let d = xs[i].d;
-            let m = xs[i].m;
-            let qh: u32 = LittleEndian::read_u32(&xs[i].qh);
+    //     let nb = k / QK5_1;
+    //     for i in 0..nb {
+    //         let d = xs[i].d;
+    //         let m = xs[i].m;
+    //         let qh: u32 = LittleEndian::read_u32(&xs[i].qh);
 
-            for j in 0..(QK5_1 / 2) {
-                let xh_0 = (((qh >> j) << 4) & 0x10) as u8;
-                let xh_1 = ((qh >> (j + 12)) & 0x10) as u8;
+    //         for j in 0..(QK5_1 / 2) {
+    //             let xh_0 = (((qh >> j) << 4) & 0x10) as u8;
+    //             let xh_1 = ((qh >> (j + 12)) & 0x10) as u8;
 
-                let x0 = (xs[i].qs[j] & 0x0F) | xh_0;
-                let x1 = (xs[i].qs[j] >> 4) | xh_1;
+    //             let x0 = (xs[i].qs[j] & 0x0F) | xh_0;
+    //             let x1 = (xs[i].qs[j] >> 4) | xh_1;
 
-                ys[i * QK5_1 + j] = (x0 as f32) * d + m;
-                ys[i * QK5_1 + j + QK5_1 / 2] = (x1 as f32) * d + m;
-            }
-        }
-        Ok(())
-    }
+    //             ys[i * QK5_1 + j] = (x0 as f32) * d + m;
+    //             ys[i * QK5_1 + j + QK5_1 / 2] = (x1 as f32) * d + m;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 impl GgmlType for BlockQ8_0 {
@@ -560,23 +572,23 @@ impl GgmlType for BlockQ8_0 {
     type VecDotType = BlockQ8_0;
 
     // // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1619
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        let k = ys.len();
-        if k % QK8_0 != 0 {
-            crate::bail!("dequantize_row_q8_0: {k} is not divisible by {QK8_0}");
-        }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     let k = ys.len();
+    //     if k % QK8_0 != 0 {
+    //         crate::bail!("dequantize_row_q8_0: {k} is not divisible by {QK8_0}");
+    //     }
 
-        let nb = k / QK8_0;
+    //     let nb = k / QK8_0;
 
-        for i in 0..nb {
-            let d = xs[i].d;
+    //     for i in 0..nb {
+    //         let d = xs[i].d;
 
-            for j in 0..QK8_0 {
-                ys[i * QK8_0 + j] = xs[i].qs[j] as f32 * d;
-            }
-        }
-        Ok(())
-    }
+    //         for j in 0..QK8_0 {
+    //             ys[i * QK8_0 + j] = xs[i].qs[j] as f32 * d;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
     // fn from_float(xs: &[f32], ys: &mut [Self]) -> Result<()> {
     //     // quantize_row_q8_0
@@ -686,9 +698,9 @@ impl GgmlType for BlockQ8_1 {
     //     Ok(())
     // }
 
-    fn to_float(_xs: &[Self], _ys: &mut [f32]) -> Result<()> {
-        unimplemented!("no support for vec-dot on Q8_1")
-    }
+    // fn to_float(_xs: &[Self], _ys: &mut [f32]) -> Result<()> {
+    //     unimplemented!("no support for vec-dot on Q8_1")
+    // }
 }
 
 impl GgmlType for BlockQ2K {
@@ -828,44 +840,44 @@ impl GgmlType for BlockQ2K {
     //     Ok(())
     // }
     // // https://github.com/ggerganov/llama.cpp/blob/8183159cf3def112f6d1fe94815fce70e1bffa12/k_quants.c#L354
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        for (block, y) in group_for_dequantization(xs, ys)? {
-            let d = block.d;
-            let min = block.dmin;
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     for (block, y) in group_for_dequantization(xs, ys)? {
+    //         let d = block.d;
+    //         let min = block.dmin;
 
-            let mut is = 0;
+    //         let mut is = 0;
 
-            for (y_block, qs) in y.chunks_exact_mut(128).zip(block.qs.chunks_exact(32)) {
-                // Step by 32 over q.
-                let mut shift = 0;
-                let mut y_block_index = 0;
-                for _j in 0..4 {
-                    let sc = block.scales[is];
-                    is += 1;
-                    let dl = d * (sc & 0xF) as f32;
-                    let ml = min * (sc >> 4) as f32;
-                    for q in &qs[..16] {
-                        let y = dl * ((q >> shift) & 3) as f32 - ml;
-                        y_block[y_block_index] = y;
-                        y_block_index += 1;
-                    }
+    //         for (y_block, qs) in y.chunks_exact_mut(128).zip(block.qs.chunks_exact(32)) {
+    //             // Step by 32 over q.
+    //             let mut shift = 0;
+    //             let mut y_block_index = 0;
+    //             for _j in 0..4 {
+    //                 let sc = block.scales[is];
+    //                 is += 1;
+    //                 let dl = d * (sc & 0xF) as f32;
+    //                 let ml = min * (sc >> 4) as f32;
+    //                 for q in &qs[..16] {
+    //                     let y = dl * ((q >> shift) & 3) as f32 - ml;
+    //                     y_block[y_block_index] = y;
+    //                     y_block_index += 1;
+    //                 }
 
-                    let sc = block.scales[is];
-                    is += 1;
-                    let dl = d * (sc & 0xF) as f32;
-                    let ml = min * (sc >> 4) as f32;
-                    for q in &qs[16..] {
-                        let y = dl * ((q >> shift) & 3) as f32 - ml;
-                        y_block[y_block_index] = y;
-                        y_block_index += 1;
-                    }
+    //                 let sc = block.scales[is];
+    //                 is += 1;
+    //                 let dl = d * (sc & 0xF) as f32;
+    //                 let ml = min * (sc >> 4) as f32;
+    //                 for q in &qs[16..] {
+    //                     let y = dl * ((q >> shift) & 3) as f32 - ml;
+    //                     y_block[y_block_index] = y;
+    //                     y_block_index += 1;
+    //                 }
 
-                    shift += 2;
-                }
-            }
-        }
-        Ok(())
-    }
+    //                 shift += 2;
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 impl GgmlType for BlockQ3K {
@@ -1090,61 +1102,61 @@ impl GgmlType for BlockQ3K {
     // }
 
     // // https://github.com/ggerganov/llama.cpp/blob/8183159cf3def112f6d1fe94815fce70e1bffa12/k_quants.c#L533
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        const KMASK1: u32 = 0x03030303;
-        const KMASK2: u32 = 0x0f0f0f0f;
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     const KMASK1: u32 = 0x03030303;
+    //     const KMASK2: u32 = 0x0f0f0f0f;
 
-        for (block, y) in group_for_dequantization(xs, ys)? {
-            //Reconstruct the scales
-            let mut aux = [0; 4];
-            LittleEndian::read_u32_into(&block.scales, &mut aux[0..3]);
+    //     for (block, y) in group_for_dequantization(xs, ys)? {
+    //         //Reconstruct the scales
+    //         let mut aux = [0; 4];
+    //         LittleEndian::read_u32_into(&block.scales, &mut aux[0..3]);
 
-            let tmp = aux[2];
-            aux[2] = ((aux[0] >> 4) & KMASK2) | (((tmp >> 4) & KMASK1) << 4);
-            aux[3] = ((aux[1] >> 4) & KMASK2) | (((tmp >> 6) & KMASK1) << 4);
-            aux[0] = (aux[0] & KMASK2) | (((tmp) & KMASK1) << 4);
-            aux[1] = (aux[1] & KMASK2) | (((tmp >> 2) & KMASK1) << 4);
+    //         let tmp = aux[2];
+    //         aux[2] = ((aux[0] >> 4) & KMASK2) | (((tmp >> 4) & KMASK1) << 4);
+    //         aux[3] = ((aux[1] >> 4) & KMASK2) | (((tmp >> 6) & KMASK1) << 4);
+    //         aux[0] = (aux[0] & KMASK2) | (((tmp) & KMASK1) << 4);
+    //         aux[1] = (aux[1] & KMASK2) | (((tmp >> 2) & KMASK1) << 4);
 
-            //Transfer the scales into an i8 array
-            let scales: &mut [i8] =
-                unsafe { std::slice::from_raw_parts_mut(aux.as_mut_ptr() as *mut i8, 16) };
+    //         //Transfer the scales into an i8 array
+    //         let scales: &mut [i8] =
+    //             unsafe { std::slice::from_raw_parts_mut(aux.as_mut_ptr() as *mut i8, 16) };
 
-            let d_all = block.d;
-            let mut m = 1;
-            let mut is = 0;
+    //         let d_all = block.d;
+    //         let mut m = 1;
+    //         let mut is = 0;
 
-            // Dequantize both 128 long blocks
-            // 32 qs values per 128 long block
-            // Each 16 elements get a scale
-            for (y, qs) in y.chunks_exact_mut(128).zip(block.qs.chunks_exact(32)) {
-                let mut shift = 0;
-                for shift_scoped_y in y.chunks_exact_mut(32) {
-                    for (scale_index, scale_scoped_y) in
-                        shift_scoped_y.chunks_exact_mut(16).enumerate()
-                    {
-                        let dl = d_all * (scales[is] as f32 - 32.0);
-                        for (i, inner_y) in scale_scoped_y.iter_mut().enumerate() {
-                            let new_y = dl
-                                * (((qs[i + 16 * scale_index] >> shift) & 3) as i8
-                                    - if (block.hmask[i + 16 * scale_index] & m) == 0 {
-                                        4
-                                    } else {
-                                        0
-                                    }) as f32;
-                            *inner_y = new_y;
-                        }
-                        // 16 block finished => advance scale index
-                        is += 1;
-                    }
-                    // 32 block finished => increase shift and m
-                    shift += 2;
-                    m <<= 1;
-                }
-            }
-        }
+    //         // Dequantize both 128 long blocks
+    //         // 32 qs values per 128 long block
+    //         // Each 16 elements get a scale
+    //         for (y, qs) in y.chunks_exact_mut(128).zip(block.qs.chunks_exact(32)) {
+    //             let mut shift = 0;
+    //             for shift_scoped_y in y.chunks_exact_mut(32) {
+    //                 for (scale_index, scale_scoped_y) in
+    //                     shift_scoped_y.chunks_exact_mut(16).enumerate()
+    //                 {
+    //                     let dl = d_all * (scales[is] as f32 - 32.0);
+    //                     for (i, inner_y) in scale_scoped_y.iter_mut().enumerate() {
+    //                         let new_y = dl
+    //                             * (((qs[i + 16 * scale_index] >> shift) & 3) as i8
+    //                                 - if (block.hmask[i + 16 * scale_index] & m) == 0 {
+    //                                     4
+    //                                 } else {
+    //                                     0
+    //                                 }) as f32;
+    //                         *inner_y = new_y;
+    //                     }
+    //                     // 16 block finished => advance scale index
+    //                     is += 1;
+    //                 }
+    //                 // 32 block finished => increase shift and m
+    //                 shift += 2;
+    //                 m <<= 1;
+    //             }
+    //         }
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
 
 impl GgmlType for BlockQ4K {
@@ -1309,35 +1321,35 @@ impl GgmlType for BlockQ4K {
     //     Ok(())
     // }
     // // https://github.com/ggerganov/llama.cpp/blob/8183159cf3def112f6d1fe94815fce70e1bffa12/k_quants.c#L735
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        for (block, y) in group_for_dequantization(xs, ys)? {
-            let d = block.d;
-            let min = block.dmin;
-            let q = &block.qs;
-            let mut is = 0;
-            let mut ys_index = 0;
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     for (block, y) in group_for_dequantization(xs, ys)? {
+    //         let d = block.d;
+    //         let min = block.dmin;
+    //         let q = &block.qs;
+    //         let mut is = 0;
+    //         let mut ys_index = 0;
 
-            for j in (0..QK_K).step_by(64) {
-                let q = &q[j / 2..j / 2 + 32];
-                let (sc, m) = get_scale_min_k4(is, &block.scales);
-                let d1 = d * sc as f32;
-                let m1 = min * m as f32;
-                let (sc, m) = get_scale_min_k4(is + 1, &block.scales);
-                let d2 = d * sc as f32;
-                let m2 = min * m as f32;
-                for q in q {
-                    y[ys_index] = d1 * (q & 0xF) as f32 - m1;
-                    ys_index += 1;
-                }
-                for q in q {
-                    y[ys_index] = d2 * (q >> 4) as f32 - m2;
-                    ys_index += 1;
-                }
-                is += 2;
-            }
-        }
-        Ok(())
-    }
+    //         for j in (0..QK_K).step_by(64) {
+    //             let q = &q[j / 2..j / 2 + 32];
+    //             let (sc, m) = get_scale_min_k4(is, &block.scales);
+    //             let d1 = d * sc as f32;
+    //             let m1 = min * m as f32;
+    //             let (sc, m) = get_scale_min_k4(is + 1, &block.scales);
+    //             let d2 = d * sc as f32;
+    //             let m2 = min * m as f32;
+    //             for q in q {
+    //                 y[ys_index] = d1 * (q & 0xF) as f32 - m1;
+    //                 ys_index += 1;
+    //             }
+    //             for q in q {
+    //                 y[ys_index] = d2 * (q >> 4) as f32 - m2;
+    //                 ys_index += 1;
+    //             }
+    //             is += 2;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 // https://github.com/ggerganov/llama.cpp/blob/8183159cf3def112f6d1fe94815fce70e1bffa12/k_quants.c#L928
@@ -1525,42 +1537,42 @@ impl GgmlType for BlockQ5K {
     // }
 
     // // https://github.com/ggerganov/llama.cpp/blob/8183159cf3def112f6d1fe94815fce70e1bffa12/k_quants.c#L928
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        for (block, y) in group_for_dequantization(xs, ys)? {
-            let d = block.d;
-            let min = block.dmin;
-            let ql = &block.qs;
-            let qh = &block.qh;
-            let mut is = 0;
-            let mut u1 = 1;
-            let mut u2 = 2;
-            let mut ys_index = 0;
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     for (block, y) in group_for_dequantization(xs, ys)? {
+    //         let d = block.d;
+    //         let min = block.dmin;
+    //         let ql = &block.qs;
+    //         let qh = &block.qh;
+    //         let mut is = 0;
+    //         let mut u1 = 1;
+    //         let mut u2 = 2;
+    //         let mut ys_index = 0;
 
-            for j in (0..QK_K).step_by(64) {
-                let ql = &ql[j / 2..j / 2 + 32];
-                let (sc, m) = get_scale_min_k4(is, &block.scales);
-                let d1 = d * sc as f32;
-                let m1 = min * m as f32;
-                let (sc, m) = get_scale_min_k4(is + 1, &block.scales);
-                let d2 = d * sc as f32;
-                let m2 = min * m as f32;
-                for (ql, qh) in ql.iter().zip(qh) {
-                    let to_add = if qh & u1 != 0 { 16f32 } else { 0f32 };
-                    y[ys_index] = d1 * ((ql & 0xF) as f32 + to_add) - m1;
-                    ys_index += 1;
-                }
-                for (ql, qh) in ql.iter().zip(qh) {
-                    let to_add = if qh & u2 != 0 { 16f32 } else { 0f32 };
-                    y[ys_index] = d2 * ((ql >> 4) as f32 + to_add) - m2;
-                    ys_index += 1;
-                }
-                is += 2;
-                u1 <<= 2;
-                u2 <<= 2;
-            }
-        }
-        Ok(())
-    }
+    //         for j in (0..QK_K).step_by(64) {
+    //             let ql = &ql[j / 2..j / 2 + 32];
+    //             let (sc, m) = get_scale_min_k4(is, &block.scales);
+    //             let d1 = d * sc as f32;
+    //             let m1 = min * m as f32;
+    //             let (sc, m) = get_scale_min_k4(is + 1, &block.scales);
+    //             let d2 = d * sc as f32;
+    //             let m2 = min * m as f32;
+    //             for (ql, qh) in ql.iter().zip(qh) {
+    //                 let to_add = if qh & u1 != 0 { 16f32 } else { 0f32 };
+    //                 y[ys_index] = d1 * ((ql & 0xF) as f32 + to_add) - m1;
+    //                 ys_index += 1;
+    //             }
+    //             for (ql, qh) in ql.iter().zip(qh) {
+    //                 let to_add = if qh & u2 != 0 { 16f32 } else { 0f32 };
+    //                 y[ys_index] = d2 * ((ql >> 4) as f32 + to_add) - m2;
+    //                 ys_index += 1;
+    //             }
+    //             is += 2;
+    //             u1 <<= 2;
+    //             u2 <<= 2;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 impl GgmlType for BlockQ6K {
@@ -1714,37 +1726,37 @@ impl GgmlType for BlockQ6K {
     // }
 
     // // https://github.com/ggerganov/llama.cpp/blob/8183159cf3def112f6d1fe94815fce70e1bffa12/k_quants.c#L1067
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        let k = ys.len();
-        if k % QK_K != 0 {
-            crate::bail!("dequantize_row_q6k: {k} is not divisible by {QK_K}")
-        }
-        for (idx_x, x) in xs.iter().enumerate() {
-            let d = x.d;
-            let ql = &x.ql;
-            let qh = &x.qh;
-            let sc = &x.scales;
-            for n in (0..QK_K).step_by(128) {
-                let idx = n / 128;
-                let ys = &mut ys[idx_x * QK_K + n..];
-                let sc = &sc[8 * idx..];
-                let ql = &ql[64 * idx..];
-                let qh = &qh[32 * idx..];
-                for l in 0..32 {
-                    let is = l / 16;
-                    let q1 = ((ql[l] & 0xF) | ((qh[l] & 3) << 4)) as i8 - 32;
-                    let q2 = ((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) as i8 - 32;
-                    let q3 = ((ql[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) as i8 - 32;
-                    let q4 = ((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) as i8 - 32;
-                    ys[l] = d * sc[is] as f32 * q1 as f32;
-                    ys[l + 32] = d * sc[is + 2] as f32 * q2 as f32;
-                    ys[l + 64] = d * sc[is + 4] as f32 * q3 as f32;
-                    ys[l + 96] = d * sc[is + 6] as f32 * q4 as f32;
-                }
-            }
-        }
-        Ok(())
-    }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     let k = ys.len();
+    //     if k % QK_K != 0 {
+    //         crate::bail!("dequantize_row_q6k: {k} is not divisible by {QK_K}")
+    //     }
+    //     for (idx_x, x) in xs.iter().enumerate() {
+    //         let d = x.d;
+    //         let ql = &x.ql;
+    //         let qh = &x.qh;
+    //         let sc = &x.scales;
+    //         for n in (0..QK_K).step_by(128) {
+    //             let idx = n / 128;
+    //             let ys = &mut ys[idx_x * QK_K + n..];
+    //             let sc = &sc[8 * idx..];
+    //             let ql = &ql[64 * idx..];
+    //             let qh = &qh[32 * idx..];
+    //             for l in 0..32 {
+    //                 let is = l / 16;
+    //                 let q1 = ((ql[l] & 0xF) | ((qh[l] & 3) << 4)) as i8 - 32;
+    //                 let q2 = ((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) as i8 - 32;
+    //                 let q3 = ((ql[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) as i8 - 32;
+    //                 let q4 = ((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) as i8 - 32;
+    //                 ys[l] = d * sc[is] as f32 * q1 as f32;
+    //                 ys[l + 32] = d * sc[is + 2] as f32 * q2 as f32;
+    //                 ys[l + 64] = d * sc[is + 4] as f32 * q3 as f32;
+    //                 ys[l + 96] = d * sc[is + 6] as f32 * q4 as f32;
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 impl GgmlType for BlockQ8K {
@@ -1826,18 +1838,18 @@ impl GgmlType for BlockQ8K {
     //     Ok(())
     // }
 
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        let k = ys.len();
-        if k % QK_K != 0 {
-            crate::bail!("dequantize_row_q8k: {k} is not divisible by {QK_K}")
-        }
-        for (i, x) in xs.iter().enumerate() {
-            for (j, &q) in x.qs.iter().enumerate() {
-                ys[i * QK_K + j] = x.d * q as f32
-            }
-        }
-        Ok(())
-    }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     let k = ys.len();
+    //     if k % QK_K != 0 {
+    //         crate::bail!("dequantize_row_q8k: {k} is not divisible by {QK_K}")
+    //     }
+    //     for (i, x) in xs.iter().enumerate() {
+    //         for (j, &q) in x.qs.iter().enumerate() {
+    //             ys[i * QK_K + j] = x.d * q as f32
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 // https://github.com/ggerganov/llama.cpp/blob/b5ffb2849d23afe73647f68eec7b68187af09be6/ggml.c#L10605
@@ -1914,13 +1926,13 @@ impl GgmlType for f32 {
     //     Ok(())
     // }
 
-    fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
-        if xs.len() != ys.len() {
-            crate::bail!("size mismatch {} {}", xs.len(), ys.len());
-        }
-        ys.copy_from_slice(xs);
-        Ok(())
-    }
+    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
+    //     if xs.len() != ys.len() {
+    //         crate::bail!("size mismatch {} {}", xs.len(), ys.len());
+    //     }
+    //     ys.copy_from_slice(xs);
+    //     Ok(())
+    // }
 }
 
 // impl GgmlType for f16 {
