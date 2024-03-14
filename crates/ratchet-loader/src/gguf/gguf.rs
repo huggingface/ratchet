@@ -111,64 +111,59 @@ impl TensorInfo {
 
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
 
-        let mut ds = vec![0f32; tensor_blocks];
-        let mut dmins = vec![0f32; tensor_blocks];
-        let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
-        let mut scales_cursor = Cursor::new(&mut scales);
-
-        let mut qs = vec![0u8; tensor_blocks * QK_K / 2];
-        let mut qs_cursor = Cursor::new(&mut qs);
-
-        for _idx in 0..tensor_blocks {
-            ds[_idx] = reader.read_f16()?.to_f32();
-            dmins[_idx] = reader.read_f16()?.to_f32();
-
-            reader.read_u8s_into(&mut scales_cursor, K_SCALE_SIZE)?;
-            reader.read_u8s_into(&mut qs_cursor, QK_K / 2)?;
-        }
-
-        let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
-        let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
-
-        let scales_tensor = Tensor::from_bytes(
-            scales.as_ref(),
-            ratchet::DType::WQ8,
-            shape![tensor_blocks, K_SCALE_SIZE],
-            device.clone(),
-        )?;
-
-        let qs_tensor = Tensor::from_bytes(
-            qs.as_ref(),
-            ratchet::DType::Q8,
-            shape![tensor_blocks, QK_K / 2],
-            device.clone(),
-        )?;
-        // println!("ds_tensor={:?}", ds_tensor);
-        // println!("dmins_tensor={:?}", dmins_tensor);
-        // println!("scales_tensor={:?}", scales_tensor);
-        // println!("qs_tensor={:?}", qs_tensor);
-
-        let ds2 = ds_tensor.to(&Device::CPU)?.to_vec::<f32>()?;
-
-        println!("{:?}", &ds2);
-        // assert_eq!(ds, ds2);
         // [TODO] Implement
         match self.ggml_dtype {
-            GgmlDType::Q4K => {
-                println!("Got Q4K type {}", size_in_bytes);
-
-                let block_q4k: BlockQ4K = BlockQ4K {
-                    d: ds_tensor,
-                    dmin: dmins_tensor,
-                    scales: scales_tensor,
-                    qs: qs_tensor,
-                };
-                let block: Block = Block::BlockQ4K(block_q4k);
-                Ok(block)
-            }
+            GgmlDType::Q4K => read_q4k(tensor_blocks, reader, device),
             _ => anyhow::bail!("Not yet implemented"),
         }
     }
+}
+
+fn read_q4k<R: std::io::Seek + std::io::Read>(
+    tensor_blocks: usize,
+    reader: &mut R,
+    device: &Device,
+) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    let mut ds = vec![0f32; tensor_blocks];
+    let mut dmins = vec![0f32; tensor_blocks];
+    let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
+    let mut scales_cursor = Cursor::new(&mut scales);
+
+    let mut qs = vec![0u8; tensor_blocks * QK_K / 2];
+    let mut qs_cursor = Cursor::new(&mut qs);
+
+    for _idx in 0..tensor_blocks {
+        ds[_idx] = reader.read_f16()?.to_f32();
+        dmins[_idx] = reader.read_f16()?.to_f32();
+
+        reader.read_u8s_into(&mut scales_cursor, K_SCALE_SIZE)?;
+        reader.read_u8s_into(&mut qs_cursor, QK_K / 2)?;
+    }
+
+    let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
+    let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
+
+    let scales_tensor = Tensor::from_bytes(
+        scales.as_ref(),
+        ratchet::DType::WQ8,
+        shape![tensor_blocks, K_SCALE_SIZE],
+        device.clone(),
+    )?;
+
+    let qs_tensor = Tensor::from_bytes(
+        qs.as_ref(),
+        ratchet::DType::WQ8,
+        shape![tensor_blocks, QK_K / 2],
+        device.clone(),
+    )?;
+    let block_q4k: BlockQ4K = BlockQ4K {
+        d: ds_tensor,
+        dmin: dmins_tensor,
+        scales: scales_tensor,
+        qs: qs_tensor,
+    };
+    let block: Block = Block::BlockQ4K(block_q4k);
+    Ok(block)
 }
 
 #[derive(Debug)]
