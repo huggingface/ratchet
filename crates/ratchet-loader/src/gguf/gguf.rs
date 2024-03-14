@@ -132,7 +132,7 @@ impl TensorInfo {
 
         let scales_tensor = Tensor::from_bytes(
             scales.as_ref(),
-            ratchet::DType::Q8,
+            ratchet::DType::WQ8,
             shape![tensor_blocks, K_SCALE_SIZE],
             device.clone(),
         )?;

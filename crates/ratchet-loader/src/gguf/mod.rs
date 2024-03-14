@@ -16,12 +16,12 @@ mod tests {
         ));
 
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(Q4K_GGUF.to_vec()));
-
+        let device = Device::request_device(DeviceRequest::GPU)?;
         let result = gguf::Content::read(&mut reader)?;
 
         // println!("{:?}", result);
 
-        let q4k_block = result.tensor(&mut reader, "blk.0.attn_k.weight", &Device::CPU)?;
+        let q4k_block = result.tensor(&mut reader, "blk.0.attn_k.weight", &device)?;
         // let model_data = file.gguf().await?;
 
         println!("{:?}", q4k_block);
