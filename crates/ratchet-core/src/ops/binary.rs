@@ -147,9 +147,8 @@ impl MetaOperation for Binary {
 
 #[cfg(test)]
 mod tests {
-    use test_strategy::{proptest, Arbitrary};
-
     use crate::{test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Shape, Tensor};
+    use test_strategy::{proptest, Arbitrary};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -158,6 +157,7 @@ mod tests {
     #[derive(Arbitrary, Debug)]
     struct BinaryProblem {
         op: BinaryOp,
+        #[any(vec![1..=4, 1..=4, 1..=256, 1..=256])]
         shape: Shape,
     }
 
