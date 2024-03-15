@@ -30,12 +30,10 @@ impl Generate for BinaryOp {
             acc.push(op.mapping());
             acc
         });
-
+        let path = renderer.templates_path.join("binary.wgsl");
+        renderer.tera.add_template_file(path, Some("binary"))?;
         for (op_name, op) in &pairs {
             for ke in KernelElement::iter() {
-                let path = renderer.templates_path.join("binary.wgsl");
-                renderer.tera.add_template_file(path, Some("binary"))?;
-
                 let mut context = Context::new();
                 context.insert("op", op);
                 context.insert("elem", &ke.as_wgsl(WgslDType::F32));

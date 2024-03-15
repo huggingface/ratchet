@@ -14,12 +14,6 @@ pub struct IndexSelect {
     dim: usize,
 }
 
-impl IndexSelect {
-    pub fn name(&self) -> &'static str {
-        "index_select"
-    }
-}
-
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct IndexSelectMeta {
     dst_numel: u32,
@@ -63,12 +57,13 @@ impl MetaOperation for IndexSelect {
         rvec![&self.input, &self.indices]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        match self.input.dt() {
+    fn kernel_key(&self) -> String {
+        let key = match self.input.dt() {
             DType::F32 => "f32_index_select",
             DType::WQ8 => "wq8_index_select",
             _ => unimplemented!(),
-        }
+        };
+        key.to_string()
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

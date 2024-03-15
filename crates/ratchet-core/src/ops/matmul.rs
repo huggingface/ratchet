@@ -1,4 +1,7 @@
-use std::cmp::Ordering;
+use std::{
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+};
 
 use derive_new::new;
 use encase::ShaderType;
@@ -12,7 +15,7 @@ use crate::{
 // Defines a matrix multiplication operation.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) struct MatmulSpec {
+pub struct MatmulSpec {
     a_dt: DType,
     b_dt: DType,
     a_shape: Shape,
@@ -26,6 +29,10 @@ pub(crate) struct MatmulSpec {
 }
 
 impl MatmulSpec {
+    //TODO: parameterize these
+    pub const TILE_DIM: usize = 32;
+    pub const ROW_PER_THREAD: usize = 4;
+
     pub fn new(A: &Tensor, B: &Tensor, C: &Tensor, trans_b: bool) -> Self {
         let mut a_shape = A.shape().clone();
         let mut b_shape = B.shape().clone();
@@ -162,6 +169,13 @@ impl MatmulSpec {
         (a_shape, b_shape, c_shape)
     }
 
+    pub fn tile_fit(&self) -> (bool, bool, bool) {
+        let a_fit = self.m() % Self::TILE_DIM == 0;
+        let b_fit = self.n() % Self::TILE_DIM == 0;
+        let out_fit = self.k() % Self::TILE_DIM == 0;
+        (a_fit, b_fit, out_fit)
+    }
+
     //If the stack is 1, we don't want to offset the data
     fn batch_offset(stack: u32, dim1: u32, dim2: u32, kernel_elem: &KernelElement) -> u32 {
         if stack == 1 {
@@ -177,17 +191,10 @@ pub struct Matmul {
     lhs: Tensor,
     rhs: Tensor,
     trans_b: bool,
+    spec: RefCell<Option<MatmulSpec>>,
 }
 
 impl Matmul {
-    pub fn name(&self) -> &'static str {
-        match (self.lhs.dt(), self.rhs.dt()) {
-            (DType::F32, DType::F32) => "sgemm",
-            (DType::F32, DType::WQ8) => "qgemm",
-            _ => panic!("Unsupported dtypes"),
-        }
-    }
-
     pub fn compute_c_shape(a: &Tensor, b: &Tensor, trans_b: bool) -> anyhow::Result<Shape> {
         let (mut ashape, mut bshape) = (a.shape().clone(), b.shape().clone());
 
@@ -235,6 +242,11 @@ impl Matmul {
         }
 
         Ok(c_shape_final)
+    }
+
+    pub fn compute_spec(&self, dst: &Tensor) {
+        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_b);
+        self.spec.replace(Some(spec));
     }
 }
 
@@ -305,32 +317,63 @@ impl OpGuards for Matmul {
 impl MetaOperation for Matmul {
     type Meta = MatmulMeta;
 
-    fn kernel_name(&self) -> &'static str {
-        match (self.lhs.dt(), self.rhs.dt(), self.trans_b) {
-            (DType::F32, DType::F32, false) => "sgemm",
-            (DType::F32, DType::WQ8, false) => "qgemm",
-            (DType::F32, DType::F32, true) => "sgemm_bt",
-            (DType::F32, DType::WQ8, true) => "qgemm_bt",
-            _ => panic!(
-                "Unsupported matmul: {:?}, {:?}, transb:{:?}",
-                self.lhs.dt(),
-                self.rhs.dt(),
-                self.trans_b
-            ),
-        }
+    fn update(&self, dst: &Tensor) -> Result<(), OperationError> {
+        self.compute_spec(dst);
+        Ok(())
+    }
+
+    fn kernel_key(&self) -> String {
+        let ref_spec = self.spec.borrow();
+        let spec = ref_spec.as_ref().unwrap();
+        let (a_fit, b_fit, out_fit) = spec.tile_fit();
+
+        let selected = if self.trans_b {
+            let old = match (self.lhs.dt(), self.rhs.dt(), self.trans_b) {
+                (DType::F32, DType::F32, false) => "sgemm",
+                (DType::F32, DType::WQ8, false) => "qgemm",
+                (DType::F32, DType::F32, true) => "sgemm_bt",
+                (DType::F32, DType::WQ8, true) => "qgemm_bt",
+                _ => panic!(
+                    "Unsupported matmul: {:?}, {:?}, transb:{:?}",
+                    self.lhs.dt(),
+                    self.rhs.dt(),
+                    self.trans_b
+                ),
+            };
+            old.to_string()
+        } else {
+            let key_base = match (self.lhs.dt(), self.rhs.dt()) {
+                (DType::F32, DType::F32) => "sgemm",
+                (DType::F32, DType::WQ8) => "qgemm",
+                _ => panic!(
+                    "Unsupported matmul: {:?}, {:?}",
+                    self.lhs.dt(),
+                    self.rhs.dt(),
+                ),
+            };
+            format!(
+                "{}_A_FIT{}_B_FIT{}_OUT_FIT{}",
+                key_base, a_fit, b_fit, out_fit
+            )
+        };
+        println!("SPEC: {:?}", spec);
+        println!("SELECTED MATMUL: {}", selected);
+        selected
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.lhs, &self.rhs]
     }
 
-    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
-        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_b);
+    fn kernel_element(&self, _: &Tensor) -> KernelElement {
+        let ref_spec = self.spec.borrow();
+        let spec = ref_spec.as_ref().unwrap();
         spec.select_kernel_element()
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let spec = MatmulSpec::new(&self.lhs, &self.rhs, &self.lhs, self.trans_b);
+    fn calculate_dispatch(&self, _: &Tensor) -> Result<WorkgroupCount, OperationError> {
+        let ref_spec = self.spec.borrow();
+        let spec = ref_spec.as_ref().unwrap();
         let kernel_element = spec.select_kernel_element();
 
         let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
@@ -352,19 +395,16 @@ impl MetaOperation for Matmul {
         Ok(layout)
     }
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
-        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_b);
+    fn metadata(&self, _: &Tensor, ke: &KernelElement) -> Result<Self::Meta, OperationError> {
+        let ref_spec = self.spec.borrow();
+        let spec = ref_spec.as_ref().unwrap();
         let M = spec.m() as u32;
         let N = spec.n() as u32;
         let K = spec.k() as u32;
 
-        let a_offset = MatmulSpec::batch_offset(spec.a_stack() as _, M, K, kernel_element);
-        let b_offset = MatmulSpec::batch_offset(spec.b_stack() as _, K, N, kernel_element);
-        let c_offset = MatmulSpec::batch_offset(spec.c_stack() as _, M, N, kernel_element);
+        let a_offset = MatmulSpec::batch_offset(spec.a_stack() as _, M, K, ke);
+        let b_offset = MatmulSpec::batch_offset(spec.b_stack() as _, K, N, ke);
+        let c_offset = MatmulSpec::batch_offset(spec.c_stack() as _, M, N, ke);
 
         Ok(MatmulMeta::new(M, N, K, a_offset, b_offset, c_offset))
     }
@@ -382,8 +422,8 @@ mod tests {
 
     fn matmul_harness() -> anyhow::Result<(Tensor, Tensor)> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![256, 256], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
         Ok((a, b))
     }
 

@@ -23,16 +23,6 @@ pub enum Reindex {
     Broadcast(Broadcast),
 }
 
-impl Reindex {
-    pub fn name(&self) -> &'static str {
-        match self {
-            Reindex::Permute(_) => "permute",
-            Reindex::Slice(_) => "slice",
-            Reindex::Broadcast(_) => "broadcast",
-        }
-    }
-}
-
 #[derive(Debug, ShaderType)]
 pub struct ReindexMeta {
     src_shape: glam::UVec4,
@@ -83,12 +73,13 @@ impl MetaOperation for Reindex {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn kernel_name(&self) -> &'static str {
-        match self {
+    fn kernel_key(&self) -> String {
+        let key = match self {
             Reindex::Permute(_) => "permute",
             Reindex::Slice(_) => "slice",
             Reindex::Broadcast(_) => "broadcast",
-        }
+        };
+        key.to_string()
     }
 
     fn metadata(

@@ -12,7 +12,7 @@ slotmap::new_key_type! { pub struct ComputePipelineHandle; }
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ComputePipelineDescriptor {
     pub pipeline_layout: PipelineLayoutHandle,
-    pub kernel_name: &'static str, //string uniquely identifying the kernel
+    pub kernel_name: String,
     pub kernel_element: KernelElement,
     //aux_ctx: Option<RVec<(&'static str, u32)>>, Used for sizing SMEM
 }

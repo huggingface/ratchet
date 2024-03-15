@@ -1,10 +1,12 @@
 mod binary;
+mod gemm;
 mod norm;
 mod reindex;
 mod unary;
 
 use anyhow::Context as anyhowCtx;
 use binary::BinaryOp;
+use gemm::Gemm;
 use norm::NormOp;
 use reindex::ReindexOp;
 use unary::UnaryOp;
@@ -93,6 +95,7 @@ impl KernelRenderer {
         BinaryOp::generate(self)?;
         ReindexOp::generate(self)?;
         NormOp::generate(self)?;
+        Gemm::generate(self)?;
         Ok(())
     }
 }

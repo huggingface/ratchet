@@ -14,12 +14,6 @@ pub struct IndexWrite {
     write_start: RVec<usize>,
 }
 
-impl IndexWrite {
-    pub fn name(&self) -> &'static str {
-        "index_write"
-    }
-}
-
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct IndexWriteMeta {
     dst_strides: glam::UVec4,
@@ -52,8 +46,8 @@ impl MetaOperation for IndexWrite {
         rvec![&self.dst, &self.src]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        self.name()
+    fn kernel_key(&self) -> String {
+        "index_write".to_string()
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

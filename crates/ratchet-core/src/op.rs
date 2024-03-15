@@ -25,19 +25,19 @@ pub enum LazyOp {
 }
 
 impl LazyOp {
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> String {
         match self {
-            LazyOp::Binary(b) => b.name(),
-            LazyOp::Matmul(m) => m.name(),
-            LazyOp::Softmax(s) => s.name(),
-            LazyOp::Unary(u) => u.name(),
-            LazyOp::Reindex(r) => r.name(),
-            LazyOp::Norm(n) => n.kernel_name(),
-            LazyOp::Conv(c) => c.name(),
-            LazyOp::Select(s) => s.name(),
-            LazyOp::IndexWrite(iw) => iw.name(),
-            LazyOp::View(_) => "View",
-            LazyOp::Const => "Const",
+            LazyOp::Binary(b) => b.kernel_key(),
+            LazyOp::Matmul(m) => m.kernel_key(),
+            LazyOp::Softmax(s) => s.kernel_key(),
+            LazyOp::Unary(u) => u.kernel_key(),
+            LazyOp::Reindex(r) => r.kernel_key(),
+            LazyOp::Norm(n) => n.kernel_key(),
+            LazyOp::Conv(c) => c.kernel_key(),
+            LazyOp::Select(s) => s.kernel_key(),
+            LazyOp::IndexWrite(iw) => iw.kernel_key(),
+            LazyOp::View(_) => "View".to_string(),
+            LazyOp::Const => "Const".to_string(),
         }
     }
 
@@ -130,7 +130,7 @@ pub trait MetaOperation: Debug + 'static {
     type Meta: OpMetadata;
 
     /// Return the file stem of the kernel source file.
-    fn kernel_name(&self) -> &'static str;
+    fn kernel_key(&self) -> String;
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -162,6 +162,12 @@ pub trait MetaOperation: Debug + 'static {
         kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError>;
 
+    /// # Update
+    /// Some operations may require computing additional info once the dst is resolved.
+    fn update(&self, _dst: &Tensor) -> Result<(), OperationError> {
+        Ok(())
+    }
+
     fn compile(
         &self,
         dst: &Tensor,
@@ -169,6 +175,7 @@ pub trait MetaOperation: Debug + 'static {
         device: &WgpuDevice,
         can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
+        self.update(dst)?;
         let kernel_element = self.kernel_element(dst);
         let meta = self.metadata(dst, &kernel_element)?;
         let offset = uniform.write(&meta)?;
@@ -183,9 +190,10 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
+        let kernel_key = self.kernel_key();
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
-            kernel_name: self.kernel_name(),
+            kernel_name: kernel_key.clone(),
             kernel_element,
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
@@ -197,7 +205,7 @@ pub trait MetaOperation: Debug + 'static {
             rvec![storage_layout],
             device,
             can_inplace,
-            self.kernel_name(),
+            &kernel_key,
         )?;
 
         Ok(CompiledOp::new(
@@ -205,7 +213,7 @@ pub trait MetaOperation: Debug + 'static {
             workgroup_count,
             storage_bind_groups,
             offset as _,
-            self.kernel_name().to_string(),
+            self.kernel_key().to_string(),
         ))
     }
 }

@@ -6,6 +6,7 @@ use crate::{
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
@@ -318,7 +319,7 @@ impl Tensor {
     //TODO: horrific interface
     pub fn matmul(self, other: Tensor, trans_b: bool) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let matmul = Matmul::new(self, other, trans_b);
+        let matmul = Matmul::new(self, other, trans_b, RefCell::new(None));
         let new_view = matmul.compute_view()?;
         Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
     }
