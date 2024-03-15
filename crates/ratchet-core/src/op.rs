@@ -1,13 +1,11 @@
-use std::fmt::Debug;
-
-use encase::internal::WriteInto;
-use encase::ShaderType;
-
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-    PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
+    PoolError, WgpuDevice, WorkgroupCount,
 };
 use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
+use encase::internal::WriteInto;
+use encase::ShaderType;
+use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -119,15 +117,7 @@ pub enum OperationError {
 
 ///A trait for types that are written into uniform buffers, these
 ///hold the metadata for a shader.
-pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
-    const __IS_VALID_META: () = {
-        assert!(std::mem::size_of::<Self>() <= UNIFORM_ALIGN);
-    };
-
-    fn n_bytes(&self) -> usize {
-        std::mem::size_of::<Self>()
-    }
-}
+pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
 
 /// # MetaOperation
 ///
