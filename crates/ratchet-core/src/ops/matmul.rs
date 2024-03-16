@@ -358,10 +358,9 @@ impl MetaOperation for Matmul {
     fn calculate_dispatch(&self, _: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
-        let kernel_element = spec.select_kernel_element();
 
-        let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
-        let group_y = WorkgroupCount::div_ceil(spec.n(), 8 * kernel_element.as_size()) as _;
+        let group_x = WorkgroupCount::div_ceil(spec.m(), 32) as _;
+        let group_y = WorkgroupCount::div_ceil(spec.n(), 32) as _;
 
         let dispatch = wgc![group_x, group_y, spec.stacks() as _];
         println!("DISPATCH: {:?}", dispatch);
@@ -479,9 +478,9 @@ def matmul(a, b):
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let prob = SGEMMProblem {
             B: 1,
-            M: 253,
-            K: 253,
-            N: 253,
+            M: 254,
+            K: 254,
+            N: 254,
         };
         run_matmul_trial(&device, prob).unwrap();
     }
