@@ -175,15 +175,6 @@ impl MatmulSpec {
         let out_fit = self.k() % Self::TILE_DIM == 0;
         (a_fit, b_fit, out_fit)
     }
-
-    //If the stack is 1, we don't want to offset the data
-    fn batch_offset(stack: u32, dim1: u32, dim2: u32, kernel_elem: &KernelElement) -> u32 {
-        if stack == 1 {
-            0
-        } else {
-            (dim1 * dim2) / kernel_elem.as_size() as u32
-        }
-    }
 }
 
 #[derive(new, Debug, Clone)]
@@ -250,6 +241,7 @@ impl Matmul {
     }
 }
 
+/*
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType)]
 pub struct MatmulMeta {
@@ -266,24 +258,16 @@ pub struct MatmulMeta {
     B_OFFSET: u32,
     C_OFFSET: u32,
 }
+*/
 
-impl MatmulMeta {
-    pub fn new(M: u32, N: u32, K: u32, A_OFFSET: u32, B_OFFSET: u32, C_OFFSET: u32) -> Self {
-        Self {
-            M,
-            N,
-            K,
-            MD2: M / 2,
-            ND2: N / 2,
-            KD2: K / 2,
-            MD4: M / 4,
-            ND4: N / 4,
-            KD4: K / 4,
-            A_OFFSET,
-            B_OFFSET,
-            C_OFFSET,
-        }
-    }
+#[allow(clippy::too_many_arguments)]
+#[derive(Debug, Clone, ShaderType)]
+pub struct MatmulMeta {
+    aShape: glam::IVec3,
+    bShape: glam::IVec3,
+    outShape: glam::IVec3,
+    outShapeStrides: glam::IVec3,
+    dimInner: u32,
 }
 
 impl OpMetadata for MatmulMeta {}
@@ -379,7 +363,10 @@ impl MetaOperation for Matmul {
         let group_x = WorkgroupCount::div_ceil(spec.m(), 8) as _;
         let group_y = WorkgroupCount::div_ceil(spec.n(), 8 * kernel_element.as_size()) as _;
 
-        Ok(wgc![group_x, group_y, spec.stacks() as _])
+        let dispatch = wgc![group_x, group_y, spec.stacks() as _];
+        println!("DISPATCH: {:?}", dispatch);
+
+        Ok(dispatch)
     }
 
     fn storage_bind_group_layout(
@@ -398,15 +385,28 @@ impl MetaOperation for Matmul {
     fn metadata(&self, _: &Tensor, ke: &KernelElement) -> Result<Self::Meta, OperationError> {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
-        let M = spec.m() as u32;
-        let N = spec.n() as u32;
-        let K = spec.k() as u32;
 
-        let a_offset = MatmulSpec::batch_offset(spec.a_stack() as _, M, K, ke);
-        let b_offset = MatmulSpec::batch_offset(spec.b_stack() as _, K, N, ke);
-        let c_offset = MatmulSpec::batch_offset(spec.c_stack() as _, M, N, ke);
+        let mut out_shape = spec.c_shape.clone();
+        out_shape.insert(0, spec.stacks());
 
-        Ok(MatmulMeta::new(M, N, K, a_offset, b_offset, c_offset))
+        let outShapeStrides = Strides::from(&out_shape).to_vec();
+        let outShapeStrides = glam::IVec3::new(
+            outShapeStrides[0] as _,
+            outShapeStrides[1] as _,
+            outShapeStrides[2] as _,
+        );
+
+        let meta = MatmulMeta {
+            aShape: glam::IVec3::new(spec.a_stack() as _, spec.m() as _, spec.k() as _),
+            bShape: glam::IVec3::new(spec.b_stack() as _, spec.k() as _, spec.n() as _),
+            outShape: glam::IVec3::new(spec.c_stack() as _, spec.m() as _, spec.n() as _),
+            outShapeStrides: outShapeStrides.into(),
+            dimInner: spec.k() as _,
+        };
+
+        println!("METADATA: {:?}", meta);
+
+        Ok(meta)
     }
 }
 
@@ -467,8 +467,23 @@ def matmul(a, b):
         let c_gpu = a_gpu.matmul(b_gpu, false)?.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
+        println!("RATCHET SGEMM\n{:?}\n", d_gpu);
+        println!("PYTORCH FP32:\n{:?}", ground);
         ground.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
+    }
+
+    #[test]
+    fn debug_sgemm() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let prob = SGEMMProblem {
+            B: 1,
+            M: 253,
+            K: 253,
+            N: 253,
+        };
+        run_matmul_trial(&device, prob).unwrap();
     }
 
     #[test]

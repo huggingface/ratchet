@@ -46,6 +46,7 @@ impl ComputePipelinePool {
             let shader = KERNELS
                 .get(kernel_key.as_str())
                 .unwrap_or_else(|| panic!("Kernel {} not found", kernel_key));
+            log::info!("Shader: \n{}", shader);
             let label = Some(kernel_key.as_str());
 
             let shader_module_desc = wgpu::ShaderModuleDescriptor {

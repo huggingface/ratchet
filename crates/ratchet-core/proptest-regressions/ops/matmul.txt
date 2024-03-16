@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8adac42e1f824310f1b85424f28525035027991bf9c0992d8faa04ed1e89f655 # shrinks to input = _TestSgemmArgs { prob: SGEMMProblem { B: 1, M: 1, K: 1, N: 1 } }
