@@ -53,8 +53,8 @@ impl MetaOperation for Softmax {
         rvec![&self.input]
     }
 
-    fn kernel_key(&self) -> String {
-        "softmax".to_string()
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!("softmax_{}", self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

@@ -317,10 +317,11 @@ impl MetaOperation for Matmul {
         Ok(())
     }
 
-    fn kernel_key(&self) -> String {
+    fn kernel_key(&self, _: &Tensor) -> String {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
+        let ke = spec.select_kernel_element();
 
         //Here we need to check if transposed, and the data types
         let kernel_stem = if self.rhs.dt() == DType::WQ8 {
@@ -328,15 +329,28 @@ impl MetaOperation for Matmul {
         } else {
             "sgemm"
         };
-        match spec.select_kernel_element() {
+        match ke {
             KernelElement::Scalar => {
                 format!(
-                    "{}_{}_{}_{}_{}_{}",
-                    kernel_stem, a_fit, b_fit, out_fit, self.trans_a, self.trans_b
+                    "{}_{}_{}_{}_{}_{}_{}",
+                    kernel_stem,
+                    a_fit,
+                    b_fit,
+                    out_fit,
+                    self.trans_a,
+                    self.trans_b,
+                    ke.as_str()
                 )
             }
             _ => {
-                format!("{}_{}_{}_{}", kernel_stem, a_fit, b_fit, out_fit)
+                format!(
+                    "{}_{}_{}_{}_{}",
+                    kernel_stem,
+                    a_fit,
+                    b_fit,
+                    out_fit,
+                    ke.as_str()
+                )
             }
         }
     }

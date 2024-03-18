@@ -57,13 +57,13 @@ impl MetaOperation for IndexSelect {
         rvec![&self.input, &self.indices]
     }
 
-    fn kernel_key(&self) -> String {
-        let key = match self.input.dt() {
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let op_key = match self.input.dt() {
             DType::F32 => "f32_index_select",
             DType::WQ8 => "wq8_index_select",
             _ => unimplemented!(),
         };
-        key.to_string()
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

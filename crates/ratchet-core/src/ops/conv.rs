@@ -72,8 +72,8 @@ impl MetaOperation for Conv {
         rvec![&self.input, &self.weight, self.bias.as_ref().unwrap()]
     }
 
-    fn kernel_key(&self) -> String {
-        "conv".to_string()
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!("conv_{}", self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

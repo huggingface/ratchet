@@ -69,7 +69,7 @@ impl Executable {
         {
             for step in self.steps.iter() {
                 let timestamp_writes =
-                    Some(profiler.create_timestamp_queries(0, step.kernel_name()));
+                    Some(profiler.create_timestamp_queries(0, step.kernel_key()));
                 let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: None,
                     timestamp_writes,

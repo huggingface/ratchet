@@ -297,7 +297,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("ggml-tiny.bin").unwrap();
+        let model_path = model.get("medium_f32.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("mm0.wav").unwrap();
@@ -321,7 +321,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let src_path = model.get("ggml-tiny.bin").unwrap();
+        let src_path = model.get("ggml-medium.bin").unwrap();
 
         let to_quant = HashSet::from([
             "attn.query.weight",
@@ -334,20 +334,31 @@ mod tests {
             "cross_attn.out.weight",
             "mlp.0.weight",
             "mlp.2.weight",
-            "token_embedding.weight",
+            //"token_embedding.weight",
         ]);
         let mut dst_path = src_path.clone();
         dst_path.pop();
-        dst_path = dst_path.join("distil-large-v3_q8.bin");
+        dst_path = dst_path.join("medium_f32.bin");
         println!("DST: {:?}", dst_path);
 
-        let v3 = true;
+        let v3 = false;
         let pad_size = if v3 { 6 } else { 7 };
         let to_pad = HashMap::from([(
             "decoder.token_embedding.weight",
             vec![[0, pad_size], [0, 0]],
         )]);
-        Converter::convert::<_, Whisper>(src_path, dst_path, Quantization::SInt8, to_quant, to_pad)
-            .unwrap();
+
+        //For performance, you can often pre-transpose the weights
+        let transpose = true;
+
+        Converter::convert::<_, Whisper>(
+            src_path,
+            dst_path,
+            Quantization::None,
+            to_quant,
+            to_pad,
+            transpose,
+        )
+        .unwrap();
     }
 }

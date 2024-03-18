@@ -25,17 +25,17 @@ pub enum LazyOp {
 }
 
 impl LazyOp {
-    pub fn name(&self) -> String {
+    pub fn key(&self, dst: &Tensor) -> String {
         match self {
-            LazyOp::Binary(b) => b.kernel_key(),
-            LazyOp::Matmul(m) => m.kernel_key(),
-            LazyOp::Softmax(s) => s.kernel_key(),
-            LazyOp::Unary(u) => u.kernel_key(),
-            LazyOp::Reindex(r) => r.kernel_key(),
-            LazyOp::Norm(n) => n.kernel_key(),
-            LazyOp::Conv(c) => c.kernel_key(),
-            LazyOp::Select(s) => s.kernel_key(),
-            LazyOp::IndexWrite(iw) => iw.kernel_key(),
+            LazyOp::Binary(b) => b.kernel_key(dst),
+            LazyOp::Matmul(m) => m.kernel_key(dst),
+            LazyOp::Softmax(s) => s.kernel_key(dst),
+            LazyOp::Unary(u) => u.kernel_key(dst),
+            LazyOp::Reindex(r) => r.kernel_key(dst),
+            LazyOp::Norm(n) => n.kernel_key(dst),
+            LazyOp::Conv(c) => c.kernel_key(dst),
+            LazyOp::Select(s) => s.kernel_key(dst),
+            LazyOp::IndexWrite(iw) => iw.kernel_key(dst),
             LazyOp::View(_) => "View".to_string(),
             LazyOp::Const => "Const".to_string(),
         }
@@ -130,7 +130,7 @@ pub trait MetaOperation: Debug + 'static {
     type Meta: OpMetadata;
 
     /// Return the file stem of the kernel source file.
-    fn kernel_key(&self) -> String;
+    fn kernel_key(&self, dst: &Tensor) -> String;
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -190,11 +190,10 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let kernel_key = self.kernel_key();
+        let kernel_key = self.kernel_key(dst);
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
-            kernel_name: kernel_key.clone(),
-            kernel_element,
+            kernel_key: kernel_key.clone(),
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
@@ -213,7 +212,7 @@ pub trait MetaOperation: Debug + 'static {
             workgroup_count,
             storage_bind_groups,
             offset as _,
-            self.kernel_key().to_string(),
+            kernel_key,
         ))
     }
 }

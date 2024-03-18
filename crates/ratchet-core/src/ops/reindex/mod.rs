@@ -73,13 +73,13 @@ impl MetaOperation for Reindex {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn kernel_key(&self) -> String {
-        let key = match self {
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let op_key = match self {
             Reindex::Permute(_) => "permute",
             Reindex::Slice(_) => "slice",
             Reindex::Broadcast(_) => "broadcast",
         };
-        key.to_string()
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn metadata(

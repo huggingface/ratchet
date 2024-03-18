@@ -64,10 +64,11 @@ impl MetaOperation for Norm {
         }
     }
 
-    fn kernel_key(&self) -> String {
-        match self {
-            Norm::LayerNorm(_) => "layernorm".to_string(),
-        }
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let op_key = match self {
+            Norm::LayerNorm(_) => "layernorm",
+        };
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

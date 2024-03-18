@@ -128,8 +128,12 @@ impl MetaOperation for Unary {
         }
     }
 
-    fn kernel_key(&self) -> String {
-        self.op.kernel_name().to_string()
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!(
+            "{}_{}",
+            self.op.kernel_name(),
+            self.kernel_element(dst).as_str()
+        )
     }
 
     fn metadata(
