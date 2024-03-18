@@ -53,6 +53,7 @@ fn mm_readA(batch: i32, row: i32, col: i32) -> f32 {
 }
 {% endif %}
 
+{% if FIT_B_OUTER and FIT_INNER %}
 fn mm_readB(batch: i32, row: i32, col: i32) -> f32 {
     var value = f32(0.0);
     {% if TRANS_B %}
@@ -62,7 +63,22 @@ fn mm_readB(batch: i32, row: i32, col: i32) -> f32 {
     {% endif %}
     return value;
 }
-  
+{% else %}
+fn mm_readB(batch: i32, row: i32, col: i32) -> f32 {
+    var value = f32(0.0);
+    {% if TRANS_B %}
+        if (row < metadata.bShape.z && col < metadata.bShape.y) {
+            value = getB(batch, col, row);
+        }
+    {% else %}
+        if (row < metadata.bShape.y && col < metadata.bShape.z) {
+            value = getB(batch, row, col);
+        }
+    {% endif %}
+    return value;
+}
+{% endif %}
+
 fn mm_write(batch: i32, row: i32, col: i32, valueIn: f32) {
 {% if FIT_A_OUTER and FIT_B_OUTER %}
         var value = valueIn;

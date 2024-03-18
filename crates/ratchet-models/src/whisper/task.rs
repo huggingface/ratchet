@@ -97,7 +97,6 @@ impl DecodingTask {
             decoder.cache_mut().update(input.len());
 
             let mut logits = Self::slice_logits(logits.to(&Device::CPU)?, sliced_vocab_size);
-            println!("LOGITS: {:?}", logits);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
                 logits = m.apply(logits, &self.tokenizer, Some(&token_t))?;
@@ -306,8 +305,6 @@ impl DecodingTask {
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
     ) -> Result<Vec<i32>, DecodeError> {
-        //let cpu_audio = audio_ctx.to(&Device::CPU)?;
-        //println!("CPU AUDIO: {:?}", cpu_audio);
         let mut tokens = self.main_loop(decoder, audio_ctx)?;
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();

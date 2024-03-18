@@ -35,6 +35,7 @@ impl MatmulSpec {
     pub const ROW_PER_THREAD: usize = 4;
 
     pub fn new(A: &Tensor, B: &Tensor, C: &Tensor, trans_a: bool, trans_b: bool) -> Self {
+        println!("A SHAPE ORIGINALLY FROM TENSOR: {:?}", A.shape());
         let mut a_shape = A.shape().clone();
         let mut b_shape = B.shape().clone();
         let mut c_shape = C.shape().clone();
@@ -101,21 +102,13 @@ impl MatmulSpec {
     }
 
     pub fn select_kernel_element(&self) -> KernelElement {
-        log::debug!(
-            "select_kernel: m={} n={} k={}",
-            self.m(),
-            self.n(),
-            self.k()
-        );
-
         if self.trans_a || self.trans_b {
             //We cannot support transposed with vectorized kernels
             return KernelElement::Scalar;
         }
 
         let checks = [
-            self.k(),
-            self.n(),
+            self.dim_inner(),
             self.a_shape.numel(),
             self.b_shape.numel(),
             self.c_shape.numel(),
@@ -140,16 +133,20 @@ impl MatmulSpec {
         &self.c_shape
     }
 
-    pub fn m(&self) -> usize {
-        self.a_shape[0]
+    pub fn dim_a_outer(&self) -> usize {
+        self.c_shape[0]
     }
 
-    pub fn k(&self) -> usize {
-        self.a_shape[1]
+    pub fn dim_b_outer(&self) -> usize {
+        self.c_shape[1]
     }
 
-    pub fn n(&self) -> usize {
-        self.b_shape[1]
+    pub fn dim_inner(&self) -> usize {
+        if self.trans_a {
+            self.a_shape[0]
+        } else {
+            self.a_shape[1]
+        }
     }
 
     pub fn a_stack(&self) -> usize {
@@ -183,9 +180,13 @@ impl MatmulSpec {
     }
 
     pub fn tile_fit(&self) -> (bool, bool, bool) {
-        let a_fit = self.m() % Self::TILE_DIM == 0;
-        let b_fit = self.n() % Self::TILE_DIM == 0;
-        let out_fit = self.k() % Self::TILE_DIM == 0;
+        let dimAOuter = self.dim_a_outer();
+        let dimBOuter = self.dim_b_outer();
+        let dimInner = self.dim_inner();
+
+        let a_fit = dimAOuter % Self::TILE_DIM == 0;
+        let b_fit = dimBOuter % Self::TILE_DIM == 0;
+        let out_fit = dimInner % Self::TILE_DIM == 0;
         (a_fit, b_fit, out_fit)
     }
 }
@@ -347,7 +348,7 @@ impl MetaOperation for Matmul {
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
-        //println!("SPEC: {:?}", spec);
+        println!("SPEC: {:?}", spec);
         spec.select_kernel_element()
     }
 
@@ -361,10 +362,12 @@ impl MetaOperation for Matmul {
 
         let dimA = if self.trans_a { a_shape[1] } else { a_shape[0] };
         let dimB = if self.trans_b { b_shape[0] } else { b_shape[1] };
+        println!("DIM A: {} DIM B: {}", dimA, dimB);
 
         let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
         let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
         let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+        println!("DISPATCH: {:?}", workgroup_count);
         Ok(workgroup_count)
     }
 
@@ -397,16 +400,16 @@ impl MetaOperation for Matmul {
         out_shape.insert(0, spec.stacks());
         let outStrides = Strides::from(&out_shape).to_vec();
 
-        let dimAOuter = if self.trans_a { a_shape[2] } else { a_shape[1] } as _;
-        let dimBOuter = if self.trans_b { b_shape[1] } else { b_shape[2] } as _;
-        let dimInner = if self.trans_a { a_shape[1] } else { a_shape[2] } as _;
+        let dimAOuter = spec.dim_a_outer() as i32;
+        let dimBOuter = spec.dim_b_outer() as i32;
+        let dimInner = spec.dim_inner() as i32;
 
         let meta = MatmulMeta {
-            aShape: glam::IVec3::new(spec.a_stack() as _, spec.m() as _, spec.k() as _),
+            aShape: glam::IVec3::new(a_shape[0] as _, a_shape[1] as _, a_shape[2] as _),
             aStrides: glam::IVec3::new(aStrides[0] as _, aStrides[1] as _, aStrides[2] as _),
-            bShape: glam::IVec3::new(spec.b_stack() as _, spec.k() as _, spec.n() as _),
+            bShape: glam::IVec3::new(b_shape[0] as _, b_shape[1] as _, b_shape[2] as _),
             bStrides: glam::IVec3::new(bStrides[0] as _, bStrides[1] as _, bStrides[2] as _),
-            outShape: glam::IVec3::new(spec.c_stack() as _, spec.m() as _, spec.n() as _),
+            outShape: glam::IVec3::new(out_shape[0] as _, out_shape[1] as _, out_shape[2] as _),
             outStrides: glam::IVec3::new(
                 outStrides[0] as _,
                 outStrides[1] as _,
@@ -416,6 +419,7 @@ impl MetaOperation for Matmul {
             dimBOuter,
             dimInner,
         };
+        println!("META: {:?}", meta);
 
         Ok(meta)
     }
@@ -493,7 +497,7 @@ def matmul(a, b):
             trans_b,
         } = prob;
         println!(
-            "Running sgemm: B={} M={} K={} N={} trans_a={} trans_b={}",
+            "Running sgemm: B={} M={} N={} K={} trans_a={} trans_b={}",
             B, M, N, K, trans_a, trans_b
         );
         run_matmul_trial(&device, prob).unwrap();
@@ -507,24 +511,20 @@ def matmul(a, b):
             K,
             N,
             trans_a,
-            mut trans_b,
+            trans_b,
         } = prob;
 
-        //let a_shape = if trans_a {
-        //    shape![B, K, M]
-        //} else {
-        //    shape![B, M, K]
-        //};
+        let a_shape = if trans_a {
+            shape![B, K, M]
+        } else {
+            shape![B, M, K]
+        };
 
-        //let b_shape = if trans_b {
-        //    shape![B, N, K]
-        //} else {
-        //    shape![B, K, N]
-        //};
-
-        let a_shape = shape![6, 1500, 1500];
-        let b_shape = shape![6, 1500, 64];
-        trans_b = false;
+        let b_shape = if trans_b {
+            shape![B, N, K]
+        } else {
+            shape![B, K, N]
+        };
 
         let a = Tensor::randn::<f32>(a_shape, cpu_device.clone());
         let b = Tensor::randn::<f32>(b_shape, cpu_device.clone());
