@@ -297,7 +297,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("medium_f32.bin").unwrap();
+        let model_path = model.get("medium_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("mm0.wav").unwrap();
@@ -334,11 +334,15 @@ mod tests {
             "cross_attn.out.weight",
             "mlp.0.weight",
             "mlp.2.weight",
-            //"token_embedding.weight",
+            "token_embedding.weight",
         ]);
+
+        let mut to_transpose = to_quant.clone();
+        //to_transpose.remove("token_embedding.weight");
+
         let mut dst_path = src_path.clone();
         dst_path.pop();
-        dst_path = dst_path.join("medium_f32.bin");
+        dst_path = dst_path.join("medium_q8.bin");
         println!("DST: {:?}", dst_path);
 
         let v3 = false;
@@ -348,16 +352,13 @@ mod tests {
             vec![[0, pad_size], [0, 0]],
         )]);
 
-        //For performance, you can often pre-transpose the weights
-        let transpose = true;
-
         Converter::convert::<_, Whisper>(
             src_path,
             dst_path,
-            Quantization::None,
+            Quantization::SInt8,
             to_quant,
             to_pad,
-            transpose,
+            to_transpose,
         )
         .unwrap();
     }
