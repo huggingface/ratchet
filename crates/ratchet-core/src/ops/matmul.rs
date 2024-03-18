@@ -211,7 +211,7 @@ impl Matmul {
         let implicit_m = ashape.rank() < 2;
         let implicit_n = bshape.rank() < 2;
         if implicit_m {
-            ashape.insert(0, 1);
+            ashape.insert(trans_a as usize, 1);
         }
         if implicit_n {
             bshape.insert(!trans_b as usize, 1);
@@ -237,7 +237,7 @@ impl Matmul {
         let (mut kb, mut n) = (bshape[brank - 2], bshape[brank - 1]);
 
         if trans_a {
-            std::mem::swap(&mut ka, &mut m);
+            std::mem::swap(&mut m, &mut ka);
         }
 
         if trans_b {
@@ -347,6 +347,7 @@ impl MetaOperation for Matmul {
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
+        //println!("SPEC: {:?}", spec);
         spec.select_kernel_element()
     }
 
@@ -480,7 +481,7 @@ def matmul(a, b):
         trans_b: bool,
     }
 
-    #[proptest(cases = 8)]
+    #[proptest(cases = 64)]
     fn test_sgemm(prob: SGEMMProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let SGEMMProblem {
@@ -506,15 +507,32 @@ def matmul(a, b):
             K,
             N,
             trans_a,
-            trans_b,
+            mut trans_b,
         } = prob;
-        let a = Tensor::randn::<f32>(shape![B, 1500, 1500], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![B, 1500, 64], cpu_device.clone());
+
+        //let a_shape = if trans_a {
+        //    shape![B, K, M]
+        //} else {
+        //    shape![B, M, K]
+        //};
+
+        //let b_shape = if trans_b {
+        //    shape![B, N, K]
+        //} else {
+        //    shape![B, K, N]
+        //};
+
+        let a_shape = shape![6, 1500, 1500];
+        let b_shape = shape![6, 1500, 64];
+        trans_b = false;
+
+        let a = Tensor::randn::<f32>(a_shape, cpu_device.clone());
+        let b = Tensor::randn::<f32>(b_shape, cpu_device.clone());
         let ground = ground_truth(&a, &b, trans_a, trans_b)?;
 
         let a_gpu = a.to(device)?;
         let b_gpu = b.to(device)?;
-        let c_gpu = a_gpu.matmul(b_gpu, trans_b)?.resolve()?;
+        let c_gpu = a_gpu.matmul(b_gpu, trans_a, trans_b)?.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
         println!("RATCHET SGEMM\n{:?}\n", d_gpu);
@@ -533,7 +551,7 @@ def matmul(a, b):
             K: 384,
             N: 384,
             trans_a: false,
-            trans_b: false,
+            trans_b: true,
         };
         run_matmul_trial(&device, prob).unwrap();
     }
@@ -548,7 +566,7 @@ def matmul(a, b):
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = a.to(&device)?;
         let b_gpu = bq.to(&device)?;
-        let c_gpu = a_gpu.matmul(b_gpu, false)?.resolve()?;
+        let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET WQ8\n{:?}\n", ours);

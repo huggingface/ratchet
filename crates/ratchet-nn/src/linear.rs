@@ -11,7 +11,7 @@ pub struct Linear {
 impl Module for Linear {
     type Input = Tensor;
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let y = input.matmul(self.w.clone(), true)?;
+        let y = input.matmul(self.w.clone(), false, true)?;
         if let Some(b) = &self.b {
             y.add(b.clone())
         } else {
