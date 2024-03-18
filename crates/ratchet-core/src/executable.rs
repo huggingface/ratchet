@@ -36,6 +36,7 @@ impl Executable {
                 timestamp_writes: None,
             });
             for step in self.steps.iter() {
+                //println!("Dispatching step: {}", step.kernel_key());
                 cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle())?);
 
                 for (group_index, bind_group) in step.storage_groups().iter().enumerate() {

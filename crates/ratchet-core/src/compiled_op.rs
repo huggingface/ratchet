@@ -15,7 +15,7 @@ pub struct CompiledOp {
     workgroup_count: WorkgroupCount,
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
-    kernel_name: String,
+    kernel_key: String,
 }
 
 impl CompiledOp {
@@ -77,7 +77,7 @@ impl CompiledOp {
         self.pipeline_handle
     }
 
-    pub fn kernel_name(&self) -> &str {
-        &self.kernel_name
+    pub fn kernel_key(&self) -> &str {
+        &self.kernel_key
     }
 }

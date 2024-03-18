@@ -35,7 +35,6 @@ impl MatmulSpec {
     pub const ROW_PER_THREAD: usize = 4;
 
     pub fn new(A: &Tensor, B: &Tensor, C: &Tensor, trans_a: bool, trans_b: bool) -> Self {
-        println!("A SHAPE ORIGINALLY FROM TENSOR: {:?}", A.shape());
         let mut a_shape = A.shape().clone();
         let mut b_shape = B.shape().clone();
         let mut c_shape = C.shape().clone();
@@ -109,6 +108,7 @@ impl MatmulSpec {
 
         let checks = [
             self.dim_inner(),
+            self.c_shape[1],
             self.a_shape.numel(),
             self.b_shape.numel(),
             self.c_shape.numel(),
@@ -348,7 +348,6 @@ impl MetaOperation for Matmul {
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
-        println!("SPEC: {:?}", spec);
         spec.select_kernel_element()
     }
 
@@ -362,12 +361,12 @@ impl MetaOperation for Matmul {
 
         let dimA = if self.trans_a { a_shape[1] } else { a_shape[0] };
         let dimB = if self.trans_b { b_shape[0] } else { b_shape[1] };
-        println!("DIM A: {} DIM B: {}", dimA, dimB);
+        //println!("DIM A: {} DIM B: {}", dimA, dimB);
 
         let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
         let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
         let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
-        println!("DISPATCH: {:?}", workgroup_count);
+        //println!("DISPATCH: {:?}", workgroup_count);
         Ok(workgroup_count)
     }
 
@@ -419,7 +418,7 @@ impl MetaOperation for Matmul {
             dimBOuter,
             dimInner,
         };
-        println!("META: {:?}", meta);
+        //println!("META: {:?}", meta);
 
         Ok(meta)
     }
