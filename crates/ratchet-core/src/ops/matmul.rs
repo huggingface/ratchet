@@ -323,7 +323,10 @@ impl MetaOperation for Matmul {
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
-        //Here we need to check if transposed, and the data types
+        if (self.rhs.dt() == DType::WQ8) && (self.trans_a || self.trans_b) {
+            panic!("Transposed WQ8 not supported");
+        }
+
         let kernel_stem = if self.rhs.dt() == DType::WQ8 {
             "qgemm"
         } else {
@@ -375,12 +378,10 @@ impl MetaOperation for Matmul {
 
         let dimA = if self.trans_a { a_shape[1] } else { a_shape[0] };
         let dimB = if self.trans_b { b_shape[0] } else { b_shape[1] };
-        //println!("DIM A: {} DIM B: {}", dimA, dimB);
 
         let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
         let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
         let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
-        //println!("DISPATCH: {:?}", workgroup_count);
         Ok(workgroup_count)
     }
 

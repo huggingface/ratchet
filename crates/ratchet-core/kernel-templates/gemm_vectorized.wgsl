@@ -23,9 +23,20 @@ fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
     return vec4<f32>(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
 }
    
-fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return vec4<f32>(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
-}
+{% if QUANTIZED_B %}
+    fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
+        return unpack4x8snorm(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
+    }
+
+    fn getAbsMax(d0 : i32, d1 : i32, d2 : i32) -> f32 {
+        let abs_index = getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 16;
+        return absmax[abs_index]; 
+    }
+{% else %}
+    fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
+        return vec4<f32>(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
+    }
+{% endif %}
    
 {% if FIT_A_OUTER and FIT_INNER %}
 fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
@@ -70,9 +81,14 @@ var<private> workgroupId: vec3<u32>;
 
 @group(0) @binding(0) var<storage, read> A: array<vec4<f32>>;
 
-@group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
-
-@group(0) @binding(2) var<storage, read_write> result: array<vec4<f32>>;
+{% if QUANTIZED_B %}
+    @group(0) @binding(1) var<storage, read> B: array<u32>;
+    @group(0) @binding(2) var<storage, read> absmax: array<f32>;
+    @group(0) @binding(3) var<storage, read_write> result: array<vec4<f32>>;
+{% else %}
+    @group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
+    @group(0) @binding(2) var<storage, read_write> result: array<vec4<f32>>;
+{% endif %}
 
 struct Meta {
     aShape: vec3<i32>,
@@ -127,7 +143,12 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         for (var innerRow = 0; innerRow < {{ ROW_PER_THREAD }}; innerRow++) {
             let inputRow = tileRowB + innerRow;
             let inputCol = tileCol;
-            mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol);
+            {% if QUANTIZED_B %}
+                let absmax = getAbsMax(batchB, kStart + inputRow, globalCol);
+                mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol) * absmax;
+            {% else %}
+                mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol);
+            {% endif %}
         }
         kStart = kStart + {{ TILE_DIM }};
         workgroupBarrier();
