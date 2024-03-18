@@ -92,7 +92,7 @@ var<uniform> metadata: Meta;
 var<workgroup> mm_Asub : array<array<vec4<f32>, {{ TILE_DIM / 4 }}>, {{ TILE_DIM }}>; 
 var<workgroup> mm_Bsub : array<array<vec4<f32>, {{ TILE_DIM / 4 }}>, {{ TILE_DIM }}>;
   
-@compute @workgroup_size(8,4,1) 
+@compute @workgroup_size(8,8,1) 
 fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         @builtin(global_invocation_id) globalId : vec3<u32>,
         @builtin(workgroup_id) workgroupId : vec3<u32>) {

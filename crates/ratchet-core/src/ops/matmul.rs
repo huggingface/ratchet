@@ -24,6 +24,7 @@ pub struct MatmulSpec {
     a_stack: usize,
     b_stack: usize,
     c_stack: usize,
+    trans_a: bool,
     trans_b: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
 }
@@ -33,7 +34,7 @@ impl MatmulSpec {
     pub const TILE_DIM: usize = 32;
     pub const ROW_PER_THREAD: usize = 4;
 
-    pub fn new(A: &Tensor, B: &Tensor, C: &Tensor, trans_b: bool) -> Self {
+    pub fn new(A: &Tensor, B: &Tensor, C: &Tensor, trans_a: bool, trans_b: bool) -> Self {
         let mut a_shape = A.shape().clone();
         let mut b_shape = B.shape().clone();
         let mut c_shape = C.shape().clone();
@@ -93,6 +94,7 @@ impl MatmulSpec {
             a_stack,
             b_stack,
             c_stack,
+            trans_a,
             trans_b,
             stack_shape,
         }
@@ -106,6 +108,11 @@ impl MatmulSpec {
             self.k()
         );
 
+        if self.trans_a || self.trans_b {
+            //We cannot support transposed with vectorized kernels
+            return KernelElement::Scalar;
+        }
+
         let checks = [
             self.k(),
             self.n(),
@@ -116,11 +123,21 @@ impl MatmulSpec {
 
         if checks.iter().all(|&x| x % 4 == 0) {
             KernelElement::Vec4
-        } else if checks.iter().all(|&x| x % 2 == 0) {
-            KernelElement::Vec2
         } else {
             KernelElement::Scalar
         }
+    }
+
+    pub fn a_shape(&self) -> &Shape {
+        &self.a_shape
+    }
+
+    pub fn b_shape(&self) -> &Shape {
+        &self.b_shape
+    }
+
+    pub fn c_shape(&self) -> &Shape {
+        &self.c_shape
     }
 
     pub fn m(&self) -> usize {
@@ -132,11 +149,7 @@ impl MatmulSpec {
     }
 
     pub fn n(&self) -> usize {
-        if self.trans_b {
-            self.b_shape[0]
-        } else {
-            self.b_shape[1]
-        }
+        self.b_shape[1]
     }
 
     pub fn a_stack(&self) -> usize {
@@ -181,12 +194,18 @@ impl MatmulSpec {
 pub struct Matmul {
     lhs: Tensor,
     rhs: Tensor,
+    trans_a: bool,
     trans_b: bool,
     spec: RefCell<Option<MatmulSpec>>,
 }
 
 impl Matmul {
-    pub fn compute_c_shape(a: &Tensor, b: &Tensor, trans_b: bool) -> anyhow::Result<Shape> {
+    pub fn compute_c_shape(
+        a: &Tensor,
+        b: &Tensor,
+        trans_a: bool,
+        trans_b: bool,
+    ) -> anyhow::Result<Shape> {
         let (mut ashape, mut bshape) = (a.shape().clone(), b.shape().clone());
 
         let implicit_m = ashape.rank() < 2;
@@ -214,8 +233,13 @@ impl Matmul {
                 anyhow::anyhow!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape)
             })?;
 
-        let (m, ka) = (ashape[arank - 2], ashape[arank - 1]);
+        let (mut m, mut ka) = (ashape[arank - 2], ashape[arank - 1]);
         let (mut kb, mut n) = (bshape[brank - 2], bshape[brank - 1]);
+
+        if trans_a {
+            std::mem::swap(&mut ka, &mut m);
+        }
+
         if trans_b {
             std::mem::swap(&mut kb, &mut n);
         }
@@ -236,45 +260,31 @@ impl Matmul {
     }
 
     pub fn compute_spec(&self, dst: &Tensor) {
-        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_b);
+        let spec = MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_a, self.trans_b);
         self.spec.replace(Some(spec));
     }
 }
-
-/*
-#[allow(clippy::too_many_arguments)]
-#[derive(Debug, Clone, ShaderType)]
-pub struct MatmulMeta {
-    M: u32,
-    N: u32,
-    K: u32,
-    MD2: u32,
-    ND2: u32,
-    KD2: u32,
-    MD4: u32,
-    ND4: u32,
-    KD4: u32,
-    A_OFFSET: u32, //batch offset
-    B_OFFSET: u32,
-    C_OFFSET: u32,
-}
-*/
 
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType)]
 pub struct MatmulMeta {
     aShape: glam::IVec3,
+    aStrides: glam::IVec3,
     bShape: glam::IVec3,
+    bStrides: glam::IVec3,
     outShape: glam::IVec3,
-    outShapeStrides: glam::IVec3,
-    dimInner: u32,
+    outStrides: glam::IVec3,
+    dimAOuter: i32,
+    dimBOuter: i32,
+    dimInner: i32,
 }
 
 impl OpMetadata for MatmulMeta {}
 
 impl Operation for Matmul {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        let c_shape = Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_b).unwrap();
+        let c_shape =
+            Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_a, self.trans_b).unwrap();
         let c_strides = Strides::from(&c_shape);
         Ok(StorageView::new(c_shape, self.lhs.dt(), c_strides))
     }
@@ -282,7 +292,7 @@ impl Operation for Matmul {
 
 impl OpGuards for Matmul {
     fn check_shapes(&self) {
-        let c_shape = Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_b);
+        let c_shape = Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_a, self.trans_b);
         assert!(c_shape.is_ok());
     }
 
@@ -311,38 +321,23 @@ impl MetaOperation for Matmul {
         let spec = ref_spec.as_ref().unwrap();
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
 
-        let selected = if self.trans_b {
-            let old = match (self.lhs.dt(), self.rhs.dt(), self.trans_b) {
-                (DType::F32, DType::F32, false) => "sgemm",
-                (DType::F32, DType::WQ8, false) => "qgemm",
-                (DType::F32, DType::F32, true) => "sgemm_bt",
-                (DType::F32, DType::WQ8, true) => "qgemm_bt",
-                _ => panic!(
-                    "Unsupported matmul: {:?}, {:?}, transb:{:?}",
-                    self.lhs.dt(),
-                    self.rhs.dt(),
-                    self.trans_b
-                ),
-            };
-            old.to_string()
+        //Here we need to check if transposed, and the data types
+        let kernel_stem = if self.rhs.dt() == DType::WQ8 {
+            "qgemm"
         } else {
-            let key_base = match (self.lhs.dt(), self.rhs.dt()) {
-                (DType::F32, DType::F32) => "sgemm",
-                (DType::F32, DType::WQ8) => "qgemm",
-                _ => panic!(
-                    "Unsupported matmul: {:?}, {:?}",
-                    self.lhs.dt(),
-                    self.rhs.dt(),
-                ),
-            };
-            format!(
-                "{}_A_FIT{}_B_FIT{}_OUT_FIT{}",
-                key_base, a_fit, b_fit, out_fit
-            )
+            "sgemm"
         };
-        println!("SPEC: {:?}", spec);
-        println!("SELECTED MATMUL: {}", selected);
-        selected
+        match spec.select_kernel_element() {
+            KernelElement::Scalar => {
+                format!(
+                    "{}_{}_{}_{}_{}_{}",
+                    kernel_stem, a_fit, b_fit, out_fit, self.trans_a, self.trans_b
+                )
+            }
+            _ => {
+                format!("{}_{}_{}_{}", kernel_stem, a_fit, b_fit, out_fit)
+            }
+        }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -359,13 +354,17 @@ impl MetaOperation for Matmul {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
 
-        let group_x = WorkgroupCount::div_ceil(spec.m(), 32) as _;
-        let group_y = WorkgroupCount::div_ceil(spec.n(), 32) as _;
+        let TILE_DIM = 32;
+        let a_shape = spec.a_shape();
+        let b_shape = spec.b_shape();
 
-        let dispatch = wgc![group_x, group_y, spec.stacks() as _];
-        println!("DISPATCH: {:?}", dispatch);
+        let dimA = if self.trans_a { a_shape[1] } else { a_shape[0] };
+        let dimB = if self.trans_b { b_shape[0] } else { b_shape[1] };
 
-        Ok(dispatch)
+        let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
+        let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
+        let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+        Ok(workgroup_count)
     }
 
     fn storage_bind_group_layout(
@@ -381,29 +380,41 @@ impl MetaOperation for Matmul {
         Ok(layout)
     }
 
-    fn metadata(&self, _: &Tensor, ke: &KernelElement) -> Result<Self::Meta, OperationError> {
+    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Meta, OperationError> {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
 
+        let mut a_shape = spec.a_shape.clone();
+        a_shape.insert(0, spec.a_stack());
+        let aStrides = Strides::from(&a_shape).to_vec();
+
+        let mut b_shape = spec.b_shape.clone();
+        b_shape.insert(0, spec.b_stack());
+        let bStrides = Strides::from(&b_shape).to_vec();
+
         let mut out_shape = spec.c_shape.clone();
         out_shape.insert(0, spec.stacks());
+        let outStrides = Strides::from(&out_shape).to_vec();
 
-        let outShapeStrides = Strides::from(&out_shape).to_vec();
-        let outShapeStrides = glam::IVec3::new(
-            outShapeStrides[0] as _,
-            outShapeStrides[1] as _,
-            outShapeStrides[2] as _,
-        );
+        let dimAOuter = if self.trans_a { a_shape[2] } else { a_shape[1] } as _;
+        let dimBOuter = if self.trans_b { b_shape[1] } else { b_shape[2] } as _;
+        let dimInner = if self.trans_a { a_shape[1] } else { a_shape[2] } as _;
 
         let meta = MatmulMeta {
             aShape: glam::IVec3::new(spec.a_stack() as _, spec.m() as _, spec.k() as _),
+            aStrides: glam::IVec3::new(aStrides[0] as _, aStrides[1] as _, aStrides[2] as _),
             bShape: glam::IVec3::new(spec.b_stack() as _, spec.k() as _, spec.n() as _),
+            bStrides: glam::IVec3::new(bStrides[0] as _, bStrides[1] as _, bStrides[2] as _),
             outShape: glam::IVec3::new(spec.c_stack() as _, spec.m() as _, spec.n() as _),
-            outShapeStrides: outShapeStrides.into(),
-            dimInner: spec.k() as _,
+            outStrides: glam::IVec3::new(
+                outStrides[0] as _,
+                outStrides[1] as _,
+                outStrides[2] as _,
+            ),
+            dimAOuter,
+            dimBOuter,
+            dimInner,
         };
-
-        println!("METADATA: {:?}", meta);
 
         Ok(meta)
     }
@@ -426,11 +437,32 @@ mod tests {
         Ok((a, b))
     }
 
-    fn ground_truth(a: &Tensor, b: &Tensor) -> anyhow::Result<Tensor> {
-        let prg = r#"
+    fn ground_truth(
+        a: &Tensor,
+        b: &Tensor,
+        trans_a: bool,
+        trans_b: bool,
+    ) -> anyhow::Result<Tensor> {
+        let a_op = if trans_a {
+            "torch.permute(torch.from_numpy(a), [0, 2, 1])"
+        } else {
+            "torch.from_numpy(a)"
+        };
+
+        let b_op = if trans_b {
+            "torch.permute(torch.from_numpy(b), [0, 2, 1])"
+        } else {
+            "torch.from_numpy(b)"
+        };
+
+        let prg = format!(
+            r#"
 import torch
 def matmul(a, b):
-    return torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).numpy()"#;
+    return torch.matmul({}, {}).numpy()"#,
+            a_op, b_op
+        );
+
         run_py_prg(prg.to_string(), &[a, b], &[])
     }
 
@@ -444,26 +476,45 @@ def matmul(a, b):
         K: usize,
         #[strategy(1..=512usize)]
         N: usize,
+        trans_a: bool,
+        trans_b: bool,
     }
 
     #[proptest(cases = 8)]
     fn test_sgemm(prob: SGEMMProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let SGEMMProblem { B, M, K, N } = prob;
-        println!("Running sgemm: B={} M={} K={} N={}", B, M, K, N);
+        let SGEMMProblem {
+            B,
+            M,
+            K,
+            N,
+            trans_a,
+            trans_b,
+        } = prob;
+        println!(
+            "Running sgemm: B={} M={} K={} N={} trans_a={} trans_b={}",
+            B, M, N, K, trans_a, trans_b
+        );
         run_matmul_trial(&device, prob).unwrap();
     }
 
     fn run_matmul_trial(device: &Device, prob: SGEMMProblem) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let SGEMMProblem { B, M, K, N } = prob;
-        let a = Tensor::randn::<f32>(shape![B, M, K], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![B, K, N], cpu_device.clone());
-        let ground = ground_truth(&a, &b)?;
+        let SGEMMProblem {
+            B,
+            M,
+            K,
+            N,
+            trans_a,
+            trans_b,
+        } = prob;
+        let a = Tensor::randn::<f32>(shape![B, 1500, 1500], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![B, 1500, 64], cpu_device.clone());
+        let ground = ground_truth(&a, &b, trans_a, trans_b)?;
 
         let a_gpu = a.to(device)?;
         let b_gpu = b.to(device)?;
-        let c_gpu = a_gpu.matmul(b_gpu, false)?.resolve()?;
+        let c_gpu = a_gpu.matmul(b_gpu, trans_b)?.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
         println!("RATCHET SGEMM\n{:?}\n", d_gpu);
@@ -478,9 +529,11 @@ def matmul(a, b):
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let prob = SGEMMProblem {
             B: 1,
-            M: 254,
-            K: 254,
-            N: 254,
+            M: 1500,
+            K: 384,
+            N: 384,
+            trans_a: false,
+            trans_b: false,
         };
         run_matmul_trial(&device, prob).unwrap();
     }
@@ -488,7 +541,7 @@ def matmul(a, b):
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
         let (a, b) = matmul_harness()?;
-        let ground = ground_truth(&a, &b)?;
+        let ground = ground_truth(&a, &b, false, false)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let bq = quantizer.sint8_quantize(b);

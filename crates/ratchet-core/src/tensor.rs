@@ -319,7 +319,7 @@ impl Tensor {
     //TODO: horrific interface
     pub fn matmul(self, other: Tensor, trans_b: bool) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let matmul = Matmul::new(self, other, trans_b, RefCell::new(None));
+        let matmul = Matmul::new(self, other, false, trans_b, RefCell::new(None));
         let new_view = matmul.compute_view()?;
         Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
     }
