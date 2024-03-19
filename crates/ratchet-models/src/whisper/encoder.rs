@@ -144,8 +144,8 @@ mod tests {
     fn encoder_matches() -> anyhow::Result<()> {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
+        let path = model.get("tiny_f32.bin").unwrap();
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
         let ground_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();

@@ -105,17 +105,18 @@ def embedding(weight, indices):
         } = problem;
         let mut weight = Tensor::randn::<f32>(vocab_shape, Device::CPU);
 
-        let ground_truth = ground_truth(&weight, &indices, false).unwrap();
+        let transposed = false;
+        let ground_truth = ground_truth(&weight, &indices, transposed).unwrap();
         println!("GROUND TRUTH: {:?}", ground_truth);
 
         let weight = weight.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
 
-        let embedding = Embedding::new(weight, true);
+        let embedding = Embedding::new(weight, transposed);
         let result = embedding.forward(indices).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("OURS: {:?}", x);
-        ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
+        ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();
     }
 
     #[derive(Debug, Clone)]
@@ -126,10 +127,9 @@ def embedding(weight, indices):
 
     #[test]
     fn debug_embedding() {
-        //Transposed
         let prob = EmbeddingProblem {
-            vocab_shape: shape![384, 4000],
-            indices: Tensor::from_data([3i32, 4i32, 1000i32], shape![1, 3], Device::CPU),
+            vocab_shape: shape![10000, 384],
+            indices: Tensor::from_data([400i32, 9001i32, 5555i32], shape![1, 3], Device::CPU),
         };
         run_embedding_trial(prob);
     }

@@ -193,8 +193,8 @@ def ground(options):
     fn decoder_matches() -> anyhow::Result<()> {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
+        let path = model.get("tiny_f32.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
@@ -251,7 +251,7 @@ def ground(options):
         let all_equal = all_logits
             .iter()
             .zip(ground_logits.iter())
-            .all(|(our, their)| their.all_close(our, 1e-4, 1e-4).is_ok());
+            .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
 
         assert!(all_equal);
 

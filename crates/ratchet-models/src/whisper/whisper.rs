@@ -296,8 +296,8 @@ mod tests {
     pub fn whisper_end_to_end() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let model_path = model.get("medium_q8.bin").unwrap();
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
+        let model_path = model.get("tiny_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("gb0.wav").unwrap();
