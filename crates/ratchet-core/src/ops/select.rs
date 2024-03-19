@@ -23,7 +23,6 @@ impl IndexSelect {
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct IndexSelectMeta {
     dst_numel: u32,
-    left_numel: u32,
     right_numel: u32,
     ids_numel: u32,
     src_dim_numel: u32,
@@ -64,9 +63,10 @@ impl MetaOperation for IndexSelect {
     }
 
     fn kernel_name(&self) -> &'static str {
-        match self.input.dt() {
-            DType::F32 => "f32_index_select",
-            DType::WQ8 => "wq8_index_select",
+        match (self.input.dt(), self.dim) {
+            (DType::F32, _) => "f32_index_select",
+            (DType::WQ8, 0) => "wq8_index_select",
+            (DType::WQ8, 1) => "wq8_index_select_coarse",
             _ => unimplemented!(),
         }
     }
@@ -76,9 +76,10 @@ impl MetaOperation for IndexSelect {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let numel = match self.input.dt() {
-            DType::F32 => dst.shape().numel(),
-            DType::WQ8 => dst.shape().numel() / 4,
+        let numel = match (self.input.dt(), self.dim) {
+            (DType::F32, _) => dst.shape().numel(),
+            (DType::WQ8, 0) => dst.shape().numel() / 4,
+            (DType::WQ8, 1) => dst.shape().numel(),
             _ => unimplemented!(),
         };
         let wgcx = WorkgroupCount::div_ceil(numel, 64);
@@ -102,19 +103,20 @@ impl MetaOperation for IndexSelect {
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
         let dst_numel = dst.shape().numel() as u32;
-        let left_numel = self.input.shape()[..self.dim].iter().product::<usize>() as u32;
         let right_numel = self.input.shape()[(self.dim + 1)..]
             .iter()
             .product::<usize>() as u32;
         let ids_numel = self.indices.shape().numel() as u32;
         let src_dim_numel = self.input.shape()[self.dim] as u32;
-        Ok(IndexSelectMeta {
+
+        let meta = IndexSelectMeta {
             dst_numel,
-            left_numel,
             right_numel,
             ids_numel,
             src_dim_numel,
-        })
+        };
+        println!("META: {:?}", meta);
+        Ok(meta)
     }
 }
 
@@ -170,13 +172,15 @@ def index_select(input, indices):
         } = problem;
         let mut input = Tensor::randn::<f32>(input_shape, Device::CPU);
 
-        let dim = 0;
+        let dim = 1;
         let ground_truth = ground_truth(&input, &indices, dim).unwrap();
         println!("ground_truth: {:?}", ground_truth);
         if quantize {
             let quantizer = Quantizer::new(Quantization::SInt8);
             input = quantizer.quantize(input);
         }
+
+        println!("INPUT SHAPE: {:?}", input.shape());
 
         let input = input.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
@@ -190,8 +194,8 @@ def index_select(input, indices):
     #[test]
     fn qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![1024, 384],
-            indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
+            input_shape: shape![500, 384],
+            indices: Tensor::from_data(vec![3i32, 4i32, 8i32], shape![3], Device::CPU),
         };
         run_index_select_trial(prob, true);
     }
