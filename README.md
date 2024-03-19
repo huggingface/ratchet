@@ -1,10 +1,11 @@
-# Ratchet
-
-### A web-first, cross-platform ML developer toolkit.
-
-[Documentation](https://hf.co)    |     [Discord](https://discord.gg/XFe33KQTG4)
-
----
+<div align="center">
+<img width="550px" height="200px" src="https://github.com/FL33TW00D/ratchet/raw/master/.github/ratchet.png">
+<p><a href="https://huggingface.co/spaces/FL33TW00D-HF/ratchet-whisper">Demo Site</a> | <a href="https://discord.gg/XFe33KQTG4">Discord</a> | <a href="https://github.com/users/FL33TW00D/projects/3">Roadmap</a></p>
+<p align="center">
+A web-first, cross-platform ML developer toolkit
+</p>
+<br>
+</div>
 
 **Ship AI inference to your Web, Electron or Tauri apps with ease.**
 
@@ -12,11 +13,18 @@
 
 Check out our [HuggingFace space](https://huggingface.co/spaces/FL33TW00D-HF/ratchet-whisper) for a live demo!
 
+### Javascript
+
 ```javascript
 // Asynchronous loading & caching with IndexedDB
 let model = await Model.load(AvailableModels.WHISPER_TINY, Quantization.Q8, (p: number) => setProgress(p))
 let result = await model.run({ input });
 ```
+
+### Rust
+
+Rust crate & CLI coming soon...
+
 
 ## Philosophy
 
@@ -28,9 +36,7 @@ The following principles will help us accomplish this:
 4. Lazy computation
 5. Inplace by default
 
-Any issues regarding training or different backends will be closed!
-
 ## Supported Models
 - Whisper
-
+- Coming soon...
 
