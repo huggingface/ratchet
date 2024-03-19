@@ -39,14 +39,6 @@ pub enum Norm {
     LayerNorm(LayerNorm),
 }
 
-impl Norm {
-    pub fn kernel_name(&self) -> &'static str {
-        match self {
-            Norm::LayerNorm(_) => "layernorm",
-        }
-    }
-}
-
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct NormMeta {
     M: u32,
@@ -72,10 +64,11 @@ impl MetaOperation for Norm {
         }
     }
 
-    fn kernel_name(&self) -> &'static str {
-        match self {
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let op_key = match self {
             Norm::LayerNorm(_) => "layernorm",
-        }
+        };
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

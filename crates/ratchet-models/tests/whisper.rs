@@ -21,8 +21,8 @@ fn log_init() {
 #[wasm_bindgen_test]
 async fn tiny_encoder() -> Result<(), JsValue> {
     log_init();
-    let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp", RepoType::Model).build();
-    let model_data = model_repo.get("ggml-tiny.bin").await?;
+    let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
+    let model_data = model_repo.get("tiny_f32.bin").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
     let input_npy = ground_repo.get("jfk_tiny_encoder_input.npy").await?;
@@ -46,8 +46,8 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 
 #[wasm_bindgen_test]
 async fn tiny_decoder() -> Result<(), JsValue> {
-    let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp", RepoType::Model).build();
-    let model_data = model_repo.get("ggml-tiny.bin").await?;
+    let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
+    let model_data = model_repo.get("tiny_f32.bin").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
     let hs_data = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;

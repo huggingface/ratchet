@@ -52,16 +52,16 @@ def scaled_dot_product_attention(input, qw, kw, vw) -> torch.Tensor:
             case.kw.clone(),
             case.vw.clone(),
         );
-        let q_proj = input.clone().matmul(qw, false)?;
-        let k_proj = input.clone().matmul(kw, false)?;
-        let v_proj = input.matmul(vw, false)?;
+        let q_proj = input.clone().matmul(qw, false, false)?;
+        let k_proj = input.clone().matmul(kw, false, false)?;
+        let v_proj = input.matmul(vw, false, false)?;
 
         let scale_factor = 1f64 / (q_proj.shape()[2] as f64).sqrt();
         let scale_factor = Tensor::from_data([scale_factor as f32], shape![1], device);
         let kt = k_proj.permute(&[0, 2, 1])?;
 
-        let logits = q_proj.matmul(kt, false)?.mul(scale_factor)?;
-        logits.softmax(2)?.matmul(v_proj, false)
+        let logits = q_proj.matmul(kt, false, false)?.mul(scale_factor)?;
+        logits.softmax(2)?.matmul(v_proj, false, false)
     }
 
     #[test]
@@ -124,9 +124,9 @@ def qkv_attention(input, qw, kw, vw, n_heads):
             case.kw.clone(),
             case.vw.clone(),
         );
-        let q_proj = input.clone().matmul(qw, false)?;
-        let k_proj = input.clone().matmul(kw, false)?;
-        let v_proj = input.matmul(vw, false)?;
+        let q_proj = input.clone().matmul(qw, false, false)?;
+        let k_proj = input.clone().matmul(kw, false, false)?;
+        let v_proj = input.matmul(vw, false, false)?;
 
         let n_heads = case.n_heads.unwrap();
         let qdim = q_proj.shape()[2];
@@ -146,9 +146,9 @@ def qkv_attention(input, qw, kw, vw, n_heads):
             .view(shape![1, hdim, n_heads, hdim])?
             .permute(&[0, 2, 1, 3])?;
 
-        let qk = q.matmul(k, false)?;
+        let qk = q.matmul(k, false, false)?;
         let attn = qk.softmax(3)?;
-        attn.matmul(v, false)?
+        attn.matmul(v, false, false)?
             .permute(&[0, 2, 1, 3])?
             .view(shape![1, hdim, qdim])
     }

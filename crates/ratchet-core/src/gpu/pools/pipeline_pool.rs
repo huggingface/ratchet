@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::{gpu::WgpuDevice, KernelElement, KERNELS};
+use crate::{gpu::WgpuDevice, KERNELS};
 
 use super::{
     PipelineLayoutHandle, StaticResourcePool, StaticResourcePoolAccessor,
@@ -12,15 +12,8 @@ slotmap::new_key_type! { pub struct ComputePipelineHandle; }
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ComputePipelineDescriptor {
     pub pipeline_layout: PipelineLayoutHandle,
-    pub kernel_name: &'static str, //string uniquely identifying the kernel
-    pub kernel_element: KernelElement,
+    pub kernel_key: String,
     //aux_ctx: Option<RVec<(&'static str, u32)>>, Used for sizing SMEM
-}
-
-impl ComputePipelineDescriptor {
-    pub fn build_kernel_key(&self) -> String {
-        format!("{}_{}", self.kernel_name, self.kernel_element.as_str())
-    }
 }
 
 pub struct ComputePipelinePool {
@@ -41,12 +34,11 @@ impl ComputePipelinePool {
         device: &WgpuDevice,
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
-            let kernel_key = desc.build_kernel_key();
-            log::info!("Kernel: {}", kernel_key);
+            //println!("Kernel: {}", kernel_key);
             let shader = KERNELS
-                .get(kernel_key.as_str())
-                .unwrap_or_else(|| panic!("Kernel {} not found", kernel_key));
-            let label = Some(kernel_key.as_str());
+                .get(desc.kernel_key.as_str())
+                .unwrap_or_else(|| panic!("Kernel {} not found", desc.kernel_key));
+            let label = Some(desc.kernel_key.as_str());
 
             let shader_module_desc = wgpu::ShaderModuleDescriptor {
                 label,

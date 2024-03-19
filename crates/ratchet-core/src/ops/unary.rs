@@ -51,10 +51,6 @@ pub struct Unary {
 }
 
 impl Unary {
-    pub fn name(&self) -> &'static str {
-        self.op.kernel_name()
-    }
-
     pub fn op(&self) -> &UnaryOp {
         &self.op
     }
@@ -132,8 +128,12 @@ impl MetaOperation for Unary {
         }
     }
 
-    fn kernel_name(&self) -> &'static str {
-        self.op.kernel_name()
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!(
+            "{}_{}",
+            self.op.kernel_name(),
+            self.kernel_element(dst).as_str()
+        )
     }
 
     fn metadata(

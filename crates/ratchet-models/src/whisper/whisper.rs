@@ -296,11 +296,11 @@ mod tests {
     pub fn whisper_end_to_end() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("FL33TW00D-HF/ratchet-whisper".to_string());
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let model_path = model.get("tiny_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_path = dataset.get("jfk.wav").unwrap();
+        let audio_path = dataset.get("gb0.wav").unwrap();
         let samples = load_sample(audio_path);
 
         let options = DecodingOptionsBuilder::new().build();
@@ -336,18 +336,29 @@ mod tests {
             "mlp.2.weight",
             "token_embedding.weight",
         ]);
+
+        let to_transpose = to_quant.clone();
+
         let mut dst_path = src_path.clone();
         dst_path.pop();
-        dst_path = dst_path.join("distil-large-v3_q8.bin");
+        dst_path = dst_path.join("tiny_q8.bin");
         println!("DST: {:?}", dst_path);
 
-        let v3 = true;
+        let v3 = false;
         let pad_size = if v3 { 6 } else { 7 };
         let to_pad = HashMap::from([(
             "decoder.token_embedding.weight",
             vec![[0, pad_size], [0, 0]],
         )]);
-        Converter::convert::<_, Whisper>(src_path, dst_path, Quantization::SInt8, to_quant, to_pad)
-            .unwrap();
+
+        Converter::convert::<_, Whisper>(
+            src_path,
+            dst_path,
+            Quantization::SInt8,
+            to_quant,
+            to_pad,
+            to_transpose,
+        )
+        .unwrap();
     }
 }

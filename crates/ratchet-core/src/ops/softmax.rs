@@ -13,12 +13,6 @@ pub struct Softmax {
     dim: usize,
 }
 
-impl Softmax {
-    pub fn name(&self) -> &'static str {
-        "softmax"
-    }
-}
-
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct SoftmaxMeta {
     M: u32,
@@ -59,8 +53,8 @@ impl MetaOperation for Softmax {
         rvec![&self.input]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        "softmax"
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!("softmax_{}", self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

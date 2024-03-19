@@ -104,7 +104,7 @@ impl MultiHeadAttention {
             //TODO: static caching
         }
 
-        let mut qk = q.matmul(k, false)?;
+        let mut qk = q.matmul(k, false, false)?;
 
         if let Some(m) = mask {
             let prepared_mask = if is_causal {
@@ -117,7 +117,7 @@ impl MultiHeadAttention {
 
         let w = qk.softmax(3)?;
         let wv = w
-            .matmul(v, false)?
+            .matmul(v, false, false)?
             .permute(&[0, 2, 1, 3])?
             .view(shape![bs, n_ctx, n_state])?;
 

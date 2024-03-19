@@ -18,12 +18,6 @@ pub struct Conv {
     //dilation: usize, TODO: implement dilation
 }
 
-impl Conv {
-    pub fn name(&self) -> &'static str {
-        "conv"
-    }
-}
-
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct ConvMeta {
     stride: u32,
@@ -78,8 +72,8 @@ impl MetaOperation for Conv {
         rvec![&self.input, &self.weight, self.bias.as_ref().unwrap()]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        "conv"
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!("conv_{}", self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

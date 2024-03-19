@@ -37,10 +37,6 @@ pub struct Binary {
 }
 
 impl Binary {
-    pub fn name(&self) -> &'static str {
-        self.op.kernel_name()
-    }
-
     pub fn op(&self) -> &BinaryOp {
         &self.op
     }
@@ -87,6 +83,13 @@ impl Operation for Binary {
 
 impl MetaOperation for Binary {
     type Meta = BinaryMeta;
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!(
+            "{}_{}",
+            self.op.kernel_name(),
+            self.kernel_element(dst).as_str()
+        )
+    }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.lhs, &self.rhs]
@@ -129,10 +132,6 @@ impl MetaOperation for Binary {
         }
         */
         Ok(BindGroupLayoutDescriptor::binary())
-    }
-
-    fn kernel_name(&self) -> &'static str {
-        self.op.kernel_name()
     }
 
     fn metadata(

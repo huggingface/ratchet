@@ -36,6 +36,7 @@ impl Executable {
                 timestamp_writes: None,
             });
             for step in self.steps.iter() {
+                //println!("Dispatching step: {}", step.kernel_key());
                 cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle())?);
 
                 for (group_index, bind_group) in step.storage_groups().iter().enumerate() {
@@ -68,7 +69,7 @@ impl Executable {
         {
             for step in self.steps.iter() {
                 let timestamp_writes =
-                    Some(profiler.create_timestamp_queries(0, step.kernel_name()));
+                    Some(profiler.create_timestamp_queries(0, step.kernel_key()));
                 let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: None,
                     timestamp_writes,

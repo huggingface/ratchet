@@ -14,12 +14,6 @@ pub struct IndexSelect {
     dim: usize,
 }
 
-impl IndexSelect {
-    pub fn name(&self) -> &'static str {
-        "index_select"
-    }
-}
-
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct IndexSelectMeta {
     dst_numel: u32,
@@ -62,13 +56,14 @@ impl MetaOperation for IndexSelect {
         rvec![&self.input, &self.indices]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        match (self.input.dt(), self.dim) {
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let op_key = match (self.input.dt(), self.dim) {
             (DType::F32, _) => "f32_index_select",
             (DType::WQ8, 0) => "wq8_index_select",
             (DType::WQ8, 1) => "wq8_index_select_coarse",
             _ => unimplemented!(),
-        }
+        };
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -170,8 +165,7 @@ def index_select(input, indices):
         } = problem;
         let mut input = Tensor::randn::<f32>(input_shape, Device::CPU);
 
-        let dim = 0;
-        let ground_truth = ground_truth(&input, &indices, dim).unwrap();
+        let ground_truth = ground_truth(&input, &indices, 0).unwrap();
         if quantize {
             let quantizer = Quantizer::new(Quantization::SInt8);
             input = quantizer.quantize(input);
@@ -180,7 +174,7 @@ def index_select(input, indices):
         let input = input.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
 
-        let result = input.index_select(indices, dim).unwrap().resolve().unwrap();
+        let result = input.index_select(indices, 0).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
         ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
     }
@@ -188,7 +182,7 @@ def index_select(input, indices):
     #[test]
     fn qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![1024, 384],
+            input_shape: shape![4000, 384],
             indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
         };
         run_index_select_trial(prob, true);

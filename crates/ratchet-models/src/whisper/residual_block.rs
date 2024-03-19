@@ -69,10 +69,18 @@ impl ResidualAttentionBlock {
         };
         let attn_ln = LayerNorm::new(lt("attn_ln.weight")?, Some(lt("attn_ln.bias")?), 1e-5);
         let attn = MultiHeadAttention::new(
-            Linear::new(lt("attn.query.weight")?, Some(lt("attn.query.bias")?)),
-            Linear::new(lt("attn.key.weight")?, None),
-            Linear::new(lt("attn.value.weight")?, Some(lt("attn.value.bias")?)),
-            Linear::new(lt("attn.out.weight")?, Some(lt("attn.out.bias")?)),
+            Linear::new(
+                lt("attn.query.weight")?,
+                Some(lt("attn.query.bias")?),
+                false,
+            ),
+            Linear::new(lt("attn.key.weight")?, None, false),
+            Linear::new(
+                lt("attn.value.weight")?,
+                Some(lt("attn.value.bias")?),
+                false,
+            ),
+            Linear::new(lt("attn.out.weight")?, Some(lt("attn.out.bias")?), false),
             n_heads,
         );
         let (x_attn_ln, x_attn) = if enable_x_attn {
@@ -85,15 +93,18 @@ impl ResidualAttentionBlock {
                 Linear::new(
                     lt("cross_attn.query.weight")?,
                     Some(lt("cross_attn.query.bias")?),
+                    false,
                 ),
-                Linear::new(lt("cross_attn.key.weight")?, None),
+                Linear::new(lt("cross_attn.key.weight")?, None, false),
                 Linear::new(
                     lt("cross_attn.value.weight")?,
                     Some(lt("cross_attn.value.bias")?),
+                    false,
                 ),
                 Linear::new(
                     lt("cross_attn.out.weight")?,
                     Some(lt("cross_attn.out.bias")?),
+                    false,
                 ),
                 n_heads,
             );
@@ -104,8 +115,8 @@ impl ResidualAttentionBlock {
 
         let mlp_ln = LayerNorm::new(lt("mlp_ln.weight")?, Some(lt("mlp_ln.bias")?), 1e-5);
         let mlp = MLP::new(
-            Linear::new(lt("mlp.0.weight")?, Some(lt("mlp.0.bias")?)),
-            Linear::new(lt("mlp.2.weight")?, Some(lt("mlp.2.bias")?)),
+            Linear::new(lt("mlp.0.weight")?, Some(lt("mlp.0.bias")?), false),
+            Linear::new(lt("mlp.2.weight")?, Some(lt("mlp.2.bias")?), false),
         );
         Ok(Self {
             attn_ln,
