@@ -7,8 +7,6 @@ A web-first, cross-platform ML developer toolkit
 <br>
 </div>
 
-**Ship AI inference to your Web, Electron or Tauri apps with ease.**
-
 ## Getting Started
 
 Check out our [HuggingFace space](https://huggingface.co/spaces/FL33TW00D-HF/ratchet-whisper) for a live demo!
