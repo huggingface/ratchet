@@ -17,7 +17,6 @@ pub struct IndexSelect {
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct IndexSelectMeta {
     dst_numel: u32,
-    left_numel: u32,
     right_numel: u32,
     ids_numel: u32,
     src_dim_numel: u32,
@@ -58,9 +57,10 @@ impl MetaOperation for IndexSelect {
     }
 
     fn kernel_key(&self, dst: &Tensor) -> String {
-        let op_key = match self.input.dt() {
-            DType::F32 => "f32_index_select",
-            DType::WQ8 => "wq8_index_select",
+        let op_key = match (self.input.dt(), self.dim) {
+            (DType::F32, _) => "f32_index_select",
+            (DType::WQ8, 0) => "wq8_index_select",
+            (DType::WQ8, 1) => "wq8_index_select_coarse",
             _ => unimplemented!(),
         };
         format!("{}_{}", op_key, self.kernel_element(dst).as_str())
@@ -71,9 +71,10 @@ impl MetaOperation for IndexSelect {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let numel = match self.input.dt() {
-            DType::F32 => dst.shape().numel(),
-            DType::WQ8 => dst.shape().numel() / 4,
+        let numel = match (self.input.dt(), self.dim) {
+            (DType::F32, _) => dst.shape().numel(),
+            (DType::WQ8, 0) => dst.shape().numel() / 4,
+            (DType::WQ8, 1) => dst.shape().numel(),
             _ => unimplemented!(),
         };
         let wgcx = WorkgroupCount::div_ceil(numel, 64);
@@ -97,15 +98,14 @@ impl MetaOperation for IndexSelect {
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
         let dst_numel = dst.shape().numel() as u32;
-        let left_numel = self.input.shape()[..self.dim].iter().product::<usize>() as u32;
         let right_numel = self.input.shape()[(self.dim + 1)..]
             .iter()
             .product::<usize>() as u32;
         let ids_numel = self.indices.shape().numel() as u32;
         let src_dim_numel = self.input.shape()[self.dim] as u32;
+
         Ok(IndexSelectMeta {
             dst_numel,
-            left_numel,
             right_numel,
             ids_numel,
             src_dim_numel,
@@ -167,7 +167,6 @@ def index_select(input, indices):
 
         let dim = 0;
         let ground_truth = ground_truth(&input, &indices, dim).unwrap();
-        println!("ground_truth: {:?}", ground_truth);
         if quantize {
             let quantizer = Quantizer::new(Quantization::SInt8);
             input = quantizer.quantize(input);
@@ -178,7 +177,6 @@ def index_select(input, indices):
 
         let result = input.index_select(indices, dim).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
-        println!("result: {:?}", x);
         ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
     }
 
