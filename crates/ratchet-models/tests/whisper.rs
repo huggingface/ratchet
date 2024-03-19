@@ -21,7 +21,7 @@ fn log_init() {
 #[wasm_bindgen_test]
 async fn tiny_encoder() -> Result<(), JsValue> {
     log_init();
-    let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper_tiny", RepoType::Model).build();
+    let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
     let model_data = model_repo.get("tiny_f32.bin").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
