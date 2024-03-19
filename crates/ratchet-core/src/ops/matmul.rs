@@ -323,7 +323,6 @@ impl MetaOperation for Matmul {
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
-        println!("SPEC: {:?}", spec);
         if (self.rhs.dt() == DType::WQ8) && (self.trans_a || self.trans_b) {
             panic!("Transposed WQ8 not supported");
         }
@@ -357,7 +356,6 @@ impl MetaOperation for Matmul {
                 )
             }
         };
-        println!("KEY: {}", key);
         key
     }
 

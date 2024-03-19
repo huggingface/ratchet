@@ -77,13 +77,22 @@ mod tests {
         }
     }
 
-    fn ground_truth(weight: &Tensor, indices: &Tensor) -> anyhow::Result<Tensor> {
-        let prg = r#"
+    fn ground_truth(weight: &Tensor, indices: &Tensor, transposed: bool) -> anyhow::Result<Tensor> {
+        let arg = if transposed {
+            "torch.from_numpy(weight).t().contiguous()"
+        } else {
+            "torch.from_numpy(weight)"
+        };
+
+        let prg = format!(
+            r#"
 import torch
 def embedding(weight, indices):
-    embedding = torch.nn.Embedding.from_pretrained(torch.from_numpy(weight).t().contiguous())
+    embedding = torch.nn.Embedding.from_pretrained({})
     return embedding(torch.from_numpy(indices)).numpy()
-"#;
+"#,
+            arg
+        );
         run_py_prg(prg.to_string(), &[weight, indices], &[])
     }
 
@@ -96,12 +105,7 @@ def embedding(weight, indices):
         } = problem;
         let mut weight = Tensor::randn::<f32>(vocab_shape, Device::CPU);
 
-        let ground_truth = ground_truth(&weight, &indices).unwrap();
-
-        if true {
-            let quantizer = Quantizer::new(Quantization::SInt8);
-            weight = quantizer.quantize(weight);
-        }
+        let ground_truth = ground_truth(&weight, &indices, false).unwrap();
         println!("GROUND TRUTH: {:?}", ground_truth);
 
         let weight = weight.to(&device).unwrap();
@@ -122,6 +126,7 @@ def embedding(weight, indices):
 
     #[test]
     fn debug_embedding() {
+        //Transposed
         let prob = EmbeddingProblem {
             vocab_shape: shape![384, 4000],
             indices: Tensor::from_data([3i32, 4i32, 1000i32], shape![1, 3], Device::CPU),

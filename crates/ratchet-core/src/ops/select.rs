@@ -57,16 +57,13 @@ impl MetaOperation for IndexSelect {
     }
 
     fn kernel_key(&self, dst: &Tensor) -> String {
-        println!("SELF: {:?}", self);
         let op_key = match (self.input.dt(), self.dim) {
             (DType::F32, _) => "f32_index_select",
             (DType::WQ8, 0) => "wq8_index_select",
             (DType::WQ8, 1) => "wq8_index_select_coarse",
             _ => unimplemented!(),
         };
-        let kern = format!("{}_{}", op_key, self.kernel_element(dst).as_str());
-        println!("kernel_key: {}", kern);
-        kern
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -107,14 +104,12 @@ impl MetaOperation for IndexSelect {
         let ids_numel = self.indices.shape().numel() as u32;
         let src_dim_numel = self.input.shape()[self.dim] as u32;
 
-        let meta = IndexSelectMeta {
+        Ok(IndexSelectMeta {
             dst_numel,
             right_numel,
             ids_numel,
             src_dim_numel,
-        };
-        println!("metadata: {:?}", meta);
-        Ok(meta)
+        })
     }
 }
 
@@ -170,18 +165,16 @@ def index_select(input, indices):
         } = problem;
         let mut input = Tensor::randn::<f32>(input_shape, Device::CPU);
 
-        let dim = 1;
-        let ground_truth = ground_truth(&input, &indices, dim).unwrap();
+        let ground_truth = ground_truth(&input, &indices, 0).unwrap();
         if quantize {
             let quantizer = Quantizer::new(Quantization::SInt8);
             input = quantizer.quantize(input);
         }
 
         let input = input.to(&device).unwrap();
-        println!("INDICES: {:?}", indices);
         let indices = indices.to(&device).unwrap();
 
-        let result = input.index_select(indices, dim).unwrap().resolve().unwrap();
+        let result = input.index_select(indices, 0).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
         ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
     }
@@ -189,7 +182,7 @@ def index_select(input, indices):
     #[test]
     fn qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![384, 4000],
+            input_shape: shape![4000, 384],
             indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
         };
         run_index_select_trial(prob, true);

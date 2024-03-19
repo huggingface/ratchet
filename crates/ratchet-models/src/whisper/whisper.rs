@@ -300,7 +300,7 @@ mod tests {
         let model_path = model.get("medium_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_path = dataset.get("mm0.wav").unwrap();
+        let audio_path = dataset.get("gb0.wav").unwrap();
         let samples = load_sample(audio_path);
 
         let options = DecodingOptionsBuilder::new().build();
@@ -338,7 +338,6 @@ mod tests {
         ]);
 
         let mut to_transpose = to_quant.clone();
-        //to_transpose.remove("token_embedding.weight");
 
         let mut dst_path = src_path.clone();
         dst_path.pop();
