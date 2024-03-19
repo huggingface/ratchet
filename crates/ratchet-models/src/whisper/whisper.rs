@@ -337,7 +337,7 @@ mod tests {
             "token_embedding.weight",
         ]);
 
-        let mut to_transpose = to_quant.clone();
+        let to_transpose = to_quant.clone();
 
         let mut dst_path = src_path.clone();
         dst_path.pop();

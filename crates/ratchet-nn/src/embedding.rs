@@ -47,7 +47,7 @@ mod tests {
     use test_strategy::proptest;
 
     use ratchet::test_util::run_py_prg;
-    use ratchet::{rvec, shape, Device, DeviceRequest, Quantization, Quantizer, Shape, Tensor};
+    use ratchet::{rvec, shape, Device, DeviceRequest, Shape, Tensor};
 
     use crate::{Embedding, Module};
 
@@ -103,7 +103,7 @@ def embedding(weight, indices):
             vocab_shape,
             indices,
         } = problem;
-        let mut weight = Tensor::randn::<f32>(vocab_shape, Device::CPU);
+        let weight = Tensor::randn::<f32>(vocab_shape, Device::CPU);
 
         let transposed = false;
         let ground_truth = ground_truth(&weight, &indices, transposed).unwrap();

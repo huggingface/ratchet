@@ -1,5 +1,5 @@
 use std::{
-    cell::{Cell, RefCell},
+    cell::{RefCell},
     cmp::Ordering,
 };
 
@@ -332,7 +332,8 @@ impl MetaOperation for Matmul {
         } else {
             "sgemm"
         };
-        let key = match ke {
+        
+        match ke {
             KernelElement::Scalar => {
                 format!(
                     "{}_{}_{}_{}_{}_{}_{}",
@@ -355,8 +356,7 @@ impl MetaOperation for Matmul {
                     ke.as_str()
                 )
             }
-        };
-        key
+        }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
