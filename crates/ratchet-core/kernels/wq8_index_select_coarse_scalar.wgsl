@@ -37,11 +37,10 @@ fn main(
     }
 
     let id_i = (tid / right_numel) % metadata.ids_numel;
-    let input_i = min(u32(I[id_i]), (src_dim_numel) - 1u);
+    let input_i = u32(I[id_i]);
     let right_rank_i = tid % right_numel;
     let left_rank_i = tid / (right_numel * metadata.ids_numel);
 
-    let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
+    let src_i = (left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i) / 4u;
     Y[tid] = (unpack4x8snorm(X[src_i]) * A[src_i / 4u])[input_i % 4u];
-    Y[tid] = f32(input_i % 4u);
 }
