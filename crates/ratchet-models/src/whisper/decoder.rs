@@ -23,7 +23,7 @@ impl DecoderStem {
             disk_model.load_tensor(&key, reader, device)
         };
         Ok(Self {
-            token_embed: Embedding::new(lt("token_embedding.weight")?),
+            token_embed: Embedding::new(lt("token_embedding.weight")?, true),
             pos_embed: lt("positional_embedding")?,
         })
     }
