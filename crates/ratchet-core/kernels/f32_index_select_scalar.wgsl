@@ -7,9 +7,11 @@ var<storage, read> I: array<i32>;
 @group(0) @binding(2)
 var<storage, read_write> Y: array<f32>;
 
+//"right_numel" is the amount of elements we need to move per id provided
+//"left" gives us the offset required to move to the start of the next "right block"
+//left & right fucking suck in multi dim.
 struct Meta {
     dst_numel: u32,
-    left_numel: u32,
     right_numel: u32,
     ids_numel: u32,
     src_dim_numel: u32,
@@ -31,9 +33,10 @@ fn main(
     }
     let id_i = (tid / metadata.right_numel) % metadata.ids_numel;
     let input_i = min(u32(I[id_i]), metadata.src_dim_numel - 1u);
-    let right_rank_i = tid % metadata.right_numel;
-    let left_rank_i = tid / (metadata.right_numel * metadata.ids_numel);
+    let right_rank_index = tid % metadata.right_numel;
+    let left_rank_index = tid / (metadata.right_numel * metadata.ids_numel);
 
-    let src_i = left_rank_i * metadata.src_dim_numel * metadata.right_numel + input_i * metadata.right_numel + right_rank_i;
-    Y[tid] = X[src_i];
+    let left_offset = left_rank_index * metadata.src_dim_numel * metadata.right_numel;
+    let right_offset = input_i * metadata.right_numel + right_rank_index;
+    Y[tid] = X[left_offset + right_offset];
 }

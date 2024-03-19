@@ -1,3 +1,4 @@
+//Coarse is like the other kernel for wq8, but you go against the grain.
 @group(0) @binding(0)
 var<storage, read> X: array<u32>;
 
@@ -8,7 +9,7 @@ var<storage, read> A: array<f32>;
 var<storage, read> I: array<i32>;
 
 @group(0) @binding(3)
-var<storage, read_write> Y: array<vec4<f32>>;
+var<storage, read_write> Y: array<f32>;
 
 struct Meta {
     dst_numel: u32,
@@ -28,18 +29,18 @@ fn main(
         @builtin(num_workgroups) num_groups: vec3<u32>
 ) {
     let tid = (group_id.x * 64u + local_index);
-    let right_numel = metadata.right_numel/ 4u;
-    let src_dim_numel = metadata.src_dim_numel/ 4u;
+    let right_numel = metadata.right_numel;
+    let src_dim_numel = metadata.src_dim_numel;
 
-    if (tid >= metadata.dst_numel / 4u) {
+    if (tid >= metadata.dst_numel) {
         return;
     }
 
     let id_i = (tid / right_numel) % metadata.ids_numel;
-    let input_i = min(u32(I[id_i]), (src_dim_numel * 4u) - 1u);
+    let input_i = u32(I[id_i]);
     let right_rank_i = tid % right_numel;
     let left_rank_i = tid / (right_numel * metadata.ids_numel);
 
-    let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
-    Y[tid] = unpack4x8snorm(X[src_i]) * A[src_i / 4u];
+    let src_i = (left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i) / 4u;
+    Y[tid] = (unpack4x8snorm(X[src_i]) * A[src_i / 4u])[input_i % 4u];
 }
