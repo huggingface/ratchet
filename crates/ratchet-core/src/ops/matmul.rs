@@ -1,7 +1,4 @@
-use std::{
-    cell::{RefCell},
-    cmp::Ordering,
-};
+use std::{cell::RefCell, cmp::Ordering};
 
 use derive_new::new;
 use encase::ShaderType;
@@ -332,7 +329,7 @@ impl MetaOperation for Matmul {
         } else {
             "sgemm"
         };
-        
+
         match ke {
             KernelElement::Scalar => {
                 format!(
