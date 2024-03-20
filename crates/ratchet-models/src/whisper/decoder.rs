@@ -1,7 +1,7 @@
 use std::io::{BufRead, Seek};
 
+use crate::model::Whisper;
 use crate::whisper::residual_block::*;
-use crate::whisper::whisper::*;
 use ratchet::prelude::*;
 use ratchet_loader::GGMLModel;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};

@@ -3,7 +3,9 @@ use hf_hub::api::sync::Api;
 use log::info;
 use ratchet::{Device, DeviceRequest};
 use ratchet_loader::GGMLCompatible;
-use ratchet_models::whisper::{transcribe, DecodingOptionsBuilder, Whisper};
+use ratchet_models::model::Whisper;
+use ratchet_models::options::DecodingOptionsBuilder;
+use ratchet_models::transcribe::transcribe;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]

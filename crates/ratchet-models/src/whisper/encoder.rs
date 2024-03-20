@@ -4,7 +4,8 @@ use ratchet::{Device, Tensor};
 use ratchet_loader::GGMLModel;
 use ratchet_nn::{LayerNorm, Module};
 
-use crate::{ResidualAttentionBlock, ResidualAttentionBlockInputs, Whisper};
+use super::residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs};
+use crate::model::Whisper;
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {

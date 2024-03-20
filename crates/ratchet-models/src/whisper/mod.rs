@@ -3,12 +3,13 @@ mod encoder;
 mod logit_mutators;
 mod mha;
 mod mlp;
-pub mod model;
-pub mod options;
 mod residual_block;
 mod samplers;
 mod spectrogram;
 mod task;
-mod tokenizer;
-mod transcribe;
 mod transcript;
+
+pub mod model;
+pub mod options;
+pub mod tokenizer;
+pub mod transcribe;
