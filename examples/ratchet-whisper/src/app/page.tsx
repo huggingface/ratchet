@@ -7,9 +7,11 @@ import ConfigModal, { ConfigOptions } from './components/configModal';
 import ModelSelector from './components/modelSelector';
 import ProgressBar from './components/progressBar';
 import MicButton, { AudioMetadata } from './components/micButton';
+import toast from "react-hot-toast";
+import WebGPUModal from './components/WebGPUModal';
 
 export default function Home() {
-    const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WHISPER_TINY);
+    const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WhisperTiny);
     const [loadedModel, setLoadedModel] = useState<AvailableModels | null>(null);
     const [model, setModel] = useState<Model | null>(null);
 
@@ -95,6 +97,7 @@ export default function Home() {
         if (!model || !audioData || generating) {
             return
         }
+        setGenerating(true);
         setSegments([]);
         let builder = new DecodingOptionsBuilder();
         let options = builder
@@ -110,7 +113,6 @@ export default function Home() {
             }
             setSegments((currentSegments) => [...currentSegments, segment]);
         };
-        setGenerating(true);
         let result = await model.run({ audio: audioData, decode_options: options, callback: callback });
         console.log("Result: ", result);
         console.log("Processing time: ", result.processing_time);
@@ -124,7 +126,15 @@ export default function Home() {
         const reader = new FileReader();
         reader.onload = async () => {
             let audioBytes = new Uint8Array(reader.result as ArrayBuffer);
-            setAudioData(pcm16ToIntFloat32(await transcode(audioBytes)));
+            let transcoded = await toast.promise(
+                transcode(audioBytes),
+                {
+                    loading: 'Transcoding audio...',
+                    success: <b>Transcoded successfully!</b>,
+                    error: <b>Failed to transcode.</b>,
+                }
+            );
+            setAudioData(pcm16ToIntFloat32(transcoded));
             setAudioMetadata({
                 file: file,
                 fromMic: false,
@@ -238,8 +248,8 @@ export default function Home() {
                             )}
                     </div>
                 </div>
-
             </div>
+            <WebGPUModal />
         </>
     );
 }
