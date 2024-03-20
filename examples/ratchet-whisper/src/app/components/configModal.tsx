@@ -19,14 +19,6 @@ export interface ConfigOptions {
 }
 
 const ConfigModal = (props: ConfigModalProps) => {
-    useEffect(() => {
-        //@ts-ignore
-        if (!navigator.gpu) {
-            props.setIsModalOpen(true);
-            return;
-        }
-    }, []);
-
     const handleModalClose = () => {
         props.setIsModalOpen(false);
     };
@@ -39,6 +31,7 @@ const ConfigModal = (props: ConfigModalProps) => {
                 }}
                 open={props.isModalOpen}
                 onClose={handleModalClose}
+                blockScroll={true}
                 center
             >
                 <div
