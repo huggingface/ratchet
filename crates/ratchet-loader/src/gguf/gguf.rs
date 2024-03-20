@@ -107,7 +107,7 @@ impl TensorInfo {
         println!("block_size={:?}", block_size);
         println!("shape={:?} ggml_dtype={:?}", self.shape, self.ggml_dtype);
         let tensor_blocks = tensor_elems / block_size;
-        let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
+        // let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
 
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
 
@@ -164,6 +164,13 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     };
     let block: Block = Block::BlockQ4K(block_q4k);
     Ok(block)
+}
+
+fn write_q4k<R: std::io::Write>(
+    block: BlockQ4K,
+    writer: &mut R,
+) -> std::prelude::v1::Result<(), anyhow::Error> {
+    Ok(())
 }
 
 #[derive(Debug)]

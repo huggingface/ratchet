@@ -27,6 +27,10 @@ pub trait GgmlType: Sized + Clone + Send + Sync {
     const TYPE_SIZE: usize;
     type VecDotType: GgmlType;
 
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error>;
     // This is only safe for types that include immediate values such as float/int/...
     // fn zeros() -> Self {
     //     unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
@@ -162,6 +166,13 @@ impl GgmlType for BlockQ4_0 {
     const TYPE_SIZE: usize = 2 + QK4_0 / 2;
     type VecDotType = BlockQ8_0;
 
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
+
     // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1525
     // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
     //     let k = ys.len();
@@ -263,6 +274,13 @@ impl GgmlType for BlockQ4_1 {
     const TYPE_SIZE: usize = 2 + 2 + QK4_1 / 2;
     type VecDotType = BlockQ8_1;
 
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
+
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
     //     Self::vec_dot_unopt(n, xs, ys)
     // }
@@ -358,6 +376,13 @@ impl GgmlType for BlockQ5_0 {
     const BLCK_SIZE: usize = QK5_0;
     const TYPE_SIZE: usize = 2 + 4 + QK5_0 / 2;
     type VecDotType = BlockQ8_0;
+
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
 
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
     //     let qk = Self::BLCK_SIZE;
@@ -461,6 +486,13 @@ impl GgmlType for BlockQ5_1 {
     const BLCK_SIZE: usize = QK5_1;
     const TYPE_SIZE: usize = 2 + 2 + 4 + QK5_1 / 2;
     type VecDotType = BlockQ8_1;
+
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
 
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
     //     Self::vec_dot_unopt(n, xs, ys)
@@ -571,6 +603,13 @@ impl GgmlType for BlockQ8_0 {
     const TYPE_SIZE: usize = 2 + QK8_0;
     type VecDotType = BlockQ8_0;
 
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
+
     // // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1619
     // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()> {
     //     let k = ys.len();
@@ -662,6 +701,13 @@ impl GgmlType for BlockQ8_1 {
     const TYPE_SIZE: usize = 2 + 2 + QK8_1;
     type VecDotType = BlockQ8_1;
 
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
+
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
     //     Self::vec_dot_unopt(n, xs, ys)
     // }
@@ -708,6 +754,13 @@ impl GgmlType for BlockQ2K {
     const BLCK_SIZE: usize = QK_K;
     const TYPE_SIZE: usize = QK_K / 16 + QK_K / 4 + 2 + 2;
     type VecDotType = BlockQ8K;
+
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
 
     // #[allow(unreachable_code)]
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
@@ -885,6 +938,13 @@ impl GgmlType for BlockQ3K {
     const BLCK_SIZE: usize = QK_K;
     const TYPE_SIZE: usize = QK_K / 8 + QK_K / 4 + 12 + 2;
     type VecDotType = BlockQ8K;
+
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
 
     // #[allow(unreachable_code)]
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
@@ -1165,6 +1225,20 @@ impl GgmlType for BlockQ4K {
     const TYPE_SIZE: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 2;
     type VecDotType = BlockQ8K;
 
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        let BlockQ4K {
+            d,
+            dmin,
+            scales,
+            qs,
+        } = self;
+
+        Ok(())
+    }
+
     // #[allow(unreachable_code)]
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
     //     #[cfg(target_feature = "avx")]
@@ -1358,6 +1432,13 @@ impl GgmlType for BlockQ5K {
     const BLCK_SIZE: usize = QK_K;
     const TYPE_SIZE: usize = QK_K / 8 + QK_K / 2 + 2 * 2 + K_SCALE_SIZE;
     type VecDotType = BlockQ8K;
+
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
 
     // #[allow(unreachable_code)]
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
@@ -1581,6 +1662,13 @@ impl GgmlType for BlockQ6K {
     const TYPE_SIZE: usize = 3 * QK_K / 4 + QK_K / 16 + 2;
     type VecDotType = BlockQ8K;
 
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
+
     // #[allow(unreachable_code)]
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
     //     #[cfg(target_feature = "avx")]
@@ -1765,6 +1853,13 @@ impl GgmlType for BlockQ8K {
     const TYPE_SIZE: usize = 4 + QK_K + QK_K / 16 * 2;
     type VecDotType = BlockQ8K;
 
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
+
     // #[allow(unreachable_code)]
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
     //     #[cfg(target_feature = "avx")]
@@ -1901,6 +1996,13 @@ impl GgmlType for f32 {
     const BLCK_SIZE: usize = 1;
     const TYPE_SIZE: usize = 4;
     type VecDotType = f32;
+
+    fn write<R: std::io::Write>(
+        &self,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+        todo!()
+    }
 
     // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32> {
     //     Self::vec_dot_unopt(n, xs, ys)

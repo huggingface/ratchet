@@ -2,9 +2,15 @@ pub mod ggml;
 pub mod gguf;
 pub mod k_quants;
 pub mod utils;
+use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+pub use k_quants::GgmlType;
+use std::io::Seek;
 
 #[cfg(test)]
 mod tests {
+
+    use std::io::{Read, SeekFrom};
+
     use super::*;
     use ratchet::{Device, DeviceRequest};
 
@@ -17,14 +23,31 @@ mod tests {
 
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(Q4K_GGUF.to_vec()));
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let result = gguf::Content::read(&mut reader)?;
+        let content = gguf::Content::read(&mut reader)?;
 
-        // println!("{:?}", result);
+        let blk0_k_weight = "blk.0.attn_k.weight";
+        let blk0_k_weight_info = content.tensor_infos.get(blk0_k_weight).unwrap();
 
-        let q4k_block = result.tensor(&mut reader, "blk.0.attn_k.weight", &device)?;
+        println!("{:?}", blk0_k_weight_info);
+
+        let k_quants::Block::BlockQ4K(blk0_k_weight_blockq4k) =
+            content.tensor(&mut reader, blk0_k_weight, &device)?;
         // let model_data = file.gguf().await?;
+        //
+        let q4k_len = blk0_k_weight_info.shape.len() * k_quants::BlockQ4K::TYPE_SIZE;
+        let mut expected_q4k_data = vec![0u8; q4k_len];
 
-        println!("{:?}", q4k_block);
+        reader.seek(SeekFrom::Start(
+            content.tensor_data_offset + blk0_k_weight_info.offset,
+        ))?;
+        reader.read(&mut expected_q4k_data)?;
+
+        let mut actual_q4k_data = vec![0u8; q4k_len];
+        blk0_k_weight_blockq4k.write(&mut actual_q4k_data)?;
+
+        println!("data={:?}", actual_q4k_data);
+
+        println!("{:?}", blk0_k_weight_blockq4k);
         Ok(())
     }
 
