@@ -119,6 +119,7 @@ impl TensorInfo {
     }
 }
 
+// [TODO] Move to GgmlType
 fn read_q4k<R: std::io::Seek + std::io::Read>(
     tensor_blocks: usize,
     reader: &mut R,
@@ -144,14 +145,23 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
 
     let scales_tensor = Tensor::from_bytes(
-        scales.as_ref(),
+        scales
+            .iter()
+            .map(to_u32)
+            .flatten()
+            .collect::<Vec<u8>>()
+            .as_ref(),
         ratchet::DType::WQ8,
         shape![tensor_blocks, K_SCALE_SIZE],
         device.clone(),
     )?;
 
     let qs_tensor = Tensor::from_bytes(
-        qs.as_ref(),
+        qs.iter()
+            .map(to_u32)
+            .flatten()
+            .collect::<Vec<u8>>()
+            .as_ref(),
         ratchet::DType::WQ8,
         shape![tensor_blocks, QK_K / 2],
         device.clone(),
@@ -166,11 +176,11 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     Ok(block)
 }
 
-fn write_q4k<R: std::io::Write>(
-    block: BlockQ4K,
-    writer: &mut R,
-) -> std::prelude::v1::Result<(), anyhow::Error> {
-    Ok(())
+// [TODO] Is there a simpler way to do this?
+pub fn to_u32(input: &u8) -> [u8; 4] {
+    let mut output: [u8; 4] = [0; 4];
+    LittleEndian::write_u32(&mut output, input.clone() as u32);
+    output
 }
 
 #[derive(Debug)]

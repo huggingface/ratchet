@@ -1,5 +1,6 @@
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/k_quants.rs
 
+use anyhow::bail;
 use byteorder::{ByteOrder, LittleEndian};
 use ratchet::Tensor;
 
@@ -1235,6 +1236,25 @@ impl GgmlType for BlockQ4K {
             scales,
             qs,
         } = self;
+
+        let tensor_blocks = d.shape().get(0).unwrap(); // [TODO] Handle result properly
+
+        let d_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+        let dmin_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+        let scales = d
+            .to(&ratchet::Device::CPU)?
+            .to_vec::<u32>()?
+            .iter()
+            .map(|u| u.to_le_bytes()[0])
+            .collect::<Vec<u8>>();
+        let qs = d
+            .to(&ratchet::Device::CPU)?
+            .to_vec::<u32>()?
+            .iter()
+            .map(|u| u.to_le_bytes()[0])
+            .collect::<Vec<u8>>();
+
+        println!("tensor_blocks={:?}", tensor_blocks);
 
         Ok(())
     }
