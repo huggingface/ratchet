@@ -41,7 +41,7 @@ serde-wasm-bindgen = "0.4.5"
 ratchet-hub = { path = "../ratchet-hub" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hf-hub = "0.3.2"
+hf-hub.workspace = true
 
 [dev-dependencies]
 console_error_panic_hook = "0.1.7"

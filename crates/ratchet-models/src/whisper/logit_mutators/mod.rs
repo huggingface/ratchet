@@ -1,10 +1,8 @@
 mod timestamp_rules;
-
 pub use timestamp_rules::*;
 
+use crate::whisper::tokenizer::WhisperTokenizer;
 use ratchet::Tensor;
-
-use crate::WhisperTokenizer;
 
 pub trait LogitMutator {
     fn apply(
