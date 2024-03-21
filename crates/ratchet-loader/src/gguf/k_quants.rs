@@ -1,15 +1,15 @@
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/k_quants.rs
 
 use anyhow::bail;
-use byteorder::{ByteOrder, LittleEndian};
+use half::f16;
 use ratchet::Tensor;
 
 use crate::error::Result;
+use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io::{Cursor, Read, Write};
 
-use super::{
-    ggml::GgmlDType,
-    utils::{get_scale_min_k4, group_for_dequantization},
-};
+use super::{ggml::GgmlDType, utils::*};
+use crate::gguf::utils::WriteHalf;
 
 // Default to QK_K 256 rather than 64.
 pub const QK_K: usize = 256;
@@ -28,9 +28,9 @@ pub trait GgmlType: Sized + Clone + Send + Sync {
     const TYPE_SIZE: usize;
     type VecDotType: GgmlType;
 
-    fn write<R: std::io::Write>(
+    fn write<W: std::io::Seek + std::io::Write>(
         &self,
-        writer: &mut R,
+        writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error>;
     // This is only safe for types that include immediate values such as float/int/...
     // fn zeros() -> Self {
@@ -1226,9 +1226,9 @@ impl GgmlType for BlockQ4K {
     const TYPE_SIZE: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 2;
     type VecDotType = BlockQ8K;
 
-    fn write<R: std::io::Write>(
+    fn write<W: std::io::Seek + std::io::Write>(
         &self,
-        writer: &mut R,
+        writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         let BlockQ4K {
             d,
@@ -1241,18 +1241,23 @@ impl GgmlType for BlockQ4K {
 
         let d_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
         let dmin_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
-        let scales = d
+        let scales_data = d
             .to(&ratchet::Device::CPU)?
             .to_vec::<u32>()?
             .iter()
             .map(|u| u.to_le_bytes()[0])
             .collect::<Vec<u8>>();
-        let qs = d
+        let qs_data = d
             .to(&ratchet::Device::CPU)?
             .to_vec::<u32>()?
             .iter()
             .map(|u| u.to_le_bytes()[0])
             .collect::<Vec<u8>>();
+
+        for _idx in 0..*tensor_blocks {
+            let d_value = half::f16::from_f32(d_data[_idx]);
+            writer.write_f16(d_value)?;
+        }
 
         println!("tensor_blocks={:?}", tensor_blocks);
 

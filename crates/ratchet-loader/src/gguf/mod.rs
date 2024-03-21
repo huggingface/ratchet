@@ -9,7 +9,7 @@ use std::io::Seek;
 #[cfg(test)]
 mod tests {
 
-    use std::io::{Read, SeekFrom};
+    use std::io::{Cursor, Read, SeekFrom};
 
     use super::*;
     use ratchet::{Device, DeviceRequest};
@@ -43,7 +43,8 @@ mod tests {
         reader.read(&mut expected_q4k_data)?;
 
         let mut actual_q4k_data = vec![0u8; q4k_len];
-        blk0_k_weight_blockq4k.write(&mut actual_q4k_data)?;
+        let mut actual_q4k_data_cursor = Cursor::new(&mut actual_q4k_data);
+        blk0_k_weight_blockq4k.write(&mut actual_q4k_data_cursor)?;
 
         println!("data={:?}", actual_q4k_data);
 

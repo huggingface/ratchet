@@ -74,6 +74,19 @@ impl<R: std::io::Seek + std::io::Read> ReadHalf for R {
         Ok(f16_value)
     }
 }
+
+trait WriteHalf {
+    fn write_f16(&mut self, input: f16) -> Result<usize>;
+}
+
+impl<R: std::io::Seek + std::io::Write> WriteHalf for R {
+    fn write_f16(&mut self, input: f16) -> Result<usize> {
+        let bytes = input.to_le_bytes();
+        let num_written = self.write(&bytes)?;
+        Ok(num_written)
+    }
+}
+
 trait ReadInto<Other> {
     fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()>;
 }
