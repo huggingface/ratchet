@@ -217,7 +217,7 @@ impl WgpuDevice {
         self.buffer_allocator.allocate_cfg(execution_order, device)
     }
 
-    pub fn begin_pass(&self, pass_index: u64) {
-        self.buffer_allocator.begin_pass(pass_index);
+    pub fn begin_pass(&self) {
+        self.buffer_allocator.begin_pass(0);
     }
 }

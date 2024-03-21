@@ -41,9 +41,7 @@ pub fn transcribe(
     let mut all_segments = Vec::with_capacity(512);
     let prompt_since_reset = 0;
 
-    let mut pass_idx = 0;
     while seek < content_frames {
-        model.device.try_gpu()?.begin_pass(pass_idx);
         println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
@@ -85,7 +83,6 @@ pub fn transcribe(
         all_segments.extend(segments);
         model.decoder.reset();
         seek += advance;
-        pass_idx += 1;
     }
 
     let mut t = TranscriptionResult::new(runtime.elapsed(), all_segments, None);
@@ -127,9 +124,7 @@ pub async fn transcribe(
     let mut all_segments = Vec::with_capacity(512);
     let prompt_since_reset = 0;
 
-    let mut pass_idx = 0;
     while seek < content_frames {
-        model.device.try_gpu()?.begin_pass(pass_idx);
         println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
@@ -172,7 +167,6 @@ pub async fn transcribe(
         all_segments.extend(segments);
         model.decoder.reset();
         seek += advance;
-        pass_idx += 1;
     }
 
     if let Some(cb) = callback {

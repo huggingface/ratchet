@@ -215,10 +215,8 @@ def ground(options):
         let mut tokens = vec![50258, 50259, 50359];
         let mut all_tokens = tokens.clone();
         let mut all_logits = vec![];
-        let mut iters = 0;
         let start = std::time::Instant::now();
         while tokens[tokens.len() - 1] != 50257 {
-            decoder.device.try_gpu()?.begin_pass(iters);
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = decoder.forward([audio_ctx.clone(), token_t])?.resolve()?;
@@ -238,7 +236,6 @@ def ground(options):
                 .collect::<Vec<_>>();
             println!("Token: {:?}", tokens);
             all_tokens.extend(tokens.clone());
-            iters += 1;
         }
         println!("Took: {:?}", start.elapsed());
 

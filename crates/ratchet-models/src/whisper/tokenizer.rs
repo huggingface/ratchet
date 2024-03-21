@@ -75,7 +75,6 @@ impl WhisperTokenizer {
             true => "openai/whisper-large-v3",
             false => "openai/whisper-tiny",
         };
-        println!("LOADING TOKENIZER: {}", repo_name);
 
         let tokenizer_repo = api.model(repo_name.to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
