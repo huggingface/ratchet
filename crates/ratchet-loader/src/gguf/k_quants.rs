@@ -6,7 +6,7 @@ use ratchet::Tensor;
 
 use crate::error::Result;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Seek, Write};
 
 use super::{ggml::GgmlDType, utils::*};
 use crate::gguf::utils::WriteHalf;
@@ -1240,23 +1240,26 @@ impl GgmlType for BlockQ4K {
         let tensor_blocks = d.shape().get(0).unwrap(); // [TODO] Handle result properly
 
         let d_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
-        let dmin_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
-        let scales_data = d
-            .to(&ratchet::Device::CPU)?
-            .to_vec::<u32>()?
-            .iter()
-            .map(|u| u.to_le_bytes()[0])
-            .collect::<Vec<u8>>();
-        let qs_data = d
-            .to(&ratchet::Device::CPU)?
-            .to_vec::<u32>()?
-            .iter()
-            .map(|u| u.to_le_bytes()[0])
-            .collect::<Vec<u8>>();
+        let dmin_data = dmin.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+
+        let scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        let mut scales_data = unsafe { std::mem::transmute::<_, Vec<u8>>(scales_data) };
+        let mut scales_data_cursor = Cursor::new(&mut scales_data);
+
+        let qs_data = qs.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
 
         for _idx in 0..*tensor_blocks {
             let d_value = half::f16::from_f32(d_data[_idx]);
             writer.write_f16(d_value)?;
+            let dmin_data = half::f16::from_f32(dmin_data[_idx]);
+            writer.write_f16(d_value)?;
+
+            // let mut current_scales = vec![0u8; K_SCALE_SIZE];
+            // let pos = std::io::SeekFrom::Start((_idx * K_SCALE_SIZE) as u64);
+            // scales_data_cursor.seek(pos)?;
+            // scales_data_cursor.read_exact(&mut current_scales)?;
+
+            // writer.write(current_scales.as_ref())?;
         }
 
         println!("tensor_blocks={:?}", tensor_blocks);

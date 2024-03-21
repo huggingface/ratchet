@@ -7,6 +7,7 @@
 use crate::error::{Error, Result};
 use crate::gguf::ggml::GgmlDType;
 use crate::gguf::k_quants::{BlockQ4K, K_SCALE_SIZE, QK_K};
+use crate::gguf::utils::ReadHalf;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use half::f16;
 use ratchet::{shape, Device, Shape, Tensor, TensorDType};
@@ -14,6 +15,7 @@ use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 
 use super::k_quants::Block;
+use super::utils::ReadInto;
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -60,44 +62,6 @@ pub struct TensorInfo {
     pub ggml_dtype: GgmlDType,
     pub shape: Shape,
     pub offset: u64,
-}
-
-trait ReadHalf {
-    fn read_f16(&mut self) -> Result<f16>;
-}
-
-impl<R: std::io::Seek + std::io::Read> ReadHalf for R {
-    fn read_f16(&mut self) -> Result<f16> {
-        let mut d = [0u8; 2];
-        self.read_exact(&mut d)?;
-        let f16_value = half::f16::from_le_bytes(d);
-        Ok(f16_value)
-    }
-}
-
-trait WriteHalf {
-    fn write_f16(&mut self, input: f16) -> Result<usize>;
-}
-
-impl<R: std::io::Seek + std::io::Write> WriteHalf for R {
-    fn write_f16(&mut self, input: f16) -> Result<usize> {
-        let bytes = input.to_le_bytes();
-        let num_written = self.write(&bytes)?;
-        Ok(num_written)
-    }
-}
-
-trait ReadInto<Other> {
-    fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()>;
-}
-
-impl<R: std::io::Seek + std::io::Read, Other: std::io::Write> ReadInto<Other> for R {
-    fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()> {
-        let mut temp = vec![0u8; length];
-        self.read_exact(&mut temp)?;
-        other.write_all(&mut temp)?;
-        Ok(())
-    }
 }
 
 impl TensorInfo {
@@ -160,7 +124,7 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     let scales_tensor = Tensor::from_bytes(
         qs.as_ref(),
         ratchet::DType::U32,
-        shape![tensor_blocks, K_SCALE_SIZE],
+        shape![tensor_blocks, K_SCALE_SIZE / 4],
         device.clone(),
     )?;
 

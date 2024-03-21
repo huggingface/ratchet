@@ -29,7 +29,7 @@ impl<W: std::io::Seek + std::io::Write> WriteHalf for W {
     }
 }
 
-trait ReadInto<Other> {
+pub trait ReadInto<Other> {
     fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()>;
 }
 
