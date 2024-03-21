@@ -11,7 +11,7 @@ use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use half::f16;
 use ratchet::{shape, Device, Shape, Tensor, TensorDType};
 use std::collections::HashMap;
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Write};
 
 use super::k_quants::Block;
 
@@ -145,24 +145,15 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
 
     let scales_tensor = Tensor::from_bytes(
-        scales
-            .iter()
-            .map(to_u32)
-            .flatten()
-            .collect::<Vec<u8>>()
-            .as_ref(),
-        ratchet::DType::WQ8,
+        qs.as_ref(),
+        ratchet::DType::U32,
         shape![tensor_blocks, K_SCALE_SIZE],
         device.clone(),
     )?;
 
     let qs_tensor = Tensor::from_bytes(
-        qs.iter()
-            .map(to_u32)
-            .flatten()
-            .collect::<Vec<u8>>()
-            .as_ref(),
-        ratchet::DType::WQ8,
+        qs.as_ref(),
+        ratchet::DType::U32,
         shape![tensor_blocks, QK_K / 2],
         device.clone(),
     )?;
@@ -174,13 +165,6 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     };
     let block: Block = Block::BlockQ4K(block_q4k);
     Ok(block)
-}
-
-// [TODO] Is there a simpler way to do this?
-pub fn to_u32(input: &u8) -> [u8; 4] {
-    let mut output: [u8; 4] = [0; 4];
-    LittleEndian::write_u32(&mut output, input.clone() as u32);
-    output
 }
 
 #[derive(Debug)]
