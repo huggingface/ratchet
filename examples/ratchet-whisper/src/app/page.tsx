@@ -11,7 +11,7 @@ import toast from "react-hot-toast";
 import WebGPUModal from './components/WebGPUModal';
 
 export default function Home() {
-    const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WhisperTiny);
+    const [selectedModel, setSelectedModel] = useState<AvailableModels>({ Whisper: "tiny" });
     const [loadedModel, setLoadedModel] = useState<AvailableModels | null>(null);
     const [model, setModel] = useState<Model | null>(null);
 
@@ -38,8 +38,7 @@ export default function Home() {
     }, [])
 
     async function loadModel() {
-        let toLoad = AvailableModels[selectedModel] as unknown as AvailableModels;
-        setModel(await Model.load(toLoad, Quantization.Q8, (p: number) => setProgress(p)));
+        setModel(await Model.load(selectedModel, Quantization.Q8, (p: number) => setProgress(p)));
         setLoadedModel(selectedModel);
         setProgress(0);
     }

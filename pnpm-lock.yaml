@@ -15,8 +15,8 @@ importers:
         specifier: ^0.12.1
         version: 0.12.1
       '@ratchet-ml/ratchet-web':
-        specifier: 0.2.0
-        version: 0.2.0
+        specifier: link:../../target/pkg/ratchet-web
+        version: link:../../target/pkg/ratchet-web
       fix-webm-duration:
         specifier: ^1.0.5
         version: 1.0.5
@@ -540,10 +540,6 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: true
-
-  /@ratchet-ml/ratchet-web@0.2.0:
-    resolution: {integrity: sha512-6zLpmm+yf9u24FGqMgQcRvbnQpmWGUHT2RATxZb1vTYPrqmJm28EIXZ7aPaamc1pQERwK99ekN8J7FqUjTEI4w==}
-    dev: false
 
   /@rollup/plugin-virtual@3.0.2:
     resolution: {integrity: sha512-10monEYsBp3scM4/ND4LNH5Rxvh3e/cVeL3jWTgZ2SrQ+BmUoQcopVQvnaMcOnykb1VkxUFuDAN+0FnpTFRy2A==}

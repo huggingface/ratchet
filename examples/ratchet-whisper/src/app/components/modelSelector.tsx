@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AvailableModels } from "@ratchet-ml/ratchet-web";
+import { AvailableModels, Whisper } from "@ratchet-ml/ratchet-web";
 
 interface ModelSelectorProps {
     selectedModel: AvailableModels | null;
@@ -33,11 +33,25 @@ export function humanFileSize(sizeBytes: number | bigint): string {
     }).format(size);
 }
 
+export function availableModelToString(model: AvailableModels): string {
+    if ("Whisper" in model) {
+        return model.Whisper;
+    } else if ("Llama" in model) {
+        return model.Llama;
+    }
+    return "";
+}
+
 const ModelSelector = (props: ModelSelectorProps) => {
     const { selectedModel, setSelectedModel, loaded, progress } = props;
     const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
-    const modelNames = Object.values(AvailableModels).filter(value => typeof value === 'string') as string[];
-    const modelValues = Object.values(AvailableModels);
+
+    const whisper = ["tiny", "base", "small", "medium", "large_v2", "large_v3", "distil_large_v3"] as const;
+    type WhisperIter = typeof whisper[number];
+
+    const modelNames = [
+        ...whisper,
+    ];
 
     const displayModels = () => {
         return modelNames.map((model, idx) => (
@@ -46,11 +60,14 @@ const ModelSelector = (props: ModelSelectorProps) => {
                     className={`bg-white hover:bg-slate-100 py-2 px-8 font-semibold text-xl block whitespace-no-wrap cursor-pointer ${idx === modelNames.length - 1 ? "rounded-b-md" : ""
                         }`}
                     onClick={() => {
-                        setSelectedModel(modelValues[idx] as number);
+                        const isWhisper = whisper.includes(model as WhisperIter);
+                        if (isWhisper) {
+                            setSelectedModel({ Whisper: model as Whisper });
+                        }
                         setDropdownOpen(false);
                     }}
                 >
-                    {model as string}
+                    {model}
                 </a>
             </li>
         ));
@@ -72,8 +89,8 @@ const ModelSelector = (props: ModelSelectorProps) => {
                 >
                     <span className="mr-1">
                         {selectedModel
-                            ? selectedModel
-                            : "Select Model"}
+                            ? availableModelToString(selectedModel)
+                            : "Select a model"}
                     </span>
                     <svg
                         className="fill-current h-4 w-4"

@@ -1,5 +1,5 @@
 use crate::db::*;
-use crate::registry::*;
+use crate::registry::{AvailableModels, Quantization, Whisper as AvailableWhisper};
 use ratchet_hub::{ApiBuilder, RepoType};
 use ratchet_models::{transcribe, StreamedSegment, Whisper};
 use serde::{Deserialize, Serialize};
@@ -83,11 +83,12 @@ impl Model {
     /// This key should be an enum of supported models.
     #[wasm_bindgen]
     pub async fn load(
-        model: AvailableModels,
+        model: JsValue,
         quantization: Quantization,
         progress: &js_sys::Function,
     ) -> Result<Model, JsValue> {
-        log::warn!("Loading model: {:?} {:?}", model, quantization);
+        log::warn!("Loading model: {:?}", model);
+        let model: AvailableModels = serde_wasm_bindgen::from_value(model).unwrap();
         let key = model.as_key(quantization);
         let model_repo = ApiBuilder::from_hf(&key.repo_id(), RepoType::Model).build();
         let db = RatchetDB::open().await.map_err(|e| {
@@ -171,9 +172,15 @@ mod tests {
         });
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
-        let mut model = Model::load(AvailableModels::WhisperTiny, Quantization::Q8, js_cb)
-            .await
-            .unwrap();
+        let mut model = Model::load(
+            AvailableModels::Whisper {
+                variant: WhisperVariant::Tiny,
+            },
+            Quantization::Q8,
+            js_cb,
+        )
+        .await
+        .unwrap();
 
         let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
         let audio_bytes = data_repo.get("jfk.wav").await?;
