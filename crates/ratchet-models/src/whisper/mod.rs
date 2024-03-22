@@ -13,3 +13,6 @@ pub mod options;
 pub mod tokenizer;
 pub mod transcribe;
 pub mod transcript;
+
+pub use decoder::WhisperDecoder;
+pub use encoder::WhisperEncoder;
