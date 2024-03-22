@@ -5,9 +5,6 @@ use ratchet_nn::Module;
 use std::cmp::min;
 use web_time::Instant;
 
-#[cfg(target_arch = "wasm32")]
-use crate::StreamedSegment;
-
 #[cfg(not(target_arch = "wasm32"))]
 pub fn transcribe(
     model: &mut Whisper,

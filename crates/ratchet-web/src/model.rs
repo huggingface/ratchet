@@ -1,22 +1,10 @@
 use crate::db::*;
-use crate::registry::{AvailableModels, Quantization, Whisper as AvailableWhisper};
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_models::{transcribe, StreamedSegment, Whisper};
-use serde::{Deserialize, Serialize};
+use ratchet_models::{
+    model::Whisper, registry::AvailableModels, registry::Quantization, transcribe::transcribe,
+    transcript::StreamedSegment,
+};
 use wasm_bindgen::prelude::*;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum ModelKind {
-    Whisper,
-}
-
-impl From<AvailableModels> for ModelKind {
-    fn from(av: AvailableModels) -> Self {
-        match av {
-            _ => ModelKind::Whisper,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum WebModel {
@@ -51,10 +39,13 @@ impl WebModel {
     }
 
     pub async fn from_stored(stored: StoredModel) -> Result<WebModel, anyhow::Error> {
-        match stored.kind {
-            ModelKind::Whisper => Ok(WebModel::Whisper(
-                Whisper::from_bytes(&stored.bytes.to_vec()).await?,
-            )),
+        match stored.model {
+            AvailableModels::Whisper(_) => {
+                //TODO: 🚨 this is where we copy from JS memory to WASM arena
+                //this lil `to_vec` call!
+                let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
+                Ok(WebModel::Whisper(model))
+            }
             _ => Err(anyhow::anyhow!("Unknown model type")),
         }
     }
@@ -83,13 +74,12 @@ impl Model {
     /// This key should be an enum of supported models.
     #[wasm_bindgen]
     pub async fn load(
-        model: JsValue,
+        model: AvailableModels,
         quantization: Quantization,
         progress: &js_sys::Function,
     ) -> Result<Model, JsValue> {
         log::warn!("Loading model: {:?}", model);
-        let model: AvailableModels = serde_wasm_bindgen::from_value(model).unwrap();
-        let key = model.as_key(quantization);
+        let key = ModelKey::from_available(&model, quantization);
         let model_repo = ApiBuilder::from_hf(&key.repo_id(), RepoType::Model).build();
         let db = RatchetDB::open().await.map_err(|e| {
             let e: JsError = e.into();

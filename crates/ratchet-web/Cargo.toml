@@ -7,6 +7,9 @@ description = "A web-first, cross-platform ML framework."
 keywords = ["llm","wasm","transformers","webgpu","ml","machine-learning","deep-learning"]
 repository = "https://github.com/FL33TW00D/ratchet"
 
+[build]
+targets = [ "wasm32-unknown-unknown"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -39,7 +42,6 @@ log.workspace = true
 hound = "3.5.1"
 fern = "0.6.2"
 chrono = "0.4.34"
-tsify = "0.4.5"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.6", features = ["js"] }

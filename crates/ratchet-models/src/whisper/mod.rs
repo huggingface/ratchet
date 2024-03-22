@@ -7,9 +7,9 @@ mod residual_block;
 mod samplers;
 mod spectrogram;
 mod task;
-mod transcript;
 
 pub mod model;
 pub mod options;
 pub mod tokenizer;
 pub mod transcribe;
+pub mod transcript;

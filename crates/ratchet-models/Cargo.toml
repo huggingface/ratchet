@@ -39,6 +39,7 @@ web-time = "1.0.0"
 wasm-bindgen = { workspace = true }  
 serde-wasm-bindgen = "0.4.5"
 ratchet-hub = { path = "../ratchet-hub" }
+tsify = "0.4.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hf-hub.workspace = true

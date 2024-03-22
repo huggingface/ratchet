@@ -1,10 +1,18 @@
-use crate::db::ModelKey;
-use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::*;
+#![allow(non_local_definitions)]
+//! # Registry
+//!
+//! The registry is responsible for surfacing available models to the user in both the CLI & WASM interfaces.
 
-#[derive(Debug, tsify::Tsify, Serialize, Deserialize)]
-#[tsify(from_wasm_abi)]
-#[serde(rename_all = "snake_case")]
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Debug)]
+#[cfg_attr(
+    target_arch = "wasm32",
+    derive(tsify::Tsify, serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(target_arch = "wasm32", tsify(from_wasm_abi))]
+#[cfg_attr(target_arch = "wasm32", serde(rename_all = "snake_case"))]
 pub enum Whisper {
     Tiny,
     Base,
@@ -15,25 +23,23 @@ pub enum Whisper {
     DistilLargeV3,
 }
 
-/// Not actually supported, placeholder.
-#[derive(Debug, tsify::Tsify, Serialize, Deserialize)]
-#[tsify(from_wasm_abi)]
-pub enum Llama {
-    #[serde(rename = "7B")]
-    _7B,
-    #[serde(rename = "13B")]
-    _13B,
-}
-
-#[derive(Debug, tsify::Tsify, Serialize, Deserialize)]
-#[tsify(from_wasm_abi)]
+/// # Available Models
+///
+/// This is a type safe way to surface models to users,
+/// providing autocomplete **within** model families.
+#[derive(Debug)]
+#[non_exhaustive]
+#[cfg_attr(
+    target_arch = "wasm32",
+    derive(tsify::Tsify, serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(target_arch = "wasm32", tsify(from_wasm_abi))]
 pub enum AvailableModels {
     Whisper(Whisper),
-    Llama(Llama),
 }
 
 impl AvailableModels {
-    fn repo_id(&self) -> String {
+    pub fn repo_id(&self) -> String {
         let id = match self {
             AvailableModels::Whisper(w) => match w {
                 Whisper::Tiny => "FL33TW00D-HF/whisper-tiny",
@@ -49,7 +55,7 @@ impl AvailableModels {
         id.to_string()
     }
 
-    fn model_id(&self, quantization: Quantization) -> String {
+    pub fn model_id(&self, quantization: Quantization) -> String {
         let model_stem = match self {
             AvailableModels::Whisper(w) => match w {
                 Whisper::Tiny => "tiny",
@@ -67,14 +73,10 @@ impl AvailableModels {
             Quantization::F32 => format!("{}_f32.bin", model_stem),
         }
     }
-
-    pub fn as_key(&self, quantization: Quantization) -> ModelKey {
-        ModelKey::new(self.repo_id(), self.model_id(quantization))
-    }
 }
 
 #[derive(Debug)]
-#[wasm_bindgen]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub enum Quantization {
     Q8,
     F32,
