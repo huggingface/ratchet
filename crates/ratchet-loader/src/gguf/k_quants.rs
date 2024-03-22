@@ -47,6 +47,16 @@ pub enum Block {
     BlockQ6K(BlockQ6K),
 }
 
+impl Block {
+    pub fn type_size(&self) -> usize {
+        match &self {
+            Block::BlockQ4K(blk) => BlockQ4K::TYPE_SIZE,
+            Block::BlockF32(blk) => BlockF32::TYPE_SIZE,
+            Block::BlockQ6K(blk) => BlockQ6K::TYPE_SIZE,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockQ4_0 {
     pub(crate) d: f32,
@@ -162,9 +172,6 @@ pub struct BlockQ8K {
     pub(crate) bsums: [i16; QK_K / 16],
 }
 // const _: () = assert!(4 + QK_K + QK_K / 16 * 2 == std::mem::size_of::<BlockQ8K>());
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct BlockF32(Tensor);
 
 impl GgmlType for BlockQ4_0 {
     const DTYPE: GgmlDType = GgmlDType::Q4_0;
@@ -626,6 +633,9 @@ impl GgmlType for BlockQ8K {
         todo!()
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockF32(Tensor);
 
 impl GgmlType for BlockF32 {
     const DTYPE: GgmlDType = GgmlDType::F32;
