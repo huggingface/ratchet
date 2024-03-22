@@ -4,18 +4,14 @@
 //!
 //! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::gguf::ggml::GgmlDType;
-use crate::gguf::k_quants::{BlockQ4K, K_SCALE_SIZE, QK_K};
-use crate::gguf::utils::ReadHalf;
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
-use half::f16;
-use ratchet::{shape, Device, Shape, Tensor, TensorDType};
+use crate::gguf::k_quants::{BlockQ4K, GgmlType};
+use byteorder::{LittleEndian, ReadBytesExt};
+use ratchet::{Device, Shape};
 use std::collections::HashMap;
-use std::io::{Cursor, Read, Write};
 
 use super::k_quants::Block;
-use super::utils::ReadInto;
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -90,65 +86,13 @@ impl TensorInfo {
 
         // [TODO] Implement
         match self.ggml_dtype {
-            GgmlDType::Q4K => read_q4k(tensor_blocks, reader, device),
+            GgmlDType::Q4K => BlockQ4K::read(tensor_blocks, reader, device),
             _ => anyhow::bail!("Not yet implemented"),
         }
     }
 }
 
 // [TODO] Move to GgmlType
-fn read_q4k<R: std::io::Seek + std::io::Read>(
-    tensor_blocks: usize,
-    reader: &mut R,
-    device: &Device,
-) -> std::prelude::v1::Result<Block, anyhow::Error> {
-    println!("tensor_blocks: {:?}", tensor_blocks);
-    let mut ds = vec![0f32; tensor_blocks];
-    let mut dmins = vec![0f32; tensor_blocks];
-    let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
-    let mut scales_cursor = Cursor::new(&mut scales);
-
-    let mut qs = vec![0u8; tensor_blocks * QK_K / 2];
-    let mut qs_cursor = Cursor::new(&mut qs);
-
-    for _idx in 0..tensor_blocks {
-        ds[_idx] = reader.read_f16()?.to_f32();
-        dmins[_idx] = reader.read_f16()?.to_f32();
-
-        reader.read_u8s_into(&mut scales_cursor, K_SCALE_SIZE)?;
-        reader.read_u8s_into(&mut qs_cursor, QK_K / 2)?;
-    }
-
-    let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
-    let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
-
-    let scales_tensor = Tensor::from_bytes(
-        scales.as_ref(),
-        ratchet::DType::U32,
-        shape![tensor_blocks, K_SCALE_SIZE / 4],
-        device.clone(),
-    )?;
-
-    let qs_tensor = Tensor::from_bytes(
-        qs.as_ref(),
-        ratchet::DType::U32,
-        shape![tensor_blocks, QK_K / 2 / 4],
-        device.clone(),
-    )?;
-    println!(
-        "qs len {:?} - tensor bytes {:?}",
-        qs.len(),
-        qs_tensor.num_bytes()
-    );
-    let block_q4k: BlockQ4K = BlockQ4K {
-        d: ds_tensor,
-        dmin: dmins_tensor,
-        scales: scales_tensor,
-        qs: qs_tensor,
-    };
-    let block: Block = Block::BlockQ4K(block_q4k);
-    Ok(block)
-}
 
 #[derive(Debug)]
 pub struct Content {
