@@ -6,7 +6,7 @@
 
 use crate::error::Result;
 use crate::gguf::ggml::GgmlDType;
-use crate::gguf::k_quants::{BlockQ4K, GgmlType};
+use crate::gguf::k_quants::{BlockF32, BlockQ4K, GgmlType, K_SCALE_SIZE, QK_K};
 use byteorder::{LittleEndian, ReadBytesExt};
 use ratchet::{Device, Shape};
 use std::collections::HashMap;
@@ -87,6 +87,7 @@ impl TensorInfo {
         // [TODO] Implement
         match self.ggml_dtype {
             GgmlDType::Q4K => BlockQ4K::read(tensor_blocks, reader, device),
+            GgmlDType::F32 => BlockF32::read(tensor_blocks, reader, device),
             _ => anyhow::bail!("Not yet implemented"),
         }
     }

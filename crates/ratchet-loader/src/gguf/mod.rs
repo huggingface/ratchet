@@ -14,6 +14,18 @@ mod tests {
     use super::*;
     use ratchet::{Device, DeviceRequest};
 
+    fn read_expected_data<R: std::io::Seek + std::io::Read>(
+        reader: &mut R,
+        offset: u64,
+        length: usize,
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut expected_data = vec![0u8; length];
+
+        reader.seek(SeekFrom::Start(offset))?;
+        reader.read_exact(&mut expected_data)?;
+        Ok(expected_data)
+    }
+
     #[tokio::test]
     async fn test_read_q4k() -> anyhow::Result<()> {
         const Q4K_GGUF: &[u8] = include_bytes!(concat!(
@@ -25,23 +37,30 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU)?;
         let content = gguf::Content::read(&mut reader)?;
 
+        println!(
+            "{:?}",
+            content
+                .tensor_infos
+                .keys()
+                .into_iter()
+                .filter(|key| (*key).starts_with("blk.0"))
+                .map(|key| content.tensor_infos.get(key).map(|ti| (key, ti)))
+                .flatten()
+                .collect::<Vec<_>>()
+        );
+
         let blk0_k_weight = "blk.0.attn_k.weight";
         let blk0_k_weight_info = content.tensor_infos.get(blk0_k_weight).unwrap();
 
-        println!("{:?}", blk0_k_weight_info);
+        let blk0_k_weight_blockq4k = match content.tensor(&mut reader, blk0_k_weight, &device)? {
+            k_quants::Block::BlockQ4K(q4k) => q4k,
+            k_quants::Block::BlockF32(_) => panic!("Not possible"),
+        };
 
-        let k_quants::Block::BlockQ4K(blk0_k_weight_blockq4k) =
-            content.tensor(&mut reader, blk0_k_weight, &device)?;
         // let model_data = file.gguf().await?;
         //
         let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * k_quants::BlockQ4K::TYPE_SIZE;
-        println!(
-            "shape {:?} shape_len {:?} type_size {:?} q4k_len {:?}",
-            blk0_k_weight_info.shape,
-            blk0_k_weight_info.shape.len(),
-            k_quants::BlockQ4K::TYPE_SIZE,
-            q4k_len
-        );
+
         let mut expected_q4k_data = vec![0u8; q4k_len];
 
         reader.seek(SeekFrom::Start(
@@ -58,49 +77,34 @@ mod tests {
             "{:?} not equal",
             blk0_k_weight
         );
+        let blk0_norm_weight = "blk.0.attn_norm.weight";
+        let blk0_norm_weight_info = content.tensor_infos.get(blk0_norm_weight).unwrap();
+
+        let f32_len = blk0_norm_weight_info.shape.get(0).unwrap() * k_quants::BlockF32::TYPE_SIZE;
+
+        let blk0_norm_weight_blockf32 =
+            match content.tensor(&mut reader, blk0_norm_weight, &device)? {
+                k_quants::Block::BlockF32(blk_f32) => blk_f32,
+                _ => panic!("Not possible"),
+            };
+
+        let mut expected_f32_data = vec![0u8; f32_len];
+
+        reader.seek(SeekFrom::Start(
+            content.tensor_data_offset + blk0_norm_weight_info.offset,
+        ))?;
+        reader.read_exact(&mut expected_f32_data)?;
+
+        let mut actual_f32_data = vec![0u8; f32_len];
+        let mut actual_f32_data_cursor = Cursor::new(&mut actual_f32_data);
+        blk0_norm_weight_blockf32.write(&mut actual_f32_data_cursor)?;
+
+        assert_eq!(
+            expected_f32_data, actual_f32_data,
+            "{:?} not equal",
+            blk0_norm_weight
+        );
 
         Ok(())
     }
-
-    // #[tokio::test]
-    // async fn test_gguf() -> anyhow::Result<()> {
-    //     const DUMMY_GGUF: &[u8] =
-    //         include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/TheBloke_TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"));
-
-    //     let mut reader = std::io::BufReader::new(std::io::Cursor::new(DUMMY_GGUF.to_vec()));
-
-    //     let result = gguf::Content::read(&mut reader)?;
-
-    //     let empty_value = gguf::Value::String(String::from(""));
-    //     let metadata = result
-    //         .metadata
-    //         .keys()
-    //         .filter(|key| !(*key).starts_with("tokenizer"))
-    //         .map(|key| {
-    //             (
-    //                 key,
-    //                 result.metadata.get(key).unwrap_or_else(|| &empty_value),
-    //             )
-    //         })
-    //         .collect::<Vec<_>>();
-
-    //     println!("{:?}", metadata);
-
-    //     println!(
-    //         "{:?}",
-    //         result
-    //             .tensor_infos
-    //             .keys()
-    //             .filter(|key| (*key).starts_with("blk.0"))
-    //             .collect::<Vec<_>>()
-    //     );
-
-    //     let device = Device::request_device(DeviceRequest::GPU)?;
-    //     // let tensor = result.tensor(&mut reader, "blk.0.ffn_norm.weight", &device);
-    //     let tensor = result.tensor(&mut reader, "blk.0.attn_k.weight", &device);
-    //     // // let model_data = file.gguf().await?;
-
-    //     // println!("{:?}", tensor);
-    //     Ok(())
-    // }
 }

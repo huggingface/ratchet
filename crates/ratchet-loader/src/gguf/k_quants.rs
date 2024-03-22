@@ -38,24 +38,12 @@ pub trait GgmlType: Sized + Clone + Send + Sync {
         &self,
         writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error>;
-    // This is only safe for types that include immediate values such as float/int/...
-    // fn zeros() -> Self {
-    //     unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
-    // }
-    // fn to_float(xs: &[Self], ys: &mut [f32]) -> Result<()>;
-    // fn from_float(xs: &[f32], ys: &mut [Self]) -> Result<()>;
-
-    // /// Dot product used as a building block for quantized mat-mul.
-    // /// n is the number of elements to be considered.
-    // fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32>;
-
-    // /// Generic implementation of the dot product without simd optimizations.
-    // fn vec_dot_unopt(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> Result<f32>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {
     BlockQ4K(BlockQ4K),
+    BlockF32(BlockF32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -166,6 +154,9 @@ pub struct BlockQ8K {
     pub(crate) bsums: [i16; QK_K / 16],
 }
 // const _: () = assert!(4 + QK_K + QK_K / 16 * 2 == std::mem::size_of::<BlockQ8K>());
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockF32(Tensor);
 
 impl GgmlType for BlockQ4_0 {
     const DTYPE: GgmlDType = GgmlDType::Q4_0;
@@ -350,7 +341,6 @@ impl GgmlType for BlockQ4K {
         reader: &mut R,
         device: &Device,
     ) -> std::prelude::v1::Result<Block, anyhow::Error> {
-        println!("tensor_blocks: {:?}", tensor_blocks);
         let mut ds = vec![0f32; tensor_blocks];
         let mut dmins = vec![0f32; tensor_blocks];
         let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
@@ -383,11 +373,6 @@ impl GgmlType for BlockQ4K {
             shape![tensor_blocks, QK_K / 2 / 4],
             device.clone(),
         )?;
-        println!(
-            "qs len {:?} - tensor bytes {:?}",
-            qs.len(),
-            qs_tensor.num_bytes()
-        );
         let block_q4k: BlockQ4K = BlockQ4K {
             d: ds_tensor,
             dmin: dmins_tensor,
@@ -522,24 +507,39 @@ impl GgmlType for BlockQ8K {
     }
 }
 
-impl GgmlType for f32 {
+impl GgmlType for BlockF32 {
     const DTYPE: GgmlDType = GgmlDType::F32;
     const BLCK_SIZE: usize = 1;
     const TYPE_SIZE: usize = 4;
-    type VecDotType = f32;
+    type VecDotType = BlockF32;
 
     fn read<R: std::io::Seek + std::io::Read>(
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
     ) -> std::prelude::v1::Result<Block, anyhow::Error> {
-        todo!()
+        println!("tensor_blocks: {:?}", tensor_blocks);
+
+        let mut data = vec![0f32; tensor_blocks];
+        for _idx in 0..tensor_blocks {
+            data[_idx] = reader.read_f32::<LittleEndian>()?;
+        }
+
+        let tensor = Tensor::from_data(data, shape![tensor_blocks], device.clone());
+        Ok(Block::BlockF32(BlockF32(tensor)))
     }
     fn write<R: std::io::Write>(
         &self,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        todo!()
+        let tensor = &self.0;
+        let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+        let tensor_blocks = tensor.shape().get(0).unwrap(); // [TODO] Handle result properly
+
+        for _idx in 0..*tensor_blocks {
+            writer.write_f32::<LittleEndian>(tensor_data[_idx])?;
+        }
+        Ok(())
     }
 }
 
