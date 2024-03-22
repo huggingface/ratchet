@@ -119,7 +119,8 @@ impl Model {
 mod tests {
     use super::*;
     use ratchet_hub::{ApiBuilder, RepoType};
-    use ratchet_models::DecodingOptionsBuilder;
+    use ratchet_models::options::DecodingOptionsBuilder;
+    use ratchet_models::registry::Whisper as RegistryWhisper;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
@@ -163,9 +164,7 @@ mod tests {
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
         let mut model = Model::load(
-            AvailableModels::Whisper {
-                variant: WhisperVariant::Tiny,
-            },
+            AvailableModels::Whisper(RegistryWhisper::Tiny),
             Quantization::Q8,
             js_cb,
         )
