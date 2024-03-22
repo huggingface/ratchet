@@ -15,4 +15,4 @@ thiserror.workspace = true
 log.workspace = true
 
 [dev-dependencies]
-hf-hub = "0.3.2" 
+hf-hub.workspace = true

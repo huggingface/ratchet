@@ -2,7 +2,8 @@ use ndarray::s;
 use ndarray_stats::QuantileExt;
 use ratchet::{NDArrayExt, Tensor};
 
-use crate::{LogitMutator, WhisperTokenizer};
+use super::LogitMutator;
+use crate::whisper::tokenizer::WhisperTokenizer;
 
 #[derive(Debug, derive_new::new)]
 pub struct ApplyTimestampRules {

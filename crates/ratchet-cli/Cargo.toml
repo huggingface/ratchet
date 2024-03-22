@@ -1,0 +1,13 @@
+[package]
+name = "ratchet-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratchet = { path = "../ratchet-core" }
+ratchet-loader = { path = "../ratchet-loader" }
+ratchet-models = { path = "../ratchet-models" }
+ratchet-hub = { path = "../ratchet-hub" }
+log.workspace = true
+clap = { version = "4.5.3", features = ["derive"] }
+hf-hub = { workspace = true }

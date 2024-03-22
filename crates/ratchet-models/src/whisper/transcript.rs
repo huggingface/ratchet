@@ -1,7 +1,9 @@
-use crate::{WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE};
+use super::spectrogram::*;
+use super::tokenizer::WhisperTokenizer;
 use num::integer::div_floor;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 

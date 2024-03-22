@@ -1,10 +1,9 @@
-use std::io::{BufRead, Seek};
-
+use super::{mha::*, mlp::MLP};
+use crate::model::Whisper;
 use ratchet::{Device, Tensor};
 use ratchet_loader::GGMLModel;
 use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
-
-use crate::{MHAInputs, MultiHeadAttention, Whisper, MLP};
+use std::io::{BufRead, Seek};
 
 #[derive(Debug)]
 pub struct ResidualAttentionBlock {

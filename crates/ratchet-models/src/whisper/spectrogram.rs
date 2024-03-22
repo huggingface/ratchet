@@ -122,10 +122,10 @@ impl SpectrogramGenerator {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::path::PathBuf;
-
+    use super::SpectrogramGenerator;
     use hf_hub::api::sync::Api;
     use ratchet::test_util::run_py_prg;
+    use std::path::PathBuf;
 
     const MAX_DIFF: f32 = 5e-5;
 
@@ -159,7 +159,7 @@ def ground_truth():
             gb0.to_str().unwrap()
         );
         let ground_truth = run_py_prg(prg.to_string(), &[], &[]).unwrap();
-        let generator = crate::SpectrogramGenerator::new(load_npy(mels));
+        let generator = SpectrogramGenerator::new(load_npy(mels));
         let result = generator.generate(load_sample(gb0)).unwrap();
         ground_truth.all_close(&result, MAX_DIFF, MAX_DIFF).unwrap();
     }

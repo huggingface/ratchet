@@ -622,6 +622,7 @@ impl Tensor {
     pub fn resolve(self) -> Result<Tensor, TensorError> {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
+        device.begin_pass();
 
         let execution_order = self.execution_order();
         //let last = execution_order.last().unwrap();

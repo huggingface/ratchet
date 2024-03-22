@@ -63,8 +63,7 @@ const WebGPUModal = () => {
                         <div className="mx-8 mt-8">
                             <p>
                                 Uh oh! It looks like your browser doesn't
-                                support WebGPU. Please try again in a different
-                                browser.
+                                support WebGPU. Please try again in supported browser (Chrome 121+).
                             </p>
                         </div>
                     </div>

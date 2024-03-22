@@ -1,13 +1,9 @@
-use crate::{
-    DecodingOptions, DecodingTask, Language, Prompt, TranscriptionResult, Whisper,
-    WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,
-};
+use crate::model::Whisper;
+use crate::options::*;
+use crate::whisper::{spectrogram::*, task::*, tokenizer::*, transcript::*};
 use ratchet_nn::Module;
 use std::cmp::min;
 use web_time::Instant;
-
-#[cfg(target_arch = "wasm32")]
-use crate::StreamedSegment;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn transcribe(
@@ -41,9 +37,7 @@ pub fn transcribe(
     let mut all_segments = Vec::with_capacity(512);
     let prompt_since_reset = 0;
 
-    let mut pass_idx = 0;
     while seek < content_frames {
-        model.device.try_gpu()?.begin_pass(pass_idx);
         println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
@@ -85,7 +79,6 @@ pub fn transcribe(
         all_segments.extend(segments);
         model.decoder.reset();
         seek += advance;
-        pass_idx += 1;
     }
 
     let mut t = TranscriptionResult::new(runtime.elapsed(), all_segments, None);
@@ -127,9 +120,7 @@ pub async fn transcribe(
     let mut all_segments = Vec::with_capacity(512);
     let prompt_since_reset = 0;
 
-    let mut pass_idx = 0;
     while seek < content_frames {
-        model.device.try_gpu()?.begin_pass(pass_idx);
         println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
@@ -172,7 +163,6 @@ pub async fn transcribe(
         all_segments.extend(segments);
         model.decoder.reset();
         seek += advance;
-        pass_idx += 1;
     }
 
     if let Some(cb) = callback {

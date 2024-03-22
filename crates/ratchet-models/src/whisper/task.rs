@@ -1,4 +1,8 @@
-use crate::*;
+use super::{
+    decoder::WhisperDecoder, logit_mutators::*, samplers::*, spectrogram::*,
+    tokenizer::WhisperTokenizer, transcript::*,
+};
+use crate::options::{DecodingOptions, Prompt};
 use ndarray::{s, Axis};
 use ratchet::{shape, Device, Tensor};
 use ratchet_nn::Module;
@@ -6,7 +10,7 @@ use ratchet_nn::Module;
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
     #[error("No valid logits found")]
-    NoValidLogitsFound,
+    InvalidLogits,
     #[error("Tokenizer error: {0}")]
     TokenizerError(#[from] tokenizers::Error),
     #[error("Unknown error: {0}")]
@@ -84,8 +88,7 @@ impl DecodingTask {
         let sliced_vocab_size = self.tokenizer.vocab_size();
         let device = audio_ctx.device().clone();
 
-        for idx in 0..self.sample_len {
-            device.try_gpu().unwrap().begin_pass(idx as _);
+        for _ in 0..self.sample_len {
             let input = if tokens.len() > self.initial_tokens_len.unwrap() {
                 &tokens[tokens.len() - 1..]
             } else {
@@ -124,8 +127,7 @@ impl DecodingTask {
         let sliced_vocab_size = self.tokenizer.vocab_size();
         let mut timestamps_seen = 0;
 
-        for idx in 0..self.sample_len {
-            device.try_gpu().unwrap().begin_pass(idx as _);
+        for _ in 0..self.sample_len {
             let input = if tokens.len() > self.initial_tokens_len.unwrap() {
                 &tokens[tokens.len() - 1..]
             } else {

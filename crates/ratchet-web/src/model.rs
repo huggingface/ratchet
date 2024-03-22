@@ -1,22 +1,10 @@
 use crate::db::*;
-use crate::registry::*;
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_models::{transcribe, StreamedSegment, Whisper};
-use serde::{Deserialize, Serialize};
+use ratchet_models::{
+    model::Whisper, registry::AvailableModels, registry::Quantization, transcribe::transcribe,
+    transcript::StreamedSegment,
+};
 use wasm_bindgen::prelude::*;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum ModelKind {
-    Whisper,
-}
-
-impl From<AvailableModels> for ModelKind {
-    fn from(av: AvailableModels) -> Self {
-        match av {
-            _ => ModelKind::Whisper,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum WebModel {
@@ -51,10 +39,13 @@ impl WebModel {
     }
 
     pub async fn from_stored(stored: StoredModel) -> Result<WebModel, anyhow::Error> {
-        match stored.kind {
-            ModelKind::Whisper => Ok(WebModel::Whisper(
-                Whisper::from_bytes(&stored.bytes.to_vec()).await?,
-            )),
+        match stored.model {
+            AvailableModels::Whisper(_) => {
+                //TODO: 🚨 this is where we copy from JS memory to WASM arena
+                //this lil `to_vec` call!
+                let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
+                Ok(WebModel::Whisper(model))
+            }
             _ => Err(anyhow::anyhow!("Unknown model type")),
         }
     }
@@ -87,8 +78,8 @@ impl Model {
         quantization: Quantization,
         progress: &js_sys::Function,
     ) -> Result<Model, JsValue> {
-        log::warn!("Loading model: {:?} {:?}", model, quantization);
-        let key = model.as_key(quantization);
+        log::warn!("Loading model: {:?}", model);
+        let key = ModelKey::from_available(&model, quantization);
         let model_repo = ApiBuilder::from_hf(&key.repo_id(), RepoType::Model).build();
         let db = RatchetDB::open().await.map_err(|e| {
             let e: JsError = e.into();
@@ -128,7 +119,8 @@ impl Model {
 mod tests {
     use super::*;
     use ratchet_hub::{ApiBuilder, RepoType};
-    use ratchet_models::DecodingOptionsBuilder;
+    use ratchet_models::options::DecodingOptionsBuilder;
+    use ratchet_models::registry::Whisper as RegistryWhisper;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
@@ -171,9 +163,13 @@ mod tests {
         });
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
-        let mut model = Model::load(AvailableModels::WhisperTiny, Quantization::Q8, js_cb)
-            .await
-            .unwrap();
+        let mut model = Model::load(
+            AvailableModels::Whisper(RegistryWhisper::Tiny),
+            Quantization::Q8,
+            js_cb,
+        )
+        .await
+        .unwrap();
 
         let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
         let audio_bytes = data_repo.get("jfk.wav").await?;

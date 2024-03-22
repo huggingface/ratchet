@@ -143,8 +143,4 @@ impl BindGroupLayoutPool {
     ) -> StaticResourcePoolReadLockAccessor<'_, BindGroupLayoutHandle, wgpu::BindGroupLayout> {
         self.inner.resources()
     }
-
-    pub fn num_resources(&self) -> usize {
-        self.inner.num_resources()
-    }
 }
