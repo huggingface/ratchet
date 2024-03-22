@@ -1,6 +1,6 @@
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/k_quants.rs
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use half::f16;
 use ratchet::{prelude::shape, Device, Tensor};
 
@@ -44,6 +44,7 @@ pub trait GgmlType: Sized + Clone + Send + Sync {
 pub enum Block {
     BlockQ4K(BlockQ4K),
     BlockF32(BlockF32),
+    BlockQ6K(BlockQ6K),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,12 +139,19 @@ pub struct BlockQ5K {
 // const _: () =
 //     assert!(QK_K / 8 + QK_K / 2 + 2 * 2 + K_SCALE_SIZE == std::mem::size_of::<BlockQ5K>());
 
+// #[derive(Debug, Clone, PartialEq)]
+// pub struct BlockQ6K {
+//     pub(crate) ql: [u8; QK_K / 2],
+//     pub(crate) qh: [u8; QK_K / 4],
+//     pub(crate) scales: [i8; QK_K / 16],
+//     pub(crate) d: f32,
+// }
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockQ6K {
-    pub(crate) ql: [u8; QK_K / 2],
-    pub(crate) qh: [u8; QK_K / 4],
-    pub(crate) scales: [i8; QK_K / 16],
-    pub(crate) d: f32,
+    pub(crate) ql: Tensor,
+    pub(crate) qh: Tensor,
+    pub(crate) scales: Tensor,
+    pub(crate) d: Tensor,
 }
 // const _: () = assert!(3 * QK_K / 4 + QK_K / 16 + 2 == std::mem::size_of::<BlockQ6K>());
 
@@ -343,6 +351,7 @@ impl GgmlType for BlockQ4K {
     ) -> std::prelude::v1::Result<Block, anyhow::Error> {
         let mut ds = vec![0f32; tensor_blocks];
         let mut dmins = vec![0f32; tensor_blocks];
+
         let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
         let mut scales_cursor = Cursor::new(&mut scales);
 
@@ -379,8 +388,7 @@ impl GgmlType for BlockQ4K {
             scales: scales_tensor,
             qs: qs_tensor,
         };
-        let block: Block = Block::BlockQ4K(block_q4k);
-        Ok(block)
+        Ok(Block::BlockQ4K(block_q4k))
     }
 
     fn write<W: std::io::Seek + std::io::Write>(
@@ -421,26 +429,34 @@ impl GgmlType for BlockQ4K {
             let dmin_value = half::f16::from_f32(dmin_data[_idx]);
             writer.write_f16(dmin_value)?;
 
-            let mut current_scales = vec![0u8; K_SCALE_SIZE];
-            let scales_offset = (_idx * K_SCALE_SIZE) as u64;
-            let pos = std::io::SeekFrom::Start(scales_offset);
-            scales_data_cursor.seek(pos)?;
-            scales_data_cursor.read_exact(&mut current_scales)?;
+            let current_scales = read_data_from_cursor(
+                &mut scales_data_cursor,
+                (_idx * K_SCALE_SIZE) as u64,
+                K_SCALE_SIZE,
+            )?;
 
             writer.write_all(current_scales.as_ref())?;
 
-            let mut current_qs = vec![0u8; QK_K / 2];
-            let qs_offset = (_idx * QK_K / 2) as u64;
-
-            let pos = std::io::SeekFrom::Start(qs_offset);
-            qs_data_cursor.seek(pos)?;
-            qs_data_cursor.read_exact(&mut current_qs)?;
+            let current_qs =
+                read_data_from_cursor(&mut qs_data_cursor, (_idx * QK_K / 2) as u64, QK_K / 2)?;
 
             writer.write_all(current_qs.as_ref())?;
         }
 
         Ok(())
     }
+}
+
+fn read_data_from_cursor(
+    cursor: &mut Cursor<&mut Vec<u8>>,
+    offset: u64,
+    length: usize,
+) -> anyhow::Result<Vec<u8>> {
+    let mut current_scales = vec![0u8; length];
+    let pos = std::io::SeekFrom::Start(offset);
+    cursor.seek(pos)?;
+    cursor.read_exact(&mut current_scales)?;
+    Ok(current_scales)
 }
 
 // https://github.com/ggerganov/llama.cpp/blob/8183159cf3def112f6d1fe94815fce70e1bffa12/k_quants.c#L928
@@ -468,21 +484,125 @@ impl GgmlType for BlockQ5K {
 impl GgmlType for BlockQ6K {
     const DTYPE: GgmlDType = GgmlDType::Q6K;
     const BLCK_SIZE: usize = QK_K;
-    const TYPE_SIZE: usize = 3 * QK_K / 4 + QK_K / 16 + 2;
-    type VecDotType = BlockQ8K;
+    const TYPE_SIZE: usize = QK_K / 2 + QK_K / 4 + QK_K / 16 + 4;
+    type VecDotType = BlockQ6K;
+
+    // pub struct BlockQ6K {
+    //     pub(crate) ql: [u8; QK_K / 2],
+    //     pub(crate) qh: [u8; QK_K / 4],
+    //     pub(crate) scales: [i8; QK_K / 16],
+    //     pub(crate) d: f32,
+    // }
 
     fn read<R: std::io::Seek + std::io::Read>(
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
     ) -> std::prelude::v1::Result<Block, anyhow::Error> {
-        todo!()
+        let mut qls = vec![0u8; tensor_blocks * QK_K / 2];
+        let mut qls_cursor = Cursor::new(&mut qls);
+
+        let mut qhs = vec![0u8; tensor_blocks * QK_K / 4];
+        let mut qhs_cursor = Cursor::new(&mut qhs);
+
+        // [TODO] See if we actually need i8
+        let mut scales = vec![0u8; tensor_blocks * QK_K / 16];
+        let mut scales_cursor = Cursor::new(&mut scales);
+
+        let mut ds = vec![0f32; tensor_blocks];
+
+        for _idx in 0..tensor_blocks {
+            reader.read_u8s_into(&mut qls_cursor, QK_K / 2)?;
+            reader.read_u8s_into(&mut qhs_cursor, QK_K / 4)?;
+            reader.read_u8s_into(&mut scales_cursor, QK_K / 16)?;
+            ds[_idx] = reader.read_f32::<LittleEndian>()?;
+        }
+
+        let qls_tensor = Tensor::from_bytes(
+            qls.as_ref(),
+            ratchet::DType::U32,
+            shape![tensor_blocks, QK_K / 2 / 4],
+            device.clone(),
+        )?;
+
+        let qhs_tensor = Tensor::from_bytes(
+            qhs.as_ref(),
+            ratchet::DType::U32,
+            shape![tensor_blocks, QK_K / 4 / 4],
+            device.clone(),
+        )?;
+
+        let scales_tensor = Tensor::from_bytes(
+            scales.as_ref(),
+            ratchet::DType::U32,
+            shape![tensor_blocks, QK_K / 16 / 4],
+            device.clone(),
+        )?;
+        let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
+
+        let block_q6k: BlockQ6K = BlockQ6K {
+            ql: qls_tensor,
+            qh: qhs_tensor,
+            scales: scales_tensor,
+            d: ds_tensor,
+        };
+        Ok(Block::BlockQ6K(block_q6k))
     }
     fn write<R: std::io::Write>(
         &self,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        todo!()
+        let BlockQ6K { ql, qh, scales, d } = self;
+
+        let tensor_blocks = d
+            .shape()
+            .get(0)
+            .ok_or(anyhow!("Unable to get tensor blocks"))?;
+
+        let ql_data = ql.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        let mut ql_data = ql_data
+            .iter()
+            .map(|value| value.to_le_bytes())
+            .flatten()
+            .collect::<Vec<u8>>();
+        let mut ql_data_cursor = Cursor::new(&mut ql_data);
+
+        let qh_data = qh.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        let mut qh_data = qh_data
+            .iter()
+            .map(|value| value.to_le_bytes())
+            .flatten()
+            .collect::<Vec<u8>>();
+        let mut qh_data_cursor = Cursor::new(&mut qh_data);
+
+        let scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        let mut scales_data = scales_data
+            .iter()
+            .map(|value| value.to_le_bytes())
+            .flatten()
+            .collect::<Vec<u8>>();
+        let mut scales_data_cursor = Cursor::new(&mut scales_data);
+
+        let d_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+
+        for _idx in 0..*tensor_blocks {
+            let current_ql =
+                read_data_from_cursor(&mut ql_data_cursor, (_idx * QK_K / 2) as u64, QK_K / 2)?;
+            writer.write_all(current_ql.as_ref())?;
+
+            let current_qh =
+                read_data_from_cursor(&mut qh_data_cursor, (_idx * QK_K / 4) as u64, QK_K / 4)?;
+            writer.write_all(current_qh.as_ref())?;
+
+            let current_scales = read_data_from_cursor(
+                &mut scales_data_cursor,
+                (_idx * QK_K / 16) as u64,
+                QK_K / 16,
+            )?;
+            writer.write_all(current_scales.as_ref())?;
+            writer.write_f32::<LittleEndian>(d_data[_idx])?;
+        }
+        Ok(())
     }
 }
 

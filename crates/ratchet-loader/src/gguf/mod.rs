@@ -11,6 +11,8 @@ mod tests {
 
     use std::io::{Cursor, Read, SeekFrom};
 
+    use self::k_quants::Block;
+
     use super::*;
     use ratchet::{Device, DeviceRequest};
 
@@ -24,6 +26,14 @@ mod tests {
         reader.seek(SeekFrom::Start(offset))?;
         reader.read_exact(&mut expected_data)?;
         Ok(expected_data)
+    }
+
+    fn read_actual_data<GGUF: GgmlType>(block: &GGUF, length: usize) -> anyhow::Result<Vec<u8>> {
+        let mut actual_data = vec![0u8; length];
+        let mut actual_f32_data_cursor = Cursor::new(&mut actual_data);
+        block.write(&mut actual_f32_data_cursor)?;
+
+        Ok(actual_data)
     }
 
     #[tokio::test]
@@ -54,23 +64,20 @@ mod tests {
 
         let blk0_k_weight_blockq4k = match content.tensor(&mut reader, blk0_k_weight, &device)? {
             k_quants::Block::BlockQ4K(q4k) => q4k,
-            k_quants::Block::BlockF32(_) => panic!("Not possible"),
+            _ => panic!("Not possible"),
         };
 
         // let model_data = file.gguf().await?;
         //
         let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * k_quants::BlockQ4K::TYPE_SIZE;
 
-        let mut expected_q4k_data = vec![0u8; q4k_len];
-
-        reader.seek(SeekFrom::Start(
+        let expected_q4k_data = read_expected_data(
+            &mut reader,
             content.tensor_data_offset + blk0_k_weight_info.offset,
-        ))?;
-        reader.read_exact(&mut expected_q4k_data)?;
+            q4k_len,
+        )?;
 
-        let mut actual_q4k_data = vec![0u8; q4k_len];
-        let mut actual_q4k_data_cursor = Cursor::new(&mut actual_q4k_data);
-        blk0_k_weight_blockq4k.write(&mut actual_q4k_data_cursor)?;
+        let actual_q4k_data = read_actual_data(&blk0_k_weight_blockq4k, q4k_len)?;
 
         assert_eq!(
             expected_q4k_data, actual_q4k_data,
@@ -88,21 +95,42 @@ mod tests {
                 _ => panic!("Not possible"),
             };
 
-        let mut expected_f32_data = vec![0u8; f32_len];
-
-        reader.seek(SeekFrom::Start(
+        let expected_f32_data = read_expected_data(
+            &mut reader,
             content.tensor_data_offset + blk0_norm_weight_info.offset,
-        ))?;
-        reader.read_exact(&mut expected_f32_data)?;
+            f32_len,
+        )?;
 
-        let mut actual_f32_data = vec![0u8; f32_len];
-        let mut actual_f32_data_cursor = Cursor::new(&mut actual_f32_data);
-        blk0_norm_weight_blockf32.write(&mut actual_f32_data_cursor)?;
+        let actual_f32_data = read_actual_data(&blk0_norm_weight_blockf32, f32_len)?;
 
         assert_eq!(
             expected_f32_data, actual_f32_data,
             "{:?} not equal",
             blk0_norm_weight
+        );
+
+        let blk0_v_weight = "blk.0.attn_v.weight";
+        let blk0_v_weight_info = content.tensor_infos.get(blk0_v_weight).unwrap();
+
+        let q6k_len = blk0_v_weight_info.shape.get(0).unwrap() * k_quants::BlockQ6K::TYPE_SIZE;
+
+        let blk0_v_weight_block_q6k = match content.tensor(&mut reader, blk0_v_weight, &device)? {
+            k_quants::Block::BlockQ6K(blk_q6k) => blk_q6k,
+            _ => panic!("Not possible"),
+        };
+
+        let expected_q6k_data = read_expected_data(
+            &mut reader,
+            content.tensor_data_offset + blk0_v_weight_info.offset,
+            q6k_len,
+        )?;
+
+        let actual_q6k_data = read_actual_data(&blk0_v_weight_block_q6k, q6k_len)?;
+
+        assert_eq!(
+            expected_q6k_data, actual_q6k_data,
+            "{:?} not equal",
+            blk0_v_weight
         );
 
         Ok(())
