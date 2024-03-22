@@ -102,6 +102,7 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     reader: &mut R,
     device: &Device,
 ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    println!("tensor_blocks: {:?}", tensor_blocks);
     let mut ds = vec![0f32; tensor_blocks];
     let mut dmins = vec![0f32; tensor_blocks];
     let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
@@ -122,7 +123,7 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
 
     let scales_tensor = Tensor::from_bytes(
-        qs.as_ref(),
+        scales.as_ref(),
         ratchet::DType::U32,
         shape![tensor_blocks, K_SCALE_SIZE / 4],
         device.clone(),
@@ -131,9 +132,14 @@ fn read_q4k<R: std::io::Seek + std::io::Read>(
     let qs_tensor = Tensor::from_bytes(
         qs.as_ref(),
         ratchet::DType::U32,
-        shape![tensor_blocks, QK_K / 2],
+        shape![tensor_blocks, QK_K / 2 / 4],
         device.clone(),
     )?;
+    println!(
+        "qs len {:?} - tensor bytes {:?}",
+        qs.len(),
+        qs_tensor.num_bytes()
+    );
     let block_q4k: BlockQ4K = BlockQ4K {
         d: ds_tensor,
         dmin: dmins_tensor,

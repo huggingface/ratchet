@@ -34,21 +34,31 @@ mod tests {
             content.tensor(&mut reader, blk0_k_weight, &device)?;
         // let model_data = file.gguf().await?;
         //
-        let q4k_len = blk0_k_weight_info.shape.len() * k_quants::BlockQ4K::TYPE_SIZE;
+        let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * k_quants::BlockQ4K::TYPE_SIZE;
+        println!(
+            "shape {:?} shape_len {:?} type_size {:?} q4k_len {:?}",
+            blk0_k_weight_info.shape,
+            blk0_k_weight_info.shape.len(),
+            k_quants::BlockQ4K::TYPE_SIZE,
+            q4k_len
+        );
         let mut expected_q4k_data = vec![0u8; q4k_len];
 
         reader.seek(SeekFrom::Start(
             content.tensor_data_offset + blk0_k_weight_info.offset,
         ))?;
-        reader.read(&mut expected_q4k_data)?;
+        reader.read_exact(&mut expected_q4k_data)?;
 
         let mut actual_q4k_data = vec![0u8; q4k_len];
         let mut actual_q4k_data_cursor = Cursor::new(&mut actual_q4k_data);
         blk0_k_weight_blockq4k.write(&mut actual_q4k_data_cursor)?;
 
-        println!("data={:?}", actual_q4k_data);
+        assert_eq!(
+            expected_q4k_data, actual_q4k_data,
+            "{:?} not equal",
+            blk0_k_weight
+        );
 
-        println!("{:?}", blk0_k_weight_blockq4k);
         Ok(())
     }
 

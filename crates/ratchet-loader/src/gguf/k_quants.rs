@@ -1243,23 +1243,45 @@ impl GgmlType for BlockQ4K {
         let dmin_data = dmin.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
 
         let scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        let mut scales_data = unsafe { std::mem::transmute::<_, Vec<u8>>(scales_data) };
+        let mut scales_data = scales_data
+            .iter()
+            .map(|value| value.to_le_bytes())
+            .flatten()
+            .collect::<Vec<u8>>();
         let mut scales_data_cursor = Cursor::new(&mut scales_data);
 
         let qs_data = qs.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        println!("qs length {:?}", qs_data.len());
+        let mut qs_data = qs_data
+            .iter()
+            .map(|value| value.to_le_bytes())
+            .flatten()
+            .collect::<Vec<u8>>();
+        println!("qs length2 {:?}", qs_data.len());
+        let mut qs_data_cursor = Cursor::new(&mut qs_data);
 
         for _idx in 0..*tensor_blocks {
             let d_value = half::f16::from_f32(d_data[_idx]);
             writer.write_f16(d_value)?;
-            let dmin_data = half::f16::from_f32(dmin_data[_idx]);
-            writer.write_f16(d_value)?;
+            let dmin_value = half::f16::from_f32(dmin_data[_idx]);
+            writer.write_f16(dmin_value)?;
 
-            // let mut current_scales = vec![0u8; K_SCALE_SIZE];
-            // let pos = std::io::SeekFrom::Start((_idx * K_SCALE_SIZE) as u64);
-            // scales_data_cursor.seek(pos)?;
-            // scales_data_cursor.read_exact(&mut current_scales)?;
+            let mut current_scales = vec![0u8; K_SCALE_SIZE];
+            let scales_offset = (_idx * K_SCALE_SIZE) as u64;
+            let pos = std::io::SeekFrom::Start(scales_offset);
+            scales_data_cursor.seek(pos)?;
+            scales_data_cursor.read_exact(&mut current_scales)?;
 
-            // writer.write(current_scales.as_ref())?;
+            writer.write_all(current_scales.as_ref())?;
+
+            let mut current_qs = vec![0u8; QK_K / 2];
+            let qs_offset = (_idx * QK_K / 2) as u64;
+
+            let pos = std::io::SeekFrom::Start(qs_offset);
+            qs_data_cursor.seek(pos)?;
+            qs_data_cursor.read_exact(&mut current_qs)?;
+
+            writer.write_all(current_qs.as_ref())?;
         }
 
         println!("tensor_blocks={:?}", tensor_blocks);
