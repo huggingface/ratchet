@@ -132,7 +132,6 @@ impl Whisper {
         let decoder = WhisperDecoder::load(disk_model, reader, &device)?;
         //TODO: remove clones
         let generator = SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
-        log::info!("Sucessfully loaded Whisper model");
         Ok(Self {
             specgen: generator,
             encoder,
@@ -148,7 +147,6 @@ impl Whisper {
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
         let disk_model = Whisper::load_ggml(&mut reader)?;
         let result = Self::load(&disk_model, &mut reader, device);
-        log::warn!("Successfully loaded Whisper model");
         result
     }
 }

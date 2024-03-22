@@ -295,11 +295,11 @@ impl BufferAllocator {
         //Allocate intermediates
         self.greedy_by_size(execution_order, &mut assignments, device)?;
 
-        log::info!(
+        log::debug!(
             "Total bytes allocated: {}kb",
             self.pool.read().total_gpu_size_in_bytes() / 1024,
         );
-        log::info!(
+        log::debug!(
             "Total buffers allocated: {}",
             self.pool.read().num_resources()
         );

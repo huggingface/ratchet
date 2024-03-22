@@ -6,13 +6,14 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     target_arch = "wasm32",
     derive(tsify::Tsify, serde::Serialize, serde::Deserialize)
 )]
 #[cfg_attr(target_arch = "wasm32", tsify(from_wasm_abi))]
 #[cfg_attr(target_arch = "wasm32", serde(rename_all = "snake_case"))]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum Whisper {
     Tiny,
     Base,
@@ -27,7 +28,7 @@ pub enum Whisper {
 ///
 /// This is a type safe way to surface models to users,
 /// providing autocomplete **within** model families.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 #[cfg_attr(
     target_arch = "wasm32",

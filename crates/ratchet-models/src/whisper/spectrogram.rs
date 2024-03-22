@@ -40,7 +40,6 @@ impl SpectrogramGenerator {
     pub fn new(mels: Vec<f32>) -> Self {
         let mut planner = RealFftPlanner::new();
         let n_mels = mels.len() / (N_FFT / 2 + 1);
-        println!("N_MELS: {}", n_mels);
         Self {
             fft_plan: planner.plan_fft_forward(N_FFT),
             hann_window: Self::hann_window(),

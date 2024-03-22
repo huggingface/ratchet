@@ -52,7 +52,7 @@ impl WgpuDevice {
         let adapter = Self::select_adapter().await;
         #[cfg(not(target_arch = "wasm32"))]
         let adapter = Self::select_adapter()?;
-        log::info!("Using adapter {:?}", adapter.get_info());
+        log::info!("Active GPU: {}", adapter.get_info().name);
 
         #[allow(unused_mut)]
         let mut features = wgpu::Features::default();
