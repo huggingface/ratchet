@@ -13,7 +13,7 @@ jobs:
         id: scc
         uses: iryanbell/scc-docker-action@v1.0.2 
         with:
-          args: ${{ env.workspace }}/crates/ratchet-core -irs 
+          args: ${{ env.workspace }} -irs 
 
       - name: Write output to a file
         run: |
