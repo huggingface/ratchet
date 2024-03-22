@@ -1,4 +1,4 @@
-use crate::{Language, Task};
+use crate::options::{Language, Task};
 use tokenizers::Tokenizer;
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -7,6 +7,7 @@ members = [
     "crates/ratchet-models",
     "crates/ratchet-nn", 
     "crates/ratchet-hub", 
+    "crates/ratchet-cli",
 ]
 resolver = "2"
 
@@ -36,3 +37,4 @@ byteorder = "1.5.0"
 wasm-bindgen = "0.2.91"
 wasm-bindgen-test = "0.3.34"
 npyz = { version = "0.8.3"}
+hf-hub = "0.3.2"

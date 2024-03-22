@@ -1,8 +1,9 @@
+use crate::whisper::task::DecodeError;
+use crate::whisper::tokenizer::WhisperTokenizer;
+
 use ndarray::Axis;
 use ndarray_stats::QuantileExt;
 use ratchet::Tensor;
-
-use crate::{DecodeError, WhisperTokenizer};
 
 pub struct GreedySampler;
 

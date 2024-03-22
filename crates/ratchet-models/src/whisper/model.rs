@@ -9,9 +9,13 @@ use ndarray::{s, Dimension};
 use ndarray_stats::QuantileExt;
 use ratchet::NDArrayExt;
 
-use crate::{
-    DecodingTask, Language, SpectrogramGenerator, WhisperDecoder, WhisperEncoder, WhisperTokenizer,
-};
+use crate::options::Language;
+use crate::whisper::task::DecodingTask;
+use crate::whisper::tokenizer::WhisperTokenizer;
+
+use super::decoder::WhisperDecoder;
+use super::encoder::WhisperEncoder;
+use super::spectrogram::SpectrogramGenerator;
 
 #[derive(Debug)]
 pub struct WhisperGGMLHeader {
@@ -127,7 +131,7 @@ impl Whisper {
         let encoder = WhisperEncoder::load(disk_model, reader, &device)?;
         let decoder = WhisperDecoder::load(disk_model, reader, &device)?;
         //TODO: remove clones
-        let generator = crate::SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
+        let generator = SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
         log::info!("Sucessfully loaded Whisper model");
         Ok(Self {
             specgen: generator,
@@ -275,10 +279,11 @@ mod tests {
         path::PathBuf,
     };
 
-    use crate::{transcribe, DecodingOptionsBuilder, Whisper};
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest, Quantization};
     use ratchet_loader::{Converter, GGMLCompatible};
+
+    use crate::{model::Whisper, options::DecodingOptionsBuilder, whisper::transcribe::transcribe};
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
