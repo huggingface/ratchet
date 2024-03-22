@@ -10,7 +10,7 @@ use ratchet_nn::Module;
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
     #[error("No valid logits found")]
-    NoValidLogitsFound,
+    InvalidLogits,
     #[error("Tokenizer error: {0}")]
     TokenizerError(#[from] tokenizers::Error),
     #[error("Unknown error: {0}")]

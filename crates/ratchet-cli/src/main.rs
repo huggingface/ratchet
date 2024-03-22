@@ -29,7 +29,7 @@ use std::process::Command;
 fn load_sample<P: AsRef<Path>>(path: P) -> Vec<f32> {
     let path = path.as_ref();
     let output = Command::new("ffmpeg")
-        .args(&[
+        .args([
             "-nostdin",
             "-threads",
             "0",

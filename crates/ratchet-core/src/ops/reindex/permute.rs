@@ -17,8 +17,8 @@ impl Permute {
         let pad_len = 4 - self.dims.len();
 
         let mut perm = self.dims.clone();
-        for i in 0..perm.len() {
-            perm[i] += pad_len;
+        for p in perm.iter_mut() {
+            *p += pad_len;
         }
         (0..pad_len).for_each(|x| perm.insert(0, x));
         perm

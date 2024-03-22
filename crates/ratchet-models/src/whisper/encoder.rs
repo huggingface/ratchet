@@ -131,11 +131,12 @@ impl WhisperEncoder {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use crate::{Whisper, WhisperEncoder};
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
+
+    use crate::{model::Whisper, whisper::encoder::WhisperEncoder};
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();

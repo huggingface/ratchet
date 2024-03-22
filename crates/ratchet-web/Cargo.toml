@@ -7,9 +7,6 @@ description = "A web-first, cross-platform ML framework."
 keywords = ["llm","wasm","transformers","webgpu","ml","machine-learning","deep-learning"]
 repository = "https://github.com/FL33TW00D/ratchet"
 
-[build]
-targets = [ "wasm32-unknown-unknown"]
-
 [lib]
 crate-type = ["cdylib", "rlib"]
 
