@@ -110,7 +110,7 @@ impl WgpuDevice {
                 force_fallback_adapter: false,
             })
             .await
-            .unwrap()
+            .expect("Failed to acquire adapter, ensure your browser supports WebGPU")
     }
 
     #[cfg(not(target_arch = "wasm32"))]
