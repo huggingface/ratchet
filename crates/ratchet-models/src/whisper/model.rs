@@ -281,7 +281,10 @@ mod tests {
     use ratchet::{Device, DeviceRequest, Quantization};
     use ratchet_loader::{Converter, GGMLCompatible};
 
-    use crate::{model::Whisper, options::DecodingOptionsBuilder, whisper::transcribe::transcribe};
+    use crate::{
+        model::Whisper, options::DecodingOptionsBuilder, transcript::StreamedSegment,
+        whisper::transcribe::transcribe,
+    };
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -314,7 +317,8 @@ mod tests {
 
         let mut whisper = Whisper::load(&gg_disk, &mut reader, device).unwrap();
 
-        let transcript = transcribe(&mut whisper, samples, options).unwrap();
+        let empty_cb: Option<fn(StreamedSegment)> = None;
+        let transcript = transcribe(&mut whisper, samples, options, empty_cb).unwrap();
         println!("{}", transcript.formatted.unwrap());
         println!("Processing time: {:?}", transcript.processing_time);
     }
