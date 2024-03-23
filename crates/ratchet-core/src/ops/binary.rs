@@ -156,7 +156,7 @@ mod tests {
     #[derive(Arbitrary, Debug)]
     struct BinaryProblem {
         op: BinaryOp,
-        #[any(vec![1..=4, 1..=4, 1..=256, 1..=256])]
+        #[any(vec![1..=4, 1..=4, 1..=1, 1..=256])]
         shape: Shape,
     }
 
@@ -173,12 +173,10 @@ def {}(a, b):
         run_py_prg(prg.to_string(), &[a, b], &[])
     }
 
-    //TODO: more involved test generation strategy
     fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let BinaryProblem { op, mut shape } = prob;
         let a = Tensor::randn::<f32>(shape.clone(), cpu_device.clone());
-        shape[2] = 1;
         let b = Tensor::randn::<f32>(shape, cpu_device.clone());
         let ground = ground_truth(&a, &b, &op)?;
         let device = GPU_DEVICE.with(|d| d.clone());

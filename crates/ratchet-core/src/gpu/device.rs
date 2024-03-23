@@ -49,7 +49,7 @@ impl PartialEq for WgpuDevice {
 impl WgpuDevice {
     pub async fn new() -> Result<Self, DeviceError> {
         #[cfg(target_arch = "wasm32")]
-        let adapter = Self::select_adapter().await;
+        let adapter = Self::select_adapter().await?;
         #[cfg(not(target_arch = "wasm32"))]
         let adapter = Self::select_adapter()?;
         log::info!("Active GPU: {}", adapter.get_info().name);
@@ -62,7 +62,7 @@ impl WgpuDevice {
         }
 
         let mut device_descriptor = wgpu::DeviceDescriptor {
-            label: Some("ratchet"),
+            label: Some("Ratchet"),
             features,
             limits: Limits {
                 max_buffer_size: MAX_BUFFER_SIZE,
@@ -79,7 +79,6 @@ impl WgpuDevice {
             device_request
         }?;
 
-        let device = Arc::new(device);
         Ok(Self {
             queue: Arc::new(queue),
             ordinal: 0,
@@ -88,7 +87,7 @@ impl WgpuDevice {
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
             compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
-            device,
+            device: Arc::new(device),
         })
     }
 
@@ -101,7 +100,7 @@ impl WgpuDevice {
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn select_adapter() -> Adapter {
+    async fn select_adapter() -> Result<Adapter, DeviceError> {
         let instance = wgpu::Instance::default();
         instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -110,7 +109,7 @@ impl WgpuDevice {
                 force_fallback_adapter: false,
             })
             .await
-            .expect("Failed to acquire adapter, ensure your browser supports WebGPU")
+            .ok_or(DeviceError::AdapterRequestFailed)
     }
 
     #[cfg(not(target_arch = "wasm32"))]

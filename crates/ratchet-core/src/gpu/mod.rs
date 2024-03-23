@@ -17,7 +17,7 @@ pub use workload::*;
 pub use profiler::*;
 
 pub const MIN_STORAGE_BUFFER_SIZE: usize = 16;
-pub const STORAGE_BUFFER_ALIGN: usize = 256;
+pub const STORAGE_BUFFER_ALIGN: usize = 256; //TODO: should be a device limit
 
 /// Usages we use everywhere
 pub trait BufferUsagesExt {
