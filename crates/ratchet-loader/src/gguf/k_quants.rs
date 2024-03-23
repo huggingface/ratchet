@@ -130,12 +130,13 @@ pub struct BlockQ3K {
 //     pub(crate) scales: [u8; K_SCALE_SIZE],
 //     pub(crate) qs: [u8; QK_K / 2],
 // }
-pub struct BlockQ4K {
-    pub(crate) d: Tensor,
-    pub(crate) dmin: Tensor,
-    pub(crate) scales: Tensor,
-    pub(crate) qs: Tensor,
-}
+// pub struct BlockQ4K {
+//     pub(crate) d: Tensor,
+//     pub(crate) dmin: Tensor,
+//     pub(crate) scales: Tensor,
+//     pub(crate) qs: Tensor,
+// }
+pub struct BlockQ4K(Tensor);
 // const _: () = assert!(QK_K / 2 + K_SCALE_SIZE + 2 * 2 == std::mem::size_of::<BlockQ4K>());
 
 #[derive(Debug, Clone, PartialEq)]
@@ -345,6 +346,26 @@ impl GgmlType for BlockQ3K {
     }
 }
 
+pub trait Padding {
+    fn align_standard(&mut self) -> usize;
+}
+
+impl<T: Clone + Default> Padding for Vec<T> {
+    fn align_standard(&mut self) -> usize {
+        let length = &self.len();
+        let remainder = length % 256;
+        if remainder != 0 {
+            let default_value: T = Default::default();
+            let alignment = 256 - remainder;
+            let mut padding = vec![default_value; alignment];
+            self.append(&mut padding);
+            alignment
+        } else {
+            0
+        }
+    }
+}
+
 impl GgmlType for BlockQ4K {
     const DTYPE: GgmlDType = GgmlDType::Q4K;
     const BLCK_SIZE: usize = QK_K;
@@ -358,10 +379,8 @@ impl GgmlType for BlockQ4K {
     ) -> std::prelude::v1::Result<Block, anyhow::Error> {
         let mut ds = vec![0f32; tensor_blocks];
         let mut dmins = vec![0f32; tensor_blocks];
-
         let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
         let mut scales_cursor = Cursor::new(&mut scales);
-
         let mut qs = vec![0u8; tensor_blocks * QK_K / 2];
         let mut qs_cursor = Cursor::new(&mut qs);
 
@@ -373,29 +392,64 @@ impl GgmlType for BlockQ4K {
             reader.read_u8s_into(&mut qs_cursor, QK_K / 2)?;
         }
 
-        let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
-        let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
+        let mut ds = ds
+            .iter()
+            .map(|d| d.to_le_bytes())
+            .flatten()
+            .collect::<Vec<u8>>();
+        let ds_alignment = ds.align_standard();
 
-        let scales_tensor = Tensor::from_bytes(
-            scales.as_ref(),
-            ratchet::DType::U32,
-            shape![tensor_blocks, K_SCALE_SIZE / 4],
+        let mut dmins = dmins
+            .iter()
+            .map(|d| d.to_le_bytes())
+            .flatten()
+            .collect::<Vec<u8>>();
+        let dmins_alignment = dmins.align_standard();
+
+        let scales_alignment = scales.align_standard();
+        let qs_alignment = qs.align_standard();
+
+        let mut tensor_data = ds;
+        tensor_data.append(&mut dmins);
+        tensor_data.append(&mut scales);
+        tensor_data.append(&mut qs);
+
+        let shape = tensor_blocks * BlockQ4K::TYPE_SIZE
+            + ds_alignment
+            + dmins_alignment
+            + scales_alignment
+            + qs_alignment;
+
+        let tensor = Tensor::from_bytes(
+            &tensor_data.as_ref(),
+            ratchet::DType::GGUF(ratchet::GGUFDType::Q4K),
+            shape![tensor_blocks, shape],
             device.clone(),
         )?;
 
-        let qs_tensor = Tensor::from_bytes(
-            qs.as_ref(),
-            ratchet::DType::U32,
-            shape![tensor_blocks, QK_K / 2 / 4],
-            device.clone(),
-        )?;
-        let block_q4k: BlockQ4K = BlockQ4K {
-            d: ds_tensor,
-            dmin: dmins_tensor,
-            scales: scales_tensor,
-            qs: qs_tensor,
-        };
-        Ok(Block::BlockQ4K(block_q4k))
+        // let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
+        // let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
+
+        // let scales_tensor = Tensor::from_bytes(
+        //     scales.as_ref(),
+        //     ratchet::DType::U32,
+        //     shape![tensor_blocks, K_SCALE_SIZE / 4],
+        //     device.clone(),
+        // )?;
+
+        // let qs_tensor = Tensor::from_bytes(
+        //     qs.as_ref(),
+        //     ratchet::DType::U32,
+        //     shape![tensor_blocks, QK_K / 2 / 4],
+        //     device.clone(),
+        // )?;
+        // let block_q4k: BlockQ4K = BlockQ4K {
+        //     d: ds_tensor,
+        //     dmin: dmins_tensor,
+        //     scales: scales_tensor,
+        //     qs: qs_tensor,
+        // };
+        Ok(Block::BlockQ4K(BlockQ4K(tensor)))
     }
 
     fn write<W: std::io::Seek + std::io::Write>(
