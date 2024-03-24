@@ -6,6 +6,7 @@ use ratchet_models::model::Whisper;
 use ratchet_models::options::DecodingOptionsBuilder;
 use ratchet_models::registry::{AvailableModels, Quantization, Whisper as RegistryWhisper};
 use ratchet_models::transcribe::transcribe;
+use spinners::Spinner;
 use std::path::Path;
 use std::process::Command as TermCommand;
 
@@ -74,6 +75,8 @@ pub fn start_logger() {
 fn handle_whisper(matches: ArgMatches, api: Api) {
     if let Some(matches) = matches.subcommand_matches("whisper") {
         let mut whisper = if let Some(variant) = matches.get_one::<RegistryWhisper>("variant") {
+            let mut spinner =
+                Spinner::new(spinners::Spinners::Dots, "Loading model...".to_string());
             let model = AvailableModels::Whisper(variant.clone());
             let repo = api.model(model.repo_id());
             let model_path = repo.get(&model.model_id(Quantization::Q8)).unwrap();
@@ -82,7 +85,9 @@ fn handle_whisper(matches: ArgMatches, api: Api) {
             let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
 
             let device = Device::request_device(DeviceRequest::GPU).unwrap();
-            Whisper::load(&gg_disk, &mut reader, device).unwrap()
+            let model = Whisper::load(&gg_disk, &mut reader, device).unwrap();
+            spinner.stop();
+            model
         } else {
             panic!("Model not found");
         };
@@ -90,6 +95,7 @@ fn handle_whisper(matches: ArgMatches, api: Api) {
         if let Some(input) = matches.get_one::<String>("input") {
             let options = DecodingOptionsBuilder::new().build();
             let samples = ffmpeg_preproc(input);
+            println!("\nGenerating transcript...");
             let transcript =
                 transcribe(&mut whisper, samples, options, Some(|s| println!("{}", s))).unwrap();
             log::info!("Processing time: {:?}", transcript.processing_time);
