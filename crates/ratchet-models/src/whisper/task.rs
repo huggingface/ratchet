@@ -83,10 +83,12 @@ impl DecodingTask {
         &self,
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
+        callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
         let mut tokens = self.get_initial_tokens();
         let sliced_vocab_size = self.tokenizer.vocab_size();
         let device = audio_ctx.device().clone();
+        let mut timestamps_seen = 0;
 
         for _ in 0..self.sample_len {
             let input = if tokens.len() > self.initial_tokens_len.unwrap() {
@@ -107,6 +109,10 @@ impl DecodingTask {
 
             let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
 
+            if let Some(ref cb) = callback {
+                self.handle_callback(&self.tokenizer, &new_tokens, &mut timestamps_seen, cb);
+            }
+
             tokens = new_tokens;
             if completed {
                 break;
@@ -120,9 +126,9 @@ impl DecodingTask {
         &self,
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
-        mut tokens: Vec<i32>,
         callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
+        let mut tokens = self.get_initial_tokens();
         let device = audio_ctx.device().clone();
         let sliced_vocab_size = self.tokenizer.vocab_size();
         let mut timestamps_seen = 0;
@@ -158,7 +164,6 @@ impl DecodingTask {
         Ok(tokens)
     }
 
-    #[cfg(target_arch = "wasm32")]
     fn handle_callback(
         &self,
         tokenizer: &WhisperTokenizer,
@@ -289,9 +294,7 @@ impl DecodingTask {
         audio_ctx: Tensor,
         callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
-        let mut tokens = self
-            .main_loop(decoder, audio_ctx, self.get_initial_tokens(), &callback)
-            .await?;
+        let mut tokens = self.main_loop(decoder, audio_ctx, &callback).await?;
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
         let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);
@@ -306,8 +309,9 @@ impl DecodingTask {
         &self,
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
+        callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
-        let mut tokens = self.main_loop(decoder, audio_ctx)?;
+        let mut tokens = self.main_loop(decoder, audio_ctx, &callback)?;
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
         let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);

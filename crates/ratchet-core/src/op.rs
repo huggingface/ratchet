@@ -164,6 +164,7 @@ pub trait MetaOperation: Debug + 'static {
 
     /// # Update
     /// Some operations may require computing additional info once the dst is resolved.
+    /// I hate this method.
     fn update(&self, _dst: &Tensor) -> Result<(), OperationError> {
         Ok(())
     }

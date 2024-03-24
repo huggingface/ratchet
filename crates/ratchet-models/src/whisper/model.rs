@@ -132,7 +132,6 @@ impl Whisper {
         let decoder = WhisperDecoder::load(disk_model, reader, &device)?;
         //TODO: remove clones
         let generator = SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
-        log::info!("Sucessfully loaded Whisper model");
         Ok(Self {
             specgen: generator,
             encoder,
@@ -148,7 +147,6 @@ impl Whisper {
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
         let disk_model = Whisper::load_ggml(&mut reader)?;
         let result = Self::load(&disk_model, &mut reader, device);
-        log::warn!("Successfully loaded Whisper model");
         result
     }
 }
@@ -283,7 +281,10 @@ mod tests {
     use ratchet::{Device, DeviceRequest, Quantization};
     use ratchet_loader::{Converter, GGMLCompatible};
 
-    use crate::{model::Whisper, options::DecodingOptionsBuilder, whisper::transcribe::transcribe};
+    use crate::{
+        model::Whisper, options::DecodingOptionsBuilder, transcript::StreamedSegment,
+        whisper::transcribe::transcribe,
+    };
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -316,7 +317,8 @@ mod tests {
 
         let mut whisper = Whisper::load(&gg_disk, &mut reader, device).unwrap();
 
-        let transcript = transcribe(&mut whisper, samples, options).unwrap();
+        let empty_cb: Option<fn(StreamedSegment)> = None;
+        let transcript = transcribe(&mut whisper, samples, options, empty_cb).unwrap();
         println!("{}", transcript.formatted.unwrap());
         println!("Processing time: {:?}", transcript.processing_time);
     }

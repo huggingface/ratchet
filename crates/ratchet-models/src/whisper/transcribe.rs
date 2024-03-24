@@ -10,6 +10,7 @@ pub fn transcribe(
     model: &mut Whisper,
     audio: Vec<f32>,
     mut decode_options: DecodingOptions,
+    callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
     let n_mels = model.hparams.n_mels as usize;
     let runtime = Instant::now();
@@ -38,18 +39,13 @@ pub fn transcribe(
     let prompt_since_reset = 0;
 
     while seek < content_frames {
-        println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
         let mel_segment = mel
             .clone()
             .slice(&[0..1, 0..n_mels, seek..(seek + N_FRAMES)])?;
-        log::info!(
-            "processing segment - from: {}, to: {}",
-            seek,
-            seek + N_FRAMES
-        );
+        log::info!("Processing segment: {} -> {}", seek, seek + N_FRAMES);
 
         let segment_size = min(N_FRAMES, content_frames - seek);
         let segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE;
@@ -61,7 +57,7 @@ pub fn transcribe(
         let hs = model.encoder.forward(mel_segment)?.resolve()?;
 
         let task = DecodingTask::new(decode_options, tokenizer.clone());
-        let decoded = task.run(&mut model.decoder, hs)?;
+        let decoded = task.run(&mut model.decoder, hs, &callback)?;
         let (segments, advance) = DecodingTask::build_segments(
             &tokenizer,
             decoded,
@@ -121,18 +117,13 @@ pub async fn transcribe(
     let prompt_since_reset = 0;
 
     while seek < content_frames {
-        println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
         let mel_segment = mel
             .clone()
             .slice(&[0..1, 0..n_mels, seek..(seek + N_FRAMES)])?;
-        log::info!(
-            "processing segment - from: {}, to: {}",
-            seek,
-            seek + N_FRAMES
-        );
+        log::info!("Processing segment: {} -> {}", seek, seek + N_FRAMES);
 
         let segment_size = min(N_FRAMES, content_frames - seek);
         let segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE;

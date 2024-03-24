@@ -34,6 +34,7 @@ serde = "1.0.197"
 tokenizers = { version = "0.13.4", default-features = false, features=["unstable_wasm"] }
 lazy_static = "1.4.0"
 web-time = "1.0.0"
+clap = "4.5.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }  

@@ -21,28 +21,27 @@ impl TranscriptionResult {
         self.formatted = Some(formatted);
     }
 
-    pub fn as_oai(&self, tokenizer: &WhisperTokenizer) -> String {
-        let oai = self
-            .segments
+    fn format_single(&self, segment: &Segment, tokenizer: &WhisperTokenizer) -> String {
+        let fragment_tokens = segment
+            .tokens
             .iter()
-            .fold(String::new(), |transcript, fragment| {
-                let fragment_tokens = fragment
-                    .tokens
-                    .iter()
-                    .copied()
-                    .filter(|x| *x < WhisperTokenizer::EOT as _)
-                    .collect::<Vec<u32>>();
-                let fragment_text = tokenizer.decode(fragment_tokens.as_slice(), true).unwrap();
-                transcript
-                    + format!(
-                        "[{} --> {}]  {}\n",
-                        Self::format_timestamp(fragment.start, false, "."),
-                        Self::format_timestamp(fragment.stop, false, "."),
-                        fragment_text.trim().replace("-->", "->")
-                    )
-                    .as_str()
-            });
-        oai.to_string()
+            .copied()
+            .filter(|x| *x < WhisperTokenizer::EOT as _)
+            .collect::<Vec<u32>>();
+        let fragment_text = tokenizer.decode(fragment_tokens.as_slice(), true).unwrap();
+        format!(
+            "[{} --> {}]  {}\n",
+            Self::format_timestamp(segment.start, false, "."),
+            Self::format_timestamp(segment.stop, false, "."),
+            fragment_text.trim().replace("-->", "->")
+        )
+    }
+
+    pub fn as_oai(&self, tokenizer: &WhisperTokenizer) -> String {
+        self.segments
+            .iter()
+            .map(|segment| self.format_single(segment, tokenizer))
+            .collect::<String>()
     }
 
     fn format_timestamp(num: f64, always_include_hours: bool, decimal_marker: &str) -> String {
@@ -99,54 +98,62 @@ impl Segment {
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(target_arch = "wasm32")] {
-        #[cfg_attr(
-            target_arch = "wasm32",
-            wasm_bindgen(getter_with_clone, js_name = Segment),
-            derive(serde::Serialize, serde::Deserialize)
-        )]
-        #[derive(Debug, derive_new::new)]
-        pub struct StreamedSegment {
-            pub start: f64,
-            pub stop: f64,
-            pub text: String,
-            pub last: bool,
-        }
+#[cfg_attr(
+    target_arch = "wasm32",
+    wasm_bindgen(getter_with_clone, js_name = Segment),
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[derive(Debug, derive_new::new)]
+pub struct StreamedSegment {
+    pub start: f64,
+    pub stop: f64,
+    pub text: String,
+    pub last: bool,
+}
 
-        #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-        impl StreamedSegment {
-            pub fn start(&self) -> f64 {
-                self.start
-            }
+impl std::fmt::Display for StreamedSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "[{} --> {}]  {}",
+            TranscriptionResult::format_timestamp(self.start, false, "."),
+            TranscriptionResult::format_timestamp(self.stop, false, "."),
+            self.text.trim().replace("-->", "->")
+        )
+    }
+}
 
-            pub fn stop(&self) -> f64 {
-                self.stop
-            }
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl StreamedSegment {
+    pub fn start(&self) -> f64 {
+        self.start
+    }
 
-            pub fn text(&self) -> String {
-                self.text.clone()
-            }
+    pub fn stop(&self) -> f64 {
+        self.stop
+    }
 
-            pub fn last(&self) -> bool {
-                self.last
-            }
+    pub fn text(&self) -> String {
+        self.text.clone()
+    }
 
-            pub(crate) fn from_tokens(
-                tokenizer: &WhisperTokenizer,
-                sliced_tokens: &[i32],
-                offset: f64,
-                last: bool,
-            ) -> Self {
-                let segment = Segment::from_tokens(tokenizer, sliced_tokens, offset, last);
-                let segment_tokens = segment
-                    .tokens
-                    .into_iter()
-                    .filter(|t| *t < tokenizer.timestamp_begin() as _)
-                    .collect::<Vec<_>>();
-                let segment_text = tokenizer.decode(segment_tokens.as_slice(), true).unwrap();
-                StreamedSegment::new(segment.start, segment.stop, segment_text, last)
-            }
-        }
+    pub fn last(&self) -> bool {
+        self.last
+    }
+
+    pub(crate) fn from_tokens(
+        tokenizer: &WhisperTokenizer,
+        sliced_tokens: &[i32],
+        offset: f64,
+        last: bool,
+    ) -> Self {
+        let segment = Segment::from_tokens(tokenizer, sliced_tokens, offset, last);
+        let segment_tokens = segment
+            .tokens
+            .into_iter()
+            .filter(|t| *t < tokenizer.timestamp_begin() as _)
+            .collect::<Vec<_>>();
+        let segment_text = tokenizer.decode(segment_tokens.as_slice(), true).unwrap();
+        StreamedSegment::new(segment.start, segment.stop, segment_text, last)
     }
 }

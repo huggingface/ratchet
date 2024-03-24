@@ -4,7 +4,8 @@ use crate::gpu::{AllocatorError, PoolError, WgpuDevice};
 pub enum DeviceError {
     #[error("Failed to acquire device with error: {0:?}")]
     DeviceAcquisitionFailed(#[from] wgpu::RequestDeviceError),
-    #[error("Failed to get adapter.")]
+    #[error("Failed to request adapter required for WebGPU. Please ensure that your browser supports WebGPU.
+             (Chrome 121+, Firefox Nightly, Edge & all Chromium based browsers)")]
     AdapterRequestFailed,
     #[error("Failed to create storage with error: {0:?}")]
     StorageCreationFailed(#[from] PoolError), //TODO: shouldn't be PoolError

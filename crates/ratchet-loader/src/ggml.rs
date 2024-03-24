@@ -138,11 +138,11 @@ impl<M: GGMLCompatible> GGMLModel<M> {
             name: key.to_string(),
         })?;
         let mut data = header.read_data(reader)?;
-        log::info!("Loading tensor: {} with size: {} bytes", key, data.len());
+        log::debug!("Loading tensor: {} with size: {} bytes", key, data.len());
         let shape = header.shape.clone();
         let mut dt: DType = header.dtype.into();
         if dt == DType::F16 {
-            log::info!("Casting {} from F16 to F32", key);
+            log::debug!("Casting {} from F16 to F32", key);
             //TODO: terrible cast whilst wgpu doesn't support F16
             let f16_data = bytemuck::cast_slice::<u8, f16>(&data);
             let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
@@ -152,11 +152,11 @@ impl<M: GGMLCompatible> GGMLModel<M> {
         self.total_bytes_loaded
             .set(self.total_bytes_loaded.get() + data.len());
         self.total_loaded.set(self.total_loaded.get() + 1);
-        log::info!(
+        log::debug!(
             "Total bytes loaded: {} bytes",
             self.total_bytes_loaded.get()
         );
-        log::info!("Total tensors loaded: {}", self.total_loaded.get());
+        log::debug!("Total tensors loaded: {}", self.total_loaded.get());
         Ok(Tensor::from_bytes(&data, dt, shape, device.clone()).unwrap())
     }
 }
@@ -178,7 +178,7 @@ impl GGMLLoader {
             total_size += header.data_size() as u64;
             tensor_map.insert(header.name.clone(), header);
         }
-        log::info!("GGML Model size: {}b", total_size);
+        log::debug!("GGML Model size: {}b", total_size);
         Ok(GGMLModel::new(model_header, tensor_map))
     }
 
