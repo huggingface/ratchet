@@ -1,11 +1,14 @@
-mod select_language;
 mod timestamp_rules;
-
-pub use select_language::*;
 pub use timestamp_rules::*;
 
+use crate::whisper::tokenizer::WhisperTokenizer;
 use ratchet::Tensor;
 
 pub trait LogitMutator {
-    fn apply(&self, logits: Tensor, tokens: Option<&Tensor>) -> anyhow::Result<Tensor>;
+    fn apply(
+        &self,
+        logits: Tensor,
+        tokenizer: &WhisperTokenizer,
+        tokens: Option<&Tensor>,
+    ) -> anyhow::Result<Tensor>;
 }

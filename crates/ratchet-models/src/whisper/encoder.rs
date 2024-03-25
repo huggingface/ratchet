@@ -4,7 +4,8 @@ use ratchet::{Device, Tensor};
 use ratchet_loader::GGMLModel;
 use ratchet_nn::{LayerNorm, Module};
 
-use crate::{ResidualAttentionBlock, ResidualAttentionBlockInputs, Whisper};
+use super::residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs};
+use crate::model::Whisper;
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {
@@ -17,9 +18,14 @@ struct ConvBlock {
 impl Module for ConvBlock {
     type Input = Tensor;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         input
-            .conv1d(&self.w, Some(&self.b), self.stride, self.padding)?
+            .conv1d(
+                self.w.clone(),
+                Some(self.b.clone()),
+                self.stride,
+                self.padding,
+            )?
             .gelu()
     }
 }
@@ -34,9 +40,9 @@ pub(crate) struct EncoderStem {
 impl Module for EncoderStem {
     type Input = Tensor;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
-        let convolved = self.conv2.forward(&self.conv1.forward(input)?)?;
-        convolved.permute(&[0, 2, 1])?.add(&self.pos_embed)
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let convolved = self.conv2.forward(self.conv1.forward(input)?)?;
+        convolved.permute(&[0, 2, 1])?.add(self.pos_embed.clone())
     }
 }
 
@@ -69,7 +75,7 @@ pub struct WhisperEncoder {
 impl Module for WhisperEncoder {
     type Input = Tensor;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.stem.forward(input)?;
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
@@ -78,9 +84,9 @@ impl Module for WhisperEncoder {
                 mask: None,
                 cache: None,
             };
-            x = block.forward(&input)?;
+            x = block.forward(input)?;
         }
-        self.ln_post.forward(&x)
+        self.ln_post.forward(x)
     }
 }
 
@@ -125,11 +131,12 @@ impl WhisperEncoder {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use crate::{Whisper, WhisperEncoder};
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
+
+    use crate::{model::Whisper, whisper::encoder::WhisperEncoder};
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -139,8 +146,8 @@ mod tests {
     fn encoder_matches() -> anyhow::Result<()> {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
+        let path = model.get("tiny_f32.bin").unwrap();
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
         let ground_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
@@ -153,7 +160,7 @@ mod tests {
         let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
         let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
 
-        let result = encoder.forward(&input)?.resolve()?;
+        let result = encoder.forward(input)?.resolve()?;
         let ours = result.to(&Device::CPU)?;
         let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);

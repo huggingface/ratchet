@@ -1,5 +1,5 @@
-use crate::{prelude::*, OperationError, StorageView, Strides};
-use crate::{Enforcer, Operation, RVec};
+use crate::{prelude::*, OpGuards, OperationError, StorageView, Strides};
+use crate::{Operation, RVec};
 use std::ops::Range;
 
 /// # Slice
@@ -7,6 +7,7 @@ use std::ops::Range;
 /// This is a temporary, user hostile implementation.
 #[derive(derive_new::new, Debug, Clone)]
 pub struct Slice {
+    pub src: Tensor,
     indices: RVec<Range<usize>>,
 }
 
@@ -16,14 +17,24 @@ impl Slice {
     }
 }
 
-impl Operation for Slice {
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
+impl OpGuards for Slice {
+    fn check_shapes(&self) {
+        self.indices.iter().for_each(|range| {
+            assert!(range.start <= range.end);
+        });
+        self.indices
+            .iter()
+            .zip(self.src.shape().iter())
+            .for_each(|(range, &dim)| {
+                assert!(range.end <= dim);
+            });
     }
 
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        //TODO: Check if slice is valid
+    fn check_dtypes(&self) {}
+}
+
+impl Operation for Slice {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
         let output_shape = self
             .indices
             .iter()
@@ -31,14 +42,16 @@ impl Operation for Slice {
             .collect::<RVec<usize>>()
             .into();
         let strides = Strides::from(&output_shape);
-        Ok(StorageView::new(output_shape, srcs[0].dt(), strides))
+        Ok(StorageView::new(output_shape, self.src.dt(), strides))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{rvec, Slice};
-    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use std::ops::Range;
+
+    use crate::{test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use crate::{Shape, Slice};
     use proptest::prelude::*;
     use test_strategy::proptest;
 
@@ -60,15 +73,31 @@ mod tests {
         }
     }
 
-    //TODO: instead of generating each index,
-    //just implement arbitrary for Shape and pass in 4 args
+    #[derive(Debug, Clone)]
+    pub struct SubSlice(pub Range<usize>);
+
+    impl Arbitrary for SubSlice {
+        type Parameters = (usize, usize);
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+            let (start, end) = args;
+            (start..=end, start..=end)
+                .prop_map(|generated| {
+                    let (start, end) = match generated {
+                        (start, end) if start == end => (start, end + 1),
+                        (start, end) if start > end => (end, start),
+                        (start, end) => (start, end),
+                    };
+                    SubSlice(start..end)
+                })
+                .boxed()
+        }
+    }
+
     #[derive(Debug)]
     struct SliceProblem {
         op: Slice,
-        B: usize,
-        M: usize,
-        N: usize,
-        K: usize,
     }
 
     impl Arbitrary for SliceProblem {
@@ -76,32 +105,22 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            let gen_range = |max: usize| {
-                // Ensure the range end is always less than max
-                (0..max, 0..max).prop_map(move |(start, end)| {
-                    let (start, end) = match (start, end) {
-                        (start, end) if start == end => (start, end + 1),
-                        (start, end) if start > end => (end, start),
-                        (start, end) => (start, end),
-                    };
-                    start..end
-                })
-            };
+            Shape::arbitrary_with(vec![2..=16, 2..=16, 2..=16, 2..=128])
+                .prop_flat_map(|shape| {
+                    let slice_strategies = shape
+                        .iter()
+                        .map(|&dim| SubSlice::arbitrary_with((1, dim - 1)))
+                        .collect::<Vec<_>>();
 
-            let B_range = gen_range(4);
-            let M_range = gen_range(4);
-            let N_range = gen_range(256);
-            let K_range = gen_range(256);
-
-            (B_range, M_range, N_range, K_range)
-                .prop_map(|(Br, Mr, Nr, Kr)| {
-                    //Adding 10 to ensure it works without matching range end
-                    //TODO: write a better generate strategy
-                    let (B, M, N, K) = (Br.end, Mr.end, Nr.end + 10, Kr.end + 10);
-                    let op = Slice {
-                        indices: rvec![Br, Mr, Nr, Kr],
-                    };
-                    SliceProblem { op, B, M, N, K }
+                    slice_strategies.prop_map(move |sub_slices| {
+                        let indices = sub_slices.into_iter().map(|sub| sub.0).collect();
+                        SliceProblem {
+                            op: Slice::new(
+                                Tensor::randn::<f32>(shape.clone(), Device::CPU),
+                                indices,
+                            ),
+                        }
+                    })
                 })
                 .boxed()
         }
@@ -122,12 +141,10 @@ def slice(a):
     }
 
     fn run_reindex_trial(prob: SliceProblem) -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        println!("slice problem: {:?}", prob);
-        let SliceProblem { op, B, M, N, K } = prob;
-        println!("Slice: {:?}, B: {}, M: {}, N: {}, K: {}", op, B, M, N, K);
-        let a = Tensor::randn::<f32>(shape![B, M, N, K], cpu_device.clone());
+        let SliceProblem { op } = prob;
+        println!("SLICE PROBLEM: {:?}", op);
         let device = GPU_DEVICE.with(|d| d.clone());
+        let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
         let ground = ground_truth(&a, &op.as_torch())?;

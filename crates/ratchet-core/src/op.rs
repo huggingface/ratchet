@@ -1,13 +1,11 @@
-use std::fmt::Debug;
-
-use encase::internal::WriteInto;
-use encase::ShaderType;
-
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-    PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
+    PoolError, WgpuDevice, WorkgroupCount,
 };
-use crate::{ops::*, rvec, CompiledOp, InvariantError, KernelElement, RVec, StorageView, Tensor};
+use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
+use encase::internal::WriteInto;
+use encase::ShaderType;
+use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -27,19 +25,19 @@ pub enum LazyOp {
 }
 
 impl LazyOp {
-    pub fn name(&self) -> &'static str {
+    pub fn key(&self, dst: &Tensor) -> String {
         match self {
-            LazyOp::Binary(b) => b.name(),
-            LazyOp::Matmul(m) => m.name(),
-            LazyOp::Softmax(s) => s.name(),
-            LazyOp::Unary(u) => u.name(),
-            LazyOp::Reindex(r) => r.name(),
-            LazyOp::Norm(n) => n.name(),
-            LazyOp::Conv(c) => c.name(),
-            LazyOp::Select(s) => s.name(),
-            LazyOp::IndexWrite(iw) => iw.name(),
-            LazyOp::View(_) => "View",
-            LazyOp::Const => "Const",
+            LazyOp::Binary(b) => b.kernel_key(dst),
+            LazyOp::Matmul(m) => m.kernel_key(dst),
+            LazyOp::Softmax(s) => s.kernel_key(dst),
+            LazyOp::Unary(u) => u.kernel_key(dst),
+            LazyOp::Reindex(r) => r.kernel_key(dst),
+            LazyOp::Norm(n) => n.kernel_key(dst),
+            LazyOp::Conv(c) => c.kernel_key(dst),
+            LazyOp::Select(s) => s.kernel_key(dst),
+            LazyOp::IndexWrite(iw) => iw.kernel_key(dst),
+            LazyOp::View(_) => "View".to_string(),
+            LazyOp::Const => "Const".to_string(),
         }
     }
 
@@ -78,6 +76,29 @@ impl LazyOp {
     pub fn is_const(&self) -> bool {
         matches!(self, LazyOp::Const)
     }
+
+    #[track_caller]
+    pub fn check_invariants(&self) {
+        match self {
+            LazyOp::Binary(b) => b.check_invariants(),
+            LazyOp::Matmul(m) => m.check_invariants(),
+            LazyOp::Softmax(s) => s.check_invariants(),
+            LazyOp::Unary(u) => u.check_invariants(),
+            LazyOp::Reindex(r) => match r {
+                Reindex::Permute(p) => p.check_invariants(),
+                Reindex::Slice(s) => s.check_invariants(),
+                Reindex::Broadcast(b) => b.check_invariants(),
+            },
+            LazyOp::Norm(n) => match n {
+                Norm::LayerNorm(ln) => ln.check_invariants(),
+            },
+            LazyOp::Conv(c) => c.check_invariants(),
+            LazyOp::Select(s) => s.check_invariants(),
+            LazyOp::IndexWrite(iw) => iw.check_invariants(),
+            LazyOp::View(v) => v.check_invariants(),
+            LazyOp::Const => {}
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -96,15 +117,7 @@ pub enum OperationError {
 
 ///A trait for types that are written into uniform buffers, these
 ///hold the metadata for a shader.
-pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
-    const __IS_VALID_META: () = {
-        assert!(std::mem::size_of::<Self>() <= UNIFORM_ALIGN);
-    };
-
-    fn n_bytes(&self) -> usize {
-        std::mem::size_of::<Self>()
-    }
-}
+pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
 
 /// # MetaOperation
 ///
@@ -117,7 +130,7 @@ pub trait MetaOperation: Debug + 'static {
     type Meta: OpMetadata;
 
     /// Return the file stem of the kernel source file.
-    fn kernel_name(&self) -> &'static str;
+    fn kernel_key(&self, dst: &Tensor) -> String;
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -149,6 +162,13 @@ pub trait MetaOperation: Debug + 'static {
         kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError>;
 
+    /// # Update
+    /// Some operations may require computing additional info once the dst is resolved.
+    /// I hate this method.
+    fn update(&self, _dst: &Tensor) -> Result<(), OperationError> {
+        Ok(())
+    }
+
     fn compile(
         &self,
         dst: &Tensor,
@@ -156,6 +176,7 @@ pub trait MetaOperation: Debug + 'static {
         device: &WgpuDevice,
         can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
+        self.update(dst)?;
         let kernel_element = self.kernel_element(dst);
         let meta = self.metadata(dst, &kernel_element)?;
         let offset = uniform.write(&meta)?;
@@ -170,10 +191,10 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
+        let kernel_key = self.kernel_key(dst);
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
-            kernel_name: self.kernel_name(),
-            kernel_element,
+            kernel_key: kernel_key.clone(),
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
@@ -184,7 +205,7 @@ pub trait MetaOperation: Debug + 'static {
             rvec![storage_layout],
             device,
             can_inplace,
-            self.kernel_name(),
+            &kernel_key,
         )?;
 
         Ok(CompiledOp::new(
@@ -192,28 +213,51 @@ pub trait MetaOperation: Debug + 'static {
             workgroup_count,
             storage_bind_groups,
             offset as _,
+            kernel_key,
         ))
     }
 }
 
+/// # Operation Guards - Runtime guards for operation correctness.
+///
+/// Guards should be implemented for all types that will be a node on the high-level CFG.
+/// It is used to ensure that the operation is valid and that the resultant tensor is correctly
+/// shaped.
+///
+/// The Rust type system is not sufficient to check all invariants at compile time (we need
+/// dependent types). Therefore, we move the checks to runtime.
+///
+/// All of these methods panic, as they're unrecoverable errors.
+pub trait OpGuards {
+    #[track_caller]
+    fn check_shapes(&self);
+
+    #[track_caller]
+    fn check_dtypes(&self);
+
+    // Some operations may have custom invariants to be upheld.
+    // e.g reduction dimension being within rank
+    #[track_caller]
+    fn check_custom(&self) {}
+}
+
 /// # Operation
 ///
-/// An operation is a user facing type that represents a computation.
-/// It checks the invariants that must be true before this operation can be executed.
+/// Operation should be implemented for all types that will be a node on the high-level CFG.
 ///
 /// An Operation is a member of a family of operations, called a MetaOperation, it may be the only
 /// member.
-///
-/// Some types may implement both Operation and MetaOperation, if there is no variance
-/// in output shape or invariants between the members of the family.
-pub trait Operation: Debug + 'static {
-    //These 2 methods below should be moved to another trait
-    //They're unrelated
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError>;
-
-    /// # Output Inference
+pub trait Operation: OpGuards + Debug + 'static {
+    /// # Check Invariants
     ///
-    /// Inference is an overloaded term, in this context it means to determine
-    /// the metadata of the output tensor given the input tensors.
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError>;
+    /// All operations have some invariants that must be upheld to ensure correctness.
+    fn check_invariants(&self) {
+        self.check_shapes();
+        self.check_dtypes();
+        self.check_custom();
+    }
+    /// # Compute View
+    ///
+    /// Determine the type, shape & strides of the resultant tensor.
+    fn compute_view(&self) -> Result<StorageView, OperationError>;
 }

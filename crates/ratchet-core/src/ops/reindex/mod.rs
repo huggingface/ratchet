@@ -16,37 +16,11 @@ use crate::{
 };
 use glam::UVec4;
 
-#[derive(Debug, Clone)]
-pub enum ReindexOp {
+#[derive(new, Debug, Clone)]
+pub enum Reindex {
     Permute(Permute),
     Slice(Slice),
     Broadcast(Broadcast),
-}
-
-impl ReindexOp {
-    pub fn kernel_name(&self) -> &'static str {
-        match self {
-            ReindexOp::Permute(_) => "permute",
-            ReindexOp::Slice(_) => "slice",
-            ReindexOp::Broadcast(_) => "broadcast",
-        }
-    }
-}
-
-#[derive(new, Debug, Clone)]
-pub struct Reindex {
-    input: Tensor,
-    op: ReindexOp,
-}
-
-impl Reindex {
-    pub fn name(&self) -> &'static str {
-        self.op.kernel_name()
-    }
-
-    pub fn op(&self) -> &ReindexOp {
-        &self.op
-    }
 }
 
 #[derive(Debug, ShaderType)]
@@ -68,7 +42,11 @@ impl MetaOperation for Reindex {
     type Meta = ReindexMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.input]
+        match self {
+            Reindex::Permute(p) => rvec![&p.src],
+            Reindex::Slice(s) => rvec![&s.src],
+            Reindex::Broadcast(b) => rvec![&b.src],
+        }
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -95,8 +73,13 @@ impl MetaOperation for Reindex {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn kernel_name(&self) -> &'static str {
-        self.op.kernel_name()
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let op_key = match self {
+            Reindex::Permute(_) => "permute",
+            Reindex::Slice(_) => "slice",
+            Reindex::Broadcast(_) => "broadcast",
+        };
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn metadata(
@@ -109,7 +92,9 @@ impl MetaOperation for Reindex {
             let strides = Strides::from(&shape);
             (shape, strides)
         };
-        let (input_shape, input_strides) = padder(self.input.shape().clone());
+        let srcs = self.srcs();
+        let src = srcs.first().unwrap();
+        let (input_shape, input_strides) = padder(src.shape().clone());
         let (dst_shape, dst_strides) = padder(dst.shape().clone());
 
         let src_stride = UVec4::from(&input_strides);
@@ -122,16 +107,16 @@ impl MetaOperation for Reindex {
 
         //TODO: move this to the inner ops
         //TODO: this is incredibly bad
-        let permute = match &self.op {
-            ReindexOp::Permute(p) => {
+        let permute = match &self {
+            Reindex::Permute(p) => {
                 let dims = p.promote();
                 let vdims = dims.iter().map(|&d| d as u32).collect::<Vec<_>>();
                 vdims.try_into().unwrap()
             }
             _ => [0, 0, 0, 0],
         };
-        let src_offsets = match &self.op {
-            ReindexOp::Slice(s) => {
+        let src_offsets = match &self {
+            Reindex::Slice(s) => {
                 let starts = s.indices().iter().map(|i| i.start).collect::<Vec<_>>();
                 let mut offsets = [0; 4];
                 let offset = 4 - starts.len();

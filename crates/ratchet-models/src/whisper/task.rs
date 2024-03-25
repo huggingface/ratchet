@@ -1,28 +1,16 @@
-use ndarray::s;
-use ndarray::Axis;
-use ratchet::prelude::shape;
-use ratchet::Device;
-use ratchet::Tensor;
+use super::{
+    decoder::WhisperDecoder, logit_mutators::*, samplers::*, spectrogram::*,
+    tokenizer::WhisperTokenizer, transcript::*,
+};
+use crate::options::{DecodingOptions, Prompt};
+use ndarray::{s, Axis};
+use ratchet::{shape, Device, Tensor};
 use ratchet_nn::Module;
-
-use crate::ApplyTimestampRules;
-use crate::DecodingOptions;
-use crate::GreedySampler;
-use crate::LogitMutator;
-use crate::Prompt;
-use crate::Segment;
-use crate::StreamedSegment;
-use crate::WhisperDecoder;
-use crate::WhisperTokenizer;
-use crate::CHUNK_LENGTH;
-use crate::HOP_LENGTH;
-use crate::N_AUDIO_CTX;
-use crate::SAMPLE_RATE;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
     #[error("No valid logits found")]
-    NoValidLogitsFound,
+    InvalidLogits,
     #[error("Tokenizer error: {0}")]
     TokenizerError(#[from] tokenizers::Error),
     #[error("Unknown error: {0}")]
@@ -32,6 +20,7 @@ pub enum DecodeError {
 }
 
 pub struct DecodingTask {
+    tokenizer: WhisperTokenizer,
     options: DecodingOptions,
     sample_len: u32,
     logit_mutators: Vec<Box<dyn LogitMutator>>,
@@ -40,18 +29,19 @@ pub struct DecodingTask {
 }
 
 impl DecodingTask {
-    fn get_initial_tokens(&self, tokenizer: &WhisperTokenizer) -> Vec<i32> {
-        let mut init_tokens = tokenizer.sot_sequence();
+    fn get_initial_tokens(&self) -> Vec<i32> {
+        let mut init_tokens = self.tokenizer.sot_sequence();
         if let Some(prompt) = &self.options.prompt {
             let prompt_tokens = match prompt {
                 Prompt::Tokens(tokens) => tokens.clone(),
-                Prompt::Text(text) => tokenizer
+                Prompt::Text(text) => self
+                    .tokenizer
                     .encode(format!(" {}", text).as_str(), false)
                     .unwrap(),
             };
             let max_prompt_length = 448 / 2 - 1; // equivalent to self.n_ctx // 2 - 1 in python
             let prompt_length = prompt_tokens.len().min(max_prompt_length);
-            let mut tokens = vec![WhisperTokenizer::START_OF_PREV];
+            let mut tokens = vec![self.tokenizer.sot_prev()];
             tokens.extend_from_slice(&prompt_tokens[prompt_tokens.len() - prompt_length..]);
             tokens.extend(init_tokens);
             init_tokens = tokens;
@@ -59,18 +49,19 @@ impl DecodingTask {
         init_tokens
     }
 
-    pub fn new(options: DecodingOptions, tokenizer: &WhisperTokenizer) -> Self {
+    pub fn new(options: DecodingOptions, tokenizer: WhisperTokenizer) -> Self {
         let sample_len = options.sample_len.unwrap_or(256);
         let _selected_lang = options.language.as_ref().unwrap();
         let max_initial_timestamp = options.max_initial_timestamp;
         let mut task = DecodingTask {
+            tokenizer,
             options,
             logit_mutators: vec![],
             sample_len,
             initial_tokens: None,
             initial_tokens_len: None,
         };
-        task.initial_tokens = Some(task.get_initial_tokens(tokenizer));
+        task.initial_tokens = Some(task.get_initial_tokens());
         task.initial_tokens_len = Some(task.initial_tokens.as_ref().unwrap().len());
 
         let mut max_initial_timestamp_index = None;
@@ -92,12 +83,14 @@ impl DecodingTask {
         &self,
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
-        mut tokens: Vec<i32>,
+        callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
+        let mut tokens = self.get_initial_tokens();
+        let sliced_vocab_size = self.tokenizer.vocab_size();
         let device = audio_ctx.device().clone();
+        let mut timestamps_seen = 0;
 
-        for idx in 0..self.sample_len {
-            device.try_gpu().unwrap().begin_pass(idx as _);
+        for _ in 0..self.sample_len {
             let input = if tokens.len() > self.initial_tokens_len.unwrap() {
                 &tokens[tokens.len() - 1..]
             } else {
@@ -105,16 +98,20 @@ impl DecodingTask {
             };
             let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
 
-            let logits = decoder.forward(&[audio_ctx.clone(), input_t])?.resolve()?;
+            let logits = decoder.forward([audio_ctx.clone(), input_t])?.resolve()?;
             decoder.cache_mut().update(input.len());
 
-            let mut logits = Self::slice_logits(logits.to(&Device::CPU)?);
+            let mut logits = Self::slice_logits(logits.to(&Device::CPU)?, sliced_vocab_size);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
-                logits = m.apply(logits, Some(&token_t))?;
+                logits = m.apply(logits, &self.tokenizer, Some(&token_t))?;
             }
 
             let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
+
+            if let Some(ref cb) = callback {
+                self.handle_callback(&self.tokenizer, &new_tokens, &mut timestamps_seen, cb);
+            }
 
             tokens = new_tokens;
             if completed {
@@ -129,15 +126,14 @@ impl DecodingTask {
         &self,
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
-        mut tokens: Vec<i32>,
-        tokenizer: &WhisperTokenizer,
         callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
+        let mut tokens = self.get_initial_tokens();
         let device = audio_ctx.device().clone();
+        let sliced_vocab_size = self.tokenizer.vocab_size();
         let mut timestamps_seen = 0;
 
-        for idx in 0..self.sample_len {
-            device.try_gpu().unwrap().begin_pass(idx as _);
+        for _ in 0..self.sample_len {
             let input = if tokens.len() > self.initial_tokens_len.unwrap() {
                 &tokens[tokens.len() - 1..]
             } else {
@@ -145,19 +141,19 @@ impl DecodingTask {
             };
             let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
 
-            let logits = decoder.forward(&[audio_ctx.clone(), input_t])?.resolve()?;
+            let logits = decoder.forward([audio_ctx.clone(), input_t])?.resolve()?;
             decoder.cache_mut().update(input.len());
 
-            let mut logits = Self::slice_logits(logits.to(&Device::CPU).await?);
+            let mut logits = Self::slice_logits(logits.to(&Device::CPU).await?, sliced_vocab_size);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
-                logits = m.apply(logits, Some(&token_t))?;
+                logits = m.apply(logits, &self.tokenizer, Some(&token_t))?;
             }
 
             let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
 
             if let Some(ref cb) = callback {
-                self.handle_callback(tokenizer, &new_tokens, &mut timestamps_seen, cb);
+                self.handle_callback(&self.tokenizer, &new_tokens, &mut timestamps_seen, cb);
             }
 
             tokens = new_tokens;
@@ -175,12 +171,12 @@ impl DecodingTask {
         timestamps_seen: &mut i32,
         callback: impl Fn(StreamedSegment),
     ) {
-        if WhisperTokenizer::is_timestamp(new_tokens[new_tokens.len() - 1]) {
+        if tokenizer.is_timestamp(new_tokens[new_tokens.len() - 1]) {
             *timestamps_seen += 1;
             if *timestamps_seen % 2 == 0 {
                 let previous_timestamp = new_tokens[..new_tokens.len() - 2]
                     .iter()
-                    .rposition(|x| WhisperTokenizer::is_timestamp(*x));
+                    .rposition(|x| tokenizer.is_timestamp(*x));
                 if let Some(previous_timestamp) = previous_timestamp {
                     callback(StreamedSegment::from_tokens(
                         tokenizer,
@@ -194,15 +190,16 @@ impl DecodingTask {
     }
 
     /// Slice logits from [1xnum_tokensx51872] -> [1x1x51865]
-    pub(crate) fn slice_logits(logits: Tensor) -> Tensor {
+    pub(crate) fn slice_logits(logits: Tensor, vocab_size: usize) -> Tensor {
         let nd_logits = logits.into_ndarray::<f32>();
         let sliced = nd_logits
-            .slice(s![.., -1.., ..WhisperTokenizer::SIZE])
+            .slice(s![.., -1.., ..vocab_size])
             .remove_axis(Axis(1));
         Tensor::from(sliced.to_owned().into_dyn())
     }
 
     pub fn build_segments(
+        tokenizer: &WhisperTokenizer,
         tokens: Vec<i32>,
         offset: f64,
         segment_size: usize,
@@ -221,13 +218,13 @@ impl DecodingTask {
         );
 
         let single_timestamp_ending =
-            !WhisperTokenizer::is_timestamp(penultimate) && WhisperTokenizer::is_timestamp(last);
+            !tokenizer.is_timestamp(penultimate) && tokenizer.is_timestamp(last);
 
         let mut consecutive = content_tokens
             .windows(2)
             .enumerate()
             .filter_map(|(i, x)| {
-                if WhisperTokenizer::is_timestamp(x[0]) && WhisperTokenizer::is_timestamp(x[1]) {
+                if tokenizer.is_timestamp(x[0]) && tokenizer.is_timestamp(x[1]) {
                     Some(i + 1)
                 } else {
                     None
@@ -243,13 +240,19 @@ impl DecodingTask {
                 consecutive.push(content_length);
             }
 
+            #[allow(unused_assignments)]
             let mut last_slice = 0;
             (segments, last_slice) =
                 consecutive
                     .iter()
                     .fold((Vec::new(), 0), |(mut acc, last_slice), &slice| {
                         let segment_tokens = &content_tokens[last_slice..slice];
-                        acc.push(Segment::from_tokens(segment_tokens, offset, false));
+                        acc.push(Segment::from_tokens(
+                            tokenizer,
+                            segment_tokens,
+                            offset,
+                            false,
+                        ));
                         (acc, slice)
                     });
 
@@ -257,16 +260,16 @@ impl DecodingTask {
                 segment_size
             } else {
                 let last_timestamp_pos =
-                    content_tokens[last_slice - 1] - WhisperTokenizer::TS_BEGIN;
+                    content_tokens[last_slice - 1] - tokenizer.timestamp_begin();
                 last_timestamp_pos as usize * input_stride
             }
         } else {
             let duration = content_tokens
                 .iter()
-                .filter(|&x| WhisperTokenizer::is_timestamp(*x))
+                .filter(|&x| tokenizer.is_timestamp(*x))
                 .last()
                 .map_or(segment_duration as f64, |&last_ts| {
-                    let last_timestamp_pos = last_ts - WhisperTokenizer::TS_BEGIN;
+                    let last_timestamp_pos = last_ts - tokenizer.timestamp_begin();
                     last_timestamp_pos as f64 * input_stride as f64 * (HOP_LENGTH as f64)
                         / (SAMPLE_RATE as f64)
                 });
@@ -289,18 +292,9 @@ impl DecodingTask {
         &self,
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
-        tokenizer: &WhisperTokenizer,
         callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
-        let mut tokens = self
-            .main_loop(
-                decoder,
-                audio_ctx,
-                self.get_initial_tokens(tokenizer),
-                tokenizer,
-                &callback,
-            )
-            .await?;
+        let mut tokens = self.main_loop(decoder, audio_ctx, &callback).await?;
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
         let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);
@@ -315,9 +309,9 @@ impl DecodingTask {
         &self,
         decoder: &mut WhisperDecoder,
         audio_ctx: Tensor,
-        tokenizer: &WhisperTokenizer,
+        callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
-        let mut tokens = self.main_loop(decoder, audio_ctx, self.get_initial_tokens(tokenizer))?;
+        let mut tokens = self.main_loop(decoder, audio_ctx, &callback)?;
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
         let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);

@@ -4,55 +4,39 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
-    StorageView, Tensor,
+    rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
+    OperationError, RVec, StorageView, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
 pub struct LayerNorm {
+    input: Tensor,
     scale: Tensor,
     bias: Option<Tensor>,
     eps: f32,
 }
 
-impl Operation for LayerNorm {
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity_range(srcs, 2..=3)?;
-        Ok(())
+impl OpGuards for LayerNorm {
+    fn check_shapes(&self) {
+        assert!(self.input.rank() >= 2);
     }
 
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].storage_view().clone())
+    fn check_dtypes(&self) {
+        assert!(self.input.dt() == DType::F32);
+        assert!(self.scale.dt() == DType::F32);
+        assert!(self.bias.as_ref().map(|t| t.dt()) == Some(DType::F32));
+    }
+}
+
+impl Operation for LayerNorm {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        Ok(self.input.storage_view().clone())
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum NormOp {
+pub enum Norm {
     LayerNorm(LayerNorm),
-}
-
-impl NormOp {
-    pub fn kernel_name(&self) -> &'static str {
-        match self {
-            NormOp::LayerNorm(_) => "layernorm",
-        }
-    }
-}
-
-#[derive(new, Debug, Clone)]
-pub struct Norm {
-    input: Tensor,
-    op: NormOp,
-}
-
-impl Norm {
-    pub fn name(&self) -> &'static str {
-        self.op.kernel_name()
-    }
-
-    pub fn op(&self) -> &NormOp {
-        &self.op
-    }
 }
 
 #[derive(Debug, derive_new::new, ShaderType)]
@@ -70,22 +54,25 @@ impl MetaOperation for Norm {
     type Meta = NormMeta;
 
     fn srcs(&self) -> RVec<&Tensor> {
-        match &self.op {
-            NormOp::LayerNorm(LayerNorm { scale, bias, .. }) => match bias {
-                Some(bias) => rvec![&self.input, scale, bias],
-                None => rvec![&self.input, scale],
+        match self {
+            Norm::LayerNorm(LayerNorm {
+                input, scale, bias, ..
+            }) => match bias {
+                Some(bias) => rvec![input, scale, bias],
+                None => rvec![input, scale],
             },
         }
     }
 
-    fn kernel_name(&self) -> &'static str {
-        match self.op {
-            NormOp::LayerNorm(_) => "layernorm",
-        }
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let op_key = match self {
+            Norm::LayerNorm(_) => "layernorm",
+        };
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
-        let input = &self.input;
+        let input = self.srcs()[0];
         let rank = input.rank();
         let N = input.shape()[rank - 1] as u32;
         if N % 4 == 0 {
@@ -98,7 +85,7 @@ impl MetaOperation for Norm {
     }
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let input = &self.input;
+        let input = self.srcs()[0];
         let rank = input.rank();
 
         let M = input.shape()[rank - 2] as u32;
@@ -118,14 +105,14 @@ impl MetaOperation for Norm {
         _dst: &Tensor,
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
-        let input = &self.input;
+        let input = self.srcs()[0];
         let rank = input.rank();
         let M = input.shape()[rank - 2] as u32;
         let N = input.shape()[rank - 1] as u32;
         let ND2 = N / 2;
         let ND4 = N / 4;
-        let eps = match &self.op {
-            NormOp::LayerNorm(LayerNorm { eps, .. }) => *eps,
+        let eps = match self {
+            Norm::LayerNorm(LayerNorm { eps, .. }) => *eps,
         };
         Ok(NormMeta::new(M, N, ND2, ND4, eps))
     }
@@ -162,7 +149,7 @@ def layernorm(input, scale, bias):
         let bias_gpu = bias.to(device)?;
 
         let result = input_gpu
-            .layer_norm(&scale_gpu, Some(&bias_gpu), 1e-5)?
+            .layer_norm(scale_gpu, Some(bias_gpu), 1e-5)?
             .resolve()?;
 
         let ours = result.to(&Device::CPU)?;

@@ -18,7 +18,7 @@ pub use select::*;
 pub use softmax::*;
 pub use unary::*;
 
-use crate::{Enforcer, Operation, Shape, StorageView, Strides, Tensor};
+use crate::{OpGuards, Operation, Shape, StorageView, Strides, Tensor};
 
 /// # KernelElement
 ///
@@ -57,27 +57,29 @@ impl From<&KernelElement> for usize {
 
 #[derive(Debug, derive_new::new, Clone)]
 pub struct View {
-    input: Tensor,
+    src: Tensor,
     shape: Shape,
 }
 
 impl View {
     pub fn input(&self) -> &Tensor {
-        &self.input
+        &self.src
     }
 }
 
-impl Operation for View {
-    fn check_invariants(srcs: &[&crate::Tensor]) -> Result<(), crate::OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
+impl OpGuards for View {
+    fn check_shapes(&self) {
+        let (src_shape, dst_shape) = (self.src.shape(), &self.shape);
+        assert_eq!(src_shape.rank(), dst_shape.rank());
+        assert_eq!(src_shape.numel(), dst_shape.numel());
     }
 
-    fn infer_output(
-        &self,
-        srcs: &[&crate::Tensor],
-    ) -> Result<crate::StorageView, crate::OperationError> {
+    fn check_dtypes(&self) {}
+}
+
+impl Operation for View {
+    fn compute_view(&self) -> Result<StorageView, crate::OperationError> {
         let strides = Strides::from(&self.shape);
-        Ok(StorageView::new(self.shape.clone(), srcs[0].dt(), strides))
+        Ok(StorageView::new(self.shape.clone(), self.src.dt(), strides))
     }
 }

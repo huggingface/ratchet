@@ -6,7 +6,8 @@ use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, DeviceRequest, Tensor};
 use ratchet_hub::{ApiBuilder, RepoType};
 use ratchet_loader::GGMLCompatible;
-use ratchet_models::{DecodingOptionsBuilder, Whisper, WhisperDecoder, WhisperEncoder};
+use ratchet_models::model::Whisper;
+use ratchet_models::{WhisperDecoder, WhisperEncoder};
 use ratchet_nn::Module;
 use std::path::PathBuf;
 use wasm_bindgen::prelude::*;
@@ -21,8 +22,8 @@ fn log_init() {
 #[wasm_bindgen_test]
 async fn tiny_encoder() -> Result<(), JsValue> {
     log_init();
-    let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp", RepoType::Model).build();
-    let model_data = model_repo.get("ggml-tiny.bin").await?;
+    let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
+    let model_data = model_repo.get("tiny_f32.bin").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
     let input_npy = ground_repo.get("jfk_tiny_encoder_input.npy").await?;
@@ -38,7 +39,7 @@ async fn tiny_encoder() -> Result<(), JsValue> {
     let ground = Tensor::from_npy_bytes::<f32>(&ground_npy.to_vec(), &Device::CPU).unwrap();
 
     let encoder = WhisperEncoder::load(&gg, &mut reader, &device).unwrap();
-    let result = encoder.forward(&input).unwrap().resolve().unwrap();
+    let result = encoder.forward(input).unwrap().resolve().unwrap();
     let ours = result.to(&Device::CPU).await.unwrap();
     ground.all_close(&ours, 1e-3, 1e-3).unwrap();
     Ok(())
@@ -46,8 +47,8 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 
 #[wasm_bindgen_test]
 async fn tiny_decoder() -> Result<(), JsValue> {
-    let model_repo = ApiBuilder::from_hf("ggerganov/whisper.cpp", RepoType::Model).build();
-    let model_data = model_repo.get("ggml-tiny.bin").await?;
+    let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
+    let model_data = model_repo.get("tiny_f32.bin").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
     let hs_data = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;
@@ -66,7 +67,7 @@ async fn tiny_decoder() -> Result<(), JsValue> {
     while tokens[tokens.len() - 1] != 50257 {
         let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
         let result = decoder
-            .forward(&[audio_ctx.clone(), token_t])
+            .forward([audio_ctx.clone(), token_t])
             .unwrap()
             .resolve()
             .unwrap();

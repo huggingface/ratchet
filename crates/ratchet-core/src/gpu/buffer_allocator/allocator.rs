@@ -1,7 +1,4 @@
-use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
-use wgpu::BufferUsages;
-
+use super::TensorUsageRecord;
 use crate::{
     gpu::{
         BufferDescriptor, BufferPool, BufferUsagesExt, CpuUniform, GpuBufferHandle,
@@ -9,9 +6,10 @@ use crate::{
     },
     DeviceError, Tensor, TensorId,
 };
+use parking_lot::RwLock;
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
-
-use super::{OpProfile, TensorUsageRecord};
+use wgpu::BufferUsages;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AllocatorError {
@@ -172,18 +170,11 @@ impl BufferAllocator {
                 record.producer = Some(topo_len - iter);
             }
         }
-        records
-    }
 
-    fn calculate_op_profiles(usage_records: &TensorUsageRecords, num_ops: usize) -> Vec<OpProfile> {
-        //An operation profile is the set of all tensor usage records within which an operation lies.
-        let mut op_profiles: Vec<OpProfile> = vec![OpProfile::default(); num_ops];
-        for record in usage_records.0.iter() {
-            for o in record.op_range() {
-                op_profiles[o].push(record.clone());
-            }
-        }
-        op_profiles
+        //filter records with no producer
+        //TODO: Warning: could be a bug here
+        records.retain(|_, v| v.producer.is_some());
+        records
     }
 
     //https://arxiv.org/pdf/2001.03288.pdf + inplace support
@@ -199,20 +190,14 @@ impl BufferAllocator {
         let mut shared_objects: Vec<PooledGPUBuffer> = Vec::with_capacity(records.0.len());
 
         for record in records.0.iter() {
-            if record.producer.is_none() {
-                continue;
-            }
             let mut best_obj = None;
             for obj in shared_objects.iter() {
                 let mut suitable = true;
                 for inner_r in records.0.iter() {
-                    if inner_r.producer.is_none() {
-                        continue;
-                    }
                     let max_first =
                         std::cmp::max(record.producer.unwrap(), inner_r.producer.unwrap());
                     let min_last = std::cmp::min(record.last_consumer, inner_r.last_consumer);
-                    if assignments.get(&inner_r.id.unwrap()) == Some(obj) && max_first <= min_last {
+                    if max_first <= min_last && assignments.get(&inner_r.id.unwrap()) == Some(obj) {
                         suitable = false;
                         break;
                     }
@@ -224,8 +209,10 @@ impl BufferAllocator {
             if let Some(obj) = best_obj {
                 assignments.insert(record.id.unwrap(), (*obj).clone());
             } else {
+                //let rounded_size = (record.size - 1).next_power_of_two();
+                let rounded_size = record.size;
                 let buf = self.create_buffer(
-                    &BufferDescriptor::new(record.size as _, BufferUsages::standard(), false),
+                    &BufferDescriptor::new(rounded_size as _, BufferUsages::standard(), false),
                     device,
                 );
                 shared_objects.push(buf.clone());
@@ -308,11 +295,11 @@ impl BufferAllocator {
         //Allocate intermediates
         self.greedy_by_size(execution_order, &mut assignments, device)?;
 
-        log::info!(
+        log::debug!(
             "Total bytes allocated: {}kb",
             self.pool.read().total_gpu_size_in_bytes() / 1024,
         );
-        log::info!(
+        log::debug!(
             "Total buffers allocated: {}",
             self.pool.read().num_resources()
         );

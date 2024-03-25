@@ -1,6 +1,8 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+use crate::tokenizer::WhisperTokenizer;
+
 #[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub enum Language {
@@ -26,11 +28,11 @@ pub enum Task {
     Translate,
 }
 
-impl From<Task> for i32 {
-    fn from(val: Task) -> Self {
-        match val {
-            Task::Transcribe => 50359,
-            Task::Translate => 50358,
+impl Task {
+    pub fn as_token(&self, tokenizer: &WhisperTokenizer) -> i32 {
+        match self {
+            Task::Transcribe => tokenizer.transcribe(),
+            Task::Translate => tokenizer.translate(),
         }
     }
 }

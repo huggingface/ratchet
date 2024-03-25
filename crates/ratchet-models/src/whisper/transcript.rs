@@ -1,7 +1,9 @@
-use crate::{WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE};
+use super::spectrogram::*;
+use super::tokenizer::WhisperTokenizer;
 use num::integer::div_floor;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -19,28 +21,27 @@ impl TranscriptionResult {
         self.formatted = Some(formatted);
     }
 
-    pub fn as_oai(&self, tokenizer: &WhisperTokenizer) -> String {
-        let oai = self
-            .segments
+    fn format_single(&self, segment: &Segment, tokenizer: &WhisperTokenizer) -> String {
+        let fragment_tokens = segment
+            .tokens
             .iter()
-            .fold(String::new(), |transcript, fragment| {
-                let fragment_tokens = fragment
-                    .tokens
-                    .iter()
-                    .copied()
-                    .filter(|x| *x < WhisperTokenizer::EOT as _)
-                    .collect::<Vec<u32>>();
-                let fragment_text = tokenizer.decode(fragment_tokens.as_slice(), true).unwrap();
-                transcript
-                    + format!(
-                        "[{} --> {}]  {}\n",
-                        Self::format_timestamp(fragment.start, false, "."),
-                        Self::format_timestamp(fragment.stop, false, "."),
-                        fragment_text.trim().replace("-->", "->")
-                    )
-                    .as_str()
-            });
-        oai.to_string()
+            .copied()
+            .filter(|x| *x < WhisperTokenizer::EOT as _)
+            .collect::<Vec<u32>>();
+        let fragment_text = tokenizer.decode(fragment_tokens.as_slice(), true).unwrap();
+        format!(
+            "[{} --> {}]  {}\n",
+            Self::format_timestamp(segment.start, false, "."),
+            Self::format_timestamp(segment.stop, false, "."),
+            fragment_text.trim().replace("-->", "->")
+        )
+    }
+
+    pub fn as_oai(&self, tokenizer: &WhisperTokenizer) -> String {
+        self.segments
+            .iter()
+            .map(|segment| self.format_single(segment, tokenizer))
+            .collect::<String>()
     }
 
     fn format_timestamp(num: f64, always_include_hours: bool, decimal_marker: &str) -> String {
@@ -74,12 +75,18 @@ pub struct Segment {
 }
 
 impl Segment {
-    pub fn from_tokens(sliced_tokens: &[i32], offset: f64, last: bool) -> Self {
+    pub fn from_tokens(
+        tokenizer: &WhisperTokenizer,
+        sliced_tokens: &[i32],
+        offset: f64,
+        last: bool,
+    ) -> Self {
         let input_stride = N_FRAMES / N_AUDIO_CTX; // mel frames per output token: 2
         let time_precision: f64 = input_stride as f64 * (HOP_LENGTH as f64) / (SAMPLE_RATE as f64); // time per output token: 0.02 (seconds)
 
-        let start_timestamp_pos = sliced_tokens[0] - WhisperTokenizer::TS_BEGIN;
-        let end_timestamp_pos = sliced_tokens[sliced_tokens.len() - 1] - WhisperTokenizer::TS_BEGIN;
+        let start_timestamp_pos = sliced_tokens[0] - tokenizer.timestamp_begin();
+        let end_timestamp_pos =
+            sliced_tokens[sliced_tokens.len() - 1] - tokenizer.timestamp_begin();
 
         let segment_tokens = sliced_tokens.iter().map(|x| *x as u32).collect::<Vec<_>>();
 
@@ -102,6 +109,18 @@ pub struct StreamedSegment {
     pub stop: f64,
     pub text: String,
     pub last: bool,
+}
+
+impl std::fmt::Display for StreamedSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "[{} --> {}]  {}",
+            TranscriptionResult::format_timestamp(self.start, false, "."),
+            TranscriptionResult::format_timestamp(self.stop, false, "."),
+            self.text.trim().replace("-->", "->")
+        )
+    }
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
@@ -128,11 +147,11 @@ impl StreamedSegment {
         offset: f64,
         last: bool,
     ) -> Self {
-        let segment = Segment::from_tokens(sliced_tokens, offset, last);
+        let segment = Segment::from_tokens(tokenizer, sliced_tokens, offset, last);
         let segment_tokens = segment
             .tokens
             .into_iter()
-            .filter(|t| *t < WhisperTokenizer::TS_BEGIN as _)
+            .filter(|t| *t < tokenizer.timestamp_begin() as _)
             .collect::<Vec<_>>();
         let segment_text = tokenizer.decode(segment_tokens.as_slice(), true).unwrap();
         StreamedSegment::new(segment.start, segment.stop, segment_text, last)

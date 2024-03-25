@@ -59,15 +59,15 @@ impl DType {
                 let absmax_size = aligner(numel / 16, std::mem::size_of::<f32>());
                 assert_eq!(weight_size + absmax_size, buffer_bytes);
 
-                let weights = BufferSegment::new(0, Some(weight_size as u64), true);
-                let absmax = BufferSegment::new(weight_size as u64, Some(absmax_size as u64), true);
+                let weights = BufferSegment::new(0, Some(weight_size as u64));
+                let absmax = BufferSegment::new(weight_size as u64, Some(absmax_size as u64));
                 rvec![weights, absmax]
             }
             _ => {
                 let mut total_bytes = numel * self.size_of();
                 total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
 
-                rvec![BufferSegment::new(0, Some(total_bytes as u64), false)]
+                rvec![BufferSegment::new(0, Some(total_bytes as u64))]
             }
         }
     }
@@ -105,12 +105,7 @@ pub struct BufferSegment {
 }
 
 impl BufferSegment {
-    pub fn new(offset: BufferAddress, size: Option<u64>, aligned: bool) -> Self {
-        if let Some(size) = size {
-            if aligned {
-                assert!(size % 256 == 0); //storage buffer alignment
-            }
-        }
+    pub fn new(offset: BufferAddress, size: Option<u64>) -> Self {
         let size = size.map(NonZeroU64::new).unwrap();
         Self { offset, size }
     }

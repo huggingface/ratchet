@@ -12,7 +12,6 @@ var<storage, read_write> Y: array<vec4<f32>>;
 
 struct Meta {
     dst_numel: u32,
-    left_numel: u32,
     right_numel: u32,
     ids_numel: u32,
     src_dim_numel: u32,
@@ -29,7 +28,6 @@ fn main(
         @builtin(num_workgroups) num_groups: vec3<u32>
 ) {
     let tid = (group_id.x * 64u + local_index);
-    let left_numel = metadata.left_numel / 4u;
     let right_numel = metadata.right_numel/ 4u;
     let src_dim_numel = metadata.src_dim_numel/ 4u;
 

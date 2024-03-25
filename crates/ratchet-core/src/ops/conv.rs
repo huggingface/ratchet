@@ -4,7 +4,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, shape, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation,
+    rvec, shape, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 
@@ -16,12 +16,6 @@ pub struct Conv {
     stride: usize,
     padding: usize,
     //dilation: usize, TODO: implement dilation
-}
-
-impl Conv {
-    pub fn name(&self) -> &'static str {
-        "conv"
-    }
 }
 
 #[derive(Debug, derive_new::new, ShaderType)]
@@ -38,9 +32,24 @@ pub struct ConvMeta {
 
 impl OpMetadata for ConvMeta {}
 
+impl OpGuards for Conv {
+    fn check_shapes(&self) {
+        assert_eq!(self.input.rank(), 3);
+        assert_eq!(self.weight.rank(), 3);
+        let [_, _, KS]: [usize; 3] = self.weight.shape().try_into().unwrap();
+        assert_eq!(KS, 3); //only have 3 kernel size for now
+    }
+
+    fn check_dtypes(&self) {
+        assert_eq!(self.input.dt(), self.weight.dt());
+        assert_eq!(self.bias.as_ref().map(|t| t.dt()), Some(self.input.dt()));
+    }
+}
+
 impl Operation for Conv {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let (input_t, weight_t) = (srcs[0], srcs[1]);
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let input_t = &self.input;
+        let weight_t = &self.weight;
         let (input_shape, weight_shape) = (input_t.shape(), weight_t.shape());
         let calc_dim = |i_size, k_size, pad, dil, stride| {
             ((i_size + (2 * pad) - dil * (k_size - 1) - 1) / stride) + 1 //TODO: Missing floor
@@ -54,13 +63,6 @@ impl Operation for Conv {
         let out_strides = Strides::from(&out_shape);
         Ok(StorageView::new(out_shape, input_t.dt(), out_strides))
     }
-
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity_range(srcs, 2..=3)?;
-        Enforcer::assert_rank(srcs[0], 3)?;
-        //TODO: exhaustive checks
-        Ok(())
-    }
 }
 
 impl MetaOperation for Conv {
@@ -70,8 +72,8 @@ impl MetaOperation for Conv {
         rvec![&self.input, &self.weight, self.bias.as_ref().unwrap()]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        "conv"
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!("conv_{}", self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -165,7 +167,7 @@ def conv(input, filters, bias, stride, padding):
         let weight = weight.to(device).unwrap();
         let bias = bias.to(device).unwrap();
         let ours = input
-            .conv1d(&weight, Some(&bias), stride, 1)
+            .conv1d(weight, Some(bias), stride, 1)
             .unwrap()
             .resolve()
             .unwrap();

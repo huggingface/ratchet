@@ -1,6 +1,6 @@
+#![cfg(target_arch = "wasm32")]
 use js_sys::JSON;
-
-use wasm_bindgen::{prelude::*, JsValue};
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 

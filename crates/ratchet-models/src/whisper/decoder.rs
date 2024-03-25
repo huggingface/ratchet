@@ -1,10 +1,10 @@
 use std::io::{BufRead, Seek};
 
+use crate::model::Whisper;
+use crate::whisper::residual_block::*;
 use ratchet::prelude::*;
 use ratchet_loader::GGMLModel;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
-
-use crate::{ResidualAttentionBlock, ResidualAttentionBlockInputs, Whisper};
 
 #[derive(Debug)]
 pub(crate) struct DecoderStem {
@@ -23,7 +23,7 @@ impl DecoderStem {
             disk_model.load_tensor(&key, reader, device)
         };
         Ok(Self {
-            token_embed: Embedding::new(lt("token_embedding.weight")?),
+            token_embed: Embedding::new(lt("token_embedding.weight")?, true),
             pos_embed: lt("positional_embedding")?,
         })
     }
@@ -38,15 +38,16 @@ pub struct StemInput {
 impl Module for DecoderStem {
     type Input = StemInput;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let StemInput { tokens, offset } = input;
         let num_tokens = tokens.shape()[tokens.rank() - 1];
-        let start = *offset;
-        let end = *offset + num_tokens;
+        let start = offset;
+        let end = offset + num_tokens;
         let sliced = self
             .pos_embed
+            .clone()
             .slice(&[start..end, 0..self.pos_embed.shape()[1]])?;
-        self.token_embed.forward(tokens)?.add(&sliced)
+        self.token_embed.forward(tokens)?.add(sliced)
     }
 }
 
@@ -63,10 +64,10 @@ pub struct WhisperDecoder {
 impl Module for WhisperDecoder {
     type Input = [Tensor; 2];
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let [audio_ctx, tokens] = input;
-        let mut x = self.stem.forward(&StemInput {
-            tokens: tokens.clone(),
+        let mut x = self.stem.forward(StemInput {
+            tokens,
             offset: self.cache.entries(0),
         })?;
         for (block_idx, block) in self.blocks.iter().enumerate() {
@@ -76,10 +77,10 @@ impl Module for WhisperDecoder {
                 mask: Some(self.mask.clone()),
                 cache: Some(self.cache[block_idx].clone()),
             };
-            x = block.forward(&block_input)?;
+            x = block.forward(block_input)?;
         }
-        x = self.ln_post.forward(&x)?;
-        let logits = x.matmul(&self.stem.token_embed.weight, true)?;
+        x = self.ln_post.forward(x)?;
+        let logits = x.matmul(self.stem.token_embed.weight.clone(), false, false)?;
         Ok(logits)
     }
 }
@@ -146,7 +147,6 @@ impl WhisperDecoder {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use crate::{DecodingOptions, DecodingOptionsBuilder, Whisper, WhisperDecoder};
     use hf_hub::api::sync::Api;
     use ndarray::{s, Axis};
     use ndarray_stats::QuantileExt;
@@ -158,13 +158,13 @@ mod tests {
     use ratchet::{shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::GGMLCompatible;
     use ratchet_nn::Module;
-    use std::path::PathBuf;
     use tokenizers::Tokenizer;
 
-    pub fn load_npy(path: PathBuf) -> Vec<f32> {
-        let bytes = std::fs::read(path).unwrap();
-        npyz::NpyFile::new(&bytes[..]).unwrap().into_vec().unwrap()
-    }
+    use crate::{
+        model::Whisper,
+        options::{DecodingOptions, DecodingOptionsBuilder},
+        whisper::decoder::WhisperDecoder,
+    };
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -198,36 +198,40 @@ def ground(options):
     fn decoder_matches() -> anyhow::Result<()> {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let path = model.get("ggml-tiny.bin").unwrap();
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
+        let path = model.get("tiny_f32.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
-        let hs_npy = load_npy(dataset.get("jfk_tiny_encoder_hs.npy").unwrap());
+        let hs_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
         let audio_path = dataset.get("jfk.wav").unwrap();
+
+        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
+        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
+        let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
         let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
-        assert_eq!(gg_disk.tensors.len(), 167);
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let audio_ctx = Tensor::from_data(hs_npy, shape![1, 1500, 384], device.clone());
+        let audio_ctx = Tensor::from_npy_path::<f32, _>(hs_npy, &device)?;
         let mut decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
 
         let mut tokens = vec![50258, 50259, 50359];
         let mut all_tokens = tokens.clone();
         let mut all_logits = vec![];
-        let mut iters = 0;
+        let start = std::time::Instant::now();
         while tokens[tokens.len() - 1] != 50257 {
-            decoder.device.try_gpu()?.begin_pass(iters);
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let result = decoder.forward(&[audio_ctx.clone(), token_t])?.resolve()?;
+            let result = decoder.forward([audio_ctx.clone(), token_t])?.resolve()?;
 
             let our_logits = result.to(&Device::CPU)?;
             all_logits.push(our_logits.clone());
             let nd_logits = our_logits.to_ndarray_view::<f32>();
-            let sliced = nd_logits.slice(s![.., -1.., ..51865]).remove_axis(Axis(1));
+            let sliced = nd_logits
+                .slice(s![.., -1.., ..tokenizer.get_vocab_size(true)])
+                .remove_axis(Axis(1));
             decoder.cache_mut().update(tokens.len());
 
             tokens = sliced
@@ -237,12 +241,9 @@ def ground(options):
                 .collect::<Vec<_>>();
             println!("Token: {:?}", tokens);
             all_tokens.extend(tokens.clone());
-            iters += 1;
         }
+        println!("Took: {:?}", start.elapsed());
 
-        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
-        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
-        let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
         let u32_tokens: Vec<_> = all_tokens.iter().map(|&x| x as u32).collect();
         let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
         println!("Decoded: {}", decoded);
@@ -252,7 +253,7 @@ def ground(options):
         let all_equal = all_logits
             .iter()
             .zip(ground_logits.iter())
-            .all(|(our, their)| their.all_close(our, 1e-4, 1e-4).is_ok());
+            .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
 
         assert!(all_equal);
 

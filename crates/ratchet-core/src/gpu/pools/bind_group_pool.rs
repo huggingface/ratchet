@@ -145,8 +145,4 @@ impl BindGroupPool {
     pub fn begin_pass(&mut self, pass_index: u64) {
         self.inner.begin_pass(pass_index, |_res| {});
     }
-
-    pub fn num_resources(&self) -> usize {
-        self.inner.num_resources()
-    }
 }

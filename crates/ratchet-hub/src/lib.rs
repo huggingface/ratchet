@@ -1,7 +1,8 @@
+#![cfg(target_arch = "wasm32")]
 use gloo_net::http::Request;
 use js_sys::{Object, Reflect, Uint8Array};
 use util::{js_error, js_to_js_error};
-use wasm_bindgen::{prelude::*, JsCast, JsValue};
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::RequestMode;
 
@@ -155,11 +156,7 @@ impl Api {
 
         let mut recv_len = 0;
         let buf = Uint8Array::new_with_length(content_len);
-        while let Some(result) = JsFuture::from(reader.read())
-            .await?
-            .dyn_into::<Object>()
-            .ok()
-        {
+        while let Ok(result) = JsFuture::from(reader.read()).await?.dyn_into::<Object>() {
             let done = Reflect::get(&result, &"done".into())?
                 .as_bool()
                 .unwrap_or(true);

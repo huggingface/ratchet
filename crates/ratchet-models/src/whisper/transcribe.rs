@@ -1,8 +1,6 @@
-use crate::StreamedSegment;
-use crate::{
-    DecodingOptions, DecodingTask, Language, Prompt, TranscriptionResult, Whisper,
-    WhisperTokenizer, HOP_LENGTH, N_AUDIO_CTX, N_FRAMES, SAMPLE_RATE,
-};
+use crate::model::Whisper;
+use crate::options::*;
+use crate::whisper::{spectrogram::*, task::*, tokenizer::*, transcript::*};
 use ratchet_nn::Module;
 use std::cmp::min;
 use web_time::Instant;
@@ -12,7 +10,9 @@ pub fn transcribe(
     model: &mut Whisper,
     audio: Vec<f32>,
     mut decode_options: DecodingOptions,
+    callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
+    let n_mels = model.hparams.n_mels as usize;
     let runtime = Instant::now();
     let mel = model.specgen.generate(audio)?.to(&model.device)?;
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
@@ -23,14 +23,14 @@ pub fn transcribe(
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
             log::warn!("No language specified, using language detection");
-            let mel = mel.slice(&[0..1, 0..80, 0..3000])?;
+            let mel = mel.clone().slice(&[0..1, 0..n_mels, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel)?);
         }
     }
 
     let language = decode_options.language.as_ref().unwrap();
     let task = decode_options.task;
-    let tokenizer = WhisperTokenizer::load(None, language.clone(), task);
+    let tokenizer = WhisperTokenizer::load(None, n_mels == 128, language.clone(), task);
 
     let mut seek = 0;
     let input_stride = N_FRAMES / N_AUDIO_CTX;
@@ -38,19 +38,14 @@ pub fn transcribe(
     let mut all_segments = Vec::with_capacity(512);
     let prompt_since_reset = 0;
 
-    let mut pass_idx = 0;
     while seek < content_frames {
-        model.device.try_gpu()?.begin_pass(pass_idx);
-        println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
-        let mel_segment = mel.slice(&[0..1, 0..80, seek..(seek + N_FRAMES)])?;
-        log::info!(
-            "processing segment - from: {}, to: {}",
-            seek,
-            seek + N_FRAMES
-        );
+        let mel_segment = mel
+            .clone()
+            .slice(&[0..1, 0..n_mels, seek..(seek + N_FRAMES)])?;
+        log::info!("Processing segment: {} -> {}", seek, seek + N_FRAMES);
 
         let segment_size = min(N_FRAMES, content_frames - seek);
         let segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE;
@@ -59,11 +54,12 @@ pub fn transcribe(
             decode_options.prompt = Some(Prompt::Tokens(all_tokens[prompt_since_reset..].to_vec()));
         }
 
-        let hs = model.encoder.forward(&mel_segment)?.resolve()?;
+        let hs = model.encoder.forward(mel_segment)?.resolve()?;
 
-        let task = DecodingTask::new(decode_options, &tokenizer);
-        let decoded = task.run(&mut model.decoder, hs, &tokenizer)?;
+        let task = DecodingTask::new(decode_options, tokenizer.clone());
+        let decoded = task.run(&mut model.decoder, hs, &callback)?;
         let (segments, advance) = DecodingTask::build_segments(
+            &tokenizer,
             decoded,
             time_offset,
             segment_size,
@@ -79,7 +75,6 @@ pub fn transcribe(
         all_segments.extend(segments);
         model.decoder.reset();
         seek += advance;
-        pass_idx += 1;
     }
 
     let mut t = TranscriptionResult::new(runtime.elapsed(), all_segments, None);
@@ -95,6 +90,7 @@ pub async fn transcribe(
     callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
     let runtime = Instant::now();
+    let n_mels = model.hparams.n_mels as usize;
     let mel = model.specgen.generate(audio)?.to(&model.device).await?;
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
 
@@ -104,14 +100,15 @@ pub async fn transcribe(
             decode_options.language = Some(Language::String("en".to_string()));
         } else {
             log::warn!("No language specified, using language detection");
-            let mel = mel.slice(&[0..1, 0..80, 0..3000])?;
+            let mel = mel.clone().slice(&[0..1, 0..n_mels, 0..3000])?;
             decode_options.language = Some(model.detect_language(mel).await?);
         }
     }
 
     let language = decode_options.language.as_ref().unwrap();
     let task = decode_options.task;
-    let tokenizer = WhisperTokenizer::load(None, language.clone(), task.clone()).await;
+    let tokenizer =
+        WhisperTokenizer::load(None, n_mels == 128, language.clone(), task.clone()).await;
 
     let mut seek = 0;
     let input_stride = N_FRAMES / N_AUDIO_CTX;
@@ -119,19 +116,14 @@ pub async fn transcribe(
     let mut all_segments = Vec::with_capacity(512);
     let prompt_since_reset = 0;
 
-    let mut pass_idx = 0;
     while seek < content_frames {
-        model.device.try_gpu()?.begin_pass(pass_idx);
-        println!("seek: {}", seek);
         let mut decode_options = decode_options.clone();
         let time_offset = (seek * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
         decode_options.time_offset = Some(time_offset);
-        let mel_segment = mel.slice(&[0..1, 0..80, seek..(seek + N_FRAMES)])?;
-        log::info!(
-            "processing segment - from: {}, to: {}",
-            seek,
-            seek + N_FRAMES
-        );
+        let mel_segment = mel
+            .clone()
+            .slice(&[0..1, 0..n_mels, seek..(seek + N_FRAMES)])?;
+        log::info!("Processing segment: {} -> {}", seek, seek + N_FRAMES);
 
         let segment_size = min(N_FRAMES, content_frames - seek);
         let segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE;
@@ -140,14 +132,13 @@ pub async fn transcribe(
             decode_options.prompt = Some(Prompt::Tokens(all_tokens[prompt_since_reset..].to_vec()));
         }
 
-        let hs = model.encoder.forward(&mel_segment)?.resolve()?;
+        let hs = model.encoder.forward(mel_segment)?.resolve()?;
 
-        let task = DecodingTask::new(decode_options, &tokenizer);
-        let decoded = task
-            .run(&mut model.decoder, hs, &tokenizer, &callback)
-            .await?;
+        let task = DecodingTask::new(decode_options, tokenizer.clone());
+        let decoded = task.run(&mut model.decoder, hs, &callback).await?;
 
         let (segments, advance) = DecodingTask::build_segments(
+            &tokenizer,
             decoded,
             time_offset,
             segment_size,
@@ -163,7 +154,6 @@ pub async fn transcribe(
         all_segments.extend(segments);
         model.decoder.reset();
         seek += advance;
-        pass_idx += 1;
     }
 
     if let Some(cb) = callback {

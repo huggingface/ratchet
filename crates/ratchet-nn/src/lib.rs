@@ -12,5 +12,5 @@ use ratchet::Tensor;
 
 pub trait Module {
     type Input;
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor>;
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor>;
 }

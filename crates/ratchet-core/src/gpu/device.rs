@@ -1,11 +1,9 @@
 use crate::{gpu::*, Tensor, TensorId};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
-use wgpu::{Adapter, DeviceType, Limits};
+use wgpu::{Adapter, Limits};
 
 use crate::DeviceError;
-
-use super::{BufferDescriptor, PoolError, PooledGPUBuffer};
 
 pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 
@@ -51,10 +49,10 @@ impl PartialEq for WgpuDevice {
 impl WgpuDevice {
     pub async fn new() -> Result<Self, DeviceError> {
         #[cfg(target_arch = "wasm32")]
-        let adapter = Self::select_adapter().await;
+        let adapter = Self::select_adapter().await?;
         #[cfg(not(target_arch = "wasm32"))]
         let adapter = Self::select_adapter()?;
-        log::info!("Using adapter {:?}", adapter.get_info());
+        log::info!("Active GPU: {}", adapter.get_info().name);
 
         #[allow(unused_mut)]
         let mut features = wgpu::Features::default();
@@ -64,7 +62,7 @@ impl WgpuDevice {
         }
 
         let mut device_descriptor = wgpu::DeviceDescriptor {
-            label: Some("ratchet"),
+            label: Some("Ratchet"),
             features,
             limits: Limits {
                 max_buffer_size: MAX_BUFFER_SIZE,
@@ -74,17 +72,13 @@ impl WgpuDevice {
         };
         let device_request = adapter.request_device(&device_descriptor, None).await;
         let (device, queue) = if let Err(e) = device_request {
-            log::error!(
-                "Failed to acq. device, trying again with reduced limits: {:?}",
-                e
-            );
+            log::error!("Failed to acq. device, trying with reduced limits: {:?}", e);
             device_descriptor.limits = adapter.limits();
             adapter.request_device(&device_descriptor, None).await
         } else {
             device_request
         }?;
 
-        let device = Arc::new(device);
         Ok(Self {
             queue: Arc::new(queue),
             ordinal: 0,
@@ -93,7 +87,7 @@ impl WgpuDevice {
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
             compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
-            device,
+            device: Arc::new(device),
         })
     }
 
@@ -106,7 +100,7 @@ impl WgpuDevice {
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn select_adapter() -> Adapter {
+    async fn select_adapter() -> Result<Adapter, DeviceError> {
         let instance = wgpu::Instance::default();
         instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -115,11 +109,12 @@ impl WgpuDevice {
                 force_fallback_adapter: false,
             })
             .await
-            .unwrap()
+            .ok_or(DeviceError::AdapterRequestFailed)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn select_adapter() -> Result<Adapter, DeviceError> {
+        use wgpu::DeviceType;
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
             ..Default::default()
@@ -221,7 +216,7 @@ impl WgpuDevice {
         self.buffer_allocator.allocate_cfg(execution_order, device)
     }
 
-    pub fn begin_pass(&self, pass_index: u64) {
-        self.buffer_allocator.begin_pass(pass_index);
+    pub fn begin_pass(&self) {
+        self.buffer_allocator.begin_pass(0);
     }
 }

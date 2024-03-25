@@ -6,16 +6,20 @@ import { Model, DecodingOptionsBuilder, default as init, Task, AvailableModels, 
 import ConfigModal, { ConfigOptions } from './components/configModal';
 import ModelSelector from './components/modelSelector';
 import ProgressBar from './components/progressBar';
+import MicButton, { AudioMetadata } from './components/micButton';
+import toast from "react-hot-toast";
+import WebGPUModal from './components/WebGPUModal';
 
 export default function Home() {
-    const [selectedModel, setSelectedModel] = useState<AvailableModels>(AvailableModels.WHISPER_TINY);
+    const [selectedModel, setSelectedModel] = useState<AvailableModels>({ Whisper: "tiny" });
     const [loadedModel, setLoadedModel] = useState<AvailableModels | null>(null);
     const [model, setModel] = useState<Model | null>(null);
 
     const ffmpegRef = useRef(new FFmpeg());
     const [ffmpegLoaded, setFFmpegLoaded] = useState(false);
     const [blobURL, setBlobURL] = useState<string>();
-    const [audio, setAudio] = useState(null);
+    const [audioData, setAudioData] = useState<Float32Array | null>(null);
+    const [audioMetadata, setAudioMetadata] = useState<AudioMetadata | null>(null);
     const [segments, setSegments] = useState<Segment[]>([]);
     const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
     const [configOptions, setConfigOptions] = useState<ConfigOptions>({
@@ -33,17 +37,8 @@ export default function Home() {
         })();
     }, [])
 
-    useEffect(() => {
-        if (model) {
-            console.log("Model loaded: ", model);
-        }
-        console.log("Selected model: ", selectedModel);
-        console.log("Loaded model: ", loadedModel);
-    }, [model, selectedModel, loadedModel])
-
     async function loadModel() {
-        let toLoad = AvailableModels[selectedModel] as unknown as AvailableModels;
-        setModel(await Model.load(toLoad, Quantization.Q8, (p: number) => setProgress(p)));
+        setModel(await Model.load(selectedModel, Quantization.Q8, (p: number) => setProgress(p)));
         setLoadedModel(selectedModel);
         setProgress(0);
     }
@@ -59,7 +54,6 @@ export default function Home() {
             coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
             wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
         });
-        console.log("Successfully loaded FFmpeg");
         setFFmpegLoaded(true);
     }
 
@@ -90,7 +84,6 @@ export default function Home() {
             "-ar", "16000",
             "output.pcm"
         ];
-        console.log("Running command: ", cmd);
 
         await ffmpeg.exec(cmd);
         const data = (await ffmpeg.readFile('output.pcm')) as any;
@@ -100,11 +93,11 @@ export default function Home() {
 
 
     async function runModel() {
-        if (!model || !audio || generating) {
+        if (!model || !audioData || generating) {
             return
         }
+        setGenerating(true);
         setSegments([]);
-        let floatArray = pcm16ToIntFloat32(audio);
         let builder = new DecodingOptionsBuilder();
         let options = builder
             .setLanguage(configOptions.language ? configOptions.language : "en")
@@ -115,11 +108,11 @@ export default function Home() {
         let callback = (segment: Segment) => {
             if (segment.last) {
                 setGenerating(false);
+                return;
             }
             setSegments((currentSegments) => [...currentSegments, segment]);
         };
-        setGenerating(true);
-        let result = await model.run({ audio: floatArray, decode_options: options, callback: callback });
+        let result = await model.run({ audio: audioData, decode_options: options, callback: callback });
         console.log("Result: ", result);
         console.log("Processing time: ", result.processing_time);
     }
@@ -132,7 +125,19 @@ export default function Home() {
         const reader = new FileReader();
         reader.onload = async () => {
             let audioBytes = new Uint8Array(reader.result as ArrayBuffer);
-            setAudio(await transcode(audioBytes));
+            let transcoded = await toast.promise(
+                transcode(audioBytes),
+                {
+                    loading: 'Transcoding audio...',
+                    success: <b>Transcoded successfully!</b>,
+                    error: <b>Failed to transcode.</b>,
+                }
+            );
+            setAudioData(pcm16ToIntFloat32(transcoded));
+            setAudioMetadata({
+                file: file,
+                fromMic: false,
+            });
             setBlobURL(URL.createObjectURL(file));
         };
         reader.readAsArrayBuffer(file);
@@ -150,35 +155,73 @@ export default function Home() {
             <h1 className="text-blue-700 text-4xl font-extrabold pb-6">Whisper + Ratchet</h1>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="flex flex-col gap-6 w-full">
-                            <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
-                            {progress > 0 && progress < 100 ? <ProgressBar progress={progress} /> : <></>}
-                            {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
-                                <></>}
-                            <div className="flex flex-row gap-2 items-center">
-                                <input
-                                    className="flex-1"
-                                    type="file"
-                                    name="audioFile"
-                                    id="audioFile"
-                                    onChange={handleAudioFile()}
+                    <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} loaded={false} progress={0} />
+                    {progress > 0 && progress < 100 ? <ProgressBar progress={progress} /> : <></>}
+                    {loadedModel != selectedModel ? <button className="outline outline-black text-black font-semibold py-1 px-4 cursor-pointer" onClick={loadModel}>Load Model</button> :
+                        <></>}
+                    <div className="flex flex-row gap-4">
+                        <div className="flex flex-col w-full">
+                            <label className="text-black font-semibold">
+                                Upload Audio
+                            </label>
+                            <label
+                                className="text-lg outline outline-black  w-full font-semibold py-2.5 px-8 mx-auto cursor-pointer w-full"
+                                htmlFor="audioFile"
+                            >
+                                <div className="flex flex-row justify-between">
+                                    <span className="">
+                                        {audioMetadata
+                                            ? audioMetadata.file.name
+                                            : `Select Audio File`}
+                                    </span>
+                                </div>
+                            </label>
+                            <input
+                                type="file"
+                                className="hidden"
+                                name="audioFile"
+                                id="audioFile"
+                                onChange={handleAudioFile()}
+                                accept=".wav,.aac,.m4a,.mp4,.mp3"
+                            />
+                        </div>
+                        <MicButton
+                            setBlobUrl={setBlobURL}
+                            setAudioData={setAudioData}
+                            setAudioMetadata={setAudioMetadata}
+                        />
+                    </div>
+                    {blobURL && (
+                        <div>
+                            <label className="text-white text-xl font-semibold">
+                                Your Audio
+                            </label>
+                            <audio
+                                controls
+                                key={blobURL}
+                                className="mx-auto w-full"
+                            >
+                                <source
+                                    key={blobURL}
+                                    src={blobURL}
+                                    type="audio/wav"
                                 />
-                                <audio controls key={blobURL} className="flex-1 p-2 rounded-lg bg-white">
-                                    <source key={blobURL} src={blobURL} type="audio/wav" />
-                                </audio>
-                            </div>
+                            </audio>
+                        </div>
+                    )}
 
-                            <div className="flex flex-row gap-4 justify-end items-center">
-                                <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={() => setIsConfigOpen(true)}>Options</button>
-                                <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={runModel}>
-                                    {
-                                        generating ?
-                                            <div className="flex p-4">
-                                                <span className="loader"></span>
-                                            </div>
-                                            : "Run Model"
-                                    }
-                                </button>
-                            </div>
+                    <div className="flex flex-row gap-4 justify-end items-center">
+                        <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={() => setIsConfigOpen(true)}>Options</button>
+                        <button className="outline outline-black text-black font-semibold py-3 px-4 cursor-pointer" onClick={runModel}>
+                            {
+                                generating ?
+                                    <div className="flex p-4">
+                                        <span className="loader"></span>
+                                    </div>
+                                    : "Run Model"
+                            }
+                        </button>
+                    </div>
                 </div>
                 <div className="flex flex-col relative w-full z-10 min-h-screen">
                     <div className="flex gap-4 flex-col">
@@ -204,8 +247,8 @@ export default function Home() {
                             )}
                     </div>
                 </div>
-
             </div>
+            <WebGPUModal />
         </>
     );
 }

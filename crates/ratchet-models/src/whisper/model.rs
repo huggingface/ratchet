@@ -5,10 +5,17 @@ use ratchet::{shape, Device, Tensor};
 use ratchet_loader::{GGMLCompatible, GGMLFormat, GGMLModel, LoadError};
 use ratchet_nn::Module;
 
-use crate::{
-    DecodingTask, Language, LogitMutator, SelectLanguage, SpectrogramGenerator, WhisperDecoder,
-    WhisperEncoder, WhisperTokenizer,
-};
+use ndarray::{s, Dimension};
+use ndarray_stats::QuantileExt;
+use ratchet::NDArrayExt;
+
+use crate::options::Language;
+use crate::whisper::task::DecodingTask;
+use crate::whisper::tokenizer::WhisperTokenizer;
+
+use super::decoder::WhisperDecoder;
+use super::encoder::WhisperEncoder;
+use super::spectrogram::SpectrogramGenerator;
 
 #[derive(Debug)]
 pub struct WhisperGGMLHeader {
@@ -124,8 +131,7 @@ impl Whisper {
         let encoder = WhisperEncoder::load(disk_model, reader, &device)?;
         let decoder = WhisperDecoder::load(disk_model, reader, &device)?;
         //TODO: remove clones
-        let generator = crate::SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
-        log::info!("Sucessfully loaded Whisper model");
+        let generator = SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
         Ok(Self {
             specgen: generator,
             encoder,
@@ -141,7 +147,6 @@ impl Whisper {
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
         let disk_model = Whisper::load_ggml(&mut reader)?;
         let result = Self::load(&disk_model, &mut reader, device);
-        log::warn!("Successfully loaded Whisper model");
         result
     }
 }
@@ -183,38 +188,84 @@ impl GGMLCompatible for Whisper {
 
 impl Whisper {
     pub fn is_multilingual(&self) -> bool {
-        self.hparams.n_vocab == 51865
+        self.hparams.n_vocab >= 51865
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
-        let audio_ctx = self.encoder.forward(&mel)?.resolve()?;
+        let audio_ctx = self.encoder.forward(mel)?.resolve()?;
         let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
 
-        let logits = self.decoder.forward(&[audio_ctx, sot])?.resolve()?;
+        let logits = self.decoder.forward([audio_ctx, sot])?.resolve()?;
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU)?;
-        let logits = DecodingTask::slice_logits(cpu_logits);
+        let logits = DecodingTask::slice_logits(cpu_logits, self.hparams.n_vocab as usize);
 
-        let selector = SelectLanguage {};
-        let lang_t = selector.apply(logits, None).unwrap();
+        let device = logits.device().clone();
+        let mut nd_logits = logits.into_ndarray::<f32>();
+
+        let languages_end = if self.hparams.n_vocab == 51865 {
+            50358
+        } else if self.hparams.n_vocab == 51866 {
+            50359
+        } else {
+            panic!("Unsupported number of tokens")
+        };
+
+        nd_logits
+            .slice_mut(s![.., ..WhisperTokenizer::LANGUAGES_BEGIN])
+            .map_inplace(move |el| *el = f32::NEG_INFINITY);
+
+        nd_logits
+            .slice_mut(s![.., languages_end..])
+            .map_inplace(move |el| *el = f32::NEG_INFINITY);
+
+        let language_tokens_probs = nd_logits.softmax(nd_logits.ndim() - 1);
+
+        let argmax_dims = language_tokens_probs.argmax_skipnan().unwrap();
+        let argmax: u32 = argmax_dims[argmax_dims.ndim() - 1] as _;
+        let lang_t = Tensor::from_data([argmax], shape![1], device);
+
         Ok(Language::Token(lang_t.item()))
     }
 
     #[cfg(target_arch = "wasm32")]
     pub async fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
-        let audio_ctx = self.encoder.forward(&mel)?.resolve()?;
-        let sot = Tensor::from_data(&[WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
+        let audio_ctx = self.encoder.forward(mel)?.resolve()?;
+        let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
 
-        let logits = self.decoder.forward(&[audio_ctx, sot])?.resolve()?;
+        let logits = self.decoder.forward([audio_ctx, sot])?.resolve()?;
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU).await?;
-        let logits = DecodingTask::slice_logits(cpu_logits);
+        let logits = DecodingTask::slice_logits(cpu_logits, self.hparams.n_vocab as usize);
 
-        let selector = SelectLanguage {};
-        let lang_t = selector.apply(logits, None).unwrap();
+        let device = logits.device().clone();
+        let mut nd_logits = logits.into_ndarray::<f32>();
+
+        let languages_end = if self.hparams.n_vocab == 51865 {
+            50358
+        } else if self.hparams.n_vocab == 51866 {
+            50359
+        } else {
+            panic!("Unsupported number of tokens")
+        };
+
+        nd_logits
+            .slice_mut(s![.., ..WhisperTokenizer::LANGUAGES_BEGIN])
+            .map_inplace(move |el| *el = f32::NEG_INFINITY);
+
+        nd_logits
+            .slice_mut(s![.., languages_end..])
+            .map_inplace(move |el| *el = f32::NEG_INFINITY);
+
+        let language_tokens_probs = nd_logits.softmax(nd_logits.ndim() - 1);
+
+        let argmax_dims = language_tokens_probs.argmax_skipnan().unwrap();
+        let argmax: u32 = argmax_dims[argmax_dims.ndim() - 1] as _;
+        let lang_t = Tensor::from_data([argmax], shape![1], device);
+
         Ok(Language::Token(lang_t.item()))
     }
 }
@@ -226,10 +277,14 @@ mod tests {
         path::PathBuf,
     };
 
-    use crate::{transcribe, DecodingOptionsBuilder, Whisper};
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest, Quantization};
     use ratchet_loader::{Converter, GGMLCompatible};
+
+    use crate::{
+        model::Whisper, options::DecodingOptionsBuilder, transcript::StreamedSegment,
+        whisper::transcribe::transcribe,
+    };
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -247,11 +302,11 @@ mod tests {
     pub fn whisper_end_to_end() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("FL33TW00D-HF/ratchet-whisper".to_string());
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let model_path = model.get("tiny_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_path = dataset.get("mm0.wav").unwrap();
+        let audio_path = dataset.get("gb0.wav").unwrap();
         let samples = load_sample(audio_path);
 
         let options = DecodingOptionsBuilder::new().build();
@@ -262,7 +317,8 @@ mod tests {
 
         let mut whisper = Whisper::load(&gg_disk, &mut reader, device).unwrap();
 
-        let transcript = transcribe(&mut whisper, samples, options).unwrap();
+        let empty_cb: Option<fn(StreamedSegment)> = None;
+        let transcript = transcribe(&mut whisper, samples, options, empty_cb).unwrap();
         println!("{}", transcript.formatted.unwrap());
         println!("Processing time: {:?}", transcript.processing_time);
     }
@@ -287,13 +343,29 @@ mod tests {
             "mlp.2.weight",
             "token_embedding.weight",
         ]);
+
+        let to_transpose = to_quant.clone();
+
         let mut dst_path = src_path.clone();
         dst_path.pop();
-        dst_path = dst_path.join("large-v2_q8.bin");
+        dst_path = dst_path.join("tiny_q8.bin");
         println!("DST: {:?}", dst_path);
 
-        let to_pad = HashMap::from([("decoder.token_embedding.weight", vec![[0, 7], [0, 0]])]);
-        Converter::convert::<_, Whisper>(src_path, dst_path, Quantization::SInt8, to_quant, to_pad)
-            .unwrap();
+        let v3 = false;
+        let pad_size = if v3 { 6 } else { 7 };
+        let to_pad = HashMap::from([(
+            "decoder.token_embedding.weight",
+            vec![[0, pad_size], [0, 0]],
+        )]);
+
+        Converter::convert::<_, Whisper>(
+            src_path,
+            dst_path,
+            Quantization::SInt8,
+            to_quant,
+            to_pad,
+            to_transpose,
+        )
+        .unwrap();
     }
 }

@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec,
+    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
     StorageView, Tensor,
 };
 
@@ -11,12 +11,6 @@ use crate::{
 pub struct Softmax {
     input: Tensor,
     dim: usize,
-}
-
-impl Softmax {
-    pub fn name(&self) -> &'static str {
-        "softmax"
-    }
 }
 
 #[derive(Debug, derive_new::new, ShaderType)]
@@ -29,14 +23,22 @@ pub struct SoftmaxMeta {
 
 impl OpMetadata for SoftmaxMeta {}
 
-impl Operation for Softmax {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].storage_view().clone())
+impl OpGuards for Softmax {
+    fn check_shapes(&self) {
+        let input = &self.input;
+        assert!(input.rank() >= 2);
+        assert!(self.dim < input.rank());
     }
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 1)?;
-        Ok(())
+    fn check_dtypes(&self) {
+        let input = &self.input;
+        assert!(input.dt() == crate::DType::F32);
+    }
+}
+
+impl Operation for Softmax {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        Ok(self.input.storage_view().clone())
     }
 }
 
@@ -51,8 +53,8 @@ impl MetaOperation for Softmax {
         rvec![&self.input]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        "softmax"
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!("softmax_{}", self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

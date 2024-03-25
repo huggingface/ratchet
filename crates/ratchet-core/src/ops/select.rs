@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, DType, Enforcer, KernelElement, MetaOperation, OpMetadata, Operation,
+    rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 
@@ -14,16 +14,9 @@ pub struct IndexSelect {
     dim: usize,
 }
 
-impl IndexSelect {
-    pub fn name(&self) -> &'static str {
-        "index_select"
-    }
-}
-
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct IndexSelectMeta {
     dst_numel: u32,
-    left_numel: u32,
     right_numel: u32,
     ids_numel: u32,
     src_dim_numel: u32,
@@ -32,8 +25,8 @@ pub struct IndexSelectMeta {
 impl OpMetadata for IndexSelectMeta {}
 
 impl Operation for IndexSelect {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let (input, indices) = (srcs[0], srcs[1]);
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let (input, indices) = (&self.input, &self.indices);
         let (indices_shape, input_shape) = (indices.shape(), input.shape());
 
         let mut output_shape = input_shape.clone();
@@ -41,13 +34,18 @@ impl Operation for IndexSelect {
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, DType::F32, strides))
     }
+}
 
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        let (input, indices) = (srcs[0], srcs[1]);
-        Enforcer::assert_dtype(indices, DType::I32)?;
-        Enforcer::assert_rank(input, 2)?;
-        Enforcer::assert_rank(indices, 1)?;
-        Ok(())
+impl OpGuards for IndexSelect {
+    fn check_shapes(&self) {
+        let (input, indices) = (&self.input, &self.indices);
+        assert_eq!(input.rank(), 2);
+        assert_eq!(indices.rank(), 1);
+    }
+
+    fn check_dtypes(&self) {
+        let indices = &self.indices;
+        assert_eq!(indices.dt(), DType::I32);
     }
 }
 
@@ -58,12 +56,14 @@ impl MetaOperation for IndexSelect {
         rvec![&self.input, &self.indices]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        match self.input.dt() {
-            DType::F32 => "f32_index_select",
-            DType::WQ8 => "wq8_index_select",
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let op_key = match (self.input.dt(), self.dim) {
+            (DType::F32, _) => "f32_index_select",
+            (DType::WQ8, 0) => "wq8_index_select",
+            (DType::WQ8, 1) => "wq8_index_select_coarse",
             _ => unimplemented!(),
-        }
+        };
+        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -71,9 +71,10 @@ impl MetaOperation for IndexSelect {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let numel = match self.input.dt() {
-            DType::F32 => dst.shape().numel(),
-            DType::WQ8 => dst.shape().numel() / 4,
+        let numel = match (self.input.dt(), self.dim) {
+            (DType::F32, _) => dst.shape().numel(),
+            (DType::WQ8, 0) => dst.shape().numel() / 4,
+            (DType::WQ8, 1) => dst.shape().numel(),
             _ => unimplemented!(),
         };
         let wgcx = WorkgroupCount::div_ceil(numel, 64);
@@ -97,15 +98,14 @@ impl MetaOperation for IndexSelect {
         _kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError> {
         let dst_numel = dst.shape().numel() as u32;
-        let left_numel = self.input.shape()[..self.dim].iter().product::<usize>() as u32;
         let right_numel = self.input.shape()[(self.dim + 1)..]
             .iter()
             .product::<usize>() as u32;
         let ids_numel = self.indices.shape().numel() as u32;
         let src_dim_numel = self.input.shape()[self.dim] as u32;
+
         Ok(IndexSelectMeta {
             dst_numel,
-            left_numel,
             right_numel,
             ids_numel,
             src_dim_numel,
@@ -131,7 +131,7 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            Shape::arbitrary_with(vec![1..512usize, 1..16usize])
+            Shape::arbitrary_with(vec![1..=512usize, 1..=16usize])
                 .prop_flat_map(|input_shape| (Just(input_shape), 1..64usize))
                 .prop_map(|(input_shape, num_indices)| {
                     let indices =
@@ -165,9 +165,7 @@ def index_select(input, indices):
         } = problem;
         let mut input = Tensor::randn::<f32>(input_shape, Device::CPU);
 
-        let dim = 0;
-        let ground_truth = ground_truth(&input, &indices, dim).unwrap();
-        println!("ground_truth: {:?}", ground_truth);
+        let ground_truth = ground_truth(&input, &indices, 0).unwrap();
         if quantize {
             let quantizer = Quantizer::new(Quantization::SInt8);
             input = quantizer.quantize(input);
@@ -176,20 +174,15 @@ def index_select(input, indices):
         let input = input.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
 
-        let result = input
-            .index_select(&indices, dim)
-            .unwrap()
-            .resolve()
-            .unwrap();
+        let result = input.index_select(indices, 0).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
-        println!("result: {:?}", x);
         ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
     }
 
     #[test]
     fn qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![1024, 384],
+            input_shape: shape![4000, 384],
             indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
         };
         run_index_select_trial(prob, true);

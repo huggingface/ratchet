@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpMetadata, Operation, OperationError, RVec, Shape,
-    StorageView, Strides, Tensor,
+    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
+    Shape, StorageView, Strides, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
@@ -12,12 +12,6 @@ pub struct IndexWrite {
     dst: Tensor,
     src: Tensor,
     write_start: RVec<usize>,
-}
-
-impl IndexWrite {
-    pub fn name(&self) -> &'static str {
-        "index_write"
-    }
 }
 
 #[derive(Debug, derive_new::new, ShaderType)]
@@ -29,13 +23,15 @@ pub struct IndexWriteMeta {
 
 impl OpMetadata for IndexWriteMeta {}
 
-impl Operation for IndexWrite {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        Ok(srcs[0].storage_view().clone())
-    }
+impl OpGuards for IndexWrite {
+    fn check_shapes(&self) {}
 
-    fn check_invariants(_: &[&Tensor]) -> Result<(), OperationError> {
-        Ok(())
+    fn check_dtypes(&self) {}
+}
+
+impl Operation for IndexWrite {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        Ok(self.dst.storage_view().clone())
     }
 }
 
@@ -50,8 +46,8 @@ impl MetaOperation for IndexWrite {
         rvec![&self.dst, &self.src]
     }
 
-    fn kernel_name(&self) -> &'static str {
-        self.name()
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!("index_write_{}", self.kernel_element(dst).as_str())
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -115,7 +111,7 @@ mod tests {
         let src = Tensor::from_data(vec![7., 8.], shape![1, 2], device.clone());
         let write_start = rvec![2, 0];
         let b = dst
-            .index_write(&src, write_start)
+            .index_write(src, write_start)
             .unwrap()
             .resolve()
             .unwrap();

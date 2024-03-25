@@ -1,23 +1,42 @@
 use crate::Module;
 use ratchet::{shape, Tensor};
 
+/// # Embedding
+///
+/// Standard `torch.nn.Embedding` module.
+/// However, we also support the `transposed` flag, which means that your vocab tensor
+/// is transposed.
+///
+/// This is useful in the following case:
+/// 1. You have quantized your vocabulary tensor & Ratchet does not support fast quantized
+///    transposed matrix multiplication (like the one you use to obtain your logits).
+///    Therefore, you can pretranspose your vocab, to avoid the transposed matmul and
+///    set `transposed` to `true`.
 #[derive(Debug, derive_new::new)]
 pub struct Embedding {
     pub weight: Tensor,
+    pub transposed: bool,
 }
 
 impl Module for Embedding {
     type Input = Tensor;
 
-    fn forward(&self, input: &Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut output_shape = input.shape().clone();
         let weight_rank = self.weight.rank();
-        output_shape.push(self.weight.shape()[weight_rank - 1]);
+        let weight_dim = if self.transposed { 0 } else { weight_rank - 1 };
+        output_shape.push(self.weight.shape()[weight_dim]);
 
-        let flat = input.view(shape![input.shape().numel()])?;
-        let indexed = self.weight.index_select(&flat, 0)?;
-        let x = indexed.view(output_shape)?;
-        Ok(x)
+        let flat_shape = shape![input.shape().numel()];
+        let flat = input.view(flat_shape)?;
+        let selection_dim = if self.transposed { 1 } else { 0 };
+        let indexed = self.weight.clone().index_select(flat, selection_dim)?;
+        let result = if self.transposed {
+            indexed.permute(&[1, 0])?
+        } else {
+            indexed
+        };
+        result.view(output_shape)
     }
 }
 
@@ -58,13 +77,22 @@ mod tests {
         }
     }
 
-    fn ground_truth(weight: &Tensor, indices: &Tensor) -> anyhow::Result<Tensor> {
-        let prg = r#"
+    fn ground_truth(weight: &Tensor, indices: &Tensor, transposed: bool) -> anyhow::Result<Tensor> {
+        let arg = if transposed {
+            "torch.from_numpy(weight).t().contiguous()"
+        } else {
+            "torch.from_numpy(weight)"
+        };
+
+        let prg = format!(
+            r#"
 import torch
-def embedding(input, indices):
-    embedding = torch.nn.Embedding.from_pretrained(torch.from_numpy(input))
+def embedding(weight, indices):
+    embedding = torch.nn.Embedding.from_pretrained({})
     return embedding(torch.from_numpy(indices)).numpy()
-"#;
+"#,
+            arg
+        );
         run_py_prg(prg.to_string(), &[weight, indices], &[])
     }
 
@@ -77,14 +105,15 @@ def embedding(input, indices):
         } = problem;
         let weight = Tensor::randn::<f32>(vocab_shape, Device::CPU);
 
-        let ground_truth = ground_truth(&weight, &indices).unwrap();
+        let transposed = false;
+        let ground_truth = ground_truth(&weight, &indices, transposed).unwrap();
         println!("GROUND TRUTH: {:?}", ground_truth);
 
         let weight = weight.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
 
-        let embedding = Embedding::new(weight);
-        let result = embedding.forward(&indices).unwrap().resolve().unwrap();
+        let embedding = Embedding::new(weight, transposed);
+        let result = embedding.forward(indices).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
         println!("OURS: {:?}", x);
         ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();
@@ -99,8 +128,8 @@ def embedding(input, indices):
     #[test]
     fn debug_embedding() {
         let prob = EmbeddingProblem {
-            vocab_shape: shape![51865, 384],
-            indices: Tensor::from_data([50363i32], shape![1, 1], Device::CPU),
+            vocab_shape: shape![10000, 384],
+            indices: Tensor::from_data([400i32, 9001i32, 5555i32], shape![1, 3], Device::CPU),
         };
         run_embedding_trial(prob);
     }

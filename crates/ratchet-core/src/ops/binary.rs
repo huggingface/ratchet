@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
-    rvec, wgc, Enforcer, InvariantError, KernelElement, MetaOperation, OpMetadata, Operation,
+    rvec, wgc, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 #[cfg(test)]
@@ -37,10 +37,6 @@ pub struct Binary {
 }
 
 impl Binary {
-    pub fn name(&self) -> &'static str {
-        self.op.kernel_name()
-    }
-
     pub fn op(&self) -> &BinaryOp {
         &self.op
     }
@@ -53,9 +49,22 @@ pub struct BinaryMeta {
 
 impl OpMetadata for BinaryMeta {}
 
+impl OpGuards for Binary {
+    fn check_shapes(&self) {
+        let shapes = [self.lhs.shape(), self.rhs.shape()];
+        let broadcasted = Shape::multi_broadcast(&shapes);
+        assert!(broadcasted.is_some());
+    }
+
+    fn check_dtypes(&self) {
+        assert_eq!(self.lhs.dt(), self.rhs.dt());
+    }
+}
+
 impl Operation for Binary {
-    fn infer_output(&self, srcs: &[&Tensor]) -> Result<StorageView, OperationError> {
-        let (lhs, rhs) = (srcs[0], srcs[1]);
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let lhs = &self.lhs;
+        let rhs = &self.rhs;
         let shapes = &[lhs.shape(), rhs.shape()];
         if lhs.is_scalar() || rhs.is_scalar() {
             let other = if lhs.is_scalar() { rhs } else { lhs };
@@ -70,16 +79,17 @@ impl Operation for Binary {
         let ostrides = Strides::from(&broadcasted);
         Ok(StorageView::new(broadcasted, lhs.dt(), ostrides))
     }
-
-    fn check_invariants(srcs: &[&Tensor]) -> Result<(), OperationError> {
-        Enforcer::check_input_arity(srcs, 2)?;
-        Enforcer::check_dtype_match(srcs)?;
-        Ok(())
-    }
 }
 
 impl MetaOperation for Binary {
     type Meta = BinaryMeta;
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        format!(
+            "{}_{}",
+            self.op.kernel_name(),
+            self.kernel_element(dst).as_str()
+        )
+    }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.lhs, &self.rhs]
@@ -124,10 +134,6 @@ impl MetaOperation for Binary {
         Ok(BindGroupLayoutDescriptor::binary())
     }
 
-    fn kernel_name(&self) -> &'static str {
-        self.op.kernel_name()
-    }
-
     fn metadata(
         &self,
         dst: &Tensor,
@@ -140,9 +146,8 @@ impl MetaOperation for Binary {
 
 #[cfg(test)]
 mod tests {
+    use crate::{test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Shape, Tensor};
     use test_strategy::{proptest, Arbitrary};
-
-    use crate::{shape, test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -151,12 +156,8 @@ mod tests {
     #[derive(Arbitrary, Debug)]
     struct BinaryProblem {
         op: BinaryOp,
-        #[strategy(1..=4usize)]
-        B: usize,
-        #[strategy(1..=512usize)]
-        M: usize,
-        #[strategy(1..=512usize)]
-        N: usize,
+        #[any(vec![1..=4, 1..=4, 1..=1, 1..=256])]
+        shape: Shape,
     }
 
     fn ground_truth(a: &Tensor, b: &Tensor, op: &BinaryOp) -> anyhow::Result<Tensor> {
@@ -172,23 +173,21 @@ def {}(a, b):
         run_py_prg(prg.to_string(), &[a, b], &[])
     }
 
-    //TODO: more involved test generation strategy
     fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let BinaryProblem { op, B, M, N } = prob;
-        println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
-        let a = Tensor::randn::<f32>(shape![B, M, N], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![B, 1, N], cpu_device.clone());
+        let BinaryProblem { op, mut shape } = prob;
+        let a = Tensor::randn::<f32>(shape.clone(), cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape, cpu_device.clone());
         let ground = ground_truth(&a, &b, &op)?;
         let device = GPU_DEVICE.with(|d| d.clone());
 
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = match op {
-            BinaryOp::Add => a_gpu.add(&b_gpu)?,
-            BinaryOp::Sub => a_gpu.sub(&b_gpu)?,
-            BinaryOp::Mul => a_gpu.mul(&b_gpu)?,
-            BinaryOp::Div => a_gpu.div(&b_gpu)?,
+            BinaryOp::Add => a_gpu.add(b_gpu)?,
+            BinaryOp::Sub => a_gpu.sub(b_gpu)?,
+            BinaryOp::Mul => a_gpu.mul(b_gpu)?,
+            BinaryOp::Div => a_gpu.div(b_gpu)?,
         }
         .resolve()?;
 
