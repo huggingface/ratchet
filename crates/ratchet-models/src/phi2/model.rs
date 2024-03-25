@@ -6,6 +6,7 @@ use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear};
 
 use super::{attn::SelfAttention, mlp::MLP};
 
+#[derive(Debug)]
 struct DecoderLayer {
     ln: LayerNorm,
     self_attn: SelfAttention,
@@ -43,6 +44,7 @@ impl DecoderLayer {
     }
 }
 
+#[derive(Debug)]
 pub struct Phi2 {
     embedding: Embedding,
     layers: Vec<DecoderLayer>,
@@ -62,10 +64,12 @@ impl Phi2 {
             disk_model.tensor(reader, "token_embd.weight", device)?,
             false,
         );
-        let (n_layers, n_heads) = (
-            disk_model.metadata.get("n_layers").unwrap().to_i32()?,
-            disk_model.metadata.get("n_heads").unwrap().to_i32()?,
-        );
+
+        let n_layers = disk_model
+            .metadata
+            .get("phi2.block_count")
+            .unwrap()
+            .to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -82,7 +86,11 @@ impl Phi2 {
 
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
         let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?), true);
-        let n_state = disk_model.metadata.get("hidden_size").unwrap().to_i32()? as usize;
+        let n_state = disk_model
+            .metadata
+            .get("phi2.embedding_length")
+            .unwrap()
+            .to_u32()? as usize;
         let kv_cache = KVCache::new(n_layers, shape![1, Self::MAX_CACHE, n_state], device);
         Ok(Self {
             embedding,
@@ -149,7 +157,8 @@ def ground():
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;
         let content = gguf::gguf::Content::read(&mut reader)?;
-        Phi2::load(content, &mut reader, &device)?;
+        let model = Phi2::load(content, &mut reader, &device)?;
+        println!("MODEL: {:?}", model);
         Ok(())
     }
 }

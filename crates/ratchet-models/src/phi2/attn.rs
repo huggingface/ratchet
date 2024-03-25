@@ -4,14 +4,15 @@ use ratchet::{prelude::shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Content;
 use ratchet_nn::Linear;
 
+#[derive(Debug)]
 pub struct SelfAttention {
     q: Linear,
     k: Linear,
     v: Linear,
     o: Linear,
-    n_heads: i32,
+    n_heads: u32,
     softmax_scale: Tensor,
-    n_kv_heads: i32,
+    n_kv_heads: u32,
 }
 
 impl SelfAttention {
@@ -36,9 +37,9 @@ impl SelfAttention {
 
         let n_heads = disk_model
             .metadata
-            .get("num_attention_heads")
+            .get("phi2.attention.head_count")
             .unwrap()
-            .to_i32()?;
+            .to_u32()?;
         let softmax_scale =
             Tensor::from_data([1.0 / (n_heads as f32).sqrt()], shape![1], device.clone());
         Ok(Self {
