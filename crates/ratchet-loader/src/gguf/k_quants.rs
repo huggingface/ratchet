@@ -456,19 +456,19 @@ impl GgmlType for BlockQ4K {
         &self,
         writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        let BlockQ4K {
-            d,
-            dmin,
-            scales,
-            qs,
-        } = self;
+        let tensor = self.0;
 
-        let tensor_blocks = d.shape().get(0).unwrap(); // [TODO] Handle result properly
+        let tensor_blocks = tensor
+            .shape()
+            .get(0)
+            .ok_or(anyhow!("Failed to get tensor blocks"))?
+            .clone();
 
-        let d_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
-        let dmin_data = dmin.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+        let data = tensor.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
 
-        let scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        let mut d_data = vec![0f32; tensor_blocks];
+        let mut dmin_data = vec![0f32; tensor_blocks];
+        let mut scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
         let mut scales_data = scales_data
             .iter()
             .map(|value| value.to_le_bytes())
