@@ -4,15 +4,13 @@
 //!
 //! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
-use crate::error::Result;
-use crate::gguf::ggml::GgmlDType;
-use crate::gguf::k_quants::{BlockF32, BlockQ4K, BlockQ6K, GgmlType, K_SCALE_SIZE, QK_K};
+use crate::{error::Result, GgmlDType};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use ratchet::{Device, Shape};
+use ratchet::{DType, Device, Shape, Tensor};
 use std::collections::HashMap;
 
-use super::k_quants::Block;
+use super::transcoder::GGTranscoder;
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -66,9 +64,9 @@ impl TensorInfo {
         &self,
         reader: &mut R,
         tensor_data_offset: u64,
+        dst_type: Option<DType>,
         device: &Device,
-    ) -> anyhow::Result<Block> {
-        // let tensor_elems = self.shape.elem_count();
+    ) -> anyhow::Result<Tensor> {
         let tensor_elems = self.shape.numel();
         let block_size = self.ggml_dtype.block_size();
         if tensor_elems % block_size != 0 {
@@ -81,21 +79,56 @@ impl TensorInfo {
         println!("block_size={:?}", block_size);
         println!("shape={:?} ggml_dtype={:?}", self.shape, self.ggml_dtype);
         let tensor_blocks = tensor_elems / block_size;
-        // let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
+        let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
 
+        let mut raw_data = vec![0u8; size_in_bytes]; //TODO: MaybeUninit
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
+        reader.read_exact(&mut raw_data)?;
 
-        // [TODO] Implement
-        match self.ggml_dtype {
-            GgmlDType::Q4K => BlockQ4K::read(tensor_blocks, reader, device),
-            GgmlDType::Q6K => BlockQ6K::read(tensor_blocks, reader, device),
-            GgmlDType::F32 => BlockF32::read(tensor_blocks, reader, device),
-            _ => anyhow::bail!("Not yet implemented"),
-        }
+        let dst_type = if let Some(dtype) = dst_type {
+            //If user provides a type to transcode to, use it
+            dtype
+        } else {
+            //Else, unquantized types map nicely F32 -> F32
+            self.ggml_dtype.into()
+        };
+
+        ratchet_from_gguf(
+            self.ggml_dtype,
+            dst_type,
+            &raw_data,
+            self.shape.clone(),
+            device,
+        )
     }
 }
 
-// [TODO] Move to GgmlType
+pub fn from_raw_data(
+    src_dtype: GgmlDType,
+    dst_dtype: DType,
+    raw_data: &[u8],
+    shape: Shape,
+    device: &Device,
+) -> anyhow::Result<Tensor> {
+    GGTranscoder::transcode(src_dtype, dst_dtype, raw_data, shape, device)
+}
+
+pub fn ratchet_from_gguf(
+    ggml_dtype: GgmlDType,
+    ratchet_dtype: DType,
+    raw_data: &[u8],
+    shape: Shape,
+    device: &Device,
+) -> anyhow::Result<Tensor> {
+    let tensor_elems = shape.numel();
+    let block_size = ggml_dtype.block_size();
+    if tensor_elems % block_size != 0 {
+        anyhow::bail!(
+            "the number of elements {tensor_elems} is not divisible by the block size {block_size}"
+        )
+    }
+    from_raw_data(ggml_dtype, ratchet_dtype, raw_data, shape, device)
+}
 
 #[derive(Debug)]
 pub struct Content {
@@ -410,7 +443,7 @@ impl Content {
 
             dimensions.reverse();
             let ggml_dtype = reader.read_u32::<LittleEndian>()?;
-            let ggml_dtype = GgmlDType::from_u32(ggml_dtype)?;
+            let ggml_dtype = GgmlDType::try_from(ggml_dtype).unwrap();
             let offset = reader.read_u64::<LittleEndian>()?;
             tensor_infos.insert(
                 tensor_name,
@@ -440,16 +473,36 @@ impl Content {
         })
     }
 
+    /// # Tensor
+    ///
+    /// Load the tensor from the reader into memory.
     pub fn tensor<R: std::io::Seek + std::io::Read>(
         &self,
         reader: &mut R,
         name: &str,
         device: &Device,
-    ) -> anyhow::Result<Block> {
+    ) -> anyhow::Result<Tensor> {
         let tensor_info = match self.tensor_infos.get(name) {
             Some(tensor_info) => tensor_info,
             None => anyhow::bail!("cannot find tensor info for {name}"),
         };
-        tensor_info.read(reader, self.tensor_data_offset, device)
+        tensor_info.read(reader, self.tensor_data_offset, None, device)
+    }
+
+    /// # Tensor
+    ///
+    /// Load the tensor from the reader into memory.
+    pub fn transcode_tensor<R: std::io::Seek + std::io::Read>(
+        &self,
+        reader: &mut R,
+        name: &str,
+        dst_type: DType,
+        device: &Device,
+    ) -> anyhow::Result<Tensor> {
+        let tensor_info = match self.tensor_infos.get(name) {
+            Some(tensor_info) => tensor_info,
+            None => anyhow::bail!("cannot find tensor info for {name}"),
+        };
+        tensor_info.read(reader, self.tensor_data_offset, Some(dst_type), device)
     }
 }

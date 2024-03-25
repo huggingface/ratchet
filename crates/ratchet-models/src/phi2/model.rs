@@ -1,12 +1,107 @@
-pub struct Phi2 {}
+use std::io::{BufRead, Seek};
 
-impl Phi2 {}
+use ratchet::{shape, Device};
+use ratchet_loader::gguf::gguf::Content;
+use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear};
+
+use super::{attn::SelfAttention, mlp::MLP};
+
+struct DecoderLayer {
+    ln: LayerNorm,
+    self_attn: SelfAttention,
+    mlp: MLP,
+}
+
+impl DecoderLayer {
+    pub fn load<R: BufRead + Seek>(
+        disk_model: &Content,
+        reader: &mut R,
+        layer_index: usize,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let ln = LayerNorm::new(
+            disk_model.tensor(
+                reader,
+                format!("blk.{}.attn_norm.weight", layer_index).as_str(),
+                device,
+            )?,
+            None,
+            1e-5,
+        );
+        let self_attn = SelfAttention::load(disk_model, reader, layer_index, device)?;
+
+        let mut lt = |name: &str| {
+            let key = format!("blk.{}.{}", layer_index, name);
+            disk_model.tensor(reader, &key, device)
+        };
+
+        let mlp = MLP::new(
+            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?), false),
+            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?), false),
+        );
+        Ok(Self { ln, self_attn, mlp })
+    }
+}
+
+pub struct Phi2 {
+    embedding: Embedding,
+    layers: Vec<DecoderLayer>,
+    ln_post: LayerNorm,
+    lm_head: Linear,
+    kv_cache: KVCache,
+}
+
+impl Phi2 {
+    const MAX_CACHE: usize = 1024;
+    pub fn load<R: BufRead + Seek>(
+        disk_model: Content,
+        reader: &mut R,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let embedding = Embedding::new(
+            disk_model.tensor(reader, "token_embd.weight", device)?,
+            false,
+        );
+        let (n_layers, n_heads) = (
+            disk_model.metadata.get("n_layers").unwrap().to_i32()?,
+            disk_model.metadata.get("n_heads").unwrap().to_i32()?,
+        );
+
+        let layers = (0..n_layers)
+            .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
+                blocks.push(DecoderLayer::load(&disk_model, reader, i as _, device));
+                blocks
+            })
+            .into_iter()
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        let mut lt = |name: &str| {
+            let key = format!("output{}", name);
+            disk_model.tensor(reader, &key, device)
+        };
+
+        let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
+        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?), true);
+        let n_state = disk_model.metadata.get("hidden_size").unwrap().to_i32()? as usize;
+        let kv_cache = KVCache::new(n_layers, shape![1, Self::MAX_CACHE, n_state], device);
+        Ok(Self {
+            embedding,
+            layers,
+            ln_post,
+            lm_head,
+            kv_cache,
+        })
+    }
+}
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use numpy::PyArrayDyn;
     use pyo3::{types::PyModule, Python};
-    use ratchet::Tensor;
+    use ratchet::{Device, DeviceRequest, Tensor};
+    use ratchet_loader::gguf;
+
+    use super::Phi2;
 
     fn ground_truth() -> anyhow::Result<Vec<Tensor>> {
         let prg = r#"
@@ -43,5 +138,18 @@ def ground():
     #[test]
     fn phi2() {
         let _ = ground_truth().unwrap();
+    }
+
+    #[test]
+    fn load_phi2() -> anyhow::Result<()> {
+        let model_path = concat!(
+            env!("CARGO_RUSTC_CURRENT_DIR"),
+            "/models/microsoft/phi-2/phi2-f16.gguf"
+        );
+        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let content = gguf::gguf::Content::read(&mut reader)?;
+        Phi2::load(content, &mut reader, &device)?;
+        Ok(())
     }
 }

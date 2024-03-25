@@ -12,6 +12,7 @@ use crate::{
 pub enum GGUFDType {
     Q4K,
 }
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
     Q8,

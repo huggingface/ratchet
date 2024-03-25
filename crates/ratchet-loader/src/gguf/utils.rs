@@ -49,7 +49,7 @@ pub(super) fn nearest_int(v: f32) -> i32 {
 /// Validates that the input and output are the right size and returns an iterator which maps each
 /// input region `xs` to its corresponding output block in `ys`. Each output region is guaranteed
 /// to be `T::BLCK_SIZE` long.
-pub(super) fn group_for_quantization<'a, 'b, T: super::k_quants::GgmlType>(
+pub(super) fn group_for_quantization<'a, 'b, T: crate::k_quants::GgmlType>(
     xs: &'b [f32],
     ys: &'a mut [T],
 ) -> Result<Vec<(&'a mut T, &'b [f32])>> {
@@ -70,7 +70,7 @@ pub(super) fn group_for_quantization<'a, 'b, T: super::k_quants::GgmlType>(
 /// Validates that the input and output are the right size and returns an iterator which maps each
 /// input block `xs` to its corresponding output region in `ys`. Each output region is guaranteed
 /// to be `T::BLCK_SIZE` long.
-pub(super) fn group_for_dequantization<'a, 'b, T: super::k_quants::GgmlType>(
+pub(super) fn group_for_dequantization<'a, 'b, T: crate::k_quants::GgmlType>(
     xs: &'a [T],
     ys: &'b mut [f32],
 ) -> Result<Vec<(&'a T, &'b mut [f32])>> {

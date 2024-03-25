@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp::Ordering};
+use std::cmp::Ordering;
 
 use derive_new::new;
 use encase::ShaderType;
