@@ -162,13 +162,6 @@ pub trait MetaOperation: Debug + 'static {
         kernel_element: &KernelElement,
     ) -> Result<Self::Meta, OperationError>;
 
-    /// # Update
-    /// Some operations may require computing additional info once the dst is resolved.
-    /// I hate this method.
-    fn update(&self, _dst: &Tensor) -> Result<(), OperationError> {
-        Ok(())
-    }
-
     fn compile(
         &self,
         dst: &Tensor,
@@ -176,7 +169,6 @@ pub trait MetaOperation: Debug + 'static {
         device: &WgpuDevice,
         can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
-        self.update(dst)?;
         let kernel_element = self.kernel_element(dst);
         let meta = self.metadata(dst, &kernel_element)?;
         let offset = uniform.write(&meta)?;
