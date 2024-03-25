@@ -1,8 +1,8 @@
 use std::io::{BufRead, Seek};
 
-use ratchet::{shape, Device};
+use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Content;
-use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear};
+use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear, Module};
 
 use super::{attn::SelfAttention, mlp::MLP};
 
@@ -51,6 +51,17 @@ pub struct Phi2 {
     ln_post: LayerNorm,
     lm_head: Linear,
     kv_cache: KVCache,
+}
+
+impl Module for Phi2 {
+    type Input = Tensor;
+
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let input = self.embedding.forward(input)?;
+
+        let embed_out = input.resolve()?.to(&Device::CPU)?;
+        Ok(embed_out)
+    }
 }
 
 impl Phi2 {
@@ -106,8 +117,10 @@ impl Phi2 {
 mod tests {
     use numpy::PyArrayDyn;
     use pyo3::{types::PyModule, Python};
-    use ratchet::{Device, DeviceRequest, Tensor};
+    use ratchet::{prelude::shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::gguf;
+    use ratchet_nn::Module;
+    use tokenizers::Tokenizer;
 
     use super::Phi2;
 
@@ -123,15 +136,13 @@ def ground():
     print(model)
     tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
 
-    inputs = tokenizer('''def print_prime(n):
-    """
-    Print all primes between 1 and n
-    """''', return_tensors="pt", return_attention_mask=False)
+    inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
 
     model.model.embed_tokens.register_forward_hook(lambda module, inputs, outputs: extracted["embed_tokens"].append(outputs))
-    outputs = model.generate(**inputs, max_length=24, return_dict_in_generate=True, output_logits=True)
+    outputs = model.generate(**inputs, max_length=8, return_dict_in_generate=True, output_logits=True)
     print("Extracted", extracted)
     print("First shape", extracted["embed_tokens"][0].shape)
+    return [extracted["embed_tokens"][0].detach().numpy()]
     
     #logits = list(outputs["logits"])
     #return [l.detach().numpy() for l in logits]
@@ -158,7 +169,29 @@ def ground():
         let device = Device::request_device(DeviceRequest::GPU)?;
         let content = gguf::gguf::Content::read(&mut reader)?;
         let model = Phi2::load(content, &mut reader, &device)?;
-        println!("MODEL: {:?}", model);
+
+        let tokenizer = Tokenizer::from_file(concat!(
+            env!("CARGO_RUSTC_CURRENT_DIR"),
+            "/models/microsoft/phi-2/tokenizer.json"
+        ))
+        .unwrap();
+
+        let tokens = tokenizer.encode("def print_prime(n):", true).unwrap();
+        let i32_tokens = tokens
+            .get_ids()
+            .iter()
+            .map(|&x| x as i32)
+            .collect::<Vec<_>>();
+        let num_tokens = i32_tokens.len();
+        let input = Tensor::from_data(i32_tokens, shape![1, num_tokens], device.clone());
+        let embedding = model.forward(input)?;
+
+        let ground_truth = ground_truth()?;
+        println!("OURS: {:?}", embedding);
+        println!("THEIRS: {:?}", ground_truth);
+
+        embedding.all_close(&ground_truth[0], 1e-5, 1e-5)?;
+
         Ok(())
     }
 }
