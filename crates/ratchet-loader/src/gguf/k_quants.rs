@@ -443,7 +443,7 @@ impl GgmlType for BlockQ4K {
         let inner = Tensor::from_bytes(
             &tensor_data.as_ref(),
             ratchet::DType::GGUF(ratchet::GGUFDType::Q4K(tensor_data_len / 256)),
-            shape![tensor_blocks, BlockQ4K::BLCK_SIZE],
+            shape![tensor_blocks * BlockQ4K::BLCK_SIZE],
             device.clone(),
         )?;
 
