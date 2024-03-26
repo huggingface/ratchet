@@ -6,7 +6,7 @@ use ratchet::{prelude::shape, Device, Tensor};
 
 use crate::error::Result;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 use super::{ggml::GgmlDType, utils::*};
 use crate::gguf::utils::WriteHalf;
@@ -136,7 +136,13 @@ pub struct BlockQ3K {
 //     pub(crate) scales: Tensor,
 //     pub(crate) qs: Tensor,
 // }
-pub struct BlockQ4K(Tensor);
+pub struct BlockQ4K {
+    inner: Tensor,
+    ds_offset: usize,
+    dmins_offset: usize,
+    scales_offset: usize,
+    qs_offset: usize,
+}
 // const _: () = assert!(QK_K / 2 + K_SCALE_SIZE + 2 * 2 == std::mem::size_of::<BlockQ4K>());
 
 #[derive(Debug, Clone, PartialEq)]
@@ -350,13 +356,16 @@ pub trait Padding {
     fn align_standard(&mut self) -> usize;
 }
 
+pub fn calculate_standard_alignment(length: usize) -> usize {
+    256 - length % 256
+}
+
 impl<T: Clone + Default> Padding for Vec<T> {
     fn align_standard(&mut self) -> usize {
         let length = &self.len();
-        let remainder = length % 256;
-        if remainder != 0 {
+        let alignment = calculate_standard_alignment(length);
+        if alignment != 0 {
             let default_value: T = Default::default();
-            let alignment = 256 - remainder;
             let mut padding = vec![default_value; alignment];
             self.append(&mut padding);
             alignment
@@ -409,21 +418,20 @@ impl GgmlType for BlockQ4K {
         let scales_alignment = scales.align_standard();
         let qs_alignment = qs.align_standard();
 
+        let ds_offset = 0;
         let mut tensor_data = ds;
+        let dmins_offset = tensor_data.len() + 1;
         tensor_data.append(&mut dmins);
+        let scales_offset = tensor_data.len() + 1;
         tensor_data.append(&mut scales);
+        let qs_offset = tensor_data.len() + 1;
+        let qs = tensor_data.len() + 1;
         tensor_data.append(&mut qs);
 
-        let shape = tensor_blocks * BlockQ4K::TYPE_SIZE
-            + ds_alignment
-            + dmins_alignment
-            + scales_alignment
-            + qs_alignment;
-
-        let tensor = Tensor::from_bytes(
+        let inner = Tensor::from_bytes(
             &tensor_data.as_ref(),
             ratchet::DType::GGUF(ratchet::GGUFDType::Q4K),
-            shape![tensor_blocks, shape],
+            shape![tensor_blocks, BlockQ4K::BLCK_SIZE],
             device.clone(),
         )?;
 
@@ -449,57 +457,73 @@ impl GgmlType for BlockQ4K {
         //     scales: scales_tensor,
         //     qs: qs_tensor,
         // };
-        Ok(Block::BlockQ4K(BlockQ4K(tensor)))
+        Ok(Block::BlockQ4K(BlockQ4K {
+            inner,
+            ds_offset,
+            dmins_offset,
+            scales_offset,
+            qs_offset,
+        }))
     }
 
     fn write<W: std::io::Seek + std::io::Write>(
         &self,
         writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        let tensor = self.0;
+        let BlockQ4K {
+            inner,
+            ds_offset,
+            dmins_offset,
+            scales_offset,
+            qs_offset,
+        } = self;
 
-        let tensor_blocks = tensor
+        let tensor_blocks = inner
             .shape()
             .get(0)
             .ok_or(anyhow!("Failed to get tensor blocks"))?
             .clone();
 
-        let data = tensor.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-
-        let mut d_data = vec![0f32; tensor_blocks];
-        let mut dmin_data = vec![0f32; tensor_blocks];
-        let mut scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        let mut scales_data = scales_data
+        let tensor_data = inner.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        let tensor_data = tensor_data
             .iter()
             .map(|value| value.to_le_bytes())
             .flatten()
             .collect::<Vec<u8>>();
-        let mut scales_data_cursor = Cursor::new(&mut scales_data);
 
-        let qs_data = qs.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        let mut qs_data = qs_data
-            .iter()
-            .map(|value| value.to_le_bytes())
-            .flatten()
-            .collect::<Vec<u8>>();
-        let mut qs_data_cursor = Cursor::new(&mut qs_data);
+        let mut gguf_data = vec![0u8; tensor_blocks * BlockQ4K::TYPE_SIZE];
+        let mut gguf_data_cursor = Cursor::new(&mut gguf_data);
+
+        let ds_cursor = Cursor::new(&tensor_data);
+        ds_cursor.seek(SeekFrom::Start(ds_offset))?;
+
+        let dmins_cursor = Cursor::new(&tensor_data);
+        dmins_cursor.seek(SeekFrom::Start(dmins_offset))?;
+
+        let scales_data_cursor = Cursor::new(&tensor_data);
+        scales_data_cursor.seek(SeekFrom::Start(scales_offset))?;
+
+        let qs_data_cursor = Cursor::new(&tensor_data);
+        qs_data_cursor.seek(SeekFrom::Start(qs_offset))?;
 
         for _idx in 0..*tensor_blocks {
-            let d_value = half::f16::from_f32(d_data[_idx]);
+            ds_cursor.seek(SeekFrom::Current(_idx * 4))?;
+            let d_value = ds_cursor.read_u32()?;
+            let d_value = half::f16::from_f32(d_value);
             writer.write_f16(d_value)?;
-            let dmin_value = half::f16::from_f32(dmin_data[_idx]);
+
+            dmins_cursor.seek(SeekFrom::Current(_idx * 4))?;
+            let dmin_value = dmins_cursor.read_u32()?;
+            let dmin_value = half::f16::from_f32(dmin_value);
             writer.write_f16(dmin_value)?;
 
-            let current_scales = read_data_from_cursor(
-                &mut scales_data_cursor,
-                (_idx * K_SCALE_SIZE) as u64,
-                K_SCALE_SIZE,
-            )?;
+            scales_data_cursor.seek(SeekFrom::Current(_idx * K_SCALE_SIZE))?;
+            let current_scales = scales_data_cursor.read_len_bytes(K_SCALE_SIZE)?;
 
             writer.write_all(current_scales.as_ref())?;
 
-            let current_qs =
-                read_data_from_cursor(&mut qs_data_cursor, (_idx * QK_K / 2) as u64, QK_K / 2)?;
+            qs_data_cursor.seek(SeekFrom::Current(_idx * QK_K / 2))?;
+            let current_qs = qs_data_cursor.read_len_bytes(QK_K / 2)?;
 
             writer.write_all(current_qs.as_ref())?;
         }
