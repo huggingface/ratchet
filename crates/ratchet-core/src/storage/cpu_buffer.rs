@@ -34,6 +34,7 @@ impl RawCPUBuffer {
     }
 
     pub fn uninitialized(size: usize, alignment: usize) -> Self {
+        println!("size={:?}, alignment={:?}", size, alignment);
         let layout = std::alloc::Layout::from_size_align(size, alignment).unwrap();
         let data = if size == 0 {
             std::ptr::null()
@@ -95,6 +96,13 @@ impl CPUBuffer {
     }
 
     pub fn to_slice<T: NoUninit + Pod>(&self, shape: &Shape) -> &[T] {
+        println!(
+            "shape:{:?} n_bytes:{:?} numel:{:?} size:{:?}",
+            &shape,
+            self.n_bytes(),
+            shape.numel(),
+            std::mem::size_of::<T>()
+        );
         assert_eq!(self.n_bytes(), shape.numel() * std::mem::size_of::<T>());
         bytemuck::cast_slice(self.inner().as_bytes())
     }

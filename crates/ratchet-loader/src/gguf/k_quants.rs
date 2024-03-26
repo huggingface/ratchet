@@ -357,7 +357,12 @@ pub trait Padding {
 }
 
 pub fn calculate_standard_alignment(length: usize) -> usize {
-    256 - length % 256
+    let remainder = length % 256;
+    if remainder == 0 {
+        0
+    } else {
+        256 - remainder
+    }
 }
 
 impl<T: Clone + Default> Padding for Vec<T> {
@@ -416,7 +421,13 @@ impl GgmlType for BlockQ4K {
         let dmins_alignment = dmins.align_standard();
 
         let scales_alignment = scales.align_standard();
+        println!("before_alignment={:?}", (&qs).len());
         let qs_alignment = qs.align_standard();
+        println!(
+            "after_alignment={:?}, alignment={:?}",
+            (&qs).len(),
+            qs_alignment
+        );
 
         let ds_offset = 0;
         let mut tensor_data = ds;
@@ -428,7 +439,7 @@ impl GgmlType for BlockQ4K {
         tensor_data.append(&mut qs);
 
         let tensor_data_len = (&tensor_data).len();
-        dbg!(tensor_data_len);
+        dbg!(tensor_data_len, tensor_blocks, BlockQ4K::BLCK_SIZE);
         let inner = Tensor::from_bytes(
             &tensor_data.as_ref(),
             ratchet::DType::GGUF(ratchet::GGUFDType::Q4K(tensor_data_len / 256)),
