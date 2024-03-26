@@ -22,7 +22,7 @@ pub const QK5_1: usize = 32;
 pub const QK8_0: usize = 32;
 pub const QK8_1: usize = 32;
 
-pub trait GgmlType: Sized + Clone + Send + Sync {
+pub trait GgmlType: Sized + Clone {
     const DTYPE: GgmlDType;
     const BLCK_SIZE: usize;
     const TYPE_SIZE: usize;
@@ -363,7 +363,7 @@ pub fn calculate_standard_alignment(length: usize) -> usize {
 impl<T: Clone + Default> Padding for Vec<T> {
     fn align_standard(&mut self) -> usize {
         let length = &self.len();
-        let alignment = calculate_standard_alignment(length);
+        let alignment = calculate_standard_alignment(length.clone());
         if alignment != 0 {
             let default_value: T = Default::default();
             let mut padding = vec![default_value; alignment];
@@ -425,12 +425,13 @@ impl GgmlType for BlockQ4K {
         let scales_offset = tensor_data.len() + 1;
         tensor_data.append(&mut scales);
         let qs_offset = tensor_data.len() + 1;
-        let qs = tensor_data.len() + 1;
         tensor_data.append(&mut qs);
 
+        let tensor_data_len = (&tensor_data).len();
+        dbg!(tensor_data_len);
         let inner = Tensor::from_bytes(
             &tensor_data.as_ref(),
-            ratchet::DType::GGUF(ratchet::GGUFDType::Q4K),
+            ratchet::DType::GGUF(ratchet::GGUFDType::Q4K(tensor_data_len / 256)),
             shape![tensor_blocks, BlockQ4K::BLCK_SIZE],
             device.clone(),
         )?;
@@ -491,38 +492,35 @@ impl GgmlType for BlockQ4K {
             .flatten()
             .collect::<Vec<u8>>();
 
-        let mut gguf_data = vec![0u8; tensor_blocks * BlockQ4K::TYPE_SIZE];
-        let mut gguf_data_cursor = Cursor::new(&mut gguf_data);
+        let mut ds_cursor = Cursor::new(&tensor_data);
+        ds_cursor.seek(SeekFrom::Start(*ds_offset as u64))?;
 
-        let ds_cursor = Cursor::new(&tensor_data);
-        ds_cursor.seek(SeekFrom::Start(ds_offset))?;
+        let mut dmins_cursor = Cursor::new(&tensor_data);
+        dmins_cursor.seek(SeekFrom::Start(*dmins_offset as u64))?;
 
-        let dmins_cursor = Cursor::new(&tensor_data);
-        dmins_cursor.seek(SeekFrom::Start(dmins_offset))?;
+        let mut scales_data_cursor = Cursor::new(&tensor_data);
+        scales_data_cursor.seek(SeekFrom::Start(*scales_offset as u64))?;
 
-        let scales_data_cursor = Cursor::new(&tensor_data);
-        scales_data_cursor.seek(SeekFrom::Start(scales_offset))?;
+        let mut qs_data_cursor = Cursor::new(&tensor_data);
+        qs_data_cursor.seek(SeekFrom::Start(*qs_offset as u64))?;
 
-        let qs_data_cursor = Cursor::new(&tensor_data);
-        qs_data_cursor.seek(SeekFrom::Start(qs_offset))?;
-
-        for _idx in 0..*tensor_blocks {
-            ds_cursor.seek(SeekFrom::Current(_idx * 4))?;
-            let d_value = ds_cursor.read_u32()?;
+        for _idx in 0..tensor_blocks {
+            ds_cursor.seek(SeekFrom::Current((_idx * 4) as i64))?;
+            let d_value = ds_cursor.read_f32::<LittleEndian>()?;
             let d_value = half::f16::from_f32(d_value);
             writer.write_f16(d_value)?;
 
-            dmins_cursor.seek(SeekFrom::Current(_idx * 4))?;
-            let dmin_value = dmins_cursor.read_u32()?;
+            dmins_cursor.seek(SeekFrom::Current((_idx * 4) as i64))?;
+            let dmin_value = dmins_cursor.read_f32::<LittleEndian>()?;
             let dmin_value = half::f16::from_f32(dmin_value);
             writer.write_f16(dmin_value)?;
 
-            scales_data_cursor.seek(SeekFrom::Current(_idx * K_SCALE_SIZE))?;
+            scales_data_cursor.seek(SeekFrom::Current((_idx * K_SCALE_SIZE) as i64))?;
             let current_scales = scales_data_cursor.read_len_bytes(K_SCALE_SIZE)?;
 
             writer.write_all(current_scales.as_ref())?;
 
-            qs_data_cursor.seek(SeekFrom::Current(_idx * QK_K / 2))?;
+            qs_data_cursor.seek(SeekFrom::Current((_idx * QK_K / 2) as i64))?;
             let current_qs = qs_data_cursor.read_len_bytes(QK_K / 2)?;
 
             writer.write_all(current_qs.as_ref())?;

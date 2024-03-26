@@ -97,6 +97,7 @@ mod tests {
             _ => panic!("Not possible"),
         };
 
+        // let mut gguf_data = vec![0u8; tensor_blocks * BlockQ4K::TYPE_SIZE];
         // let model_data = file.gguf().await?;
         //
         let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * k_quants::BlockQ4K::TYPE_SIZE;

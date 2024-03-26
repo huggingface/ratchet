@@ -10,7 +10,7 @@ use crate::{
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GGUFDType {
-    Q4K,
+    Q4K(usize),
 }
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -45,7 +45,7 @@ impl DType {
             DType::I32 => 4,
             DType::U32 => 4,
             DType::WQ8 => 4,
-            DType::GGUF(_) => todo!(),
+            DType::GGUF(GGUFDType::Q4K(size)) => size,
         }
     }
 

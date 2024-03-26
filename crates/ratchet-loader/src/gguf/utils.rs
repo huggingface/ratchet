@@ -30,16 +30,10 @@ impl<W: std::io::Seek + std::io::Write> WriteHalf for W {
 }
 
 pub trait ReadInto<Other> {
-    fn read_len_bytes(&mut self, length: usize) -> Result<Vec<u8>>;
     fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()>;
 }
 
 impl<R: std::io::Seek + std::io::Read, Other: std::io::Write> ReadInto<Other> for R {
-    fn read_len_bytes(&mut self, length: usize) -> Result<Vec<u8>> {
-        let mut temp = vec![0u8; length];
-        self.read_exact(&mut temp)?;
-        Ok(temp)
-    }
     fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()> {
         let mut temp = vec![0u8; length];
         self.read_exact(&mut temp)?;
@@ -48,6 +42,17 @@ impl<R: std::io::Seek + std::io::Read, Other: std::io::Write> ReadInto<Other> fo
     }
 }
 
+pub trait ReadLen {
+    fn read_len_bytes(&mut self, length: usize) -> Result<Vec<u8>>;
+}
+
+impl<R: std::io::Seek + std::io::Read> ReadLen for R {
+    fn read_len_bytes(&mut self, length: usize) -> Result<Vec<u8>> {
+        let mut temp = vec![0u8; length];
+        self.read_exact(&mut temp)?;
+        Ok(temp)
+    }
+}
 pub(super) fn nearest_int(v: f32) -> i32 {
     v.round() as i32
 }
