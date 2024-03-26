@@ -75,9 +75,6 @@ impl TensorInfo {
         )
         }
 
-        println!("tensor_elems={:?}", tensor_elems);
-        println!("block_size={:?}", block_size);
-        println!("shape={:?} ggml_dtype={:?}", self.shape, self.ggml_dtype);
         let tensor_blocks = tensor_elems / block_size;
         let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
 

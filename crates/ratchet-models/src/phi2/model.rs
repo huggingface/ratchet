@@ -20,21 +20,13 @@ impl DecoderLayer {
         layer_index: usize,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let ln = LayerNorm::new(
-            disk_model.tensor(
-                reader,
-                format!("blk.{}.attn_norm.weight", layer_index).as_str(),
-                device,
-            )?,
-            None,
-            1e-5,
-        );
         let self_attn = SelfAttention::load(disk_model, reader, layer_index, device)?;
-
         let mut lt = |name: &str| {
             let key = format!("blk.{}.{}", layer_index, name);
             disk_model.tensor(reader, &key, device)
         };
+
+        let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
 
         let mlp = MLP::new(
             Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?), false),
@@ -57,10 +49,19 @@ impl Module for Phi2 {
     type Input = Tensor;
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let input = self.embedding.forward(input)?;
+        let mut x = self.embedding.forward(input)?;
 
-        let embed_out = input.resolve()?.to(&Device::CPU)?;
-        Ok(embed_out)
+        let mut layer_idx = 0;
+        for layer in &self.layers {
+            x = layer.ln.forward(x)?;
+            x = layer.self_attn.forward(x)?;
+            if layer_idx == 0 {
+                return Ok(x);
+            }
+            layer_idx += 1;
+        }
+
+        Ok(x)
     }
 }
 
@@ -138,11 +139,12 @@ def ground():
 
     inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
 
-    model.model.embed_tokens.register_forward_hook(lambda module, inputs, outputs: extracted["embed_tokens"].append(outputs))
+    model.model.layers[0].self_attn.q_proj.register_forward_hook(lambda module, inputs, outputs: extracted["self_attn"].append(outputs))
     outputs = model.generate(**inputs, max_length=8, return_dict_in_generate=True, output_logits=True)
-    print("Extracted", extracted)
-    print("First shape", extracted["embed_tokens"][0].shape)
-    return [extracted["embed_tokens"][0].detach().numpy()]
+
+    print(extracted["self_attn"])
+    extracted = extracted["self_attn"][0][0].detach().numpy()
+    return [extracted]
     
     #logits = list(outputs["logits"])
     #return [l.detach().numpy() for l in logits]
@@ -155,12 +157,9 @@ def ground():
     }
 
     #[test]
-    fn phi2() {
-        let _ = ground_truth().unwrap();
-    }
-
-    #[test]
     fn load_phi2() -> anyhow::Result<()> {
+        let ground_truth = ground_truth()?;
+
         let model_path = concat!(
             env!("CARGO_RUSTC_CURRENT_DIR"),
             "/models/microsoft/phi-2/phi2-f16.gguf"
@@ -184,14 +183,13 @@ def ground():
             .collect::<Vec<_>>();
         let num_tokens = i32_tokens.len();
         let input = Tensor::from_data(i32_tokens, shape![1, num_tokens], device.clone());
-        let embedding = model.forward(input)?;
+        let result = model.forward(input)?.resolve()?;
+        let cpu_result = result.to(&Device::CPU)?;
 
-        let ground_truth = ground_truth()?;
-        println!("OURS: {:?}", embedding);
+        println!("OURS: {:?}\n", cpu_result);
         println!("THEIRS: {:?}", ground_truth);
 
-        embedding.all_close(&ground_truth[0], 1e-5, 1e-5)?;
-
+        cpu_result.all_close(&ground_truth[0], 1e-5, 1e-5)?;
         Ok(())
     }
 }

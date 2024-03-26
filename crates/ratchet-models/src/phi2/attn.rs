@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{prelude::shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Content;
-use ratchet_nn::Linear;
+use ratchet_nn::{Linear, Module, RotaryEmbedding};
 
 #[derive(Debug)]
 pub struct SelfAttention {
@@ -10,6 +10,7 @@ pub struct SelfAttention {
     k: Linear,
     v: Linear,
     o: Linear,
+    rope: RotaryEmbedding,
     n_heads: u32,
     softmax_scale: Tensor,
     n_kv_heads: u32,
@@ -42,14 +43,41 @@ impl SelfAttention {
             .to_u32()?;
         let softmax_scale =
             Tensor::from_data([1.0 / (n_heads as f32).sqrt()], shape![1], device.clone());
+        println!("DISK MODEL METADATA: {:?}", disk_model.metadata);
+        let rope = RotaryEmbedding::new(64, 512, 1e-5, device.clone())?;
+        println!("ROPE: {:?}", rope);
         Ok(Self {
             q,
             k,
             v,
             o,
+            rope,
             n_heads,
             softmax_scale,
             n_kv_heads: n_heads,
         })
+    }
+}
+
+impl Module for SelfAttention {
+    type Input = Tensor;
+
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let [batch_size, seq_len, n_state]: [usize; 3] = input.shape().try_into()?;
+        let q = self.q.forward(input.clone())?;
+        let k = self.k.forward(input.clone())?;
+        let v = self.v.forward(input.clone())?;
+
+        let h_dim = n_state / self.n_heads as usize;
+        //we don't support qk ln
+        let qs = shape![batch_size as _, seq_len, self.n_heads as _, h_dim];
+        let kvs = shape![batch_size as _, seq_len, self.n_kv_heads as _, h_dim];
+        let q = q.view(qs)?.permute(&[0, 2, 1, 3])?;
+        let k = k.view(kvs.clone())?.permute(&[0, 2, 1, 3])?;
+        let v = v.view(kvs)?.permute(&[0, 2, 1, 3])?;
+
+        //Correct so far,  now we need to do RotaryEmbedding on value_states
+
+        return Ok(q);
     }
 }

@@ -52,6 +52,7 @@ impl Tensor {
         }
     }
 
+    #[track_caller]
     fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
         op.check_invariants();
         Self::new(op, meta, None, device)
