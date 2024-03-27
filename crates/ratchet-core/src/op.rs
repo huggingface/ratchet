@@ -1,6 +1,6 @@
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-    PoolError, WgpuDevice, WorkgroupCount,
+    PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
 };
 use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
 use encase::internal::WriteInto;
@@ -115,8 +115,13 @@ pub enum OperationError {
     UnknownError(#[from] anyhow::Error),
 }
 
-///A trait for types that are written into uniform buffers, these
-///hold the metadata for a shader.
+/// # OpMetadata
+///
+/// Marker trait for metadata structs that are written into the uniform buffer for each kernel.
+///
+/// Some kernels may not know their metadata at compile time, so this is not an associated type.
+/// If they do not know their metadata at compile time, they should use [DynamicUniformBuffer] from
+/// encase.
 pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
 
 /// # MetaOperation
@@ -125,10 +130,6 @@ pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
 /// Some types may implement both Operation and MetaOperation, if there is no variance
 /// in output shape or invariants between the members of the family.
 pub trait MetaOperation: Debug + 'static {
-    ///Meta is a struct containing all data written into our uniform buffer.
-    ///Typically contains shapes or strides.
-    type Meta: OpMetadata;
-
     /// Return the file stem of the kernel source file.
     fn kernel_key(&self, dst: &Tensor) -> String;
 
@@ -156,11 +157,18 @@ pub trait MetaOperation: Debug + 'static {
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError>;
 
-    fn metadata(
+    /// # Metadata
+    ///
+    /// Each kernel has zero or more required metadata fields (e.g shape, strides, etc).
+    /// This is stored in a uniform buffer, for faster access.
+    ///
+    /// The metadata is limited to 256 bytes per kernel.
+    fn write_metadata(
         &self,
+        uniform: &mut CpuUniform,
         dst: &Tensor,
         kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError>;
+    ) -> Result<u64, OperationError>;
 
     /// # Update
     /// Some operations may require computing additional info once the dst is resolved.
@@ -178,8 +186,9 @@ pub trait MetaOperation: Debug + 'static {
     ) -> Result<CompiledOp, OperationError> {
         self.update(dst)?;
         let kernel_element = self.kernel_element(dst);
-        let meta = self.metadata(dst, &kernel_element)?;
-        let offset = uniform.write(&meta)?;
+        let prev_offset = uniform.as_ref().len();
+        let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
+        assert!(offset - prev_offset <= UNIFORM_ALIGN); //Each kernel has a 256 byte limit
 
         let workgroup_count = self.calculate_dispatch(dst)?;
 

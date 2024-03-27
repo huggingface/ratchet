@@ -64,6 +64,7 @@ impl BufferAllocator {
             BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             false,
         );
+        println!("Creating uniform buffer with size: {}", uniform.len());
 
         let resource = self.pool.write().get_or_create(&desc, device);
         device

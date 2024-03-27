@@ -3,7 +3,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Tensor,
 };
@@ -51,8 +51,6 @@ pub struct NormMeta {
 impl OpMetadata for NormMeta {}
 
 impl MetaOperation for Norm {
-    type Meta = NormMeta;
-
     fn srcs(&self) -> RVec<&Tensor> {
         match self {
             Norm::LayerNorm(LayerNorm {
@@ -100,11 +98,12 @@ impl MetaOperation for Norm {
         Ok(BindGroupLayoutDescriptor::ternary())
     }
 
-    fn metadata(
+    fn write_metadata(
         &self,
-        _dst: &Tensor,
-        _kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
+        uniform: &mut CpuUniform,
+        _: &Tensor,
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let input = self.srcs()[0];
         let rank = input.rank();
         let M = input.shape()[rank - 2] as u32;
@@ -114,7 +113,8 @@ impl MetaOperation for Norm {
         let eps = match self {
             Norm::LayerNorm(LayerNorm { eps, .. }) => *eps,
         };
-        Ok(NormMeta::new(M, N, ND2, ND4, eps))
+        let meta = NormMeta::new(M, N, ND2, ND4, eps);
+        Ok(uniform.write(&meta)?)
     }
 }
 

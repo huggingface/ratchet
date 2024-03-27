@@ -4,7 +4,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, DType, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata,
     Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
@@ -307,8 +307,6 @@ impl OpGuards for Matmul {
 }
 
 impl MetaOperation for Matmul {
-    type Meta = MatmulMeta;
-
     fn update(&self, dst: &Tensor) -> Result<(), OperationError> {
         self.compute_spec(dst);
         Ok(())
@@ -396,7 +394,12 @@ impl MetaOperation for Matmul {
         Ok(layout)
     }
 
-    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Meta, OperationError> {
+    fn write_metadata(
+        &self,
+        uniform: &mut CpuUniform,
+        _: &Tensor,
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let ref_spec = self.spec.borrow();
         let spec = ref_spec.as_ref().unwrap();
 
@@ -431,9 +434,7 @@ impl MetaOperation for Matmul {
             dimBOuter,
             dimInner,
         };
-        //println!("META: {:?}", meta);
-
-        Ok(meta)
+        Ok(uniform.write(&meta)?)
     }
 }
 

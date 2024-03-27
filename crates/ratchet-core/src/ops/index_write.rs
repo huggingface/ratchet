@@ -2,7 +2,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
     Shape, StorageView, Strides, Tensor,
 };
@@ -36,8 +36,6 @@ impl Operation for IndexWrite {
 }
 
 impl MetaOperation for IndexWrite {
-    type Meta = IndexWriteMeta;
-
     fn supports_inplace(&self) -> bool {
         true
     }
@@ -73,7 +71,12 @@ impl MetaOperation for IndexWrite {
         Ok(BindGroupLayoutDescriptor::binary_inplace())
     }
 
-    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Meta, OperationError> {
+    fn write_metadata(
+        &self,
+        uniform: &mut CpuUniform,
+        _: &Tensor,
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let padder = |mut shape: Shape| {
             shape.left_pad_to(1, 4);
             let strides = Strides::from(&shape);
@@ -88,11 +91,12 @@ impl MetaOperation for IndexWrite {
             start[i + offset] = s as u32;
         }
 
-        Ok(IndexWriteMeta {
+        let meta = IndexWriteMeta {
             dst_strides: glam::UVec4::from(&dst_strides),
             src_numel: src_shape.numel() as u32,
             write_start: start.into(),
-        })
+        };
+        Ok(uniform.write(&meta)?)
     }
 }
 

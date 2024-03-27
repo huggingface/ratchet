@@ -10,7 +10,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, KernelElement, MetaOperation, OpMetadata, OperationError, RVec, Shape, Strides,
     Tensor,
 };
@@ -31,7 +31,7 @@ pub struct ReindexMeta {
     dst_stride: glam::UVec4,
     src_numel: u32,
     dst_numel: u32,
-    //"Optional" fields below (if not present, they are set to 0)
+    //"Optional" fields below (if not present, they are set to 0) this is dumb
     permute: glam::UVec4,
     src_offsets: glam::UVec4,
 }
@@ -39,8 +39,6 @@ pub struct ReindexMeta {
 impl OpMetadata for ReindexMeta {}
 
 impl MetaOperation for Reindex {
-    type Meta = ReindexMeta;
-
     fn srcs(&self) -> RVec<&Tensor> {
         match self {
             Reindex::Permute(p) => rvec![&p.src],
@@ -82,11 +80,12 @@ impl MetaOperation for Reindex {
         format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
-    fn metadata(
+    fn write_metadata(
         &self,
+        uniform: &mut CpuUniform,
         dst: &Tensor,
-        _kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let padder = |mut shape: Shape| {
             shape.left_pad_to(1, 4);
             let strides = Strides::from(&shape);
@@ -139,6 +138,6 @@ impl MetaOperation for Reindex {
             permute,
             src_offsets,
         };
-        Ok(meta)
+        Ok(uniform.write(&meta)?)
     }
 }
