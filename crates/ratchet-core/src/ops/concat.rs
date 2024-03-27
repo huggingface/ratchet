@@ -184,7 +184,7 @@ def permute(t0, t1, t2):
     }
 
     #[test]
-    fn test_permute() {
+    fn test_concat() {
         let t0 = Tensor::randn::<f32>(shape![2, 128, 128], Device::CPU);
         let t1 = Tensor::randn::<f32>(shape![1, 128, 128], Device::CPU);
         let t2 = Tensor::randn::<f32>(shape![2, 128, 128], Device::CPU);

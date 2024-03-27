@@ -668,7 +668,6 @@ impl Tensor {
             crate::plot::render_to_file(last, "allocations.svg").unwrap();
         }
 
-        println!("COMPILED OPS: {:#?}", compiled_ops);
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));

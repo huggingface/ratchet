@@ -192,9 +192,7 @@ pub trait MetaOperation: Debug + 'static {
         self.update(dst)?;
         let kernel_element = self.kernel_element(dst);
         let prev_offset = uniform.as_ref().len();
-        println!("PREV OFFSET: {}", prev_offset);
         let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
-        println!("OFFSET: {}", offset);
         assert!(offset - prev_offset <= UNIFORM_ALIGN); //Each kernel has a 256 byte limit
 
         let workgroup_count = self.calculate_dispatch(dst)?;
