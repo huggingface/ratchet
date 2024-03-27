@@ -17,6 +17,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/abs_scalar.wgsl"),
         );
         m.insert(
+            "concat6_scalar",
+            include_str!(r"../kernels/generated/concat6_scalar.wgsl"),
+        );
+        m.insert(
             "relu_vec2",
             include_str!(r"../kernels/generated/relu_vec2.wgsl"),
         );
@@ -83,6 +87,10 @@ lazy_static! {
         m.insert(
             "exp_vec2",
             include_str!(r"../kernels/generated/exp_vec2.wgsl"),
+        );
+        m.insert(
+            "concat3_scalar",
+            include_str!(r"../kernels/generated/concat3_scalar.wgsl"),
         );
         m.insert(
             "cos_vec2",
@@ -201,6 +209,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/broadcast_scalar.wgsl"),
         );
         m.insert(
+            "concat5_scalar",
+            include_str!(r"../kernels/generated/concat5_scalar.wgsl"),
+        );
+        m.insert(
             "sgemm_false_false_true_true_true_scalar",
             include_str!(r"../kernels/generated/sgemm_false_false_true_true_true_scalar.wgsl"),
         );
@@ -235,6 +247,10 @@ lazy_static! {
         m.insert(
             "sgemm_true_true_true_true_false_scalar",
             include_str!(r"../kernels/generated/sgemm_true_true_true_true_false_scalar.wgsl"),
+        );
+        m.insert(
+            "concat2_scalar",
+            include_str!(r"../kernels/generated/concat2_scalar.wgsl"),
         );
         m.insert(
             "layernorm_scalar",
@@ -313,6 +329,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/sgemm_false_true_true_true_false_scalar.wgsl"),
         );
         m.insert(
+            "concat7_scalar",
+            include_str!(r"../kernels/generated/concat7_scalar.wgsl"),
+        );
+        m.insert(
             "sin_scalar",
             include_str!(r"../kernels/generated/sin_scalar.wgsl"),
         );
@@ -339,6 +359,10 @@ lazy_static! {
         m.insert(
             "ceil_vec2",
             include_str!(r"../kernels/generated/ceil_vec2.wgsl"),
+        );
+        m.insert(
+            "concat4_scalar",
+            include_str!(r"../kernels/generated/concat4_scalar.wgsl"),
         );
         m.insert(
             "sgemm_true_true_false_vec4",
@@ -375,6 +399,10 @@ lazy_static! {
         m.insert(
             "sgemm_false_false_true_true_false_scalar",
             include_str!(r"../kernels/generated/sgemm_false_false_true_true_false_scalar.wgsl"),
+        );
+        m.insert(
+            "concat8_scalar",
+            include_str!(r"../kernels/generated/concat8_scalar.wgsl"),
         );
         m.insert(
             "log_scalar",
@@ -420,10 +448,6 @@ lazy_static! {
         m.insert(
             "softmax_vec2",
             include_str!(r"../kernels/softmax_vec2.wgsl"),
-        );
-        m.insert(
-            "concat_scalar",
-            include_str!(r"../kernels/concat_scalar.wgsl"),
         );
         m.insert(
             "softmax_scalar",

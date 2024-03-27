@@ -1,32 +1,21 @@
-@group(0) @binding(0)
-var<storage, read> X0: array<f32>;
+{% for i in range(end=num_inputs) -%}
+@group(0) @binding({{i}})
+var<storage, read> X{{i}}: array<f32>;
+{% endfor -%}
 
-@group(0) @binding(1)
-var<storage, read> X1: array<f32>;
-
-@group(0) @binding(2)
-var<storage, read> X2: array<f32>;
-
-@group(0) @binding(3)
+@group(0) @binding({{num_inputs}})
 var<storage, read_write> Y: array<f32>;
 
 struct Meta {
-    dim: u32,
-    dst_shape: vec4<u32>,
+    {% for i in range(end=num_inputs) -%}
+        x{{i}}_stride: vec4<u32>,
+    {% endfor %}
     dst_stride: vec4<u32>,
     dst_numel: u32,
-    x0_shape: vec4<u32>,
-    x0_stride: vec4<u32>,
-    x0_numel: u32,
-    x1_shape: vec4<u32>,
-    x1_stride: vec4<u32>,
-    x1_numel: u32,
-    x2_shape: vec4<u32>,
-    x2_stride: vec4<u32>,
-    x2_numel: u32,
-    cum0: u32,
-    cum1: u32,
-    cum2: u32,
+    {% for i in range(end=num_inputs) -%}
+        cum{{i}}: u32,
+    {% endfor -%}
+    dim: u32,
 }
 
 @group(1) @binding(0)
@@ -73,23 +62,14 @@ fn main(
     var dst_index = offsetToNdIndex(dst_offset, metadata.dst_stride);
 
     let dim = metadata.dim;
-    if (dst_index[dim] < metadata.cum0) {
-        let src_offset = ndIndexToOffset(dst_index, metadata.x0_stride);
-        Y[dst_offset] = X0[src_offset];
-        return;
-    }
-
-    if (dst_index[dim] < metadata.cum1) {
-        dst_index[dim] -= metadata.cum0;
-        let src_offset = ndIndexToOffset(dst_index, metadata.x1_stride);
-        Y[dst_offset] = X1[src_offset];
-        return;
-    }
-
-    if (dst_index[dim] < metadata.cum2) {
-        dst_index[dim] -= metadata.cum1;
-        let src_offset = ndIndexToOffset(dst_index, metadata.x2_stride);
-        Y[dst_offset] = X2[src_offset];
-        return;
-    }
+    {% for i in range(end=num_inputs) -%}
+        if (dst_index[dim] < metadata.cum{{i}}) {
+            {% if i > 0 %}
+                dst_index[dim] -= metadata.cum{{i-1}};
+            {% endif -%}
+            let src_offset = ndIndexToOffset(dst_index, metadata.x{{i}}_stride);
+            Y[dst_offset] = X{{i}}[src_offset];
+            return;
+        }
+    {% endfor -%}
 }
