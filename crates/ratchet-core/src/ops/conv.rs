@@ -3,7 +3,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, shape, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
@@ -66,8 +66,6 @@ impl Operation for Conv {
 }
 
 impl MetaOperation for Conv {
-    type Meta = ConvMeta;
-
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input, &self.weight, self.bias.as_ref().unwrap()]
     }
@@ -97,18 +95,18 @@ impl MetaOperation for Conv {
         Ok(BindGroupLayoutDescriptor::ternary())
     }
 
-    fn metadata(
+    fn write_metadata(
         &self,
+        uniform: &mut CpuUniform,
         dst: &Tensor,
-        _kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let [_N, Cin, Lin]: [usize; 3] = self.input.shape().try_into()?;
         let [_Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
         let [_, _, Lout]: [usize; 3] = dst.shape().try_into()?;
         let F_numel = Cin * KS;
         let Fperthread = WorkgroupCount::div_ceil(F_numel, 256);
-
-        Ok(ConvMeta::new(
+        let meta = ConvMeta::new(
             self.stride as _,
             self.padding as _,
             Cin as _,
@@ -117,7 +115,9 @@ impl MetaOperation for Conv {
             F_numel as _,
             Lout as _,
             Fperthread as _,
-        ))
+        );
+
+        Ok(uniform.write(&meta)?)
     }
 }
 

@@ -10,7 +10,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, KernelElement, MetaOperation, OpMetadata, OperationError, RVec, Shape, Strides,
     Tensor,
 };
@@ -31,7 +31,7 @@ pub struct ReindexMeta {
     dst_stride: glam::UVec4,
     src_numel: u32,
     dst_numel: u32,
-    //"Optional" fields below (if not present, they are set to 0)
+    //"Optional" fields below (if not present, they are set to 0) this is dumb
     permute: glam::UVec4,
     src_offsets: glam::UVec4,
 }
@@ -39,8 +39,6 @@ pub struct ReindexMeta {
 impl OpMetadata for ReindexMeta {}
 
 impl MetaOperation for Reindex {
-    type Meta = ReindexMeta;
-
     fn srcs(&self) -> RVec<&Tensor> {
         match self {
             Reindex::Permute(p) => rvec![&p.src],
@@ -82,27 +80,27 @@ impl MetaOperation for Reindex {
         format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
 
-    fn metadata(
+    fn write_metadata(
         &self,
+        uniform: &mut CpuUniform,
         dst: &Tensor,
-        _kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
-        let padder = |mut shape: Shape| {
-            shape.left_pad_to(1, 4);
-            let strides = Strides::from(&shape);
-            (shape, strides)
-        };
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
+        //This is gross
         let srcs = self.srcs();
         let src = srcs.first().unwrap();
-        let (input_shape, input_strides) = padder(src.shape().clone());
-        let (dst_shape, dst_strides) = padder(dst.shape().clone());
+        let src_shape = Shape::promote(src.shape().clone(), 4);
+        let dst_shape = Shape::promote(dst.shape().clone(), 4);
 
-        let src_stride = UVec4::from(&input_strides);
+        let src_strides = Strides::from(&src_shape);
+        let dst_strides = Strides::from(&dst_shape);
+
+        let src_stride = UVec4::from(&src_strides);
         let dst_stride = UVec4::from(&dst_strides);
-        let src_numel = input_shape.numel() as u32;
+        let src_numel = src_shape.numel() as u32;
         let dst_numel = dst_shape.numel() as u32;
 
-        let src_shape = UVec4::from(&input_shape);
+        let src_shape = UVec4::from(&src_shape);
         let dst_shape = UVec4::from(&dst_shape);
 
         //TODO: move this to the inner ops
@@ -139,6 +137,6 @@ impl MetaOperation for Reindex {
             permute,
             src_offsets,
         };
-        Ok(meta)
+        Ok(uniform.write(&meta)?)
     }
 }

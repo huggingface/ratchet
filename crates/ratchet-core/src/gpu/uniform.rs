@@ -15,6 +15,7 @@ pub struct CpuUniform(DynamicUniformBuffer<Vec<u8>>);
 
 ///Uniforms must be 256-byte aligned, encase handles this for us.
 pub const UNIFORM_ALIGN: usize = 256;
+pub const DEFAULT_UNIFORM_SIZE: usize = 16384;
 
 impl Default for CpuUniform {
     fn default() -> Self {
@@ -24,7 +25,9 @@ impl Default for CpuUniform {
 
 impl CpuUniform {
     pub fn new() -> Self {
-        Self(DynamicUniformBuffer::new(Vec::new()))
+        Self(DynamicUniformBuffer::new(Vec::with_capacity(
+            DEFAULT_UNIFORM_SIZE,
+        )))
     }
 
     pub fn into_inner(self) -> Vec<u8> {

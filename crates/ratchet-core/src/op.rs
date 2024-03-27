@@ -1,6 +1,6 @@
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-    PoolError, WgpuDevice, WorkgroupCount,
+    PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
 };
 use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
 use encase::internal::WriteInto;
@@ -15,6 +15,7 @@ pub enum LazyOp {
     Binary(Binary),
     Unary(Unary),
     Reindex(Reindex),
+    Concat(Concat),
     // ---- Everything below this line shouldn't exist ----
     Softmax(Softmax),
     Norm(Norm),
@@ -32,6 +33,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.kernel_key(dst),
             LazyOp::Unary(u) => u.kernel_key(dst),
             LazyOp::Reindex(r) => r.kernel_key(dst),
+            LazyOp::Concat(c) => c.kernel_key(dst),
             LazyOp::Norm(n) => n.kernel_key(dst),
             LazyOp::Conv(c) => c.kernel_key(dst),
             LazyOp::Select(s) => s.kernel_key(dst),
@@ -48,6 +50,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.srcs(),
             LazyOp::Unary(u) => u.srcs(),
             LazyOp::Reindex(r) => r.srcs(),
+            LazyOp::Concat(c) => c.srcs(),
             LazyOp::Norm(n) => n.srcs(),
             LazyOp::Conv(c) => c.srcs(),
             LazyOp::Select(s) => s.srcs(),
@@ -64,6 +67,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.supports_inplace(),
             LazyOp::Unary(u) => u.supports_inplace(),
             LazyOp::Reindex(r) => r.supports_inplace(),
+            LazyOp::Concat(c) => c.supports_inplace(),
             LazyOp::Norm(n) => n.supports_inplace(),
             LazyOp::Conv(c) => c.supports_inplace(),
             LazyOp::Select(s) => s.supports_inplace(),
@@ -89,6 +93,7 @@ impl LazyOp {
                 Reindex::Slice(s) => s.check_invariants(),
                 Reindex::Broadcast(b) => b.check_invariants(),
             },
+            LazyOp::Concat(c) => c.check_invariants(),
             LazyOp::Norm(n) => match n {
                 Norm::LayerNorm(ln) => ln.check_invariants(),
             },
@@ -115,8 +120,13 @@ pub enum OperationError {
     UnknownError(#[from] anyhow::Error),
 }
 
-///A trait for types that are written into uniform buffers, these
-///hold the metadata for a shader.
+/// # OpMetadata
+///
+/// Marker trait for metadata structs that are written into the uniform buffer for each kernel.
+///
+/// Some kernels may not know their metadata at compile time, so this is not an associated type.
+/// If they do not know their metadata at compile time, they should use [DynamicUniformBuffer] from
+/// encase.
 pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
 
 /// # MetaOperation
@@ -125,10 +135,6 @@ pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
 /// Some types may implement both Operation and MetaOperation, if there is no variance
 /// in output shape or invariants between the members of the family.
 pub trait MetaOperation: Debug + 'static {
-    ///Meta is a struct containing all data written into our uniform buffer.
-    ///Typically contains shapes or strides.
-    type Meta: OpMetadata;
-
     /// Return the file stem of the kernel source file.
     fn kernel_key(&self, dst: &Tensor) -> String;
 
@@ -156,11 +162,18 @@ pub trait MetaOperation: Debug + 'static {
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError>;
 
-    fn metadata(
+    /// # Metadata
+    ///
+    /// Each kernel has zero or more required metadata fields (e.g shape, strides, etc).
+    /// This is stored in a uniform buffer, for faster access.
+    ///
+    /// The metadata is limited to 256 bytes per kernel.
+    fn write_metadata(
         &self,
+        uniform: &mut CpuUniform,
         dst: &Tensor,
         kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError>;
+    ) -> Result<u64, OperationError>;
 
     fn compile(
         &self,
@@ -170,8 +183,9 @@ pub trait MetaOperation: Debug + 'static {
         can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let meta = self.metadata(dst, &kernel_element)?;
-        let offset = uniform.write(&meta)?;
+        let prev_offset = uniform.as_ref().len();
+        let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
+        assert!(offset - prev_offset <= UNIFORM_ALIGN); //Each kernel has a 256 byte limit
 
         let workgroup_count = self.calculate_dispatch(dst)?;
 

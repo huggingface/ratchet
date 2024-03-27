@@ -101,6 +101,12 @@ impl BindGroupLayoutDescriptor {
         ]
     }
 
+    pub fn nthary(n: usize) -> Self {
+        Self {
+            entries: Self::entries(n),
+        }
+    }
+
     pub fn uniform() -> Self {
         Self {
             entries: rvec![wgpu::BindGroupLayoutEntry::dynamic_uniform_buffer()],

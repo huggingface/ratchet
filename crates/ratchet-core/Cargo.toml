@@ -33,7 +33,7 @@ rustc-hash = "1.1.0"
 slotmap = "1.0.7"
 parking_lot = "0.12.1"
 smallvec = "1.11.2"
-encase = { version = "0.7.0", features = ["smallvec", "glam"] }
+encase = { git="https://github.com/cwfitzgerald/encase", branch="add-member", features=["smallvec","glam"] }
 pollster = "0.3.0"
 anyhow = "1.0.79"
 getrandom = { version = "0.2", features = ["js"] } # Needed for wasm support in `num` trait

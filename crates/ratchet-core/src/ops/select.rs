@@ -2,7 +2,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
@@ -50,8 +50,6 @@ impl OpGuards for IndexSelect {
 }
 
 impl MetaOperation for IndexSelect {
-    type Meta = IndexSelectMeta;
-
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input, &self.indices]
     }
@@ -92,11 +90,12 @@ impl MetaOperation for IndexSelect {
         }
     }
 
-    fn metadata(
+    fn write_metadata(
         &self,
+        uniform: &mut CpuUniform,
         dst: &Tensor,
-        _kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let dst_numel = dst.shape().numel() as u32;
         let right_numel = self.input.shape()[(self.dim + 1)..]
             .iter()
@@ -104,12 +103,13 @@ impl MetaOperation for IndexSelect {
         let ids_numel = self.indices.shape().numel() as u32;
         let src_dim_numel = self.input.shape()[self.dim] as u32;
 
-        Ok(IndexSelectMeta {
+        let meta = IndexSelectMeta {
             dst_numel,
             right_numel,
             ids_numel,
             src_dim_numel,
-        })
+        };
+        Ok(uniform.write(&meta)?)
     }
 }
 

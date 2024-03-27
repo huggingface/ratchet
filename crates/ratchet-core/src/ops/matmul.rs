@@ -4,7 +4,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, DType, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata,
     Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
@@ -304,8 +304,6 @@ impl OpGuards for Matmul {
 }
 
 impl MetaOperation for Matmul {
-    type Meta = MatmulMeta;
-
     fn kernel_key(&self, dst: &Tensor) -> String {
         let spec = self.compute_spec(dst);
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
@@ -385,7 +383,12 @@ impl MetaOperation for Matmul {
         Ok(layout)
     }
 
-    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Meta, OperationError> {
+    fn write_metadata(
+        &self,
+        uniform: &mut CpuUniform,
+        dst: &Tensor,
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let spec = self.compute_spec(dst);
 
         let mut a_shape = spec.a_shape.clone();
@@ -404,7 +407,7 @@ impl MetaOperation for Matmul {
         let dimBOuter = spec.dim_b_outer() as i32;
         let dimInner = spec.dim_inner() as i32;
 
-        Ok(MatmulMeta {
+        let meta = MatmulMeta {
             aShape: a_shape.into(),
             aStrides: aStrides.into(),
             bShape: b_shape.into(),
@@ -414,7 +417,8 @@ impl MetaOperation for Matmul {
             dimAOuter,
             dimBOuter,
             dimInner,
-        })
+        };
+        Ok(uniform.write(&meta)?)
     }
 }
 
