@@ -1,10 +1,8 @@
 use derive_new::new;
-use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, StorageView, Strides, Tensor,
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount}, KernelElement, MetaOperation, OpGuards, Operation,
+    OperationError, RVec, StorageView, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
