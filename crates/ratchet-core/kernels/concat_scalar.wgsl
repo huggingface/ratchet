@@ -24,7 +24,9 @@ struct Meta {
     x2_shape: vec4<u32>,
     x2_stride: vec4<u32>,
     x2_numel: u32,
-    cumsum: [u32; 3],
+    cum0: u32,
+    cum1: u32,
+    cum2: u32,
 }
 
 @group(1) @binding(0)
@@ -45,10 +47,10 @@ fn offsetToNdIndex(offset: u32, stride: vec4<u32>) -> vec4<u32> {
 }
 
 //Converts 4D index into 1D offset
-fn ndIndexToOffset(index: vec4<u32>, src_offsets: vec4<u32>, stride: vec4<u32>) -> u32 {
+fn ndIndexToOffset(index: vec4<u32>, stride: vec4<u32>) -> u32 {
     var offset: u32 = 0u;
     for (var i: i32 = 0; i < 4; i++) {
-        offset += (index[i] + src_offsets[i]) * stride[i];
+        offset += index[i] * stride[i];
     }
     return offset;
 }
@@ -68,24 +70,25 @@ fn main(
         return;
     }
     //Convert 1D offset into 4D index
-    let dst_index = offsetToNdIndex(dst_offset, metadata.dst_stride);
+    var dst_index = offsetToNdIndex(dst_offset, metadata.dst_stride);
 
-    if (dst_index[dim] < metadata.cumsum[0]) {
-        let src_offset = ndIndexToOffset(dst_index, metadata.x0_stride, metadata.x0_shape);
+    let dim = metadata.dim;
+    if (dst_index[dim] < metadata.cum0) {
+        let src_offset = ndIndexToOffset(dst_index, metadata.x0_stride);
         Y[dst_offset] = X0[src_offset];
         return;
     }
 
-    if (dst_index[dim] < metadata.cumsum[1]) {
-        dst_index[dim] -= metadata.cumsum[0];
-        let src_offset = ndIndexToOffset(dst_index, metadata.x1_stride, metadata.x1_shape);
+    if (dst_index[dim] < metadata.cum1) {
+        dst_index[dim] -= metadata.cum0;
+        let src_offset = ndIndexToOffset(dst_index, metadata.x1_stride);
         Y[dst_offset] = X1[src_offset];
         return;
     }
 
-    if (dst_index[dim] < metadata.cumsum[2]) {
-        dst_index[dim] -= metadata.cumsum[1];
-        let src_offset = ndIndexToOffset(dst_index, metadata.x2_stride, metadata.x2_shape);
+    if (dst_index[dim] < metadata.cum2) {
+        dst_index[dim] -= metadata.cum1;
+        let src_offset = ndIndexToOffset(dst_index, metadata.x2_stride);
         Y[dst_offset] = X2[src_offset];
         return;
     }

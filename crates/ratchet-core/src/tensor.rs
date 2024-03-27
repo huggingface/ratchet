@@ -366,6 +366,15 @@ impl Tensor {
         Ok(Tensor::shallow(LazyOp::View(op), out_view, storage, device))
     }
 
+    pub fn cat(tensors: RVec<Tensor>, dim: usize) -> anyhow::Result<Tensor> {
+        let device = tensors[0].device.clone();
+        assert!(tensors.iter().all(|t| t.device == device), "Mixed devices");
+
+        let cat = Concat::new(tensors, dim);
+        let new_view = cat.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Concat(cat), new_view, device))
+    }
+
     pub fn permute(self, dims: &[usize]) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
         let permute = Permute::new(self, dims.to_vec());
@@ -610,6 +619,7 @@ impl Tensor {
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Concat(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace).ok(),
@@ -658,6 +668,7 @@ impl Tensor {
             crate::plot::render_to_file(last, "allocations.svg").unwrap();
         }
 
+        println!("COMPILED OPS: {:#?}", compiled_ops);
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
         let index = executable.dispatch_operations(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));

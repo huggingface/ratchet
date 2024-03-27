@@ -15,6 +15,7 @@ pub enum LazyOp {
     Binary(Binary),
     Unary(Unary),
     Reindex(Reindex),
+    Concat(Concat),
     // ---- Everything below this line shouldn't exist ----
     Softmax(Softmax),
     Norm(Norm),
@@ -32,6 +33,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.kernel_key(dst),
             LazyOp::Unary(u) => u.kernel_key(dst),
             LazyOp::Reindex(r) => r.kernel_key(dst),
+            LazyOp::Concat(c) => c.kernel_key(dst),
             LazyOp::Norm(n) => n.kernel_key(dst),
             LazyOp::Conv(c) => c.kernel_key(dst),
             LazyOp::Select(s) => s.kernel_key(dst),
@@ -48,6 +50,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.srcs(),
             LazyOp::Unary(u) => u.srcs(),
             LazyOp::Reindex(r) => r.srcs(),
+            LazyOp::Concat(c) => c.srcs(),
             LazyOp::Norm(n) => n.srcs(),
             LazyOp::Conv(c) => c.srcs(),
             LazyOp::Select(s) => s.srcs(),
@@ -64,6 +67,7 @@ impl LazyOp {
             LazyOp::Softmax(s) => s.supports_inplace(),
             LazyOp::Unary(u) => u.supports_inplace(),
             LazyOp::Reindex(r) => r.supports_inplace(),
+            LazyOp::Concat(c) => c.supports_inplace(),
             LazyOp::Norm(n) => n.supports_inplace(),
             LazyOp::Conv(c) => c.supports_inplace(),
             LazyOp::Select(s) => s.supports_inplace(),
@@ -89,6 +93,7 @@ impl LazyOp {
                 Reindex::Slice(s) => s.check_invariants(),
                 Reindex::Broadcast(b) => b.check_invariants(),
             },
+            LazyOp::Concat(c) => c.check_invariants(),
             LazyOp::Norm(n) => match n {
                 Norm::LayerNorm(ln) => ln.check_invariants(),
             },
@@ -187,7 +192,9 @@ pub trait MetaOperation: Debug + 'static {
         self.update(dst)?;
         let kernel_element = self.kernel_element(dst);
         let prev_offset = uniform.as_ref().len();
+        println!("PREV OFFSET: {}", prev_offset);
         let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
+        println!("OFFSET: {}", offset);
         assert!(offset - prev_offset <= UNIFORM_ALIGN); //Each kernel has a 256 byte limit
 
         let workgroup_count = self.calculate_dispatch(dst)?;

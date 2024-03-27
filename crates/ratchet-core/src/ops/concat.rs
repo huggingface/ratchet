@@ -2,7 +2,7 @@ use derive_new::new;
 use glam::UVec4;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount, UNIFORM_ALIGN},
     wgc, KernelElement, MetaOperation, OpGuards, Operation, OperationError, RVec, Shape,
     StorageView, Strides, Tensor,
 };
@@ -15,7 +15,12 @@ pub struct Concat {
 
 impl Operation for Concat {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        todo!()
+        let first = &self.inputs[0];
+        let stacked_dim = self.inputs.iter().map(|x| x.shape()[self.dim]).sum();
+        let mut output_shape = first.shape().clone();
+        output_shape[self.dim] = stacked_dim;
+        let output_strides = Strides::from(&output_shape);
+        Ok(StorageView::new(output_shape, first.dt(), output_strides))
     }
 }
 
@@ -96,15 +101,15 @@ impl MetaOperation for Concat {
         let dst_shape = Shape::promote(dst.shape().clone(), 4);
         let dst_strides = Strides::from(&dst_shape);
 
-        uniform.write_struct_member(&(promoted_dim as u32));
-        uniform.write_struct_member(&UVec4::from(&dst_shape));
-        uniform.write_struct_member(&UVec4::from(&dst_strides));
-        uniform.write_struct_member(&(dst_shape.numel() as u32));
+        let _ = uniform.write_struct_member(&(promoted_dim as u32));
+        let _ = uniform.write_struct_member(&UVec4::from(&dst_shape));
+        let _ = uniform.write_struct_member(&UVec4::from(&dst_strides));
+        let _ = uniform.write_struct_member(&(dst_shape.numel() as u32));
 
         for (shape, strides) in input_shapes.iter().zip(input_strides.iter()) {
-            uniform.write_struct_member(&UVec4::from(shape));
-            uniform.write_struct_member(&UVec4::from(strides));
-            uniform.write_struct_member(&(shape.numel() as u32));
+            let _ = uniform.write_struct_member(&UVec4::from(shape));
+            let _ = uniform.write_struct_member(&UVec4::from(strides));
+            let _ = uniform.write_struct_member(&(shape.numel() as u32));
         }
         let cumsum = input_shapes
             .iter()
@@ -114,10 +119,76 @@ impl MetaOperation for Concat {
                 Some(*acc)
             })
             .collect::<Vec<u32>>();
-        uniform.write_struct_member(&cumsum);
-        Ok(uniform.write_struct_end()?)
+        for &c in cumsum.iter() {
+            let _ = uniform.write_struct_member(&c)?;
+        }
+        //This seems strange, but `write_struct_end` returns the ROUNDED UP offset of the struct
+        //with standard `.write()` it returns the offset where the struct writing started
+        Ok(uniform.write_struct_end()? - UNIFORM_ALIGN as u64)
     }
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::{rvec, shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
+    #[derive(Debug)]
+    struct ConcatProblem {
+        t0: Tensor,
+        t1: Tensor,
+        t2: Tensor,
+        dim: usize,
+    }
+
+    fn ground_truth(to_cat: &[&Tensor], args: &str) -> anyhow::Result<Tensor> {
+        let prg = format!(
+            r#"
+import torch
+import numpy as np
+def permute(t0, t1, t2):
+    t0 = torch.from_numpy(t0)
+    t1 = torch.from_numpy(t1)
+    t2 = torch.from_numpy(t2)
+    return np.ascontiguousarray(torch.cat((t0, t1, t2), dim={}).numpy())
+"#,
+            args
+        );
+        run_py_prg(prg.to_string(), to_cat, &[])
+    }
+
+    fn run_concat_trial(prob: ConcatProblem) -> anyhow::Result<()> {
+        let ConcatProblem {
+            mut t0,
+            mut t1,
+            mut t2,
+            dim,
+        } = prob;
+        let device = GPU_DEVICE.with(|d| d.clone());
+
+        let arg_str = format!("{}", dim);
+        let ground = ground_truth(&[&t0, &t1, &t2], arg_str.as_str())?;
+
+        t0 = t0.to(&device)?;
+        t1 = t1.to(&device)?;
+        t2 = t2.to(&device)?;
+        let ours = Tensor::cat(rvec![t0, t1, t2], dim)?.resolve()?;
+        let result = ours.to(&Device::CPU)?;
+        println!("Ground: {:?}\n", ground);
+        println!("Ours: {:?}", result);
+        ground.all_close(&result, 1e-5, 1e-5)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_permute() {
+        let t0 = Tensor::randn::<f32>(shape![2, 128, 128], Device::CPU);
+        let t1 = Tensor::randn::<f32>(shape![1, 128, 128], Device::CPU);
+        let t2 = Tensor::randn::<f32>(shape![2, 128, 128], Device::CPU);
+        let dim = 0;
+        run_concat_trial(ConcatProblem { t0, t1, t2, dim }).unwrap();
+    }
+}

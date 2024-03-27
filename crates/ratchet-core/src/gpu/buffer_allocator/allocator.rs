@@ -55,6 +55,7 @@ impl BufferAllocator {
 
     pub fn create_uniform_init(&self, uniform: CpuUniform, device: &WgpuDevice) -> PooledGPUBuffer {
         let mut uniform = uniform.into_inner();
+        println!("Original uniform length: {}", uniform.len());
         uniform.resize(
             uniform.len() + UNIFORM_ALIGN - uniform.len() % UNIFORM_ALIGN,
             0u8,
