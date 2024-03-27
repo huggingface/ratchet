@@ -86,22 +86,21 @@ impl MetaOperation for Reindex {
         dst: &Tensor,
         _: &KernelElement,
     ) -> Result<u64, OperationError> {
-        let padder = |mut shape: Shape| {
-            shape.left_pad_to(1, 4);
-            let strides = Strides::from(&shape);
-            (shape, strides)
-        };
+        //This is gross
         let srcs = self.srcs();
         let src = srcs.first().unwrap();
-        let (input_shape, input_strides) = padder(src.shape().clone());
-        let (dst_shape, dst_strides) = padder(dst.shape().clone());
+        let src_shape = Shape::promote(src.shape().clone(), 4);
+        let dst_shape = Shape::promote(dst.shape().clone(), 4);
 
-        let src_stride = UVec4::from(&input_strides);
+        let src_strides = Strides::from(&src_shape);
+        let dst_strides = Strides::from(&dst_shape);
+
+        let src_stride = UVec4::from(&src_strides);
         let dst_stride = UVec4::from(&dst_strides);
-        let src_numel = input_shape.numel() as u32;
+        let src_numel = src_shape.numel() as u32;
         let dst_numel = dst_shape.numel() as u32;
 
-        let src_shape = UVec4::from(&input_shape);
+        let src_shape = UVec4::from(&src_shape);
         let dst_shape = UVec4::from(&dst_shape);
 
         //TODO: move this to the inner ops

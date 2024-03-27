@@ -422,6 +422,10 @@ lazy_static! {
             include_str!(r"../kernels/softmax_vec2.wgsl"),
         );
         m.insert(
+            "concat_scalar",
+            include_str!(r"../kernels/concat_scalar.wgsl"),
+        );
+        m.insert(
             "softmax_scalar",
             include_str!(r"../kernels/softmax_scalar.wgsl"),
         );
