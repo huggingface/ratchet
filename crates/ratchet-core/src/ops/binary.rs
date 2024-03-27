@@ -2,7 +2,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
@@ -82,7 +82,6 @@ impl Operation for Binary {
 }
 
 impl MetaOperation for Binary {
-    type Meta = BinaryMeta;
     fn kernel_key(&self, dst: &Tensor) -> String {
         format!(
             "{}_{}",
@@ -134,13 +133,15 @@ impl MetaOperation for Binary {
         Ok(BindGroupLayoutDescriptor::binary())
     }
 
-    fn metadata(
+    fn write_metadata(
         &self,
+        uniform: &mut CpuUniform,
         dst: &Tensor,
         _kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
+    ) -> Result<u64, OperationError> {
         let numel = dst.shape().numel() as _;
-        Ok(BinaryMeta { numel })
+        let meta = BinaryMeta { numel };
+        Ok(uniform.write(&meta)?)
     }
 }
 
@@ -175,7 +176,7 @@ def {}(a, b):
 
     fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let BinaryProblem { op, mut shape } = prob;
+        let BinaryProblem { op, shape } = prob;
         let a = Tensor::randn::<f32>(shape.clone(), cpu_device.clone());
         let b = Tensor::randn::<f32>(shape, cpu_device.clone());
         let ground = ground_truth(&a, &b, &op)?;

@@ -311,7 +311,7 @@ impl DecodingTask {
         audio_ctx: Tensor,
         callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
-        let mut tokens = self.main_loop(decoder, audio_ctx, &callback)?;
+        let mut tokens = self.main_loop(decoder, audio_ctx, callback)?;
 
         tokens = tokens.drain(self.initial_tokens_len.unwrap()..).collect();
         let eot_index = tokens.iter().position(|x| *x == WhisperTokenizer::EOT);

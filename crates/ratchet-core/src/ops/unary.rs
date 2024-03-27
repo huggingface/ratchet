@@ -2,7 +2,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
     StorageView, Tensor,
 };
@@ -82,8 +82,6 @@ impl Operation for Unary {
 }
 
 impl MetaOperation for Unary {
-    type Meta = UnaryMeta;
-
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
     }
@@ -136,14 +134,16 @@ impl MetaOperation for Unary {
         )
     }
 
-    fn metadata(
+    fn write_metadata(
         &self,
-        _dst: &Tensor,
-        _kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
+        uniform: &mut CpuUniform,
+        _: &Tensor,
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let a = &self.input;
         let numel = a.shape().numel() as u32;
-        Ok(UnaryMeta { numel })
+        let meta = UnaryMeta { numel };
+        Ok(uniform.write(&meta)?)
     }
 }
 

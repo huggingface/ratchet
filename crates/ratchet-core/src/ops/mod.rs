@@ -1,4 +1,5 @@
 mod binary;
+mod concat;
 mod conv;
 mod index_write;
 mod matmul;
@@ -9,6 +10,7 @@ mod softmax;
 mod unary;
 
 pub use binary::*;
+pub use concat::*;
 pub use conv::*;
 pub use index_write::*;
 pub use matmul::*;

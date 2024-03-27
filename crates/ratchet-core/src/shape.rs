@@ -77,6 +77,13 @@ impl Shape {
         }
     }
 
+    #[inline]
+    pub fn promote(shape: Shape, rank: usize) -> Shape {
+        let mut shape = shape;
+        shape.left_pad_to(1, rank);
+        shape
+    }
+
     pub fn drain<R>(&mut self, range: R) -> smallvec::Drain<'_, [usize; 4]>
     where
         R: std::ops::RangeBounds<usize>,

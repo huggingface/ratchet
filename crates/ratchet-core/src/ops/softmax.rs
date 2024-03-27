@@ -2,7 +2,7 @@ use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
     StorageView, Tensor,
 };
@@ -43,8 +43,6 @@ impl Operation for Softmax {
 }
 
 impl MetaOperation for Softmax {
-    type Meta = SoftmaxMeta;
-
     fn supports_inplace(&self) -> bool {
         true
     }
@@ -86,17 +84,19 @@ impl MetaOperation for Softmax {
         Ok(BindGroupLayoutDescriptor::unary_inplace())
     }
 
-    fn metadata(
+    fn write_metadata(
         &self,
-        _dst: &Tensor,
-        _kernel_element: &KernelElement,
-    ) -> Result<Self::Meta, OperationError> {
+        uniform: &mut CpuUniform,
+        _: &Tensor,
+        _: &KernelElement,
+    ) -> Result<u64, OperationError> {
         let input = &self.input;
         let M = input.shape()[self.dim - 1] as u32;
         let N = input.shape()[self.dim] as u32;
         let ND2 = N / 2;
         let ND4 = N / 4;
-        Ok(SoftmaxMeta { M, N, ND2, ND4 })
+        let meta = SoftmaxMeta { M, N, ND2, ND4 };
+        Ok(uniform.write(&meta)?)
     }
 }
 
