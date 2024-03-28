@@ -18,6 +18,7 @@ pub enum UnaryOp {
     Relu,
     Floor,
     Ceil,
+    Neg,
 }
 
 impl std::fmt::Display for UnaryOp {
@@ -34,6 +35,7 @@ impl std::fmt::Display for UnaryOp {
             UnaryOp::Relu => "relu",
             UnaryOp::Floor => "floor",
             UnaryOp::Ceil => "ceil",
+            UnaryOp::Neg => "neg",
         };
         write!(f, "{}", s)
     }
@@ -50,6 +52,7 @@ impl Generate for UnaryOp {
                     let mut context = Context::new();
                     let tera_func = match func {
                         UnaryOp::Tanh => String::from("safe_tanh"),
+                        UnaryOp::Neg => String::from("-"),
                         _ => func.to_string(),
                     };
                     context.insert("inplace", inplace);

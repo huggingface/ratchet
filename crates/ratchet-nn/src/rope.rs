@@ -60,9 +60,35 @@ impl RotaryEmbedding {
         Tensor::cat(&[&xs_rot, &xs_pass], D::Minus1)
     }
      */
-    pub fn apply_rotary_embedding(&self, x: Tensor, index_pos: usize) -> anyhow::Result<Tensor> {
-        let [batch_size, n_heads, seq_len, n_embeddings] = x.shape().try_into()?;
-        todo!()
+    pub fn apply_rotary_embedding(&self, xs: Tensor, offset: usize) -> anyhow::Result<Tensor> {
+        let [bsz, n_heads, seq_len, hdim] = xs.shape().try_into()?;
+
+        let sin = self
+            .sin
+            .clone()
+            .slice(&[offset..offset + seq_len, 0..self.dim])?;
+        let cos = self
+            .cos
+            .clone()
+            .slice(&[offset..offset + seq_len, 0..self.dim])?;
+
+        let mut x_rot = xs
+            .clone()
+            .slice(&[0..bsz, 0..n_heads, 0..seq_len, 0..self.dim])?;
+        let x_pass = xs.slice(&[0..bsz, 0..n_heads, 0..seq_len, self.dim..hdim])?;
+
+        let xs1 = x_rot
+            .clone()
+            .slice(&[0..bsz, 0..n_heads, 0..seq_len, 0..self.dim / 2])?;
+        let xs2 = x_rot
+            .clone()
+            .slice(&[0..bsz, 0..n_heads, 0..seq_len, self.dim / 2..self.dim])?;
+
+        let rotate_half = Tensor::cat(rvec![xs2.neg()?, xs1], 3)?;
+        let xs_cos = x_rot.mul(cos)?;
+        let rh_sin = rotate_half.mul(sin)?;
+        x_rot = xs_cos.add(rh_sin)?;
+        Tensor::cat(rvec![x_rot, x_pass], 3)
     }
 }
 

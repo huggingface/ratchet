@@ -24,6 +24,7 @@ pub enum UnaryOp {
     Relu,
     Floor,
     Ceil,
+    Neg,
 }
 
 impl UnaryOp {
@@ -40,6 +41,7 @@ impl UnaryOp {
             UnaryOp::Relu => "relu",
             UnaryOp::Floor => "floor",
             UnaryOp::Ceil => "ceil",
+            UnaryOp::Neg => "neg",
         }
     }
 }
@@ -228,6 +230,7 @@ def {}(a):
             UnaryOp::Relu => a_gpu.relu()?,
             UnaryOp::Floor => a_gpu.floor()?,
             UnaryOp::Ceil => a_gpu.ceil()?,
+            UnaryOp::Neg => a_gpu.neg()?,
         }
         .resolve()?;
 

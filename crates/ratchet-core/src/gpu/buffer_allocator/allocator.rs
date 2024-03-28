@@ -300,8 +300,6 @@ impl BufferAllocator {
             });
         assignments.insert(output.id(), output_buffer);
 
-        println!("ALLOCATIONS: {:#?}", assignments);
-
         log::debug!(
             "Total bytes allocated: {}kb",
             self.pool.read().total_gpu_size_in_bytes() / 1024,
