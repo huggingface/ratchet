@@ -304,7 +304,11 @@ impl OpGuards for Matmul {
 }
 
 impl MetaOperation for Matmul {
-    fn kernel_key(&self, dst: &Tensor) -> String {
+    fn kernel_name(&self) -> String {
+        "MatMul".to_string()
+    }
+
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
         let spec = self.compute_spec(dst);
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
