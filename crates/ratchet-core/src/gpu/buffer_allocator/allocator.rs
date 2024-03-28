@@ -111,24 +111,29 @@ impl BufferAllocator {
     /// # Inplace operations
     ///
     /// If an operation supports inplace, we need to "lease" the buffer
-    /// from the actual source (i.e the first non-inplace operation)
+    /// from the actual source (i.e the first non-inplace operation).
     ///
-    /// On what conditions do we terminate the upward traversal?
-    /// 1. We reach an operation that does not support inplace
-    /// 2. We reach an operation that has more than one consumer
-    /// 3. We reach an operation that has more than one source (this condition is wrong)
+    /// We traverse upwards checking how far the inplace chain goes. This is done by checking:
+    /// 1. If the operation has any sources (i.e it's not a constant)
+    /// 2. If the operation has an inplace kernel available
+    /// 3. If our PARENT (i.e the buffer we are about to apply an operation to) has multiple consumers
+    ///    if it has multiple consumers, you can't inplace
     fn determine_tensor_source(source: &Tensor) -> &Tensor {
         let mut true_source = source;
         loop {
-            let cant_inplace = !true_source.op().supports_inplace();
-            let multiple_consumers = Arc::strong_count(&true_source.inner) > 1;
-            log::debug!("Conditions: {:?} {:?}", cant_inplace, multiple_consumers);
-            if cant_inplace || multiple_consumers {
+            if true_source.op().srcs().is_empty() {
+                //If no sources, we are at the root
+                break;
+            }
+            //TODO: operations should define their "inplace" source
+            //doesn't necessarily have to be the zeroth
+            let to_modify = true_source.op().srcs()[0];
+            let multiple_consumers = Arc::strong_count(&to_modify.inner) > 1;
+            if !true_source.op().supports_inplace() || multiple_consumers {
                 break;
             }
 
-            true_source = true_source.op().srcs()[0]; //TODO: this shouldn't be 0, operations
-                                                      //should define their inplace source
+            true_source = to_modify;
         }
         log::debug!("Traversed to true source: {:?}", true_source.id());
         true_source
@@ -252,7 +257,6 @@ impl BufferAllocator {
         execution_order: &[&Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
-        println!("EXECUTION ORDER: {:#?}", execution_order);
         let mut free = Vec::new(); //TODO: switch to BTreeMap
         let mut assignments = FxHashMap::default();
         //Assignments already needs all of the constants in it.
@@ -269,6 +273,9 @@ impl BufferAllocator {
                 assignments.insert(t.id(), pooled);
             }
         }
+
+        //Allocate intermediates
+        self.greedy_by_size(execution_order, &mut assignments, device)?;
 
         //The output tensor is a special case.
         //We know we need an allocation for the output.
@@ -291,11 +298,7 @@ impl BufferAllocator {
                     device,
                 )
             });
-        println!("OUTPUT BUFFER: {:?}", output_buffer);
         assignments.insert(output.id(), output_buffer);
-
-        //Allocate intermediates
-        self.greedy_by_size(execution_order, &mut assignments, device)?;
 
         println!("ALLOCATIONS: {:#?}", assignments);
 

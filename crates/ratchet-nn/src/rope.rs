@@ -15,6 +15,7 @@ impl Default for RotaryEmbeddingConfig {
 pub struct RotaryEmbedding {
     dim: usize,
     cos: Tensor,
+    sin: Tensor,
 }
 impl RotaryEmbedding {
     pub fn new(
@@ -41,6 +42,7 @@ impl RotaryEmbedding {
         Ok(Self {
             dim: dim as usize,
             cos: emb.clone().cos()?,
+            sin: emb.sin()?,
         })
     }
 
@@ -81,21 +83,14 @@ mod tests {
         let d = GPU_DEVICE.with(|d| d.clone());
         let mut rope = RotaryEmbedding::new(dim, max_position_embeddings, rope_theta, d)?;
         rope.cos = rope.cos.resolve()?;
+        rope.sin = rope.sin.resolve()?;
 
         let cpu_cos = rope.cos.to(&Device::CPU)?;
-        println!("Cos: {:?}", cpu_cos);
+        println!("Cos: {:?}\n", cpu_cos);
 
-        Ok(())
-    }
+        let cpu_sin = rope.sin.to(&Device::CPU)?;
+        println!("Sin: {:?}", cpu_sin);
 
-    #[test]
-    fn dbg_rope() -> anyhow::Result<()> {
-        let gpu = GPU_DEVICE.with(|d| d.clone());
-        let rand = Tensor::randn::<f32>(shape![1, 54, 128], gpu.clone()).cos()?;
-        let randc = rand.clone();
-        let cat = Tensor::cat(rvec![rand, randc], 1)?.resolve()?;
-        let cpu_cat = cat.to(&Device::CPU)?;
-        println!("Cat: {:?}", cpu_cat);
         Ok(())
     }
 }

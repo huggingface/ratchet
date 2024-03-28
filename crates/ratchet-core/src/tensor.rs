@@ -446,6 +446,7 @@ impl Tensor {
                 T::from(sample).expect("Failed to convert sample")
             })
             .collect::<Vec<_>>();
+
         Self::from_data(data, shape, device)
     }
 
@@ -656,8 +657,9 @@ impl Tensor {
                 alignment: t.dt().size_of(),
             }));
 
+            let inplacer = t.op().srcs()[0];
             //Can inplace && only 1 consumer
-            let can_inplace = t.op().supports_inplace() && Arc::strong_count(&t.inner) == 1;
+            let can_inplace = t.op().supports_inplace() && Arc::strong_count(&inplacer.inner) == 1;
 
             if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
@@ -760,6 +762,7 @@ impl Tensor {
 
     fn to_cpu(&self) -> Result<Tensor, TensorError> {
         if self.device().is_cpu() || !self.resolved() {
+            log::warn!("Tensor may not have been resolved, try calling `resolve()` first.");
             return Ok(self.clone());
         }
         let storage_guard = self.storage();

@@ -200,6 +200,7 @@ pub trait MetaOperation: Debug + 'static {
 
         let kernel_key = self.kernel_key(can_inplace, dst);
         println!("kernel_key: {}", kernel_key);
+        println!("CAN INPLACE: {}", can_inplace);
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
             kernel_key: kernel_key.clone(),

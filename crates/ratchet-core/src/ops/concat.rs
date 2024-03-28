@@ -109,6 +109,8 @@ impl MetaOperation for Concat {
         let promoted_dim = self.dim + promotion;
         let dst_shape = Shape::promote(dst.shape().clone(), 4);
         let dst_strides = Strides::from(&dst_shape);
+        //YOU MUST WRITE THIS BEFORE STARTING
+        uniform.write_struct_end()?;
 
         let cumsum = input_shapes
             .iter()
@@ -202,11 +204,11 @@ def permute(t0, t1, t2, t3, t4):
 
     #[test]
     fn test_concat() {
-        let t0 = Tensor::randn::<f32>(shape![128, 75], Device::CPU);
-        let t1 = Tensor::randn::<f32>(shape![128, 22], Device::CPU);
-        let t2 = Tensor::randn::<f32>(shape![128, 33], Device::CPU);
-        let t3 = Tensor::randn::<f32>(shape![128, 44], Device::CPU);
-        let t4 = Tensor::randn::<f32>(shape![128, 55], Device::CPU);
+        let t0 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
+        let t1 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
+        let t2 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
+        let t3 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
+        let t4 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
 
         let dim = 1;
         run_concat_trial(ConcatProblem {
