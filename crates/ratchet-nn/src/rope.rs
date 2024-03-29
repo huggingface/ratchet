@@ -107,15 +107,13 @@ mod tests {
         let dim = (0.4 * (2560f64 / 32f64)) as usize;
         let max_position_embeddings = 2048;
         let d = GPU_DEVICE.with(|d| d.clone());
-        let mut rope = RotaryEmbedding::new(dim, max_position_embeddings, rope_theta, d)?;
-        rope.cos = rope.cos.resolve()?;
-        rope.sin = rope.sin.resolve()?;
+        let rope = RotaryEmbedding::new(dim, max_position_embeddings, rope_theta, d)?;
+        let rand = Tensor::randn::<f32>(shape![1, 32, 7, 80], rope.cos.device().clone());
 
-        let cpu_cos = rope.cos.to(&Device::CPU)?;
-        println!("Cos: {:?}\n", cpu_cos);
+        let roped = rope.apply_rotary_embedding(rand, 0)?.resolve()?;
+        let cpu_roped = roped.to(&Device::CPU)?;
 
-        let cpu_sin = rope.sin.to(&Device::CPU)?;
-        println!("Sin: {:?}", cpu_sin);
+        println!("{:?}", cpu_roped);
 
         Ok(())
     }

@@ -7,7 +7,7 @@ use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear, Module};
 use super::{attn::SelfAttention, mlp::MLP};
 
 #[derive(Debug)]
-struct DecoderLayer {
+pub struct DecoderLayer {
     ln: LayerNorm,
     self_attn: SelfAttention,
     mlp: MLP,
@@ -36,13 +36,24 @@ impl DecoderLayer {
     }
 }
 
+impl Module for DecoderLayer {
+    type Input = Tensor;
+
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let x = self.ln.forward(input)?;
+        let x = self.self_attn.forward(x);
+        //self.mlp.forward(x)
+        x
+    }
+}
+
 #[derive(Debug)]
 pub struct Phi2 {
-    embedding: Embedding,
-    layers: Vec<DecoderLayer>,
-    ln_post: LayerNorm,
-    lm_head: Linear,
-    kv_cache: KVCache,
+    pub embedding: Embedding,
+    pub layers: Vec<DecoderLayer>,
+    pub ln_post: LayerNorm,
+    pub lm_head: Linear,
+    pub kv_cache: KVCache,
 }
 
 impl Module for Phi2 {
@@ -53,8 +64,7 @@ impl Module for Phi2 {
 
         let mut layer_idx = 0;
         for layer in &self.layers {
-            x = layer.ln.forward(x)?;
-            x = layer.self_attn.forward(x)?;
+            x = layer.forward(x)?;
             if layer_idx == 0 {
                 return Ok(x);
             }
@@ -134,7 +144,6 @@ import collections
 def ground():
     extracted = collections.defaultdict(list)
     model = AutoModelForCausalLM.from_pretrained("microsoft/phi-2", torch_dtype=torch.float32, device_map="cpu", trust_remote_code=True)
-    print(model)
     tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
 
     inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
@@ -142,12 +151,8 @@ def ground():
     model.model.layers[0].self_attn.q_proj.register_forward_hook(lambda module, inputs, outputs: extracted["self_attn"].append(outputs))
     outputs = model.generate(**inputs, max_length=8, return_dict_in_generate=True, output_logits=True)
 
-    print(extracted["self_attn"])
     extracted = extracted["self_attn"][0][0].detach().numpy()
     return [extracted]
-    
-    #logits = list(outputs["logits"])
-    #return [l.detach().numpy() for l in logits]
 "#;
         Python::with_gil(|py| {
             let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
