@@ -11,8 +11,8 @@ use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use super::utils::*;
 use super::{ggml::GgmlDType, utils::*};
 use crate::gguf::utils::WriteHalf;
-use ratchet::DType;
 use ratchet::GGUFDType;
+use ratchet::{BufferSegment, DType};
 
 // Default to QK_K 256 rather than 64.
 pub const QK_K: usize = 256;
@@ -35,10 +35,10 @@ pub trait GgmlType: Sized + Clone {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error>;
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error>;
 
     fn write<W: std::io::Seek + std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error>;
 }
@@ -140,11 +140,11 @@ pub struct BlockQ3K {
 //     pub(crate) qs: Tensor,
 // }
 pub struct BlockQ4K {
-    inner: Tensor,
-    ds_offset: usize,
-    dmins_offset: usize,
-    scales_offset: usize,
-    qs_offset: usize,
+    // inner: Tensor,
+    // ds_offset: usize,
+    // dmins_offset: usize,
+    // scales_offset: usize,
+    // qs_offset: usize,
 }
 // const _: () = assert!(QK_K / 2 + K_SCALE_SIZE + 2 * 2 == std::mem::size_of::<BlockQ4K>());
 
@@ -193,12 +193,12 @@ impl GgmlType for BlockQ4_0 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
 
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -215,12 +215,12 @@ impl GgmlType for BlockQ4_1 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
 
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -237,12 +237,12 @@ impl GgmlType for BlockQ5_0 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
 
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -259,12 +259,12 @@ impl GgmlType for BlockQ5_1 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
 
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -281,11 +281,11 @@ impl GgmlType for BlockQ8_0 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -302,11 +302,11 @@ impl GgmlType for BlockQ8_1 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -323,11 +323,11 @@ impl GgmlType for BlockQ2K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -344,11 +344,11 @@ impl GgmlType for BlockQ3K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -393,7 +393,7 @@ impl GgmlType for BlockQ4K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         let mut ds = vec![0f32; tensor_blocks];
         let mut dmins = vec![0f32; tensor_blocks];
         let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
@@ -414,39 +414,52 @@ impl GgmlType for BlockQ4K {
             .map(|d| d.to_le_bytes())
             .flatten()
             .collect::<Vec<u8>>();
-        let ds_alignment = ds.align_standard();
 
         let mut dmins = dmins
             .iter()
             .map(|d| d.to_le_bytes())
             .flatten()
             .collect::<Vec<u8>>();
-        let dmins_alignment = dmins.align_standard();
 
-        let scales_alignment = scales.align_standard();
-        println!("before_alignment={:?}", (&qs).len());
-        let qs_alignment = qs.align_standard();
-        println!(
-            "after_alignment={:?}, alignment={:?}",
-            (&qs).len(),
-            qs_alignment
-        );
+        let mut tensor_data = vec![0u8; 0];
 
         let ds_offset = 0;
-        let mut tensor_data = ds;
-        let dmins_offset = tensor_data.len() + 1;
+        let ds_segment = BufferSegment::new(ds_offset, Some(ds.len() as u64));
+        let ds_alignment = ds.align_standard();
+        tensor_data.append(&mut ds);
+
+        let dmins_offset = tensor_data.len();
+        let dmins_segment = BufferSegment::new(dmins_offset as u64, Some(dmins.len() as u64));
+        let dmins_alignment = dmins.align_standard();
         tensor_data.append(&mut dmins);
-        let scales_offset = tensor_data.len() + 1;
+
+        let scales_offset = tensor_data.len();
+        let scales_segment = BufferSegment::new(scales_offset as u64, Some(scales.len() as u64));
+        let scales_alignment = scales.align_standard();
+        dbg!(scales_alignment);
         tensor_data.append(&mut scales);
-        let qs_offset = tensor_data.len() + 1;
+
+        let qs_offset = tensor_data.len();
+        let qs_segment = BufferSegment::new(qs_offset as u64, Some(qs.len() as u64));
+        let qs_alignment = qs.align_standard();
+        dbg!(qs_alignment);
         tensor_data.append(&mut qs);
 
         let tensor_data_len = (&tensor_data).len();
         dbg!(tensor_data_len, tensor_blocks, BlockQ4K::BLCK_SIZE);
+
+        let ggufdtype = GGUFDType::Q4K {
+            ds_segment,
+            dmins_segment,
+            scales_segment,
+            qs_segment,
+            size: tensor_data_len,
+        };
+        dbg!(ggufdtype);
         let inner = Tensor::from_bytes(
             &tensor_data.as_ref(),
-            DType::GGUF(GGUFDType::Q4K),
-            shape![tensor_blocks * BlockQ4K::BLCK_SIZE],
+            DType::GGUF(ggufdtype),
+            shape![tensor_blocks],
             device.clone(),
         )?;
 
@@ -472,51 +485,63 @@ impl GgmlType for BlockQ4K {
         //     scales: scales_tensor,
         //     qs: qs_tensor,
         // };
-        Ok(Block::BlockQ4K(BlockQ4K {
-            inner,
-            ds_offset,
-            dmins_offset,
-            scales_offset,
-            qs_offset,
-        }))
+        Ok(inner)
     }
 
     fn write<W: std::io::Seek + std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        let BlockQ4K {
-            inner,
-            ds_offset,
-            dmins_offset,
-            scales_offset,
-            qs_offset,
-        } = self;
+        let GGUFDType::Q4K {
+            ds_segment,
+            dmins_segment,
+            scales_segment,
+            qs_segment,
+            size,
+        } = match tensor.dt() {
+            DType::GGUF(
+                q4k @ GGUFDType::Q4K {
+                    ds_segment: _,
+                    dmins_segment: _,
+                    scales_segment: _,
+                    qs_segment: _,
+                    size,
+                },
+            ) => Ok(q4k),
+            otherwise => Err(anyhow!(
+                "Got an invalid datatype while trying to parse q4k: {:?}",
+                otherwise
+            )),
+        }?;
 
-        let tensor_blocks = inner
+        let tensor_blocks = tensor
             .shape()
             .get(0)
             .ok_or(anyhow!("Failed to get tensor blocks"))?
             .clone();
 
-        let tensor_data = inner.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
         let tensor_data = tensor_data
             .iter()
             .map(|value| value.to_le_bytes())
             .flatten()
             .collect::<Vec<u8>>();
 
+        let ds_offset = ds_segment.offset;
         let mut ds_cursor = Cursor::new(&tensor_data);
-        ds_cursor.seek(SeekFrom::Start(*ds_offset as u64))?;
+        ds_cursor.seek(SeekFrom::Start(ds_offset))?;
 
+        let dmins_offset = dmins_segment.offset;
         let mut dmins_cursor = Cursor::new(&tensor_data);
-        dmins_cursor.seek(SeekFrom::Start(*dmins_offset as u64))?;
+        dmins_cursor.seek(SeekFrom::Start(dmins_offset))?;
 
+        let scales_offset = scales_segment.offset;
         let mut scales_data_cursor = Cursor::new(&tensor_data);
-        scales_data_cursor.seek(SeekFrom::Start(*scales_offset as u64))?;
+        scales_data_cursor.seek(SeekFrom::Start(scales_offset))?;
 
+        let qs_offset = qs_segment.offset;
         let mut qs_data_cursor = Cursor::new(&tensor_data);
-        qs_data_cursor.seek(SeekFrom::Start(*qs_offset as u64))?;
+        qs_data_cursor.seek(SeekFrom::Start(qs_offset))?;
 
         for _idx in 0..tensor_blocks {
             ds_cursor.seek(SeekFrom::Current((_idx * 4) as i64))?;
@@ -567,11 +592,11 @@ impl GgmlType for BlockQ5K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -595,7 +620,7 @@ impl GgmlType for BlockQ6K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         let mut qls = vec![0u8; tensor_blocks * QK_K / 2];
         let mut qls_cursor = Cursor::new(&mut qls);
 
@@ -643,62 +668,63 @@ impl GgmlType for BlockQ6K {
             scales: scales_tensor,
             d: ds_tensor,
         };
-        Ok(Block::BlockQ6K(block_q6k))
+        // Ok(Block::BlockQ6K(block_q6k))
+        todo!()
     }
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        let BlockQ6K { ql, qh, scales, d } = self;
+        // let BlockQ6K { ql, qh, scales, d } = self;
 
-        let tensor_blocks = d
-            .shape()
-            .get(0)
-            .ok_or(anyhow!("Unable to get tensor blocks"))?;
+        // let tensor_blocks = d
+        //     .shape()
+        //     .get(0)
+        //     .ok_or(anyhow!("Unable to get tensor blocks"))?;
 
-        let ql_data = ql.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        let mut ql_data = ql_data
-            .iter()
-            .map(|value| value.to_le_bytes())
-            .flatten()
-            .collect::<Vec<u8>>();
-        let mut ql_data_cursor = Cursor::new(&mut ql_data);
+        // let ql_data = ql.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        // let mut ql_data = ql_data
+        //     .iter()
+        //     .map(|value| value.to_le_bytes())
+        //     .flatten()
+        //     .collect::<Vec<u8>>();
+        // let mut ql_data_cursor = Cursor::new(&mut ql_data);
 
-        let qh_data = qh.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        let mut qh_data = qh_data
-            .iter()
-            .map(|value| value.to_le_bytes())
-            .flatten()
-            .collect::<Vec<u8>>();
-        let mut qh_data_cursor = Cursor::new(&mut qh_data);
+        // let qh_data = qh.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        // let mut qh_data = qh_data
+        //     .iter()
+        //     .map(|value| value.to_le_bytes())
+        //     .flatten()
+        //     .collect::<Vec<u8>>();
+        // let mut qh_data_cursor = Cursor::new(&mut qh_data);
 
-        let scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        let mut scales_data = scales_data
-            .iter()
-            .map(|value| value.to_le_bytes())
-            .flatten()
-            .collect::<Vec<u8>>();
-        let mut scales_data_cursor = Cursor::new(&mut scales_data);
+        // let scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        // let mut scales_data = scales_data
+        //     .iter()
+        //     .map(|value| value.to_le_bytes())
+        //     .flatten()
+        //     .collect::<Vec<u8>>();
+        // let mut scales_data_cursor = Cursor::new(&mut scales_data);
 
-        let d_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+        // let d_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
 
-        for _idx in 0..*tensor_blocks {
-            let current_ql =
-                read_data_from_cursor(&mut ql_data_cursor, (_idx * QK_K / 2) as u64, QK_K / 2)?;
-            writer.write_all(current_ql.as_ref())?;
+        // for _idx in 0..*tensor_blocks {
+        //     let current_ql =
+        //         read_data_from_cursor(&mut ql_data_cursor, (_idx * QK_K / 2) as u64, QK_K / 2)?;
+        //     writer.write_all(current_ql.as_ref())?;
 
-            let current_qh =
-                read_data_from_cursor(&mut qh_data_cursor, (_idx * QK_K / 4) as u64, QK_K / 4)?;
-            writer.write_all(current_qh.as_ref())?;
+        //     let current_qh =
+        //         read_data_from_cursor(&mut qh_data_cursor, (_idx * QK_K / 4) as u64, QK_K / 4)?;
+        //     writer.write_all(current_qh.as_ref())?;
 
-            let current_scales = read_data_from_cursor(
-                &mut scales_data_cursor,
-                (_idx * QK_K / 16) as u64,
-                QK_K / 16,
-            )?;
-            writer.write_all(current_scales.as_ref())?;
-            writer.write_f32::<LittleEndian>(d_data[_idx])?;
-        }
+        //     let current_scales = read_data_from_cursor(
+        //         &mut scales_data_cursor,
+        //         (_idx * QK_K / 16) as u64,
+        //         QK_K / 16,
+        //     )?;
+        //     writer.write_all(current_scales.as_ref())?;
+        //     writer.write_f32::<LittleEndian>(d_data[_idx])?;
+        // }
         Ok(())
     }
 }
@@ -713,11 +739,11 @@ impl GgmlType for BlockQ8K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         todo!()
     }
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
         todo!()
@@ -737,7 +763,7 @@ impl GgmlType for BlockF32 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Block, anyhow::Error> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         println!("tensor_blocks: {:?}", tensor_blocks);
 
         let mut data = vec![0f32; tensor_blocks];
@@ -746,19 +772,19 @@ impl GgmlType for BlockF32 {
         }
 
         let tensor = Tensor::from_data(data, shape![tensor_blocks], device.clone());
-        Ok(Block::BlockF32(BlockF32(tensor)))
+        Ok(tensor)
     }
     fn write<R: std::io::Write>(
-        &self,
+        tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        let tensor = &self.0;
-        let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
-        let tensor_blocks = tensor.shape().get(0).unwrap(); // [TODO] Handle result properly
+        // let tensor = &self.0;
+        // let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+        // let tensor_blocks = tensor.shape().get(0).unwrap(); // [TODO] Handle result properly
 
-        for _idx in 0..*tensor_blocks {
-            writer.write_f32::<LittleEndian>(tensor_data[_idx])?;
-        }
+        // for _idx in 0..*tensor_blocks {
+        //     writer.write_f32::<LittleEndian>(tensor_data[_idx])?;
+        // }
         Ok(())
     }
 }

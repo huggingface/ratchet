@@ -4,7 +4,12 @@
 //!
 //! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
-use crate::{error::Result, GgmlDType};
+use super::{
+    ggml::GgmlDType,
+    new_k_quants::{BlockF32, BlockQ4K, BlockQ6K},
+    GgmlType,
+};
+use crate::error::Result;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use ratchet::{DType, Device, Shape, Tensor};
@@ -80,23 +85,31 @@ impl TensorInfo {
 
         let mut raw_data = vec![0u8; size_in_bytes]; //TODO: MaybeUninit
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
-        reader.read_exact(&mut raw_data)?;
+        // reader.read_exact(&mut raw_data)?;
 
-        let dst_type = if let Some(dtype) = dst_type {
-            //If user provides a type to transcode to, use it
-            dtype
-        } else {
-            //Else, unquantized types map nicely F32 -> F32
-            self.ggml_dtype.into()
-        };
+        // let dst_type = if let Some(dtype) = dst_type {
+        //     //If user provides a type to transcode to, use it
+        //     dtype
+        // } else {
+        //     //Else, unquantized types map nicely F32 -> F32
+        //     self.ggml_dtype.into()
+        // };
 
-        ratchet_from_gguf(
-            self.ggml_dtype,
-            dst_type,
-            &raw_data,
-            self.shape.clone(),
-            device,
-        )
+        // ratchet_from_gguf(
+        //     self.ggml_dtype,
+        //     dst_type,
+        //     &raw_data,
+        //     self.shape.clone(),
+        //     device,
+        // )
+        //
+        // [TODO] Implement
+        match self.ggml_dtype {
+            GgmlDType::Q4K => BlockQ4K::read(tensor_blocks, reader, device),
+            GgmlDType::Q6K => BlockQ6K::read(tensor_blocks, reader, device),
+            GgmlDType::F32 => BlockF32::read(tensor_blocks, reader, device),
+            _ => anyhow::bail!("Not yet implemented"),
+        }
     }
 }
 
@@ -440,7 +453,7 @@ impl Content {
 
             dimensions.reverse();
             let ggml_dtype = reader.read_u32::<LittleEndian>()?;
-            let ggml_dtype = GgmlDType::try_from(ggml_dtype).unwrap();
+            let ggml_dtype = GgmlDType::from_u32(ggml_dtype)?;
             let offset = reader.read_u64::<LittleEndian>()?;
             tensor_infos.insert(
                 tensor_name,

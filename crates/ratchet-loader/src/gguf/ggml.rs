@@ -2,6 +2,7 @@
 //
 
 use crate::error::Result;
+use crate::LoadError;
 
 use super::new_k_quants;
 use super::new_k_quants::{

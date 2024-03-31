@@ -10,7 +10,13 @@ use crate::{
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GGUFDType {
-    Q4K,
+    Q4K {
+        ds_segment: BufferSegment,
+        dmins_segment: BufferSegment,
+        scales_segment: BufferSegment,
+        qs_segment: BufferSegment,
+        size: usize,
+    },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
@@ -46,7 +52,18 @@ impl DType {
             DType::I32 => 4,
             DType::U32 => 4,
             DType::WQ8 => 4,
-            DType::GGUF(_) => todo!(),
+            DType::GGUF(GGUFDType::Q4K {
+                ds_segment: ds,
+                dmins_segment: dmins,
+                scales_segment: scales,
+                qs_segment: qs,
+                size,
+            }) => {
+                // let alignment = size / 256;
+                // println!("Q4K alignment={:?}", alignment);
+                // alignment
+                256
+            }
         }
     }
 
@@ -105,7 +122,7 @@ impl From<npyz::DType> for DType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct BufferSegment {
     pub offset: BufferAddress,
     pub size: Option<BufferSize>,

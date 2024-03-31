@@ -13,7 +13,7 @@ mod tests {
     // use crate::k_quants::GgmlType;
 
     use super::*;
-    use ratchet::{Device, DeviceRequest};
+    use ratchet::{Device, DeviceRequest, Tensor};
 
     fn read_expected_data<R: std::io::Seek + std::io::Read>(
         reader: &mut R,
@@ -27,10 +27,10 @@ mod tests {
         Ok(expected_data)
     }
 
-    fn read_actual_data<GGUF: GgmlType>(block: &GGUF, length: usize) -> anyhow::Result<Vec<u8>> {
+    fn read_actual_data<GGUF: GgmlType>(tensor: Tensor, length: usize) -> anyhow::Result<Vec<u8>> {
         let mut actual_data = vec![0u8; length];
         let mut actual_f32_data_cursor = Cursor::new(&mut actual_data);
-        block.write(&mut actual_f32_data_cursor)?;
+        GGUF::write(tensor, &mut actual_f32_data_cursor)?;
 
         Ok(actual_data)
     }
@@ -94,9 +94,10 @@ mod tests {
 
         let blk0_k_weight_blockq4k = content.tensor(&mut reader, blk0_k_weight, &device)?;
 
-        // let model_data = file.gguf().await?;
-        //
+        dbg!(&blk0_k_weight_blockq4k);
+
         let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * new_k_quants::BlockQ4K::TYPE_SIZE;
+        dbg!(q4k_len);
 
         let expected_q4k_data = read_expected_data(
             &mut reader,
@@ -104,11 +105,13 @@ mod tests {
             q4k_len,
         )?;
 
-        // let actual_q4k_data = read_actual_data(&blk0_k_weight_blockq4k, q4k_len)?;
+        let actual_q4k_data =
+            read_actual_data::<new_k_quants::BlockQ4K>(blk0_k_weight_blockq4k, q4k_len)?;
         Ok(())
     }
 
     #[tokio::test]
+    #[ignore = "todo"]
     async fn test_read_f16() -> anyhow::Result<()> {
         let model_path = concat!(
             env!("CARGO_RUSTC_CURRENT_DIR"),

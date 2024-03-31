@@ -1,7 +1,7 @@
 use half::f16;
 use ratchet::{DType, Device, Shape, Tensor, TensorDType};
 
-use crate::{k_quants::GgmlType, GgmlDType};
+use super::{ggml::GgmlDType, new_k_quants::GgmlType};
 
 /// # Transcoder
 /// Transcode GGML quantized types into Ratchet quantized types.
