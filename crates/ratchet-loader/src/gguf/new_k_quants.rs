@@ -421,31 +421,36 @@ impl GgmlType for BlockQ4K {
             .flatten()
             .collect::<Vec<u8>>();
 
-        let mut tensor_data = vec![0u8; 0];
+        let mut tensor_data = vec![0u32; 0];
 
         let ds_offset = 0;
         let ds_segment = BufferSegment::new(ds_offset, Some(ds.len() as u64));
         let ds_alignment = ds.align_standard();
-        tensor_data.append(&mut ds);
+        let mut ds_u32 = bytemuck::cast_slice::<u8, u32>(&ds).to_vec();
+        tensor_data.append(&mut ds_u32);
 
         let dmins_offset = tensor_data.len();
         let dmins_segment = BufferSegment::new(dmins_offset as u64, Some(dmins.len() as u64));
         let dmins_alignment = dmins.align_standard();
-        tensor_data.append(&mut dmins);
+        let mut dmins_u32 = bytemuck::cast_slice::<u8, u32>(&dmins).to_vec();
+        tensor_data.append(&mut dmins_u32);
 
         let scales_offset = tensor_data.len();
         let scales_segment = BufferSegment::new(scales_offset as u64, Some(scales.len() as u64));
         let scales_alignment = scales.align_standard();
         dbg!(scales_alignment);
-        tensor_data.append(&mut scales);
+        let mut scales_u32 = bytemuck::cast_slice::<u8, u32>(&scales).to_vec();
+        tensor_data.append(&mut scales_u32);
 
         let qs_offset = tensor_data.len();
         let qs_segment = BufferSegment::new(qs_offset as u64, Some(qs.len() as u64));
         let qs_alignment = qs.align_standard();
         dbg!(qs_alignment);
-        tensor_data.append(&mut qs);
+        let mut qs_u32 = bytemuck::cast_slice::<u8, u32>(&qs).to_vec();
+        tensor_data.append(&mut qs_u32);
 
         let tensor_data_len = (&tensor_data).len();
+        println!("TENSOR DATA LEN: {:?}", tensor_data_len);
         dbg!(tensor_data_len, tensor_blocks, BlockQ4K::BLCK_SIZE);
 
         let ggufdtype = GGUFDType::Q4K {
@@ -456,12 +461,14 @@ impl GgmlType for BlockQ4K {
             size: tensor_data_len,
         };
         dbg!(ggufdtype);
-        let inner = Tensor::from_bytes(
-            &tensor_data.as_ref(),
-            DType::GGUF(ggufdtype),
-            shape![tensor_blocks],
-            device.clone(),
-        )?;
+        let inner = unsafe {
+            Tensor::from_quantized::<u32, _>(
+                &tensor_data,
+                DType::GGUF(ggufdtype),
+                shape![256, 256],
+                device.clone(),
+            )
+        };
 
         // let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
         // let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
@@ -520,6 +527,8 @@ impl GgmlType for BlockQ4K {
             .ok_or(anyhow!("Failed to get tensor blocks"))?
             .clone();
 
+        //Can't just call `to_vec` here.
+        //Do something like: https://github.com/FL33TW00D/wgpu-bench/blob/master/src/quant.rs#L105
         let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
         let tensor_data = tensor_data
             .iter()

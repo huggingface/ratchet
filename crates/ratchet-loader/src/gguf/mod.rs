@@ -43,7 +43,7 @@ mod tests {
         ));
 
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(Q4K_GGUF.to_vec()));
-        let device = Device::request_device(DeviceRequest::GPU)?;
+        let device = Device::request_device(DeviceRequest::CPU)?;
         let content = gguf::Content::read(&mut reader)?;
 
         println!(
@@ -91,13 +91,11 @@ mod tests {
 
         let blk0_k_weight = "blk.0.attn_k.weight";
         let blk0_k_weight_info = content.tensor_infos.get(blk0_k_weight).unwrap();
+        println!("Tensor info: {:#?}", blk0_k_weight_info);
 
         let blk0_k_weight_blockq4k = content.tensor(&mut reader, blk0_k_weight, &device)?;
 
-        dbg!(&blk0_k_weight_blockq4k);
-
         let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * new_k_quants::BlockQ4K::TYPE_SIZE;
-        dbg!(q4k_len);
 
         let expected_q4k_data = read_expected_data(
             &mut reader,

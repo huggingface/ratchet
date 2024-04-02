@@ -81,6 +81,7 @@ impl TensorInfo {
         }
 
         let tensor_blocks = tensor_elems / block_size;
+        println!("#NUM BLOCKS: {tensor_blocks}");
         let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
 
         let mut raw_data = vec![0u8; size_in_bytes]; //TODO: MaybeUninit
