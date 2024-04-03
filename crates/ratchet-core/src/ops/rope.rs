@@ -19,7 +19,6 @@ pub struct RoPEMeta {
     in_strides: glam::UVec3,
     out_strides: glam::UVec3,
     seq_len: u32,
-    hd: u32,
     offset: u32,
     base: f32,
     scale: f32,
@@ -91,7 +90,7 @@ impl MetaOperation for RoPE {
         if inplace {
             return Ok(BindGroupLayoutDescriptor::unary_inplace());
         }
-        Ok(BindGroupLayoutDescriptor::unary())
+        panic!("RoPE does not support out-of-place operation");
     }
 
     fn write_metadata(
@@ -102,7 +101,6 @@ impl MetaOperation for RoPE {
     ) -> Result<u64, OperationError> {
         let mut input_shape = self.input.shape().clone();
         let SL = input_shape[2];
-        let HD = input_shape[3];
         let mut out_shape = dst.shape().clone();
         input_shape.remove(0);
         out_shape.remove(0);
@@ -112,7 +110,6 @@ impl MetaOperation for RoPE {
             (&in_strides).into(),
             (&out_strides).into(),
             SL as u32,
-            HD as u32,
             0,
             self.base,
             1.0,
@@ -202,22 +199,4 @@ def mlx_rope(input, dim):
         );
         run_rope_trial(prob);
     }
-
-    /*
-    #[test]
-    fn debug_rope() {
-        let prob = RoPEProblem {
-            BS: 1,
-            NH: 1,
-            SL: 15,
-            HD: 96,
-            dim: 96,
-        };
-        println!(
-            "BS = {}, NH = {}, SL = {}, HD = {}, rope_dim = {}",
-            prob.BS, prob.NH, prob.SL, prob.HD, prob.dim
-        );
-        run_rope_trial(prob);
-    }
-    */
 }

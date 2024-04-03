@@ -13,6 +13,7 @@
 //    This can be done in 2 ways: 1. q = (q1, q2, q3, q4) -> q = (q1 + iq2, q3 + iq4)
 //                                2. q = (q1, q2 ... qd/2, qd/2+1) -> q = (q1 + iqd/2, q2 + iqd/2+1)
 // 7. We then rotate these 2D coords by a fixed angle, theta, to encode relative positions.
+// Y is the token index.
         
 @group(0) @binding(0)
 var<storage, read_write> in: array<f32>;
@@ -21,7 +22,6 @@ struct Meta {
     in_strides: vec3<u32>,
     out_strides: vec3<u32>,
     seq_len: u32,
-    hd: u32,
     offset: u32,
     base: f32,
     scale: f32,
