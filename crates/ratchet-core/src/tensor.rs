@@ -316,6 +316,13 @@ impl Tensor {
         Ok(Tensor::lazy(LazyOp::Softmax(softmax), new_view, device))
     }
 
+    pub fn rope(self, base: f32, dim: usize) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let rope = RoPE::new(self, dim, f32::log2(base));
+        let new_view = rope.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::RoPE(rope), new_view, device))
+    }
+
     //TODO: horrific interface
     pub fn matmul(self, other: Tensor, trans_a: bool, trans_b: bool) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
@@ -617,6 +624,7 @@ impl Tensor {
             LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::RoPE(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Concat(c) => c.compile(self, uniform, device, can_inplace).ok(),
