@@ -13,6 +13,7 @@ anyhow.workspace = true
 bytemuck.workspace = true
 thiserror.workspace = true
 log.workspace = true
+itertools = "0.12.1"
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true

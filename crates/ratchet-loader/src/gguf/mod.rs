@@ -29,8 +29,8 @@ mod tests {
 
     fn read_actual_data<GGUF: GgmlType>(tensor: Tensor, length: usize) -> anyhow::Result<Vec<u8>> {
         let mut actual_data = vec![0u8; length];
-        let mut actual_f32_data_cursor = Cursor::new(&mut actual_data);
-        GGUF::write(tensor, &mut actual_f32_data_cursor)?;
+        let mut actual_data_cursor = Cursor::new(&mut actual_data);
+        GGUF::write(tensor, &mut actual_data_cursor)?;
 
         Ok(actual_data)
     }
@@ -96,15 +96,18 @@ mod tests {
         let blk0_k_weight_blockq4k = content.tensor(&mut reader, blk0_k_weight, &device)?;
 
         let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * new_k_quants::BlockQ4K::TYPE_SIZE;
-
         let expected_q4k_data = read_expected_data(
             &mut reader,
             content.tensor_data_offset + blk0_k_weight_info.offset,
             q4k_len,
         )?;
 
+        println!("Reading actual data");
+
         let actual_q4k_data =
             read_actual_data::<new_k_quants::BlockQ4K>(blk0_k_weight_blockq4k, q4k_len)?;
+
+        assert_eq!(expected_q4k_data, actual_q4k_data, "Q4K don't match");
         Ok(())
     }
 

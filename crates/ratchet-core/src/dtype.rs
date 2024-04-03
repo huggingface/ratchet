@@ -1,5 +1,6 @@
 use std::{cmp::max, num::NonZeroU64};
-
+pub mod gguf;
+pub use gguf::GGUFDType;
 use half::{bf16, f16};
 use wgpu::{BufferAddress, BufferSize};
 
@@ -7,17 +8,6 @@ use crate::{
     gpu::{MIN_STORAGE_BUFFER_SIZE, STORAGE_BUFFER_ALIGN},
     rvec, RVec,
 };
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum GGUFDType {
-    Q4K {
-        ds_segment: BufferSegment,
-        dmins_segment: BufferSegment,
-        scales_segment: BufferSegment,
-        qs_segment: BufferSegment,
-        size: usize,
-    },
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -29,7 +19,7 @@ pub enum DType {
     I32,
     U32,
     WQ8, //Packed Q8 (|--4xQ8(u32)--| |--f32--|)
-    GGUF(GGUFDType),
+    GGUF(gguf::GGUFDType),
 }
 
 impl DType {
@@ -52,18 +42,7 @@ impl DType {
             DType::I32 => 4,
             DType::U32 => 4,
             DType::WQ8 => 4,
-            DType::GGUF(GGUFDType::Q4K {
-                ds_segment: ds,
-                dmins_segment: dmins,
-                scales_segment: scales,
-                qs_segment: qs,
-                size,
-            }) => {
-                // let alignment = size / 256;
-                // println!("Q4K alignment={:?}", alignment);
-                // alignment
-                256
-            }
+            DType::GGUF(gguf::GGUFDType::Q4K) => 256,
         }
     }
 

@@ -2,15 +2,17 @@
 
 use anyhow::{anyhow, bail};
 use half::f16;
+use ratchet::gguf::Align;
 use ratchet::{prelude::shape, Device, Tensor};
 
-use crate::error::Result;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 use super::utils::*;
 use super::{ggml::GgmlDType, utils::*};
 use crate::gguf::utils::WriteHalf;
+use itertools::Itertools;
+use ratchet::gguf;
 use ratchet::GGUFDType;
 use ratchet::{BufferSegment, DType};
 
@@ -359,19 +361,10 @@ pub trait Padding {
     fn align_standard(&mut self) -> usize;
 }
 
-pub fn calculate_standard_alignment(length: usize) -> usize {
-    let remainder = length % 256;
-    if remainder == 0 {
-        0
-    } else {
-        256 - remainder
-    }
-}
-
 impl<T: Clone + Default> Padding for Vec<T> {
     fn align_standard(&mut self) -> usize {
         let length = &self.len();
-        let alignment = calculate_standard_alignment(length.clone());
+        let alignment = length.calculate_alignment();
         if alignment != 0 {
             let default_value: T = Default::default();
             let mut padding = vec![default_value; alignment];
@@ -423,75 +416,33 @@ impl GgmlType for BlockQ4K {
 
         let mut tensor_data = vec![0u32; 0];
 
-        let ds_offset = 0;
-        let ds_segment = BufferSegment::new(ds_offset, Some(ds.len() as u64));
         let ds_alignment = ds.align_standard();
         let mut ds_u32 = bytemuck::cast_slice::<u8, u32>(&ds).to_vec();
         tensor_data.append(&mut ds_u32);
 
-        let dmins_offset = tensor_data.len();
-        let dmins_segment = BufferSegment::new(dmins_offset as u64, Some(dmins.len() as u64));
         let dmins_alignment = dmins.align_standard();
         let mut dmins_u32 = bytemuck::cast_slice::<u8, u32>(&dmins).to_vec();
         tensor_data.append(&mut dmins_u32);
 
-        let scales_offset = tensor_data.len();
-        let scales_segment = BufferSegment::new(scales_offset as u64, Some(scales.len() as u64));
         let scales_alignment = scales.align_standard();
-        dbg!(scales_alignment);
         let mut scales_u32 = bytemuck::cast_slice::<u8, u32>(&scales).to_vec();
         tensor_data.append(&mut scales_u32);
 
-        let qs_offset = tensor_data.len();
-        let qs_segment = BufferSegment::new(qs_offset as u64, Some(qs.len() as u64));
         let qs_alignment = qs.align_standard();
-        dbg!(qs_alignment);
         let mut qs_u32 = bytemuck::cast_slice::<u8, u32>(&qs).to_vec();
         tensor_data.append(&mut qs_u32);
 
         let tensor_data_len = (&tensor_data).len();
-        println!("TENSOR DATA LEN: {:?}", tensor_data_len);
-        dbg!(tensor_data_len, tensor_blocks, BlockQ4K::BLCK_SIZE);
 
-        let ggufdtype = GGUFDType::Q4K {
-            ds_segment,
-            dmins_segment,
-            scales_segment,
-            qs_segment,
-            size: tensor_data_len,
-        };
-        dbg!(ggufdtype);
         let inner = unsafe {
             Tensor::from_quantized::<u32, _>(
                 &tensor_data,
-                DType::GGUF(ggufdtype),
+                DType::GGUF(GGUFDType::Q4K),
                 shape![256, 256],
                 device.clone(),
             )
         };
 
-        // let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
-        // let dmins_tensor = Tensor::from_data(dmins, shape![tensor_blocks], device.clone());
-
-        // let scales_tensor = Tensor::from_bytes(
-        //     scales.as_ref(),
-        //     ratchet::DType::U32,
-        //     shape![tensor_blocks, K_SCALE_SIZE / 4],
-        //     device.clone(),
-        // )?;
-
-        // let qs_tensor = Tensor::from_bytes(
-        //     qs.as_ref(),
-        //     ratchet::DType::U32,
-        //     shape![tensor_blocks, QK_K / 2 / 4],
-        //     device.clone(),
-        // )?;
-        // let block_q4k: BlockQ4K = BlockQ4K {
-        //     d: ds_tensor,
-        //     dmin: dmins_tensor,
-        //     scales: scales_tensor,
-        //     qs: qs_tensor,
-        // };
         Ok(inner)
     }
 
@@ -499,22 +450,8 @@ impl GgmlType for BlockQ4K {
         tensor: Tensor,
         writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        let GGUFDType::Q4K {
-            ds_segment,
-            dmins_segment,
-            scales_segment,
-            qs_segment,
-            size,
-        } = match tensor.dt() {
-            DType::GGUF(
-                q4k @ GGUFDType::Q4K {
-                    ds_segment: _,
-                    dmins_segment: _,
-                    scales_segment: _,
-                    qs_segment: _,
-                    size,
-                },
-            ) => Ok(q4k),
+        let GGUFDType::Q4K = match tensor.dt() {
+            DType::GGUF(q4k @ GGUFDType::Q4K) => Ok(q4k),
             otherwise => Err(anyhow!(
                 "Got an invalid datatype while trying to parse q4k: {:?}",
                 otherwise
@@ -527,14 +464,16 @@ impl GgmlType for BlockQ4K {
             .ok_or(anyhow!("Failed to get tensor blocks"))?
             .clone();
 
+        let segments = gguf::GGUFDType::Q4K.segments(tensor_blocks);
+        let (ds_segment, dmins_segment, scales_segment, qs_segment) = segments
+            .iter()
+            .collect_tuple()
+            .ok_or(anyhow!("Invalid segmentation found in Q4K"))?;
+
         //Can't just call `to_vec` here.
         //Do something like: https://github.com/FL33TW00D/wgpu-bench/blob/master/src/quant.rs#L105
-        let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        let tensor_data = tensor_data
-            .iter()
-            .map(|value| value.to_le_bytes())
-            .flatten()
-            .collect::<Vec<u8>>();
+        // let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        let tensor_data = unsafe { tensor.into_bytes()? };
 
         let ds_offset = ds_segment.offset;
         let mut ds_cursor = Cursor::new(&tensor_data);
@@ -553,24 +492,18 @@ impl GgmlType for BlockQ4K {
         qs_data_cursor.seek(SeekFrom::Start(qs_offset))?;
 
         for _idx in 0..tensor_blocks {
-            ds_cursor.seek(SeekFrom::Current((_idx * 4) as i64))?;
             let d_value = ds_cursor.read_f32::<LittleEndian>()?;
             let d_value = half::f16::from_f32(d_value);
             writer.write_f16(d_value)?;
 
-            dmins_cursor.seek(SeekFrom::Current((_idx * 4) as i64))?;
             let dmin_value = dmins_cursor.read_f32::<LittleEndian>()?;
             let dmin_value = half::f16::from_f32(dmin_value);
             writer.write_f16(dmin_value)?;
 
-            scales_data_cursor.seek(SeekFrom::Current((_idx * K_SCALE_SIZE) as i64))?;
             let current_scales = scales_data_cursor.read_len_bytes(K_SCALE_SIZE)?;
-
             writer.write_all(current_scales.as_ref())?;
 
-            qs_data_cursor.seek(SeekFrom::Current((_idx * QK_K / 2) as i64))?;
             let current_qs = qs_data_cursor.read_len_bytes(QK_K / 2)?;
-
             writer.write_all(current_qs.as_ref())?;
         }
 

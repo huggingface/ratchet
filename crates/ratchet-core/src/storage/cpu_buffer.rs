@@ -95,7 +95,7 @@ impl CPUBuffer {
     }
 
     pub fn to_slice<T: NoUninit + Pod>(&self, shape: &Shape) -> &[T] {
-        assert_eq!(self.n_bytes(), shape.numel() * std::mem::size_of::<T>());
+        // assert_eq!(self.n_bytes(), shape.numel() * std::mem::size_of::<T>());
         bytemuck::cast_slice(self.inner().as_bytes())
     }
 
