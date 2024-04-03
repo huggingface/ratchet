@@ -46,6 +46,7 @@ impl Executable {
                 let uniform_group = self.gpu_uniform.bind_group();
                 cpass.set_bind_group(uniform_group_index, uniform_group, &[step.offset()]);
 
+                println!("Dispatching workgroups: {:?}", step.workgroup_count());
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
             }

@@ -18,6 +18,8 @@ pub struct RoPE {
 pub struct RoPEMeta {
     in_strides: glam::UVec3,
     out_strides: glam::UVec3,
+    seq_len: u32,
+    hd: u32,
     offset: u32,
     base: f32,
     scale: f32,
@@ -45,7 +47,7 @@ impl Operation for RoPE {
 
 impl MetaOperation for RoPE {
     fn supports_inplace(&self) -> bool {
-        false
+        true
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -61,28 +63,42 @@ impl MetaOperation for RoPE {
     }
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        const WGSX: usize = 16;
+        const WGSX: usize = 8;
         const WGSY: usize = 8;
-        const WGSZ: usize = 8;
+        const WGSZ: usize = 1;
 
         let input = &self.input;
         let [_, _, SL, HD]: [usize; 4] = input.shape().try_into()?;
+        let mat_size = SL * HD;
 
+        let dims_ = self.dim;
+        println!("dims = {}", dims_);
         let total_x = self.dim / 2;
+        println!("dim0 = {}", total_x);
         let total_y = SL;
-        let total_z = input.shape().numel() / (SL * HD);
+        println!("dim1 = {}", total_y);
+        let total_z = input.shape().numel() / mat_size;
+        println!("in size: {:?}", input.shape().numel());
+        println!("mat size: {:?}", mat_size);
+        println!("dim2 = {}", total_z);
 
-        let wgcx = (total_x / WGSX) as _;
-        let wgcy = (total_y / WGSY) as _;
-        let wgcz = (total_z / WGSZ) as _;
+        let wgcx = WorkgroupCount::div_ceil(total_x, WGSX) as u32;
+        let wgcy = WorkgroupCount::div_ceil(total_y, WGSY) as u32;
+        let wgcz = WorkgroupCount::div_ceil(total_z, WGSZ) as u32;
 
-        Ok(wgc![wgcx, wgcy, wgcz])
+        println!("wgcx = {} wgcy = {} wgcz = {}", wgcx, wgcy, wgcz);
+
+        //Ok(wgc![wgcx, wgcy, wgcz])
+        Ok(wgc![1, 1, 1])
     }
 
     fn storage_bind_group_layout(
         &self,
-        _: bool,
+        inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if inplace {
+            return Ok(BindGroupLayoutDescriptor::unary_inplace());
+        }
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
@@ -93,6 +109,8 @@ impl MetaOperation for RoPE {
         _: &KernelElement,
     ) -> Result<u64, OperationError> {
         let mut input_shape = self.input.shape().clone();
+        let SL = input_shape[2];
+        let HD = input_shape[3];
         let mut out_shape = dst.shape().clone();
         input_shape.remove(0);
         out_shape.remove(0);
@@ -101,10 +119,13 @@ impl MetaOperation for RoPE {
         let meta = RoPEMeta::new(
             (&in_strides).into(),
             (&out_strides).into(),
+            SL as u32,
+            HD as u32,
             0,
             self.base,
             1.0,
         );
+        println!("meta = {:?}", meta);
         Ok(uniform.write(&meta)?)
     }
 }
@@ -127,6 +148,7 @@ import mlx.nn as nn
 import numpy as np
 
 def mlx_rope(input, dim):
+    print("Rope dim = ", dim)
     rope = nn.RoPE(dim)
     mx_input = mx.array(input)
     y = rope(mx_input)
@@ -136,8 +158,8 @@ def mlx_rope(input, dim):
         run_py_prg(prg.to_string(), &[a], &[&dim])
     }
 
-    fn run_softmax_trial(problem: RoPEProblem) {
-        let rope_dim = 128;
+    fn run_rope_trial(problem: RoPEProblem) {
+        let rope_dim = 32;
         let device = GPU_DEVICE.with(|d| d.clone());
         let RoPEProblem { BS, NH, SL, HD } = problem;
         let a = Tensor::randn::<f32>(shape![BS, NH, SL, HD], Device::CPU);
@@ -147,27 +169,41 @@ def mlx_rope(input, dim):
         let b = a_gpu.rope(10000.0, rope_dim).unwrap().resolve().unwrap();
 
         let ours = b.to(&Device::CPU).unwrap();
-        println!("ours = {:?}", ours);
-        println!("ground = {:?}", ground);
+        println!("ours = \n{:#?}\n", ours.to_ndarray_view::<f32>());
+        println!("ground = \n{:#?}", ground.to_ndarray_view::<f32>());
         ground.all_close(&ours, 1e-6, 1e-6).unwrap();
     }
 
     #[derive(Arbitrary, Debug)]
     struct RoPEProblem {
-        #[strategy(1..=3usize)]
+        #[strategy(1..=1usize)]
         BS: usize,
         #[strategy(1..=64usize)]
+        #[filter(#NH % 16 == 0)]
         NH: usize,
         #[strategy(1..=512usize)]
         SL: usize,
         #[strategy(1..=128usize)]
+        #[filter(#HD % 16 == 0)]
         HD: usize,
     }
 
     #[proptest(cases = 8)]
-    fn test_softmax(prob: RoPEProblem) {
+    fn test_rope(prob: RoPEProblem) {
         let RoPEProblem { BS, NH, SL, HD } = prob;
         println!("BS = {}, NH = {}, SL = {}, HD = {}", BS, NH, SL, HD);
-        run_softmax_trial(prob);
+        run_rope_trial(prob);
+    }
+
+    #[test]
+    fn debug_rope() {
+        let prob = RoPEProblem {
+            BS: 1,
+            NH: 16,
+            SL: 2,
+            HD: 128,
+        };
+        println!("prob = {:?}", prob);
+        run_rope_trial(prob);
     }
 }

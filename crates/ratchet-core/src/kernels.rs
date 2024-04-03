@@ -615,6 +615,7 @@ lazy_static! {
             "wq8_index_select_coarse_scalar",
             include_str!(r"../kernels/wq8_index_select_coarse_scalar.wgsl"),
         );
+        m.insert("rope_scalar", include_str!(r"../kernels/rope_scalar.wgsl"));
         m.insert(
             "f32_index_select_scalar",
             include_str!(r"../kernels/f32_index_select_scalar.wgsl"),

@@ -67,6 +67,7 @@ impl WgpuDevice {
             limits: Limits {
                 max_buffer_size: MAX_BUFFER_SIZE,
                 max_storage_buffer_binding_size: MAX_BUFFER_SIZE as u32,
+                max_compute_invocations_per_workgroup: 1024,
                 ..Default::default()
             },
         };
