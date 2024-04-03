@@ -31,6 +31,8 @@ impl OpGuards for RoPE {
     fn check_shapes(&self) {
         let input = &self.input;
         assert!(input.rank() == 4);
+        assert!(input.shape()[3] >= self.dim);
+        assert!(self.dim % 8 == 0);
     }
 
     fn check_dtypes(&self) {
@@ -71,25 +73,15 @@ impl MetaOperation for RoPE {
         let [_, _, SL, HD]: [usize; 4] = input.shape().try_into()?;
         let mat_size = SL * HD;
 
-        let dims_ = self.dim;
-        println!("dims = {}", dims_);
         let total_x = self.dim / 2;
-        println!("dim0 = {}", total_x);
         let total_y = SL;
-        println!("dim1 = {}", total_y);
         let total_z = input.shape().numel() / mat_size;
-        println!("in size: {:?}", input.shape().numel());
-        println!("mat size: {:?}", mat_size);
-        println!("dim2 = {}", total_z);
 
         let wgcx = WorkgroupCount::div_ceil(total_x, WGSX) as u32;
         let wgcy = WorkgroupCount::div_ceil(total_y, WGSY) as u32;
         let wgcz = WorkgroupCount::div_ceil(total_z, WGSZ) as u32;
 
-        println!("wgcx = {} wgcy = {} wgcz = {}", wgcx, wgcy, wgcz);
-
-        //Ok(wgc![wgcx, wgcy, wgcz])
-        Ok(wgc![1, 1, 1])
+        Ok(wgc![wgcx, wgcy, wgcz])
     }
 
     fn storage_bind_group_layout(
@@ -125,7 +117,6 @@ impl MetaOperation for RoPE {
             self.base,
             1.0,
         );
-        println!("meta = {:?}", meta);
         Ok(uniform.write(&meta)?)
     }
 }
@@ -159,51 +150,74 @@ def mlx_rope(input, dim):
     }
 
     fn run_rope_trial(problem: RoPEProblem) {
-        let rope_dim = 32;
         let device = GPU_DEVICE.with(|d| d.clone());
-        let RoPEProblem { BS, NH, SL, HD } = problem;
+        let RoPEProblem {
+            BS,
+            NH,
+            SL,
+            HD,
+            dim,
+        } = problem;
         let a = Tensor::randn::<f32>(shape![BS, NH, SL, HD], Device::CPU);
-        let ground = ground_truth(&a, rope_dim).unwrap();
+        let ground = ground_truth(&a, dim).unwrap();
 
         let a_gpu = a.to(&device).unwrap();
-        let b = a_gpu.rope(10000.0, rope_dim).unwrap().resolve().unwrap();
+        let b = a_gpu.rope(10000.0, dim).unwrap().resolve().unwrap();
 
         let ours = b.to(&Device::CPU).unwrap();
-        println!("ours = \n{:#?}\n", ours.to_ndarray_view::<f32>());
-        println!("ground = \n{:#?}", ground.to_ndarray_view::<f32>());
-        ground.all_close(&ours, 1e-6, 1e-6).unwrap();
+        //println!("ours = \n{:#?}\n", ours.to_ndarray_view::<f32>());
+        //println!("ground = \n{:#?}", ground.to_ndarray_view::<f32>());
+        //Weak tolerance because of `ffast-math`
+        ground.all_close(&ours, 1e-3, 1e-3).unwrap();
     }
 
     #[derive(Arbitrary, Debug)]
     struct RoPEProblem {
-        #[strategy(1..=1usize)]
+        #[strategy(1..=4usize)]
         BS: usize,
         #[strategy(1..=64usize)]
-        #[filter(#NH % 16 == 0)]
         NH: usize,
         #[strategy(1..=512usize)]
         SL: usize,
-        #[strategy(1..=128usize)]
+        #[strategy(32..=128usize)]
         #[filter(#HD % 16 == 0)]
         HD: usize,
+        #[strategy(32..=128usize)]
+        #[filter(#dim % 32 == 0 && #dim <= #HD)]
+        dim: usize,
     }
 
-    #[proptest(cases = 8)]
+    #[proptest(cases = 32)]
     fn test_rope(prob: RoPEProblem) {
-        let RoPEProblem { BS, NH, SL, HD } = prob;
-        println!("BS = {}, NH = {}, SL = {}, HD = {}", BS, NH, SL, HD);
+        let RoPEProblem {
+            BS,
+            NH,
+            SL,
+            HD,
+            dim,
+        } = prob;
+        println!(
+            "BS = {}, NH = {}, SL = {}, HD = {}, rope_dim = {}",
+            BS, NH, SL, HD, dim
+        );
         run_rope_trial(prob);
     }
 
+    /*
     #[test]
     fn debug_rope() {
         let prob = RoPEProblem {
             BS: 1,
-            NH: 16,
-            SL: 2,
-            HD: 128,
+            NH: 1,
+            SL: 15,
+            HD: 96,
+            dim: 96,
         };
-        println!("prob = {:?}", prob);
+        println!(
+            "BS = {}, NH = {}, SL = {}, HD = {}, rope_dim = {}",
+            prob.BS, prob.NH, prob.SL, prob.HD, prob.dim
+        );
         run_rope_trial(prob);
     }
+    */
 }

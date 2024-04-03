@@ -30,7 +30,7 @@ struct Meta {
 @group(1) @binding(0)
 var<uniform> metadata: Meta;
 
-@compute @workgroup_size(16, 2, 16)
+@compute @workgroup_size(8, 8, 1)
 fn main( 
         @builtin(local_invocation_id) local_id: vec3<u32>,
         @builtin(global_invocation_id) pos: vec3<u32>,
@@ -40,7 +40,7 @@ fn main(
     return;
   }
 
-  let grid = vec3<u32>(groups.x * 16u, groups.y * 2u, groups.z * 16u);
+  let grid = vec3<u32>(groups.x * 8u, groups.y * 8u, groups.z * 1u);
 
   let out_index_1 = dot(pos, vec3<u32>(metadata.out_strides[2], metadata.out_strides[1], metadata.out_strides[0]));
   let out_index_2 = out_index_1 + grid.x * metadata.out_strides[2];
