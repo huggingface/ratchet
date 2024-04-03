@@ -17,6 +17,7 @@ pub enum LazyOp {
     Reindex(Reindex),
     Concat(Concat),
     // ---- Everything below this line shouldn't exist ----
+    RoPE(RoPE),
     Softmax(Softmax),
     Norm(Norm),
     View(View),             //Should be general class, metadata modification
@@ -30,6 +31,7 @@ impl LazyOp {
         match self {
             LazyOp::Binary(b) => b.kernel_key(dst),
             LazyOp::Matmul(m) => m.kernel_key(dst),
+            LazyOp::RoPE(r) => r.kernel_key(dst),
             LazyOp::Softmax(s) => s.kernel_key(dst),
             LazyOp::Unary(u) => u.kernel_key(dst),
             LazyOp::Reindex(r) => r.kernel_key(dst),
@@ -47,6 +49,7 @@ impl LazyOp {
         match self {
             LazyOp::Binary(b) => b.srcs(),
             LazyOp::Matmul(m) => m.srcs(),
+            LazyOp::RoPE(r) => r.srcs(),
             LazyOp::Softmax(s) => s.srcs(),
             LazyOp::Unary(u) => u.srcs(),
             LazyOp::Reindex(r) => r.srcs(),
@@ -64,6 +67,7 @@ impl LazyOp {
         match self {
             LazyOp::Binary(b) => b.supports_inplace(),
             LazyOp::Matmul(m) => m.supports_inplace(),
+            LazyOp::RoPE(r) => r.supports_inplace(),
             LazyOp::Softmax(s) => s.supports_inplace(),
             LazyOp::Unary(u) => u.supports_inplace(),
             LazyOp::Reindex(r) => r.supports_inplace(),
@@ -86,6 +90,7 @@ impl LazyOp {
         match self {
             LazyOp::Binary(b) => b.check_invariants(),
             LazyOp::Matmul(m) => m.check_invariants(),
+            LazyOp::RoPE(r) => r.check_invariants(),
             LazyOp::Softmax(s) => s.check_invariants(),
             LazyOp::Unary(u) => u.check_invariants(),
             LazyOp::Reindex(r) => match r {
