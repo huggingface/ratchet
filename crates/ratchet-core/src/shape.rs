@@ -59,6 +59,10 @@ impl Shape {
         self.0.push(dim);
     }
 
+    pub fn remove(&mut self, index: usize) -> usize {
+        self.0.remove(index)
+    }
+
     pub fn is_scalar(&self) -> bool {
         self.0.iter().all(|&x| x == 1)
     }
