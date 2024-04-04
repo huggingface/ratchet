@@ -89,13 +89,11 @@ impl TensorLoader for gguf::Q4K {
         let mut qs_u32 = bytemuck::cast_slice::<u8, u32>(&qs).to_vec();
         tensor_data.append(&mut qs_u32);
 
-        let tensor_data_len = (&tensor_data).len();
-
         let inner = unsafe {
             Tensor::from_quantized::<u32, _>(
                 &tensor_data,
                 DType::GGUF(GGUFDType::Q4K(gguf::Q4K::new())),
-                shape![256, 256],
+                shape![tensor_blocks, 256],
                 device.clone(),
             )
         };
@@ -216,13 +214,11 @@ impl TensorLoader for gguf::Q6K {
         let mut ds_u32 = bytemuck::cast_slice::<f32, u32>(&ds).to_vec();
         tensor_data.append(&mut ds_u32);
 
-        let tensor_data_len = (&tensor_data).len();
-
         let inner = unsafe {
             Tensor::from_quantized::<u32, _>(
                 &tensor_data,
                 DType::GGUF(GGUFDType::Q6K(gguf::Q6K::new())),
-                shape![256, 256],
+                shape![tensor_blocks, 256],
                 device.clone(),
             )
         };
