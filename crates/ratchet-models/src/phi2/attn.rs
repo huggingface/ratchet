@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{prelude::shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Content;
-use ratchet_nn::{Linear, Module, RotaryEmbedding};
+use ratchet_nn::{KVEntry, Linear, Module, RotaryEmbedding, RotaryInput};
 
 #[derive(Debug)]
 pub struct PhiSelfAttention {
@@ -69,28 +69,37 @@ impl PhiSelfAttention {
 pub struct PhiAttnInput {
     pub input: Tensor,
     pub mask: Option<Tensor>,
+    pub cache: Option<KVEntry>,
 }
 
 impl Module for PhiSelfAttention {
     type Input = PhiAttnInput;
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let PhiAttnInput { input, mask } = input;
+        let PhiAttnInput { input, mask, cache } = input;
         let [batch_size, seq_len, n_state]: [usize; 3] = input.shape().try_into()?;
         let q = self.q.forward(input.clone())?;
         let k = self.k.forward(input.clone())?;
         let v = self.v.forward(input.clone())?;
 
         let h_dim = n_state / self.n_heads as usize;
-        //we don't support qk ln
+
+        //TODO:
+        //if self.qk_layer_norm {
+        //  do ln
+        //}
+
         let q_shape = shape![batch_size as _, seq_len, self.n_heads as _, h_dim];
         let kv_shape = shape![batch_size as _, seq_len, self.n_kv_heads as _, h_dim];
         let qs = q.view(q_shape)?.permute(&[0, 2, 1, 3])?;
         let ks = k.view(kv_shape.clone())?.permute(&[0, 2, 1, 3])?;
         let vs = v.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
 
-        let query_states = self.rope.forward(qs)?;
-        let key_states = self.rope.forward(ks)?;
+        let query_states = self.rope.forward(RotaryInput {
+            input: input.clone(),
+            offset: 0,
+        })?;
+        let key_states = self.rope.forward(RotaryInput { input, offset: 0 })?;
 
         //TODO: can we just use the built in transposed matmul?
         let mut attn_weights = query_states

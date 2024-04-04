@@ -28,10 +28,16 @@ pub struct RotaryEmbedding {
     scale: f32,
 }
 
+pub struct RotaryInput {
+    pub input: Tensor,
+    pub offset: usize,
+}
+
 impl Module for RotaryEmbedding {
-    type Input = Tensor;
+    type Input = RotaryInput;
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        input.rope(self.dim, self.base)
+        let RotaryInput { input, offset } = input;
+        input.rope(self.dim, self.base, offset)
     }
 }

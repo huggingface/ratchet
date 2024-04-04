@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Content;
-use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear, Module};
+use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
 
 use super::{
     attn::{PhiAttnInput, PhiSelfAttention},
@@ -42,18 +42,20 @@ impl DecoderLayer {
 pub struct DecoderLayerInput {
     pub x: Tensor,
     pub mask: Option<Tensor>,
+    pub cache: Option<KVEntry>,
 }
 
 impl Module for DecoderLayer {
     type Input = DecoderLayerInput;
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let DecoderLayerInput { x, mask } = input;
+        let DecoderLayerInput { x, mask, cache } = input;
         let residual = x.clone();
         let xs = self.ln.forward(x)?;
         let attn_output = self.self_attn.forward(PhiAttnInput {
             input: xs.clone(),
             mask,
+            cache,
         })?;
         let ff_hs = self.mlp.forward(xs)?;
         Ok(attn_output.add(ff_hs)?.add(residual)?)
@@ -81,16 +83,14 @@ impl Module for Phi2 {
             Some(Self::generate_mask(seq_len, x.device())?)
         };
 
-        let mut layer_idx = 0;
-        for layer in &self.layers {
+        for (layer_idx, layer) in self.layers.iter().enumerate() {
             x = layer.forward(DecoderLayerInput {
                 x,
                 mask: mask.clone(),
+                cache: Some(self.kv_cache[layer_idx].clone()),
             })?;
-            layer_idx += 1;
         }
         x = self.ln_post.forward(x)?;
-        println!("X SHAPE: {:?}", x.shape());
         x = x.slice(&[0..1, seq_len - 1..seq_len, 0..n_state])?;
         let logits = self.lm_head.forward(x)?;
         Ok(logits)

@@ -12,6 +12,7 @@ pub struct RoPE {
     input: Tensor,
     dim: usize,
     base: f32,
+    offset: usize,
 }
 
 #[derive(Debug, derive_new::new, ShaderType)]
@@ -115,7 +116,7 @@ impl MetaOperation for RoPE {
             (&in_strides).into(),
             (&out_strides).into(),
             SL as u32,
-            0,
+            self.offset as u32,
             self.base,
             1.0,
         );
@@ -134,21 +135,22 @@ mod tests {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
     }
 
-    fn ground_truth(a: &Tensor, dim: usize) -> anyhow::Result<Tensor> {
+    fn ground_truth(a: &Tensor, dim: usize, offset: usize) -> anyhow::Result<Tensor> {
         let prg = r#"
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-def mlx_rope(input, dim):
+def mlx_rope(input, dim, offset):
     print("Rope dim = ", dim)
+    print("Offset = ", offset)
     rope = nn.RoPE(dim)
     mx_input = mx.array(input)
-    y = rope(mx_input)
+    y = rope(mx_input, offset)
     mx.eval(y)
     return np.array(y)
 "#;
-        run_py_prg(prg.to_string(), &[a], &[&dim])
+        run_py_prg(prg.to_string(), &[a], &[&dim, &offset])
     }
 
     fn run_rope_trial(problem: RoPEProblem) {
@@ -159,12 +161,13 @@ def mlx_rope(input, dim):
             SL,
             HD,
             dim,
+            offset,
         } = problem;
         let a = Tensor::randn::<f32>(shape![BS, NH, SL, HD], Device::CPU);
-        let ground = ground_truth(&a, dim).unwrap();
+        let ground = ground_truth(&a, dim, offset).unwrap();
 
         let a_gpu = a.to(&device).unwrap();
-        let b = a_gpu.rope(dim, 10000.0).unwrap().resolve().unwrap();
+        let b = a_gpu.rope(dim, 10000.0, offset).unwrap().resolve().unwrap();
 
         let ours = b.to(&Device::CPU).unwrap();
         //println!("ours = \n{:#?}\n", ours.to_ndarray_view::<f32>());
@@ -187,9 +190,12 @@ def mlx_rope(input, dim):
         #[strategy(32..=128usize)]
         #[filter(#dim % 32 == 0 && #dim <= #HD)]
         dim: usize,
+        #[strategy(0..=128usize)]
+        #[filter(#offset <= #SL)]
+        offset: usize,
     }
 
-    #[proptest(cases = 32)]
+    #[proptest(cases = 16)]
     fn test_rope(prob: RoPEProblem) {
         let RoPEProblem {
             BS,
@@ -197,10 +203,11 @@ def mlx_rope(input, dim):
             SL,
             HD,
             dim,
+            offset,
         } = prob;
         println!(
-            "BS = {}, NH = {}, SL = {}, HD = {}, rope_dim = {}",
-            BS, NH, SL, HD, dim
+            "BS = {}, NH = {}, SL = {}, HD = {}, rope_dim = {}, offset = {}",
+            BS, NH, SL, HD, dim, offset
         );
         run_rope_trial(prob);
     }

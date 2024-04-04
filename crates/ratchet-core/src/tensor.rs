@@ -318,9 +318,9 @@ impl Tensor {
         Ok(Tensor::lazy(LazyOp::Softmax(softmax), new_view, device))
     }
 
-    pub fn rope(self, dim: usize, base: f32) -> anyhow::Result<Tensor> {
+    pub fn rope(self, dim: usize, base: f32, offset: usize) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let rope = RoPE::new(self, dim, f32::log2(base));
+        let rope = RoPE::new(self, dim, f32::log2(base), offset);
         let new_view = rope.compute_view()?;
         Ok(Tensor::lazy(LazyOp::RoPE(rope), new_view, device))
     }
