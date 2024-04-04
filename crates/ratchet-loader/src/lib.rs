@@ -44,6 +44,7 @@ pub enum GgmlDType {
     Q5K,
     Q6K,
     Q8K,
+    RWQ8,
 }
 
 impl From<GgmlDType> for ratchet::DType {
@@ -51,6 +52,7 @@ impl From<GgmlDType> for ratchet::DType {
         match val {
             GgmlDType::F32 => ratchet::DType::F32,
             GgmlDType::F16 => ratchet::DType::F16,
+            GgmlDType::RWQ8 => ratchet::DType::WQ8,
             _ => unimplemented!(),
         }
     }
@@ -75,6 +77,7 @@ impl TryFrom<u32> for GgmlDType {
             13 => Self::Q5K,
             14 => Self::Q6K,
             15 => Self::Q8K,
+            64 => Self::RWQ8,
             _ => return Err(LoadError::InvalidDType(u)),
         };
         Ok(dtype)
@@ -98,6 +101,7 @@ impl GgmlDType {
             Self::Q5K => 13,
             Self::Q6K => 14,
             Self::Q8K => 15,
+            Self::RWQ8 => 64,
         }
     }
 
@@ -120,6 +124,7 @@ impl GgmlDType {
             Self::Q5K => std::mem::size_of::<BlockQ5K>(),
             Self::Q6K => std::mem::size_of::<BlockQ6K>(),
             Self::Q8K => std::mem::size_of::<BlockQ8K>(),
+            Self::RWQ8 => std::mem::size_of::<RBlockWQ8>(),
         }
     }
 
@@ -128,6 +133,7 @@ impl GgmlDType {
         match self {
             Self::F32 => 1,
             Self::F16 => 1,
+            Self::RWQ8 => 16,
             Self::Q4_0 => k_quants::QK4_0,
             Self::Q4_1 => k_quants::QK4_1,
             Self::Q5_0 => k_quants::QK5_0,

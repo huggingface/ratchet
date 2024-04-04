@@ -26,12 +26,7 @@ impl GGTranscoder {
                 //Cast whilst WGPU doesn't support f16
                 let f16_data = bytemuck::cast_slice::<u8, f16>(raw_data);
                 let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
-                Tensor::from_bytes(
-                    bytemuck::cast_slice::<f32, u8>(&f32_data),
-                    DType::F32,
-                    shape,
-                    device.clone(),
-                )
+                Ok(Tensor::from_data(f32_data, shape, device.clone()))
             }
             _ => todo!(),
         }

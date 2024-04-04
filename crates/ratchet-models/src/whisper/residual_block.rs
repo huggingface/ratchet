@@ -27,6 +27,7 @@ impl Module for ResidualAttentionBlock {
     type Input = ResidualAttentionBlockInputs;
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let ResidualAttentionBlockInputs { x, xa, mask, cache } = input;
+
         let attn_ln = self.attn_ln.forward(x.clone())?;
         let self_attn = self.attn.forward(MHAInputs::new(
             attn_ln,

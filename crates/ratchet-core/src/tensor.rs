@@ -69,6 +69,10 @@ impl Tensor {
         }
     }
 
+    pub fn strong_count(&self) -> usize {
+        Arc::strong_count(&self.inner)
+    }
+
     fn update_storage(&self, storage: Storage) {
         *self.inner.storage.write() = Some(storage);
     }
@@ -654,6 +658,7 @@ impl Tensor {
         //println!("Allocations: {:#?}", allocations);
 
         for t in execution_order.iter() {
+            log::info!("Compiling: {:?}", t.op().name());
             assert!(t.device().is_gpu());
             if t.resolved() {
                 continue;

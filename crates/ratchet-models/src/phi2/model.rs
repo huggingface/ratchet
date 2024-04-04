@@ -83,12 +83,24 @@ impl Module for Phi2 {
             Some(Self::generate_mask(seq_len, x.device())?)
         };
 
+        for index in 0..32 {
+            println!(
+                "K ARC COUNT: {}",
+                self.kv_cache[index].k_cache.strong_count()
+            );
+            println!(
+                "V ARC COUNT: {}",
+                self.kv_cache[index].v_cache.strong_count()
+            );
+        }
+
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            x = layer.forward(DecoderLayerInput {
+            let input = DecoderLayerInput {
                 x,
                 mask: mask.clone(),
                 cache: Some(self.kv_cache[layer_idx].clone()),
-            })?;
+            };
+            x = layer.forward(input)?;
         }
         x = self.ln_post.forward(x)?;
         x = x.slice(&[0..1, seq_len - 1..seq_len, 0..n_state])?;
@@ -99,6 +111,7 @@ impl Module for Phi2 {
 
 impl Phi2 {
     const MAX_CACHE: usize = 1024;
+
     pub fn load<R: BufRead + Seek>(
         disk_model: Content,
         reader: &mut R,
@@ -130,19 +143,13 @@ impl Phi2 {
 
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
         let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?), true);
-        let n_state = disk_model
-            .metadata
-            .get("phi2.embedding_length")
-            .unwrap()
-            .to_u32()? as usize;
-        let kv_cache = KVCache::new(n_layers, shape![1, Self::MAX_CACHE, n_state], device);
 
         Ok(Self {
             embedding,
             layers,
             ln_post,
             lm_head,
-            kv_cache,
+            kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], device),
         })
     }
 
@@ -195,7 +202,7 @@ def ground():
 
     #[test]
     fn load_phi2() -> anyhow::Result<()> {
-        let ground_truth = ground_truth()?;
+        let _ = env_logger::builder().is_test(true).try_init();
         let model_path = concat!(
             env!("CARGO_RUSTC_CURRENT_DIR"),
             "/models/microsoft/phi-2/phi2-f16.gguf"
@@ -221,6 +228,7 @@ def ground():
         let input = Tensor::from_data(i32_tokens, shape![1, num_tokens], device.clone());
         let result = model.forward(input)?.resolve()?;
         let cpu_result = result.to(&Device::CPU)?;
+        let ground_truth = ground_truth()?;
 
         println!("OURS: {:?}\n", cpu_result.to_ndarray_view::<f32>());
         println!("THEIRS: {:?}", ground_truth);

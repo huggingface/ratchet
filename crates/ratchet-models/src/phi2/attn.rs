@@ -1,6 +1,9 @@
-use std::io::{BufRead, Seek};
+use std::{
+    io::{BufRead, Seek},
+    sync::Arc,
+};
 
-use ratchet::{prelude::shape, Device, Tensor};
+use ratchet::{prelude::shape, rvec, Device, Tensor};
 use ratchet_loader::gguf::gguf::Content;
 use ratchet_nn::{KVEntry, Linear, Module, RotaryEmbedding, RotaryInput};
 
@@ -80,7 +83,7 @@ impl Module for PhiSelfAttention {
         let [batch_size, seq_len, n_state]: [usize; 3] = input.shape().try_into()?;
         let q = self.q.forward(input.clone())?;
         let k = self.k.forward(input.clone())?;
-        let v = self.v.forward(input.clone())?;
+        let v = self.v.forward(input)?;
 
         let h_dim = n_state / self.n_heads as usize;
 
@@ -91,15 +94,37 @@ impl Module for PhiSelfAttention {
 
         let q_shape = shape![batch_size as _, seq_len, self.n_heads as _, h_dim];
         let kv_shape = shape![batch_size as _, seq_len, self.n_kv_heads as _, h_dim];
-        let qs = q.view(q_shape)?.permute(&[0, 2, 1, 3])?;
-        let ks = k.view(kv_shape.clone())?.permute(&[0, 2, 1, 3])?;
-        let vs = v.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
+        let query_states = q.view(q_shape)?.permute(&[0, 2, 1, 3])?;
+        let key_states = k.view(kv_shape.clone())?.permute(&[0, 2, 1, 3])?;
+        let value_states = v.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
 
+        let offset = cache.as_ref().map(|kv| kv.entries).unwrap_or(0);
         let query_states = self.rope.forward(RotaryInput {
-            input: input.clone(),
-            offset: 0,
+            input: query_states,
+            offset,
         })?;
-        let key_states = self.rope.forward(RotaryInput { input, offset: 0 })?;
+        let key_states = self.rope.forward(RotaryInput {
+            input: key_states,
+            offset,
+        })?;
+
+        let (key_states, value_states) = if let Some(kv) = cache {
+            let prev_entries = kv.entries;
+            let new_entries = prev_entries + seq_len;
+            println!("K_CACHE ARC COUNT: {:?}", kv.k_cache.strong_count());
+            println!("V_CACHE ARC COUNT: {:?}", kv.v_cache.strong_count());
+            let k_cache = kv
+                .k_cache
+                .index_write(key_states, rvec![0, 0, prev_entries, 0])?
+                .view(shape![batch_size, 32, new_entries, 80])?;
+            let v_cache = kv
+                .v_cache
+                .index_write(value_states, rvec![0, 0, prev_entries, 0])?
+                .view(shape![batch_size, 32, new_entries, 80])?;
+            (k_cache, v_cache)
+        } else {
+            (key_states, value_states)
+        };
 
         //TODO: can we just use the built in transposed matmul?
         let mut attn_weights = query_states
@@ -116,7 +141,9 @@ impl Module for PhiSelfAttention {
         }
 
         let w = attn_weights.softmax(3)?;
-        let wv = w.matmul(vs, false, false)?.permute(&[0, 2, 1, 3])?;
+        let wv = w
+            .matmul(value_states, false, false)?
+            .permute(&[0, 2, 1, 3])?;
         let wv = wv.view(shape![batch_size as _, seq_len, n_state])?;
         self.o.forward(wv)
     }
