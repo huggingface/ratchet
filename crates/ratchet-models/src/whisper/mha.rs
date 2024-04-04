@@ -59,8 +59,6 @@ impl Module for MultiHeadAttention {
         let (k, v) = if let Some(kv) = cache {
             let prev_entries = kv.entries;
             let new_entries = prev_entries + n_ctx;
-            println!("K_CACHE ARC COUNT: {:?}", kv.k_cache.strong_count());
-            println!("V_CACHE ARC COUNT: {:?}", kv.v_cache.strong_count());
             let k_cache = kv
                 .k_cache
                 .index_write(k, rvec![0, prev_entries, 0])?

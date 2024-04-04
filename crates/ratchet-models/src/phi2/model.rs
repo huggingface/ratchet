@@ -83,17 +83,6 @@ impl Module for Phi2 {
             Some(Self::generate_mask(seq_len, x.device())?)
         };
 
-        for index in 0..32 {
-            println!(
-                "K ARC COUNT: {}",
-                self.kv_cache[index].k_cache.strong_count()
-            );
-            println!(
-                "V ARC COUNT: {}",
-                self.kv_cache[index].v_cache.strong_count()
-            );
-        }
-
         for (layer_idx, layer) in self.layers.iter().enumerate() {
             let input = DecoderLayerInput {
                 x,
