@@ -42,6 +42,18 @@ impl<R: std::io::Seek + std::io::Read, Other: std::io::Write> ReadInto<Other> fo
     }
 }
 
+pub trait ReadLen {
+    fn read_len_bytes(&mut self, length: usize) -> Result<Vec<u8>>;
+}
+
+impl<R: std::io::Seek + std::io::Read> ReadLen for R {
+    fn read_len_bytes(&mut self, length: usize) -> Result<Vec<u8>> {
+        let mut temp = vec![0u8; length];
+        self.read_exact(&mut temp)?;
+        Ok(temp)
+    }
+}
+
 pub(super) fn nearest_int(v: f32) -> i32 {
     v.round() as i32
 }

@@ -73,8 +73,8 @@ impl Quantizer {
         unsafe {
             Tensor::from_quantized(
                 quantized_matrix,
-                tensor.shape().clone(),
                 DType::WQ8,
+                tensor.shape().clone(),
                 Device::CPU,
             )
         }

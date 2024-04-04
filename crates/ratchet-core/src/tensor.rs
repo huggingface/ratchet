@@ -505,10 +505,10 @@ impl Tensor {
         Ok(storage.into_bytes())
     }
 
-    pub(crate) unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
+    pub unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
         data: U,
-        shape: Shape,
         dt: DType,
+        shape: Shape,
         device: Device,
     ) -> Tensor {
         let storage = unsafe { Storage::from_quantized(data.as_ref(), &device) };
