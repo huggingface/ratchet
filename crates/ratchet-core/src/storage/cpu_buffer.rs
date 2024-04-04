@@ -80,7 +80,7 @@ impl CPUBuffer {
 
     /// # Safety
     ///
-    /// We don't check the provide shape here.
+    /// We don't check the provided shape here.
     /// The caller should ensure that this data is laid out correctly.
     /// We also require that all of the elements have the same alignment.
     pub unsafe fn from_quantized<T: NoUninit>(data: &[T]) -> Self {

@@ -52,6 +52,7 @@ impl Tensor {
         }
     }
 
+    #[track_caller]
     fn lazy(op: LazyOp, meta: StorageView, device: Device) -> Self {
         op.check_invariants();
         Self::new(op, meta, None, device)
@@ -66,6 +67,10 @@ impl Tensor {
         Self {
             inner: Arc::new(Inner::from_shallow(op, meta, storage, device)),
         }
+    }
+
+    pub fn strong_count(&self) -> usize {
+        Arc::strong_count(&self.inner)
     }
 
     fn update_storage(&self, storage: Storage) {
@@ -281,6 +286,7 @@ impl Tensor {
     impl_unary_op!(relu, UnaryOp::Relu);
     impl_unary_op!(floor, UnaryOp::Floor);
     impl_unary_op!(ceil, UnaryOp::Ceil);
+    impl_unary_op!(neg, UnaryOp::Neg);
 
     pub fn layer_norm(
         self,
@@ -316,9 +322,9 @@ impl Tensor {
         Ok(Tensor::lazy(LazyOp::Softmax(softmax), new_view, device))
     }
 
-    pub fn rope(self, base: f32, dim: usize) -> anyhow::Result<Tensor> {
+    pub fn rope(self, dim: usize, base: f32, offset: usize) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let rope = RoPE::new(self, dim, f32::log2(base));
+        let rope = RoPE::new(self, dim, f32::log2(base), offset);
         let new_view = rope.compute_view()?;
         Ok(Tensor::lazy(LazyOp::RoPE(rope), new_view, device))
     }
@@ -767,6 +773,7 @@ impl Tensor {
 
     fn to_cpu(&self) -> Result<Tensor, TensorError> {
         if self.device().is_cpu() || !self.resolved() {
+            log::warn!("Tensor may not have been resolved, try calling `resolve()` first.");
             return Ok(self.clone());
         }
         let storage_guard = self.storage();
