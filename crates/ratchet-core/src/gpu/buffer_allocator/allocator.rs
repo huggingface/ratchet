@@ -111,29 +111,24 @@ impl BufferAllocator {
     /// # Inplace operations
     ///
     /// If an operation supports inplace, we need to "lease" the buffer
-    /// from the actual source (i.e the first non-inplace operation).
+    /// from the actual source (i.e the first non-inplace operation)
     ///
-    /// We traverse upwards checking how far the inplace chain goes. This is done by checking:
-    /// 1. If the operation has any sources (i.e it's not a constant)
-    /// 2. If the operation has an inplace kernel available
-    /// 3. If our PARENT (i.e the buffer we are about to apply an operation to) has multiple consumers
-    ///    if it has multiple consumers, you can't inplace
+    /// On what conditions do we terminate the upward traversal?
+    /// 1. We reach an operation that does not support inplace
+    /// 2. We reach an operation that has more than one consumer
+    /// 3. We reach an operation that has more than one source (this condition is wrong)
     fn determine_tensor_source(source: &Tensor) -> &Tensor {
         let mut true_source = source;
         loop {
-            if true_source.op().srcs().is_empty() {
-                //If no sources, we are at the root
-                break;
-            }
-            //TODO: operations should define their "inplace" source
-            //doesn't necessarily have to be the zeroth
-            let to_modify = true_source.op().srcs()[0];
-            let multiple_consumers = Arc::strong_count(&to_modify.inner) > 1;
-            if !true_source.op().supports_inplace() || multiple_consumers {
+            let cant_inplace = !true_source.op().supports_inplace();
+            let multiple_consumers = Arc::strong_count(&true_source.inner) > 1;
+            log::debug!("Conditions: {:?} {:?}", cant_inplace, multiple_consumers);
+            if cant_inplace || multiple_consumers {
                 break;
             }
 
-            true_source = to_modify;
+            true_source = true_source.op().srcs()[0]; //TODO: this shouldn't be 0, operations
+                                                      //should define their inplace source
         }
         log::debug!("Traversed to true source: {:?}", true_source.id());
         true_source
@@ -274,10 +269,7 @@ impl BufferAllocator {
             }
         }
 
-        //Allocate intermediates
-        self.greedy_by_size(execution_order, &mut assignments, device)?;
-
-        //The output tensor is a special case.
+        //The output never gets allocated in the below loop, because it is not a source.
         //We know we need an allocation for the output.
         //We traverse upwards until we find the first non-inplace operation, and use it's buffer.
         //It's also handy to treat output as different, as we can handle getting data back to CPU
@@ -299,6 +291,9 @@ impl BufferAllocator {
                 )
             });
         assignments.insert(output.id(), output_buffer);
+
+        //Allocate intermediates
+        self.greedy_by_size(execution_order, &mut assignments, device)?;
 
         log::debug!(
             "Total bytes allocated: {}kb",

@@ -108,11 +108,10 @@ impl Module for PhiSelfAttention {
             offset,
         })?;
 
+        /*
         let (key_states, value_states) = if let Some(kv) = cache {
             let prev_entries = kv.entries;
             let new_entries = prev_entries + seq_len;
-            println!("K_CACHE ARC COUNT: {:?}", kv.k_cache.strong_count());
-            println!("V_CACHE ARC COUNT: {:?}", kv.v_cache.strong_count());
             let k_cache = kv
                 .k_cache
                 .index_write(key_states, rvec![0, 0, prev_entries, 0])?
@@ -124,7 +123,7 @@ impl Module for PhiSelfAttention {
             (k_cache, v_cache)
         } else {
             (key_states, value_states)
-        };
+        };*/
 
         //TODO: can we just use the built in transposed matmul?
         let mut attn_weights = query_states

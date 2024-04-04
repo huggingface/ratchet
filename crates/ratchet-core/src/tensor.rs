@@ -671,9 +671,8 @@ impl Tensor {
                 alignment: t.dt().size_of(),
             }));
 
-            let inplacer = t.op().srcs()[0];
             //Can inplace && only 1 consumer
-            let can_inplace = t.op().supports_inplace() && Arc::strong_count(&inplacer.inner) == 1;
+            let can_inplace = t.op().supports_inplace() && Arc::strong_count(&t.inner) == 1;
 
             if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
