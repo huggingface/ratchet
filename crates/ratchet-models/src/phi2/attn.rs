@@ -43,9 +43,11 @@ impl SelfAttention {
             .to_u32()?;
         let softmax_scale =
             Tensor::from_data([1.0 / (n_heads as f32).sqrt()], shape![1], device.clone());
-        println!("DISK MODEL METADATA: {:?}", disk_model.metadata);
-        let rope = RotaryEmbedding::new(64, 512, 1e-5, device.clone())?;
-        println!("ROPE: {:?}", rope);
+        //TODO: hardcoded for Phi2, should read from meta
+        let rope_theta = 10000.0;
+        let dim = (0.4 * (2560f64 / 32f64)) as usize;
+        let max_position_embeddings = 2048;
+        let rope = RotaryEmbedding::new(dim, max_position_embeddings, rope_theta, device.clone())?;
         Ok(Self {
             q,
             k,
@@ -70,14 +72,34 @@ impl Module for SelfAttention {
 
         let h_dim = n_state / self.n_heads as usize;
         //we don't support qk ln
-        let qs = shape![batch_size as _, seq_len, self.n_heads as _, h_dim];
-        let kvs = shape![batch_size as _, seq_len, self.n_kv_heads as _, h_dim];
-        let q = q.view(qs)?.permute(&[0, 2, 1, 3])?;
-        let k = k.view(kvs.clone())?.permute(&[0, 2, 1, 3])?;
-        let v = v.view(kvs)?.permute(&[0, 2, 1, 3])?;
+        let q_shape = shape![batch_size as _, seq_len, self.n_heads as _, h_dim];
+        let kv_shape = shape![batch_size as _, seq_len, self.n_kv_heads as _, h_dim];
+        let qs = q.view(q_shape)?.permute(&[0, 2, 1, 3])?;
+        let ks = k.view(kv_shape.clone())?.permute(&[0, 2, 1, 3])?;
+        let vs = v.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
 
-        //Correct so far,  now we need to do RotaryEmbedding on value_states
+        let query_states = self.rope.apply_rotary_embedding(qs, 0)?;
+        let key_states = self.rope.apply_rotary_embedding(ks, 0)?;
 
-        return Ok(q);
+        /*
+        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+
+        # Partial rotary embedding
+        query_rot, query_pass = (
+            query_states[..., : self.rotary_emb.dim],
+            query_states[..., self.rotary_emb.dim :],
+        )
+        key_rot, key_pass = (
+            key_states[..., : self.rotary_emb.dim],
+            key_states[..., self.rotary_emb.dim :],
+        )
+        # [batch_size, seq_length, num_heads, head_dim // config.partial_rotary_factor]
+        query_rot, key_rot = apply_rotary_pos_emb(query_rot, key_rot, cos, sin, position_ids)
+
+        # [batch_size, seq_length, num_heads, head_dim]
+        query_states = torch.cat((query_rot, query_pass), dim=-1)
+        key_states = torch.cat((key_rot, key_pass), dim=-1)
+        */
+        Ok(query_states)
     }
 }
