@@ -163,8 +163,6 @@ def ground():
 
     #[test]
     fn load_phi2() -> anyhow::Result<()> {
-        let ground_truth = ground_truth()?;
-
         let model_path = concat!(
             env!("CARGO_RUSTC_CURRENT_DIR"),
             "/models/microsoft/phi-2/phi2-f16.gguf"
@@ -192,6 +190,7 @@ def ground():
         let cpu_result = result.to(&Device::CPU)?;
 
         println!("OURS: {:?}\n", cpu_result);
+        let ground_truth = ground_truth()?;
         println!("THEIRS: {:?}", ground_truth);
 
         cpu_result.all_close(&ground_truth[0], 1e-5, 1e-5)?;

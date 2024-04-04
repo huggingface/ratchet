@@ -436,13 +436,6 @@ mod tests {
 
     use super::*;
 
-    fn matmul_harness() -> anyhow::Result<(Tensor, Tensor)> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
-        Ok((a, b))
-    }
-
     fn ground_truth(
         a: &Tensor,
         b: &Tensor,
@@ -557,9 +550,16 @@ def matmul(a, b):
         run_matmul_trial(&device, prob).unwrap();
     }
 
+    fn qgemm_harness() -> anyhow::Result<(Tensor, Tensor)> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
+        Ok((a, b))
+    }
+
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
-        let (a, b) = matmul_harness()?;
+        let (a, b) = qgemm_harness()?;
         let ground = ground_truth(&a, &b, false, false)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);

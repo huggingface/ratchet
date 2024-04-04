@@ -41,13 +41,18 @@ impl SelfAttention {
             .get("phi2.attention.head_count")
             .unwrap()
             .to_u32()?;
+        let n_kv_heads = disk_model
+            .metadata
+            .get("phi2.attention.head_count_kv")
+            .unwrap()
+            .to_u32()?;
+        //1 / head_dim
         let softmax_scale =
-            Tensor::from_data([1.0 / (n_heads as f32).sqrt()], shape![1], device.clone());
+            Tensor::from_data([1.0 / (80 as f32).sqrt()], shape![1], device.clone());
         //TODO: hardcoded for Phi2, should read from meta
-        let rope_theta = 10000.0;
+        let base = 10000.0;
         let dim = (0.4 * (2560f64 / 32f64)) as usize;
-        let max_position_embeddings = 2048;
-        let rope = RotaryEmbedding::new(dim, max_position_embeddings, rope_theta, device.clone())?;
+        let rope = RotaryEmbedding::new(dim, false, base, 1.0);
         Ok(Self {
             q,
             k,
@@ -56,7 +61,7 @@ impl SelfAttention {
             rope,
             n_heads,
             softmax_scale,
-            n_kv_heads: n_heads,
+            n_kv_heads,
         })
     }
 }
@@ -78,28 +83,26 @@ impl Module for SelfAttention {
         let ks = k.view(kv_shape.clone())?.permute(&[0, 2, 1, 3])?;
         let vs = v.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
 
-        let query_states = self.rope.apply_rotary_embedding(qs, 0)?;
-        let key_states = self.rope.apply_rotary_embedding(ks, 0)?;
+        let query_states = self.rope.forward(qs)?;
+        let key_states = self.rope.forward(ks)?;
 
-        /*
-        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+        //TODO: can we just use the built in transposed matmul?
+        let attn_weights = query_states
+            .matmul(key_states.permute(&[0, 1, 3, 2])?, false, false)?
+            .mul(self.softmax_scale.clone())?;
 
-        # Partial rotary embedding
-        query_rot, query_pass = (
-            query_states[..., : self.rotary_emb.dim],
-            query_states[..., self.rotary_emb.dim :],
-        )
-        key_rot, key_pass = (
-            key_states[..., : self.rotary_emb.dim],
-            key_states[..., self.rotary_emb.dim :],
-        )
-        # [batch_size, seq_length, num_heads, head_dim // config.partial_rotary_factor]
-        query_rot, key_rot = apply_rotary_pos_emb(query_rot, key_rot, cos, sin, position_ids)
+        assert_eq!(
+            attn_weights.shape(),
+            &shape![batch_size as _, self.n_heads as _, seq_len, seq_len]
+        );
 
-        # [batch_size, seq_length, num_heads, head_dim]
-        query_states = torch.cat((query_rot, query_pass), dim=-1)
-        key_states = torch.cat((key_rot, key_pass), dim=-1)
-        */
-        Ok(query_states)
+        let w = attn_weights.softmax(3)?;
+        println!("W SHAPE: {:?}", w.shape());
+        println!("VS SHAPE: {:?}", vs.shape());
+        let wv = w.matmul(vs, false, false)?;
+        Ok(wv)
+        //wv.permute(&[0, 2, 1, 3])?
+        //let wv = wv.view(shape![batch_size as _, seq_len, n_state])?;
+        //self.o.forward(wv)
     }
 }

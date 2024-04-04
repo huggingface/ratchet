@@ -29,6 +29,7 @@ impl OpMetadata for RoPEMeta {}
 impl OpGuards for RoPE {
     fn check_shapes(&self) {
         let input = &self.input;
+        //TODO: overly restrictive
         assert!(input.rank() == 4);
         assert!(input.shape()[3] >= self.dim);
         assert!(self.dim % 8 == 0);
@@ -163,7 +164,7 @@ def mlx_rope(input, dim):
         let ground = ground_truth(&a, dim).unwrap();
 
         let a_gpu = a.to(&device).unwrap();
-        let b = a_gpu.rope(10000.0, dim).unwrap().resolve().unwrap();
+        let b = a_gpu.rope(dim, 10000.0).unwrap().resolve().unwrap();
 
         let ours = b.to(&Device::CPU).unwrap();
         //println!("ours = \n{:#?}\n", ours.to_ndarray_view::<f32>());
