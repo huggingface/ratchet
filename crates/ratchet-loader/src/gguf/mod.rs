@@ -1,9 +1,10 @@
 pub mod ggml;
 pub mod gguf;
-pub mod new_k_quants;
+pub mod tensor_loader;
 pub mod transcoder;
 pub mod utils;
-pub use new_k_quants::GgmlType;
+use ratchet::gguf::*;
+pub use tensor_loader::TensorLoader;
 
 #[cfg(test)]
 mod tests {
@@ -27,7 +28,10 @@ mod tests {
         Ok(expected_data)
     }
 
-    fn read_actual_data<GGUF: GgmlType>(tensor: Tensor, length: usize) -> anyhow::Result<Vec<u8>> {
+    fn read_actual_data<GGUF: TensorLoader>(
+        tensor: Tensor,
+        length: usize,
+    ) -> anyhow::Result<Vec<u8>> {
         let mut actual_data = vec![0u8; length];
         let mut actual_data_cursor = Cursor::new(&mut actual_data);
         GGUF::write(tensor, &mut actual_data_cursor)?;
@@ -95,7 +99,7 @@ mod tests {
 
         let blk0_k_weight_blockq4k = content.tensor(&mut reader, blk0_k_weight, &device)?;
 
-        let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * new_k_quants::BlockQ4K::TYPE_SIZE;
+        let q4k_len = blk0_k_weight_info.shape.get(0).unwrap() * Q4K::TYPE_SIZE;
         let expected_q4k_data = read_expected_data(
             &mut reader,
             content.tensor_data_offset + blk0_k_weight_info.offset,
@@ -104,8 +108,7 @@ mod tests {
 
         println!("Reading actual data");
 
-        let actual_q4k_data =
-            read_actual_data::<new_k_quants::BlockQ4K>(blk0_k_weight_blockq4k, q4k_len)?;
+        let actual_q4k_data = read_actual_data::<Q4K>(blk0_k_weight_blockq4k, q4k_len)?;
 
         assert_eq!(expected_q4k_data, actual_q4k_data, "Q4K don't match");
 
@@ -115,7 +118,7 @@ mod tests {
 
         let blk0_k_weight_blockq6k = content.tensor(&mut reader, blk0_v_weight, &device)?;
 
-        let q6k_len = blk0_v_weight_info.shape.get(0).unwrap() * new_k_quants::BlockQ6K::TYPE_SIZE;
+        let q6k_len = blk0_v_weight_info.shape.get(0).unwrap() * Q6K::TYPE_SIZE;
         let expected_q6k_data = read_expected_data(
             &mut reader,
             content.tensor_data_offset + blk0_v_weight_info.offset,
@@ -124,8 +127,7 @@ mod tests {
 
         println!("Reading actual data");
 
-        let actual_q6k_data =
-            read_actual_data::<new_k_quants::BlockQ6K>(blk0_k_weight_blockq6k, q6k_len)?;
+        let actual_q6k_data = read_actual_data::<Q6K>(blk0_k_weight_blockq6k, q6k_len)?;
 
         assert_eq!(expected_q6k_data, actual_q6k_data, "Q6K don't match");
         Ok(())

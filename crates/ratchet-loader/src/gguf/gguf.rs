@@ -4,19 +4,16 @@
 //!
 //! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
-use super::{
-    ggml::GgmlDType,
-    new_k_quants::{BlockF32, BlockQ4K, BlockQ6K},
-    GgmlType,
-};
+use super::ggml::GgmlDType;
 use crate::error::Result;
+use crate::gguf::TensorLoader;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use ratchet::{DType, Device, Shape, Tensor};
+use ratchet::gguf::Q6K;
+use ratchet::{gguf::Q4K, DType, Device, Shape, Tensor};
 use std::collections::HashMap;
 
 use super::transcoder::GGTranscoder;
-
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,31 +81,12 @@ impl TensorInfo {
         println!("#NUM BLOCKS: {tensor_blocks}");
         let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
 
-        let mut raw_data = vec![0u8; size_in_bytes]; //TODO: MaybeUninit
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
-        // reader.read_exact(&mut raw_data)?;
 
-        // let dst_type = if let Some(dtype) = dst_type {
-        //     //If user provides a type to transcode to, use it
-        //     dtype
-        // } else {
-        //     //Else, unquantized types map nicely F32 -> F32
-        //     self.ggml_dtype.into()
-        // };
-
-        // ratchet_from_gguf(
-        //     self.ggml_dtype,
-        //     dst_type,
-        //     &raw_data,
-        //     self.shape.clone(),
-        //     device,
-        // )
-        //
-        // [TODO] Implement
         match self.ggml_dtype {
-            GgmlDType::Q4K => BlockQ4K::read(tensor_blocks, reader, device),
-            GgmlDType::Q6K => BlockQ6K::read(tensor_blocks, reader, device),
-            GgmlDType::F32 => BlockF32::read(tensor_blocks, reader, device),
+            GgmlDType::Q4K => Q4K::read(tensor_blocks, reader, device),
+            GgmlDType::Q6K => Q6K::read(tensor_blocks, reader, device),
+            GgmlDType::F32 => f32::read(tensor_blocks, reader, device),
             _ => anyhow::bail!("Not yet implemented"),
         }
     }

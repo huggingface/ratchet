@@ -1,38 +1,16 @@
+use derive_new::new;
 use smallvec::SmallVec;
 
-use crate::{BufferSegment, RVec};
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum GGUFDType {
-    Q4K,
-    Q6K,
-}
+use crate::{BufferSegment, RVec, Segments};
 
 pub const QK_K: usize = 256;
 pub const K_SCALE_SIZE: usize = 12;
 
-pub trait Align {
-    fn calculate_alignment(&self) -> usize;
-    fn align(&self) -> usize;
-}
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
+pub struct Q4K;
 
-impl Align for usize {
-    fn calculate_alignment(&self) -> usize {
-        let remainder = self % 256;
-        if remainder == 0 {
-            0
-        } else {
-            256 - remainder
-        }
-    }
-
-    fn align(&self) -> usize {
-        self + &self.calculate_alignment()
-    }
-}
-
-impl GGUFDType {
-    fn calculate_q4k_segments(numel: usize) -> RVec<BufferSegment> {
+impl Segments for Q4K {
+    fn segments(numel: usize) -> RVec<BufferSegment> {
         let ds_len: u64 = (numel * 4).align() as u64;
         let offset = 0;
         let ds_segment = BufferSegment::new(offset, Some(ds_len));
@@ -56,8 +34,13 @@ impl GGUFDType {
             qs_segment,
         ])
     }
+}
 
-    fn calculate_q6k_segments(numel: usize) -> RVec<BufferSegment> {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
+pub struct Q6K;
+
+impl Segments for Q6K {
+    fn segments(numel: usize) -> RVec<BufferSegment> {
         let ql_len: u64 = (numel * QK_K / 2).align() as u64;
         let offset = 0;
         let ql_segment = BufferSegment::new(offset, Some(ql_len));
@@ -81,11 +64,39 @@ impl GGUFDType {
             q_segment,
         ])
     }
+}
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum GGUFDType {
+    Q4K(Q4K),
+    Q6K(Q6K),
+}
+
+pub trait Align {
+    fn calculate_alignment(&self) -> usize;
+    fn align(&self) -> usize;
+}
+
+impl Align for usize {
+    fn calculate_alignment(&self) -> usize {
+        let remainder = self % 256;
+        if remainder == 0 {
+            0
+        } else {
+            256 - remainder
+        }
+    }
+
+    fn align(&self) -> usize {
+        self + &self.calculate_alignment()
+    }
+}
+
+impl GGUFDType {
     pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
         match self {
-            GGUFDType::Q4K => GGUFDType::calculate_q4k_segments(numel),
-            GGUFDType::Q6K => GGUFDType::calculate_q6k_segments(numel),
+            GGUFDType::Q4K(_) => Q4K::segments(numel),
+            GGUFDType::Q6K(_) => Q6K::segments(numel),
         }
     }
 }

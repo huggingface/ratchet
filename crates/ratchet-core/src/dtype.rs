@@ -1,7 +1,9 @@
 use std::{cmp::max, num::NonZeroU64};
 pub mod gguf;
+pub mod segments;
 pub use gguf::GGUFDType;
 use half::{bf16, f16};
+pub use segments::Segments;
 use wgpu::{BufferAddress, BufferSize};
 
 use crate::{
@@ -42,8 +44,8 @@ impl DType {
             DType::I32 => 4,
             DType::U32 => 4,
             DType::WQ8 => 4,
-            DType::GGUF(gguf::GGUFDType::Q4K) => 256,
-            DType::GGUF(gguf::GGUFDType::Q6K) => 256,
+            DType::GGUF(gguf::GGUFDType::Q4K(_)) => 256,
+            DType::GGUF(gguf::GGUFDType::Q6K(_)) => 256,
         }
     }
 
