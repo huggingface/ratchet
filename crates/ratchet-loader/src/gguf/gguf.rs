@@ -78,15 +78,27 @@ impl TensorInfo {
         }
 
         let tensor_blocks = tensor_elems / block_size;
+        let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
 
+        let mut raw_data = vec![0u8; size_in_bytes]; //TODO: MaybeUninit
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
+        reader.read_exact(&mut raw_data)?;
 
-        match self.ggml_dtype {
-            GgmlDType::Q4K => Q4K::read(tensor_blocks, reader, device),
-            GgmlDType::Q6K => Q6K::read(tensor_blocks, reader, device),
-            GgmlDType::F32 => f32::read(tensor_blocks, reader, device),
-            _ => anyhow::bail!("Not yet implemented"),
-        }
+        let dst_type = if let Some(dtype) = dst_type {
+            //If user provides a type to transcode to, use it
+            dtype
+        } else {
+            //Else, unquantized types map nicely F32 -> F32
+            self.ggml_dtype.into()
+        };
+
+        ratchet_from_gguf(
+            self.ggml_dtype,
+            dst_type,
+            &raw_data,
+            self.shape.clone(),
+            device,
+        )
     }
 }
 

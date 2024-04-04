@@ -5,7 +5,7 @@ use ratchet_loader::gguf::gguf::Content;
 use ratchet_nn::{Linear, Module, RotaryEmbedding};
 
 #[derive(Debug)]
-pub struct SelfAttention {
+pub struct PhiSelfAttention {
     q: Linear,
     k: Linear,
     v: Linear,
@@ -16,7 +16,7 @@ pub struct SelfAttention {
     n_kv_heads: u32,
 }
 
-impl SelfAttention {
+impl PhiSelfAttention {
     pub fn load<R: BufRead + Seek>(
         disk_model: &Content,
         reader: &mut R,
@@ -66,10 +66,16 @@ impl SelfAttention {
     }
 }
 
-impl Module for SelfAttention {
-    type Input = Tensor;
+pub struct PhiAttnInput {
+    pub input: Tensor,
+    pub mask: Option<Tensor>,
+}
+
+impl Module for PhiSelfAttention {
+    type Input = PhiAttnInput;
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let PhiAttnInput { input, mask } = input;
         let [batch_size, seq_len, n_state]: [usize; 3] = input.shape().try_into()?;
         let q = self.q.forward(input.clone())?;
         let k = self.k.forward(input.clone())?;
@@ -87,7 +93,7 @@ impl Module for SelfAttention {
         let key_states = self.rope.forward(ks)?;
 
         //TODO: can we just use the built in transposed matmul?
-        let attn_weights = query_states
+        let mut attn_weights = query_states
             .matmul(key_states.permute(&[0, 1, 3, 2])?, false, false)?
             .mul(self.softmax_scale.clone())?;
 
@@ -96,13 +102,13 @@ impl Module for SelfAttention {
             &shape![batch_size as _, self.n_heads as _, seq_len, seq_len]
         );
 
+        if let Some(m) = mask {
+            attn_weights = attn_weights.add(m)?;
+        }
+
         let w = attn_weights.softmax(3)?;
-        println!("W SHAPE: {:?}", w.shape());
-        println!("VS SHAPE: {:?}", vs.shape());
-        let wv = w.matmul(vs, false, false)?;
-        Ok(wv)
-        //wv.permute(&[0, 2, 1, 3])?
-        //let wv = wv.view(shape![batch_size as _, seq_len, n_state])?;
-        //self.o.forward(wv)
+        let wv = w.matmul(vs, false, false)?.permute(&[0, 2, 1, 3])?;
+        let wv = wv.view(shape![batch_size as _, seq_len, n_state])?;
+        self.o.forward(wv)
     }
 }

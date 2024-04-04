@@ -4,12 +4,15 @@ use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Content;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear, Module};
 
-use super::{attn::SelfAttention, mlp::MLP};
+use super::{
+    attn::{PhiAttnInput, PhiSelfAttention},
+    mlp::MLP,
+};
 
 #[derive(Debug)]
 pub struct DecoderLayer {
     ln: LayerNorm,
-    self_attn: SelfAttention,
+    self_attn: PhiSelfAttention,
     mlp: MLP,
 }
 
@@ -20,7 +23,7 @@ impl DecoderLayer {
         layer_index: usize,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let self_attn = SelfAttention::load(disk_model, reader, layer_index, device)?;
+        let self_attn = PhiSelfAttention::load(disk_model, reader, layer_index, device)?;
         let mut lt = |name: &str| {
             let key = format!("blk.{}.{}", layer_index, name);
             disk_model.tensor(reader, &key, device)
@@ -36,14 +39,20 @@ impl DecoderLayer {
     }
 }
 
+pub struct DecoderLayerInput {
+    pub x: Tensor,
+    pub mask: Option<Tensor>,
+}
+
 impl Module for DecoderLayer {
-    type Input = Tensor;
+    type Input = DecoderLayerInput;
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let x = self.ln.forward(input)?;
-        let x = self.self_attn.forward(x);
+        let DecoderLayerInput { x, mask } = input;
+        let x = self.ln.forward(x)?;
+        let x = self.self_attn.forward(PhiAttnInput { input: x, mask })?;
         //self.mlp.forward(x)
-        x
+        Ok(x)
     }
 }
 
@@ -61,10 +70,19 @@ impl Module for Phi2 {
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.embedding.forward(input)?;
+        let [_, seq_len, _]: [usize; 3] = x.shape().try_into()?;
+        let mask = if seq_len <= 1 {
+            None
+        } else {
+            Some(Self::generate_mask(seq_len, x.device())?)
+        };
 
         let mut layer_idx = 0;
         for layer in &self.layers {
-            x = layer.forward(x)?;
+            x = layer.forward(DecoderLayerInput {
+                x,
+                mask: mask.clone(),
+            })?;
             if layer_idx == 0 {
                 return Ok(x);
             }
@@ -121,6 +139,18 @@ impl Phi2 {
             lm_head,
             kv_cache,
         })
+    }
+
+    pub fn generate_mask(seq_len: usize, device: &Device) -> anyhow::Result<Tensor> {
+        let mask: Vec<_> = (0..seq_len)
+            .flat_map(|i| (0..seq_len).map(move |j| if j > i { f32::NEG_INFINITY } else { 0f32 }))
+            .collect();
+
+        Ok(Tensor::from_data(
+            &mask,
+            shape![seq_len, seq_len],
+            device.clone(),
+        ))
     }
 }
 
@@ -189,7 +219,7 @@ def ground():
         let result = model.forward(input)?.resolve()?;
         let cpu_result = result.to(&Device::CPU)?;
 
-        println!("OURS: {:?}\n", cpu_result);
+        println!("OURS: {:?}\n", cpu_result.to_ndarray_view::<f32>());
         let ground_truth = ground_truth()?;
         println!("THEIRS: {:?}", ground_truth);
 

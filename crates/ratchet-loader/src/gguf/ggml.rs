@@ -24,6 +24,16 @@ pub enum GgmlDType {
     Q8K,
 }
 
+impl From<GgmlDType> for ratchet::DType {
+    fn from(val: GgmlDType) -> Self {
+        match val {
+            GgmlDType::F32 => ratchet::DType::F32,
+            GgmlDType::F16 => ratchet::DType::F16,
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl GgmlDType {
     pub(crate) fn from_u32(u: u32) -> Result<Self> {
         let dtype = match u {
@@ -69,7 +79,7 @@ impl GgmlDType {
     pub fn type_size(&self) -> usize {
         match self {
             Self::F32 => 4,
-            Self::F16 => 4, // 2, [TODO] Think about this. Currently WASM doesn't support F16
+            Self::F16 => 2, // 2, [TODO] Think about this. Currently WASM doesn't support F16
             Self::Q4K => Q4K::TYPE_SIZE,
             Self::Q6K => Q6K::TYPE_SIZE,
             dt => todo!("{:?} not yet supported", dt),
