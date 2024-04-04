@@ -16,3 +16,8 @@ pub trait Module {
     type Input;
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor>;
 }
+
+pub trait MutableModule {
+    type Input;
+    fn forward(&mut self, input: Self::Input) -> anyhow::Result<Tensor>;
+}

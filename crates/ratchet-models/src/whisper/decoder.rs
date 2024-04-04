@@ -4,7 +4,7 @@ use crate::model::Whisper;
 use crate::whisper::residual_block::*;
 use ratchet::prelude::*;
 use ratchet_loader::ggml::GGMLModel;
-use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
+use ratchet_nn::{Embedding, KVCache, LayerNorm, Module, MutableModule};
 
 #[derive(Debug)]
 pub(crate) struct DecoderStem {
@@ -61,16 +61,17 @@ pub struct WhisperDecoder {
     device: Device,
 }
 
-impl Module for WhisperDecoder {
+impl MutableModule for WhisperDecoder {
     type Input = [Tensor; 2];
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&mut self, input: Self::Input) -> anyhow::Result<Tensor> {
         let [audio_ctx, tokens] = input;
         let mut x = self.stem.forward(StemInput {
             tokens,
             offset: self.cache.entries(0),
         })?;
         for (block_idx, block) in self.blocks.iter().enumerate() {
+            let cache_entry = self.cache.take(block_idx);
             let block_input = ResidualAttentionBlockInputs {
                 x,
                 xa: Some(audio_ctx.clone()),
@@ -157,7 +158,7 @@ mod tests {
     };
     use ratchet::{shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::ggml::GGMLCompatible;
-    use ratchet_nn::Module;
+    use ratchet_nn::{Module, MutableModule};
     use tokenizers::Tokenizer;
 
     use crate::{

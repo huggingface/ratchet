@@ -29,13 +29,9 @@ impl Module for ResidualAttentionBlock {
         let ResidualAttentionBlockInputs { x, xa, mask, cache } = input;
 
         let attn_ln = self.attn_ln.forward(x.clone())?;
-        let self_attn = self.attn.forward(MHAInputs::new(
-            attn_ln,
-            None,
-            mask.clone(),
-            cache.clone(),
-            true,
-        ))?;
+        let self_attn =
+            self.attn
+                .forward(MHAInputs::new(attn_ln, None, mask.clone(), cache, true))?;
 
         let mut attn = self_attn.add(x)?;
 

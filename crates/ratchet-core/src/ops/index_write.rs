@@ -72,6 +72,9 @@ impl MetaOperation for IndexWrite {
         &self,
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if !inplace {
+            panic!("IndexWrite only supports inplace operation");
+        }
         Ok(BindGroupLayoutDescriptor::binary_inplace())
     }
 
