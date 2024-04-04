@@ -450,8 +450,8 @@ impl GgmlType for BlockQ4K {
         tensor: Tensor,
         writer: &mut W,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        let GGUFDType::Q4K = match tensor.dt() {
-            DType::GGUF(q4k @ GGUFDType::Q4K) => Ok(q4k),
+        match tensor.dt() {
+            DType::GGUF(GGUFDType::Q4K) => Ok(()),
             otherwise => Err(anyhow!(
                 "Got an invalid datatype while trying to parse q4k: {:?}",
                 otherwise
@@ -473,6 +473,7 @@ impl GgmlType for BlockQ4K {
         //Can't just call `to_vec` here.
         //Do something like: https://github.com/FL33TW00D/wgpu-bench/blob/master/src/quant.rs#L105
         // let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
+        // [TODO] Check if we can improve on this
         let tensor_data = unsafe { tensor.into_bytes()? };
 
         let ds_offset = ds_segment.offset;
@@ -582,91 +583,96 @@ impl GgmlType for BlockQ6K {
             ds[_idx] = reader.read_f32::<LittleEndian>()?;
         }
 
-        let qls_tensor = Tensor::from_bytes(
-            qls.as_ref(),
-            ratchet::DType::U32,
-            shape![tensor_blocks, QK_K / 2 / 4],
-            device.clone(),
-        )?;
+        let mut tensor_data = vec![0u32; 0];
 
-        let qhs_tensor = Tensor::from_bytes(
-            qhs.as_ref(),
-            ratchet::DType::U32,
-            shape![tensor_blocks, QK_K / 4 / 4],
-            device.clone(),
-        )?;
+        let qls_alignment = qls.align_standard();
+        let mut qls_u32 = bytemuck::cast_slice::<u8, u32>(&qls).to_vec();
+        tensor_data.append(&mut qls_u32);
 
-        let scales_tensor = Tensor::from_bytes(
-            scales.as_ref(),
-            ratchet::DType::U32,
-            shape![tensor_blocks, QK_K / 16 / 4],
-            device.clone(),
-        )?;
-        let ds_tensor = Tensor::from_data(&ds, shape![tensor_blocks], device.clone());
+        let qhs_alignment = qhs.align_standard();
+        let mut qhs_u32 = bytemuck::cast_slice::<u8, u32>(&qhs).to_vec();
+        tensor_data.append(&mut qhs_u32);
 
-        let block_q6k: BlockQ6K = BlockQ6K {
-            ql: qls_tensor,
-            qh: qhs_tensor,
-            scales: scales_tensor,
-            d: ds_tensor,
+        let scales_alignment = scales.align_standard();
+        let mut scales_u32 = bytemuck::cast_slice::<u8, u32>(&scales).to_vec();
+        tensor_data.append(&mut scales_u32);
+
+        let ds_alignment = ds.align_standard();
+        let mut ds_u32 = bytemuck::cast_slice::<f32, u32>(&ds).to_vec();
+        tensor_data.append(&mut ds_u32);
+
+        let tensor_data_len = (&tensor_data).len();
+
+        let inner = unsafe {
+            Tensor::from_quantized::<u32, _>(
+                &tensor_data,
+                DType::GGUF(GGUFDType::Q6K),
+                shape![256, 256],
+                device.clone(),
+            )
         };
-        // Ok(Block::BlockQ6K(block_q6k))
-        todo!()
+
+        Ok(inner)
     }
+
     fn write<R: std::io::Write>(
         tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        // let BlockQ6K { ql, qh, scales, d } = self;
+        match tensor.dt() {
+            DType::GGUF(GGUFDType::Q6K) => Ok(()),
+            otherwise => Err(anyhow!(
+                "Got an invalid datatype while trying to parse q6k: {:?}",
+                otherwise
+            )),
+        }?;
 
-        // let tensor_blocks = d
-        //     .shape()
-        //     .get(0)
-        //     .ok_or(anyhow!("Unable to get tensor blocks"))?;
+        let tensor_blocks = tensor
+            .shape()
+            .get(0)
+            .ok_or(anyhow!("Failed to get tensor blocks"))?
+            .clone();
 
-        // let ql_data = ql.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        // let mut ql_data = ql_data
-        //     .iter()
-        //     .map(|value| value.to_le_bytes())
-        //     .flatten()
-        //     .collect::<Vec<u8>>();
-        // let mut ql_data_cursor = Cursor::new(&mut ql_data);
+        let segments = gguf::GGUFDType::Q6K.segments(tensor_blocks);
+        let (ql_segment, qh_segment, scales_segment, d_segment) =
+            segments
+                .iter()
+                .collect_tuple()
+                .ok_or(anyhow!("Invalid segmentation found in Q4K"))?;
 
-        // let qh_data = qh.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        // let mut qh_data = qh_data
-        //     .iter()
-        //     .map(|value| value.to_le_bytes())
-        //     .flatten()
-        //     .collect::<Vec<u8>>();
-        // let mut qh_data_cursor = Cursor::new(&mut qh_data);
+        // [TODO] Check if we can improve on this
+        let tensor_data = unsafe { tensor.into_bytes()? };
 
-        // let scales_data = scales.to(&ratchet::Device::CPU)?.to_vec::<u32>()?;
-        // let mut scales_data = scales_data
-        //     .iter()
-        //     .map(|value| value.to_le_bytes())
-        //     .flatten()
-        //     .collect::<Vec<u8>>();
-        // let mut scales_data_cursor = Cursor::new(&mut scales_data);
+        let ql_offset = ql_segment.offset;
+        let mut ql_data_cursor = Cursor::new(&tensor_data);
+        ql_data_cursor.seek(SeekFrom::Start(ql_offset))?;
 
-        // let d_data = d.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+        let qh_offset = qh_segment.offset;
+        let mut qh_data_cursor = Cursor::new(&tensor_data);
+        qh_data_cursor.seek(SeekFrom::Start(qh_offset))?;
 
-        // for _idx in 0..*tensor_blocks {
-        //     let current_ql =
-        //         read_data_from_cursor(&mut ql_data_cursor, (_idx * QK_K / 2) as u64, QK_K / 2)?;
-        //     writer.write_all(current_ql.as_ref())?;
+        let scales_offset = scales_segment.offset;
+        let mut scales_data_cursor = Cursor::new(&tensor_data);
+        scales_data_cursor.seek(SeekFrom::Start(scales_offset))?;
 
-        //     let current_qh =
-        //         read_data_from_cursor(&mut qh_data_cursor, (_idx * QK_K / 4) as u64, QK_K / 4)?;
-        //     writer.write_all(current_qh.as_ref())?;
+        let d_offset = d_segment.offset;
+        let mut d_data_cursor = Cursor::new(&tensor_data);
+        d_data_cursor.seek(SeekFrom::Start(d_offset))?;
 
-        //     let current_scales = read_data_from_cursor(
-        //         &mut scales_data_cursor,
-        //         (_idx * QK_K / 16) as u64,
-        //         QK_K / 16,
-        //     )?;
-        //     writer.write_all(current_scales.as_ref())?;
-        //     writer.write_f32::<LittleEndian>(d_data[_idx])?;
-        // }
+        for _idx in 0..tensor_blocks {
+            let current_ql = ql_data_cursor.read_len_bytes(QK_K / 2)?;
+            writer.write_all(current_ql.as_ref())?;
+
+            let current_qh = qh_data_cursor.read_len_bytes(QK_K / 4)?;
+            writer.write_all(current_qh.as_ref())?;
+
+            let current_scales = scales_data_cursor.read_len_bytes(QK_K / 16)?;
+            writer.write_all(current_scales.as_ref())?;
+
+            let d_value = d_data_cursor.read_f32::<LittleEndian>()?;
+            writer.write_f32::<LittleEndian>(d_value)?;
+        }
+
         Ok(())
     }
 }

@@ -108,6 +108,26 @@ mod tests {
             read_actual_data::<new_k_quants::BlockQ4K>(blk0_k_weight_blockq4k, q4k_len)?;
 
         assert_eq!(expected_q4k_data, actual_q4k_data, "Q4K don't match");
+
+        let blk0_v_weight = "blk.0.attn_v.weight";
+        let blk0_v_weight_info = content.tensor_infos.get(blk0_v_weight).unwrap();
+        println!("Tensor info: {:#?}", blk0_v_weight_info);
+
+        let blk0_k_weight_blockq6k = content.tensor(&mut reader, blk0_v_weight, &device)?;
+
+        let q6k_len = blk0_v_weight_info.shape.get(0).unwrap() * new_k_quants::BlockQ6K::TYPE_SIZE;
+        let expected_q6k_data = read_expected_data(
+            &mut reader,
+            content.tensor_data_offset + blk0_v_weight_info.offset,
+            q6k_len,
+        )?;
+
+        println!("Reading actual data");
+
+        let actual_q6k_data =
+            read_actual_data::<new_k_quants::BlockQ6K>(blk0_k_weight_blockq6k, q6k_len)?;
+
+        assert_eq!(expected_q6k_data, actual_q6k_data, "Q6K don't match");
         Ok(())
     }
 

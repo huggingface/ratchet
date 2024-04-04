@@ -43,6 +43,7 @@ impl DType {
             DType::U32 => 4,
             DType::WQ8 => 4,
             DType::GGUF(gguf::GGUFDType::Q4K) => 256,
+            DType::GGUF(gguf::GGUFDType::Q6K) => 256,
         }
     }
 
