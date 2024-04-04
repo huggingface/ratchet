@@ -32,8 +32,8 @@ impl DecoderLayer {
         let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
 
         let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?), false),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?), false),
+            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?), true),
+            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?), true),
         );
         Ok(Self { ln, self_attn, mlp })
     }
@@ -49,10 +49,14 @@ impl Module for DecoderLayer {
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let DecoderLayerInput { x, mask } = input;
-        let x = self.ln.forward(x)?;
-        let x = self.self_attn.forward(PhiAttnInput { input: x, mask })?;
-        //self.mlp.forward(x)
-        Ok(x)
+        let residual = x.clone();
+        let xs = self.ln.forward(x)?;
+        let attn_output = self.self_attn.forward(PhiAttnInput {
+            input: xs.clone(),
+            mask,
+        })?;
+        let ff_hs = self.mlp.forward(xs)?;
+        Ok(attn_output.add(ff_hs)?.add(residual)?)
     }
 }
 
@@ -70,7 +74,7 @@ impl Module for Phi2 {
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.embedding.forward(input)?;
-        let [_, seq_len, _]: [usize; 3] = x.shape().try_into()?;
+        let [_, seq_len, n_state]: [usize; 3] = x.shape().try_into()?;
         let mask = if seq_len <= 1 {
             None
         } else {
@@ -83,13 +87,13 @@ impl Module for Phi2 {
                 x,
                 mask: mask.clone(),
             })?;
-            if layer_idx == 0 {
-                return Ok(x);
-            }
             layer_idx += 1;
         }
-
-        Ok(x)
+        x = self.ln_post.forward(x)?;
+        println!("X SHAPE: {:?}", x.shape());
+        x = x.slice(&[0..1, seq_len - 1..seq_len, 0..n_state])?;
+        let logits = self.lm_head.forward(x)?;
+        Ok(logits)
     }
 }
 
@@ -132,6 +136,7 @@ impl Phi2 {
             .unwrap()
             .to_u32()? as usize;
         let kv_cache = KVCache::new(n_layers, shape![1, Self::MAX_CACHE, n_state], device);
+
         Ok(Self {
             embedding,
             layers,
@@ -175,14 +180,11 @@ def ground():
     extracted = collections.defaultdict(list)
     model = AutoModelForCausalLM.from_pretrained("microsoft/phi-2", torch_dtype=torch.float32, device_map="cpu", trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
-
     inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
-
-    model.model.layers[0].self_attn.q_proj.register_forward_hook(lambda module, inputs, outputs: extracted["self_attn"].append(outputs))
     outputs = model.generate(**inputs, max_length=8, return_dict_in_generate=True, output_logits=True)
-
-    extracted = extracted["self_attn"][0][0].detach().numpy()
-    return [extracted]
+    generated_logits = outputs.logits[0]
+    generated_logits = torch.unsqueeze(torch.unsqueeze(generated_logits, 0), 0)
+    return generated_logits.numpy()
 "#;
         Python::with_gil(|py| {
             let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
@@ -193,6 +195,7 @@ def ground():
 
     #[test]
     fn load_phi2() -> anyhow::Result<()> {
+        let ground_truth = ground_truth()?;
         let model_path = concat!(
             env!("CARGO_RUSTC_CURRENT_DIR"),
             "/models/microsoft/phi-2/phi2-f16.gguf"
@@ -220,10 +223,9 @@ def ground():
         let cpu_result = result.to(&Device::CPU)?;
 
         println!("OURS: {:?}\n", cpu_result.to_ndarray_view::<f32>());
-        let ground_truth = ground_truth()?;
         println!("THEIRS: {:?}", ground_truth);
 
-        cpu_result.all_close(&ground_truth[0], 1e-5, 1e-5)?;
+        cpu_result.all_close(&ground_truth[0], 1e-3, 1e-3)?;
         Ok(())
     }
 }
