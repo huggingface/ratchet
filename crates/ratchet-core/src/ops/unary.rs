@@ -24,6 +24,7 @@ pub enum UnaryOp {
     Relu,
     Floor,
     Ceil,
+    Neg,
 }
 
 impl UnaryOp {
@@ -40,6 +41,7 @@ impl UnaryOp {
             UnaryOp::Relu => "relu",
             UnaryOp::Floor => "floor",
             UnaryOp::Ceil => "ceil",
+            UnaryOp::Neg => "neg",
         }
     }
 }
@@ -82,6 +84,12 @@ impl Operation for Unary {
 }
 
 impl MetaOperation for Unary {
+    fn kernel_key(&self, dst: &Tensor) -> String {
+        let kn = self.op.kernel_name();
+        let ke = self.kernel_element(dst).as_str();
+        format!("{}_{}", kn, ke)
+    }
+
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
     }
@@ -124,14 +132,6 @@ impl MetaOperation for Unary {
         } else {
             Ok(BindGroupLayoutDescriptor::unary())
         }
-    }
-
-    fn kernel_key(&self, dst: &Tensor) -> String {
-        format!(
-            "{}_{}",
-            self.op.kernel_name(),
-            self.kernel_element(dst).as_str()
-        )
     }
 
     fn write_metadata(
@@ -222,6 +222,7 @@ def {}(a):
             UnaryOp::Relu => a_gpu.relu()?,
             UnaryOp::Floor => a_gpu.floor()?,
             UnaryOp::Ceil => a_gpu.ceil()?,
+            UnaryOp::Neg => a_gpu.neg()?,
         }
         .resolve()?;
 
