@@ -78,8 +78,6 @@ impl TensorInfo {
         }
 
         let tensor_blocks = tensor_elems / block_size;
-        println!("#NUM BLOCKS: {tensor_blocks}");
-        let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
 
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
 
