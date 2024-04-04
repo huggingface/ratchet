@@ -1,7 +1,7 @@
 use half::f16;
-use ratchet::{DType, Device, Shape, Tensor, TensorDType};
+use ratchet::{DType, Device, Shape, Tensor};
 
-use crate::{k_quants::GgmlType, GgmlDType};
+use super::ggml::GgmlDType;
 
 /// # Transcoder
 /// Transcode GGML quantized types into Ratchet quantized types.
@@ -33,12 +33,7 @@ impl GGTranscoder {
                     device.clone(),
                 )
             }
-            (GgmlDType::Q4K, DType::WQ8) => Self::q4k_to_wq8(),
             _ => todo!(),
         }
-    }
-
-    fn q4k_to_wq8() -> anyhow::Result<Tensor> {
-        todo!()
     }
 }
