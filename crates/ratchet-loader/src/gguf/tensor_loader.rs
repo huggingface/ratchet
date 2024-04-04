@@ -19,8 +19,6 @@ use ratchet::{gguf, Segments};
 
 pub trait TensorLoader: Sized + Clone {
     const GGML_DTYPE: GgmlDType;
-    const BLCK_SIZE: usize;
-    const TYPE_SIZE: usize;
 
     fn read<R: std::io::Seek + std::io::Read>(
         tensor_blocks: usize,
@@ -36,8 +34,6 @@ pub trait TensorLoader: Sized + Clone {
 
 impl TensorLoader for gguf::Q4K {
     const GGML_DTYPE: GgmlDType = GgmlDType::Q4K;
-    const BLCK_SIZE: usize = QK_K;
-    const TYPE_SIZE: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 2;
 
     fn read<R: std::io::Seek + std::io::Read>(
         tensor_blocks: usize,
@@ -93,7 +89,7 @@ impl TensorLoader for gguf::Q4K {
             Tensor::from_quantized::<u32, _>(
                 &tensor_data,
                 DType::GGUF(GGUFDType::Q4K(gguf::Q4K::new())),
-                shape![tensor_blocks, 256],
+                shape![tensor_blocks, QK_K],
                 device.clone(),
             )
         };
@@ -169,8 +165,6 @@ impl TensorLoader for gguf::Q4K {
 
 impl TensorLoader for gguf::Q6K {
     const GGML_DTYPE: GgmlDType = GgmlDType::Q6K;
-    const BLCK_SIZE: usize = QK_K;
-    const TYPE_SIZE: usize = QK_K / 2 + QK_K / 4 + QK_K / 16 + 4;
 
     fn read<R: std::io::Seek + std::io::Read>(
         tensor_blocks: usize,
@@ -218,7 +212,7 @@ impl TensorLoader for gguf::Q6K {
             Tensor::from_quantized::<u32, _>(
                 &tensor_data,
                 DType::GGUF(GGUFDType::Q6K(gguf::Q6K::new())),
-                shape![tensor_blocks, 256],
+                shape![tensor_blocks, QK_K],
                 device.clone(),
             )
         };
@@ -290,8 +284,6 @@ impl TensorLoader for gguf::Q6K {
 
 impl TensorLoader for f32 {
     const GGML_DTYPE: GgmlDType = GgmlDType::F32;
-    const BLCK_SIZE: usize = 1;
-    const TYPE_SIZE: usize = 4;
 
     fn read<R: std::io::Seek + std::io::Read>(
         tensor_blocks: usize,

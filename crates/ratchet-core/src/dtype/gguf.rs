@@ -1,13 +1,24 @@
 use derive_new::new;
-use smallvec::SmallVec;
 
-use crate::{BufferSegment, RVec, Segments};
+use crate::{rvec, BufferSegment, RVec, Segments};
 
 pub const QK_K: usize = 256;
 pub const K_SCALE_SIZE: usize = 12;
 
+pub trait GGUFSize {
+    const BLCK_SIZE: usize;
+    const TYPE_SIZE: usize;
+    const TYPE_SIZE_WEBGPU: usize;
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
 pub struct Q4K;
+
+impl GGUFSize for Q4K {
+    const BLCK_SIZE: usize = QK_K;
+    const TYPE_SIZE: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 2;
+    const TYPE_SIZE_WEBGPU: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 4;
+}
 
 impl Segments for Q4K {
     fn segments(numel: usize) -> RVec<BufferSegment> {
@@ -27,17 +38,18 @@ impl Segments for Q4K {
         let offset = offset + scales_len;
         let qs_segment = BufferSegment::new(offset, Some(qs_len));
 
-        SmallVec::<[BufferSegment; 4]>::from_vec(vec![
-            ds_segment,
-            dmins_segment,
-            scales_segment,
-            qs_segment,
-        ])
+        rvec![ds_segment, dmins_segment, scales_segment, qs_segment,]
     }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
 pub struct Q6K;
+
+impl GGUFSize for Q6K {
+    const BLCK_SIZE: usize = QK_K;
+    const TYPE_SIZE: usize = QK_K / 2 + QK_K / 4 + QK_K / 16 + 4;
+    const TYPE_SIZE_WEBGPU: usize = QK_K / 2 + QK_K / 4 + QK_K / 16 + 4;
+}
 
 impl Segments for Q6K {
     fn segments(numel: usize) -> RVec<BufferSegment> {
@@ -57,13 +69,14 @@ impl Segments for Q6K {
         let offset = offset + scales_len;
         let q_segment = BufferSegment::new(offset, Some(q_len));
 
-        SmallVec::<[BufferSegment; 4]>::from_vec(vec![
-            ql_segment,
-            qh_segment,
-            scales_segment,
-            q_segment,
-        ])
+        rvec![ql_segment, qh_segment, scales_segment, q_segment,]
     }
+}
+
+impl GGUFSize for f32 {
+    const BLCK_SIZE: usize = 1;
+    const TYPE_SIZE: usize = 4;
+    const TYPE_SIZE_WEBGPU: usize = 4;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

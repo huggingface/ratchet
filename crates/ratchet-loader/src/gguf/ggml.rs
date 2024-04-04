@@ -1,7 +1,7 @@
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/mod.rs
 //
 
-use ratchet::gguf::{self, Q4K, Q6K};
+use ratchet::gguf::{self, GGUFSize, Q4K, Q6K};
 
 use crate::error::Result;
 use crate::gguf::TensorLoader;
@@ -70,19 +70,8 @@ impl GgmlDType {
         match self {
             Self::F32 => 4,
             Self::F16 => 4, // 2, [TODO] Think about this. Currently WASM doesn't support F16
-            // Self::Q4_0 => BlockQ4_0::TYPE_SIZE,
-            // Self::Q4_1 => BlockQ4_1::TYPE_SIZE,
-            // Self::Q5_0 => BlockQ5_0::TYPE_SIZE,
-            // Self::Q5_1 => BlockQ5_1::TYPE_SIZE,
-            // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L932
-            // Self::Q8_0 => BlockQ8_0::TYPE_SIZE,
-            // Self::Q8_1 => BlockQ8_1::TYPE_SIZE,
-            // Self::Q2K => BlockQ2K::TYPE_SIZE,
-            // Self::Q3K => BlockQ3K::TYPE_SIZE,
             Self::Q4K => Q4K::TYPE_SIZE,
-            // Self::Q5K => BlockQ5K::TYPE_SIZE,
             Self::Q6K => Q6K::TYPE_SIZE,
-            // Self::Q8K => BlockQ8K::TYPE_SIZE,
             dt => todo!("{:?} not yet supported", dt),
         }
     }
