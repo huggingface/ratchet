@@ -103,7 +103,7 @@ impl MetaOperation for Unary {
     }
 
     fn supports_inplace(&self) -> bool {
-        true
+        false
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
