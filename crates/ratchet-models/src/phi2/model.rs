@@ -165,6 +165,8 @@ impl Phi2 {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    use std::io::Write;
+
     use ndarray::Axis;
     use ndarray_stats::QuantileExt;
     use numpy::PyArrayDyn;
@@ -217,7 +219,9 @@ def ground():
         ))
         .unwrap();
 
-        let encoding = tokenizer.encode("def print_prime(n):", true).unwrap();
+        let prompt = "def print_prime(n):";
+        print!("{}", prompt);
+        let encoding = tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding
             .get_ids()
             .iter()
@@ -227,11 +231,9 @@ def ground():
         let mut all_tokens = tokens.clone();
         let mut loop_cnt = 0;
         while tokens[tokens.len() - 1] != 50256 && loop_cnt < 1000 {
-            println!("INPUT TOKENS: {:?}", tokens);
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.forward(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
-            println!("LOGITS: {:?}", logits.to_ndarray_view::<f32>());
             all_logits.push(logits.clone());
             model.cache_mut().update(tokens.len());
 
@@ -241,7 +243,8 @@ def ground():
                 .iter()
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
-            println!("GENERATED TOKENS: {:?}", tokens);
+            let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
+            print!("{}", tokenizer.decode(&u32_toks, true).unwrap());
             all_tokens.extend(tokens.clone());
             loop_cnt += 1;
         }
@@ -251,11 +254,6 @@ def ground():
         println!("DECODED\n\n{}", decoded);
 
         let ground_logits = ground_truth()?;
-
-        for (i, (our, their)) in all_logits.iter().zip(ground_logits.iter()).enumerate() {
-            println!("Our logits: {:?}", our.to_ndarray_view::<f32>());
-            println!("Their logits: {:?}", their.to_ndarray_view::<f32>());
-        }
 
         let all_equal = all_logits
             .iter()
