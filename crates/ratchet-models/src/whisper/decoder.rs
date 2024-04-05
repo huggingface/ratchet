@@ -4,7 +4,7 @@ use crate::model::Whisper;
 use crate::whisper::residual_block::*;
 use ratchet::prelude::*;
 use ratchet_loader::ggml::GGMLModel;
-use ratchet_nn::{Embedding, KVCache, LayerNorm, Module, MutableModule};
+use ratchet_nn::{Embedding, KVCache, LayerNorm, LendingModule, Module, MutableModule};
 
 #[derive(Debug)]
 pub(crate) struct DecoderStem {
@@ -52,19 +52,19 @@ impl Module for DecoderStem {
 }
 
 #[derive(Debug)]
-pub struct WhisperDecoder {
+pub struct WhisperDecoder<'d> {
     stem: DecoderStem,
-    blocks: Vec<ResidualAttentionBlock>,
+    blocks: Vec<ResidualAttentionBlock<'d>>,
     mask: Tensor,
     ln_post: LayerNorm,
     cache: KVCache,
     device: Device,
 }
 
-impl Module for WhisperDecoder {
+impl MutableModule for WhisperDecoder<'_> {
     type Input = [Tensor; 2];
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&mut self, input: Self::Input) -> anyhow::Result<Tensor> {
         let [audio_ctx, tokens] = input;
         let mut x = self.stem.forward(StemInput {
             tokens,
@@ -75,7 +75,7 @@ impl Module for WhisperDecoder {
                 x,
                 xa: Some(audio_ctx.clone()),
                 mask: Some(self.mask.clone()),
-                cache: Some(self.cache[block_idx].clone()),
+                cache: Some(&mut self.cache[block_idx]),
             };
             x = block.forward(block_input)?;
         }
@@ -85,7 +85,7 @@ impl Module for WhisperDecoder {
     }
 }
 
-impl WhisperDecoder {
+impl WhisperDecoder<'_> {
     pub const MAX_CACHE: usize = 512;
 
     pub fn cache_mut(&mut self) -> &mut KVCache {

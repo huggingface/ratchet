@@ -2,30 +2,36 @@ use super::{mha::*, mlp::MLP};
 use crate::model::Whisper;
 use ratchet::{Device, Tensor};
 use ratchet_loader::ggml::GGMLModel;
-use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
+use ratchet_nn::{KVEntry, LayerNorm, LendingModule, LendingModuleඞInput, Linear, Module};
 use std::io::{BufRead, Seek};
 
 #[derive(Debug)]
-pub struct ResidualAttentionBlock {
+pub struct ResidualAttentionBlock<'m> {
     attn_ln: LayerNorm,
-    attn: MultiHeadAttention,
+    attn: MultiHeadAttention<'m>,
     x_attn_ln: Option<LayerNorm>,
-    x_attn: Option<MultiHeadAttention>,
+    x_attn: Option<MultiHeadAttention<'m>>,
     mlp_ln: LayerNorm,
     mlp: MLP,
+    phantom: std::marker::PhantomData<&'m ()>,
 }
 
 #[derive(Debug, derive_new::new)]
-pub struct ResidualAttentionBlockInputs {
+pub struct ResidualAttentionBlockInputs<'m> {
     pub x: Tensor,
     pub xa: Option<Tensor>,
     pub mask: Option<Tensor>,
-    pub cache: Option<KVEntry>,
+    pub cache: Option<&'m mut KVEntry>,
 }
 
-impl Module for ResidualAttentionBlock {
-    type Input = ResidualAttentionBlockInputs;
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+#[nougat::gat]
+impl<'m> LendingModule for ResidualAttentionBlock<'m> {
+    type Input<'input>
+    where
+        Self: 'input,
+    = ResidualAttentionBlockInputs<'input>;
+
+    fn forward(&self, input: Self::Input<'_>) -> anyhow::Result<Tensor> {
         let ResidualAttentionBlockInputs { x, xa, mask, cache } = input;
 
         let attn_ln = self.attn_ln.forward(x.clone())?;
@@ -49,7 +55,7 @@ impl Module for ResidualAttentionBlock {
     }
 }
 
-impl ResidualAttentionBlock {
+impl ResidualAttentionBlock<'_> {
     pub fn load<R: BufRead + Seek>(
         disk_model: &GGMLModel<Whisper>,
         reader: &mut R,
@@ -121,6 +127,7 @@ impl ResidualAttentionBlock {
             x_attn,
             mlp_ln,
             mlp,
+            phantom: std::marker::PhantomData,
         })
     }
 }

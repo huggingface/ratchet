@@ -58,6 +58,7 @@ pub fn transcribe(
 
         let task = DecodingTask::new(decode_options, tokenizer.clone());
         let decoded = task.run(&mut model.decoder, hs, &callback)?;
+        println!("DECODED: {:?}", decoded);
         let (segments, advance) = DecodingTask::build_segments(
             &tokenizer,
             decoded,

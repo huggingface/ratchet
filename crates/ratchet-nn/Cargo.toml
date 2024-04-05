@@ -9,6 +9,7 @@ edition = "2021"
 anyhow.workspace = true
 derive-new = "0.6.0"
 ratchet = { path = "../ratchet-core" }
+nougat = { version = "0.2.4" }
 
 [dev-dependencies]
 proptest = "1.4.0"

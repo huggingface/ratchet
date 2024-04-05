@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
 use ratchet_loader::ggml::GGMLModel;
-use ratchet_nn::{LayerNorm, Module};
+use ratchet_nn::{LayerNorm, LendingModule, Module};
 
 use super::residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs};
 use crate::model::Whisper;
@@ -66,13 +66,13 @@ impl EncoderStem {
 }
 
 #[derive(Debug)]
-pub struct WhisperEncoder {
+pub struct WhisperEncoder<'e> {
     stem: EncoderStem,
-    blocks: Vec<ResidualAttentionBlock>,
+    blocks: Vec<ResidualAttentionBlock<'e>>,
     ln_post: LayerNorm,
 }
 
-impl Module for WhisperEncoder {
+impl Module for WhisperEncoder<'_> {
     type Input = Tensor;
 
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
@@ -90,7 +90,7 @@ impl Module for WhisperEncoder {
     }
 }
 
-impl WhisperEncoder {
+impl WhisperEncoder<'_> {
     pub fn load<R: BufRead + Seek>(
         disk_model: &GGMLModel<Whisper>,
         reader: &mut R,

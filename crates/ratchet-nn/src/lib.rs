@@ -17,6 +17,15 @@ pub trait Module {
     fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor>;
 }
 
+#[nougat::gat]
+pub trait LendingModule {
+    type Input<'m>
+    where
+        Self: 'm;
+
+    fn forward(&self, input: Self::Input<'_>) -> anyhow::Result<Tensor>;
+}
+
 pub trait MutableModule {
     type Input;
     fn forward(&mut self, input: Self::Input) -> anyhow::Result<Tensor>;

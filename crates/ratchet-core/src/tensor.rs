@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape,
-    Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, shape, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
+    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -43,6 +43,16 @@ pub enum TensorError {
 #[derive(Clone)]
 pub struct Tensor {
     pub(crate) inner: Arc<Inner>,
+}
+
+impl std::default::Default for Tensor {
+    fn default() -> Self {
+        Self::lazy(
+            LazyOp::Const,
+            StorageView::new(shape![0], DType::F32, Strides::default()),
+            Device::CPU,
+        )
+    }
 }
 
 impl Tensor {

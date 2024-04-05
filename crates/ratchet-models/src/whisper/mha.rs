@@ -1,18 +1,25 @@
 use ratchet::{rvec, shape, Tensor};
-use ratchet_nn::{KVEntry, Linear, Module};
+use ratchet_nn::{KVEntry, KVEntryInput, LendingModule, LendingModuleඞInput, Linear, Module};
 
 #[derive(Debug)]
-pub struct MultiHeadAttention {
+pub struct MultiHeadAttention<'m> {
     q: Linear,
     k: Linear,
     v: Linear,
     o: Linear,
     n_heads: usize,
     dk: Tensor,
+    phantom: std::marker::PhantomData<&'m ()>,
 }
 
-impl MultiHeadAttention {
-    pub fn new(q: Linear, k: Linear, v: Linear, o: Linear, n_heads: usize) -> MultiHeadAttention {
+impl MultiHeadAttention<'_> {
+    pub fn new(
+        q: Linear,
+        k: Linear,
+        v: Linear,
+        o: Linear,
+        n_heads: usize,
+    ) -> MultiHeadAttention<'static> {
         let n_state = q.w.shape()[1];
         let dk = (n_state / n_heads) as f32;
         let dk = Tensor::from_data([dk.powf(-0.25)], shape![1], q.w.device().clone());
@@ -23,23 +30,28 @@ impl MultiHeadAttention {
             o,
             n_heads,
             dk,
+            phantom: std::marker::PhantomData,
         }
     }
 }
 
 #[derive(Debug, derive_new::new)]
-pub struct MHAInputs {
+pub struct MHAInputs<'m> {
     x: Tensor,
     xa: Option<Tensor>,
     mask: Option<Tensor>,
-    cache: Option<KVEntry>,
+    cache: Option<&'m mut KVEntry>,
     is_causal: bool,
 }
 
-impl Module for MultiHeadAttention {
-    type Input = MHAInputs;
+#[nougat::gat]
+impl<'m> LendingModule for MultiHeadAttention<'m> {
+    type Input<'input>
+    where
+        Self: 'input,
+    = MHAInputs<'input>;
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input<'_>) -> anyhow::Result<Tensor> {
         let MHAInputs {
             x,
             xa,
@@ -50,24 +62,15 @@ impl Module for MultiHeadAttention {
         let is_xattn = xa.is_some();
 
         let q = self.q.forward(x.clone())?;
-        let [bs, n_ctx, n_state]: [usize; 3] = q.shape().try_into()?;
 
         let to_project = xa.unwrap_or(x);
         let k = self.k.forward(to_project.clone())?;
         let v = self.v.forward(to_project)?;
 
         let (k, v) = if let Some(kv) = cache {
-            let prev_entries = kv.entries;
-            let new_entries = prev_entries + n_ctx;
-            let k_cache = kv
-                .k_cache
-                .index_write(k, rvec![0, prev_entries, 0])?
-                .view(shape![bs, new_entries, n_state])?;
-            let v_cache = kv
-                .v_cache
-                .index_write(v, rvec![0, prev_entries, 0])?
-                .view(shape![bs, new_entries, n_state])?;
-            (k_cache, v_cache)
+            kv.forward(KVEntryInput { x: k, k: true })?;
+            kv.forward(KVEntryInput { x: v, k: false })?;
+            (kv.k_cache.clone(), kv.v_cache.clone())
         } else {
             (k, v)
         };
@@ -76,7 +79,7 @@ impl Module for MultiHeadAttention {
     }
 }
 
-impl MultiHeadAttention {
+impl MultiHeadAttention<'_> {
     fn qkv_attention(
         &self,
         q: Tensor,

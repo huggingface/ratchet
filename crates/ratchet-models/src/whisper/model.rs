@@ -115,15 +115,15 @@ impl MelFilters {
 }
 
 #[derive(Debug)]
-pub struct Whisper {
+pub struct Whisper<'w> {
     pub specgen: SpectrogramGenerator,
-    pub encoder: WhisperEncoder,
-    pub decoder: WhisperDecoder,
+    pub encoder: WhisperEncoder<'w>,
+    pub decoder: WhisperDecoder<'w>,
     pub hparams: HyperParameters,
     pub device: Device,
 }
 
-impl Whisper {
+impl Whisper<'_> {
     pub fn load<R: BufRead + Seek>(
         disk_model: &GGMLModel<Whisper>,
         reader: &mut R,
@@ -152,7 +152,7 @@ impl Whisper {
     }
 }
 
-impl GGMLCompatible for Whisper {
+impl GGMLCompatible for Whisper<'_> {
     type ModelHeader = WhisperGGMLHeader;
 
     fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError> {
@@ -187,7 +187,7 @@ impl GGMLCompatible for Whisper {
     }
 }
 
-impl Whisper {
+impl Whisper<'_> {
     pub fn is_multilingual(&self) -> bool {
         self.hparams.n_vocab >= 51865
     }

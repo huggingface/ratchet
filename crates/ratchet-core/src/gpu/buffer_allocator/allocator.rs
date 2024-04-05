@@ -128,7 +128,7 @@ impl BufferAllocator {
             //TODO: operations should define their "inplace" source
             //doesn't necessarily have to be the zeroth
             let to_modify = true_source.op().srcs()[0];
-            let multiple_consumers = Arc::strong_count(&to_modify.inner) > 1;
+            let multiple_consumers = to_modify.strong_count() > 1;
             if !true_source.op().supports_inplace() || multiple_consumers {
                 break;
             }
