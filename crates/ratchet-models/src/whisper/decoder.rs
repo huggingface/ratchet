@@ -61,17 +61,16 @@ pub struct WhisperDecoder {
     device: Device,
 }
 
-impl MutableModule for WhisperDecoder {
+impl Module for WhisperDecoder {
     type Input = [Tensor; 2];
 
-    fn forward(&mut self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let [audio_ctx, tokens] = input;
         let mut x = self.stem.forward(StemInput {
             tokens,
             offset: self.cache.entries(0),
         })?;
         for (block_idx, block) in self.blocks.iter().enumerate() {
-            let cache_entry = self.cache.take(block_idx);
             let block_input = ResidualAttentionBlockInputs {
                 x,
                 xa: Some(audio_ctx.clone()),
