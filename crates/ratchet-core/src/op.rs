@@ -24,6 +24,7 @@ pub enum LazyOp {
     Conv(Conv),             //Really it's a matmul
     Select(IndexSelect),    //Can probably be Reindex
     IndexWrite(IndexWrite), //Above 2 should be merged
+    Cache(Cache),           //Should be a general class
 }
 
 impl LazyOp {
@@ -40,6 +41,7 @@ impl LazyOp {
             LazyOp::Select(s) => s.kernel_name(),
             LazyOp::IndexWrite(iw) => iw.kernel_name(),
             LazyOp::RoPE(r) => r.kernel_name(),
+            LazyOp::Cache(c) => c.kernel_name(),
             LazyOp::View(_) => "View".to_string(),
             LazyOp::Const => "Const".to_string(),
         }
@@ -58,6 +60,7 @@ impl LazyOp {
             LazyOp::Conv(c) => c.srcs(),
             LazyOp::Select(s) => s.srcs(),
             LazyOp::IndexWrite(iw) => iw.srcs(),
+            LazyOp::Cache(c) => c.srcs(),
             LazyOp::View(v) => rvec![v.input()],
             LazyOp::Const => rvec![], //end of the line kid
         }
@@ -76,6 +79,7 @@ impl LazyOp {
             LazyOp::Conv(c) => c.supports_inplace(),
             LazyOp::Select(s) => s.supports_inplace(),
             LazyOp::IndexWrite(iw) => iw.supports_inplace(),
+            LazyOp::Cache(c) => c.supports_inplace(),
             LazyOp::View(_v) => true,
             LazyOp::Const => false,
         }
@@ -105,6 +109,7 @@ impl LazyOp {
             LazyOp::Conv(c) => c.check_invariants(),
             LazyOp::Select(s) => s.check_invariants(),
             LazyOp::IndexWrite(iw) => iw.check_invariants(),
+            LazyOp::Cache(c) => c.check_invariants(),
             LazyOp::View(v) => v.check_invariants(),
             LazyOp::Const => {}
         }

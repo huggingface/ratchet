@@ -153,10 +153,20 @@ impl Phi2 {
             device.clone(),
         ))
     }
+
+    pub fn reset(&mut self) {
+        self.kv_cache.reset();
+    }
+
+    pub fn cache_mut(&mut self) -> &mut KVCache {
+        &mut self.kv_cache
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    use ndarray::Axis;
+    use ndarray_stats::QuantileExt;
     use numpy::PyArrayDyn;
     use pyo3::{types::PyModule, Python};
     use ratchet::{prelude::shape, Device, DeviceRequest, Tensor};
@@ -173,14 +183,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import collections
 
 def ground():
-    extracted = collections.defaultdict(list)
     model = AutoModelForCausalLM.from_pretrained("microsoft/phi-2", torch_dtype=torch.float32, device_map="cpu", trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
     inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
-    outputs = model.generate(**inputs, max_length=8, return_dict_in_generate=True, output_logits=True)
-    generated_logits = outputs.logits[0]
-    generated_logits = torch.unsqueeze(torch.unsqueeze(generated_logits, 0), 0)
-    return generated_logits.numpy()
+    outputs = model.generate(**inputs, max_length=20, return_dict_in_generate=True, output_logits=True)
+    generated_logits = outputs.logits
+
+    result = [torch.unsqueeze(torch.unsqueeze(l, 0), 0).numpy() for l in generated_logits]
+    return result
 "#;
         Python::with_gil(|py| {
             let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
@@ -199,7 +209,7 @@ def ground():
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;
         let content = gguf::gguf::Content::read(&mut reader)?;
-        let model = Phi2::load(content, &mut reader, &device)?;
+        let mut model = Phi2::load(content, &mut reader, &device)?;
 
         let tokenizer = Tokenizer::from_file(concat!(
             env!("CARGO_RUSTC_CURRENT_DIR"),
@@ -207,22 +217,51 @@ def ground():
         ))
         .unwrap();
 
-        let tokens = tokenizer.encode("def print_prime(n):", true).unwrap();
-        let i32_tokens = tokens
+        let encoding = tokenizer.encode("def print_prime(n):", true).unwrap();
+        let mut tokens = encoding
             .get_ids()
             .iter()
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
-        let num_tokens = i32_tokens.len();
-        let input = Tensor::from_data(i32_tokens, shape![1, num_tokens], device.clone());
-        let result = model.forward(input)?.resolve()?;
-        let cpu_result = result.to(&Device::CPU)?;
-        let ground_truth = ground_truth()?;
+        let mut all_logits = vec![];
+        let mut all_tokens = tokens.clone();
+        let mut loop_cnt = 0;
+        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 1000 {
+            println!("INPUT TOKENS: {:?}", tokens);
+            let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
+            let result = model.forward(input)?.resolve()?;
+            let logits = result.to(&Device::CPU)?;
+            println!("LOGITS: {:?}", logits.to_ndarray_view::<f32>());
+            all_logits.push(logits.clone());
+            model.cache_mut().update(tokens.len());
 
-        println!("OURS: {:?}\n", cpu_result.to_ndarray_view::<f32>());
-        println!("THEIRS: {:?}", ground_truth);
+            tokens = logits
+                .to_ndarray_view::<f32>()
+                .map_axis(Axis(2), |row| row.argmax_skipnan().unwrap())
+                .iter()
+                .map(|&x| x as i32)
+                .collect::<Vec<_>>();
+            println!("GENERATED TOKENS: {:?}", tokens);
+            all_tokens.extend(tokens.clone());
+            loop_cnt += 1;
+        }
 
-        cpu_result.all_close(&ground_truth[0], 1e-3, 1e-3)?;
+        let u32_tokens = all_tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
+        let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
+        println!("DECODED\n\n{}", decoded);
+
+        let ground_logits = ground_truth()?;
+
+        for (i, (our, their)) in all_logits.iter().zip(ground_logits.iter()).enumerate() {
+            println!("Our logits: {:?}", our.to_ndarray_view::<f32>());
+            println!("Their logits: {:?}", their.to_ndarray_view::<f32>());
+        }
+
+        let all_equal = all_logits
+            .iter()
+            .zip(ground_logits.iter())
+            .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
+        println!("All logits equal: {}", all_equal);
         Ok(())
     }
 }

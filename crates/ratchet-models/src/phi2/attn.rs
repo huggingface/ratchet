@@ -88,9 +88,7 @@ impl Module for PhiSelfAttention {
         let h_dim = n_state / self.n_heads as usize;
 
         //TODO:
-        //if self.qk_layer_norm {
-        //  do ln
-        //}
+        //if self.qk_layer_norm { ... }
 
         let q_shape = shape![batch_size as _, seq_len, self.n_heads as _, h_dim];
         let kv_shape = shape![batch_size as _, seq_len, self.n_kv_heads as _, h_dim];
@@ -108,32 +106,33 @@ impl Module for PhiSelfAttention {
             offset,
         })?;
 
-        /*
         let (key_states, value_states) = if let Some(kv) = cache {
-            let prev_entries = kv.entries;
-            let new_entries = prev_entries + seq_len;
-            let k_cache = kv
-                .k_cache
-                .index_write(key_states, rvec![0, 0, prev_entries, 0])?
-                .view(shape![batch_size, 32, new_entries, 80])?;
-            let v_cache = kv
-                .v_cache
-                .index_write(value_states, rvec![0, 0, prev_entries, 0])?
-                .view(shape![batch_size, 32, new_entries, 80])?;
+            let k_cache = kv.k_cache.cache(key_states, 2, offset)?;
+            let v_cache = kv.v_cache.cache(value_states, 2, offset)?;
             (k_cache, v_cache)
         } else {
             (key_states, value_states)
-        };*/
+        };
+
+        //let dbg_ks = key_states
+        //    .clone()
+        //    .resolve()
+        //    .unwrap()
+        //    .to(&Device::CPU)
+        //    .unwrap();
+
+        //println!("KEY STATES: \n {:?}", dbg_ks.to_ndarray_view::<f32>());
 
         //TODO: can we just use the built in transposed matmul?
         let mut attn_weights = query_states
             .matmul(key_states.permute(&[0, 1, 3, 2])?, false, false)?
             .mul(self.softmax_scale.clone())?;
 
+        /*
         assert_eq!(
             attn_weights.shape(),
             &shape![batch_size as _, self.n_heads as _, seq_len, seq_len]
-        );
+        );*/
 
         if let Some(m) = mask {
             attn_weights = attn_weights.add(m)?;

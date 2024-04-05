@@ -6,7 +6,6 @@ use crate::{
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
@@ -397,6 +396,13 @@ impl Tensor {
         Ok(Tensor::lazy(op, out_view, device))
     }
 
+    pub fn cache(self, source: Tensor, dim: usize, offset: usize) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let cache = Cache::new(self, source, dim, offset);
+        let new_view = cache.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Cache(cache), new_view, device))
+    }
+
     pub fn broadcast_to(self, shape: Shape) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
         let broadcast = Broadcast::new(self, shape);
@@ -639,6 +645,7 @@ impl Tensor {
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::IndexWrite(i) => i.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Cache(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }

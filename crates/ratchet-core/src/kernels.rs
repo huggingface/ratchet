@@ -604,6 +604,10 @@ lazy_static! {
         m.insert("-_vec4", include_str!(r"../kernels/generated/-_vec4.wgsl"));
         m.insert("conv_scalar", include_str!(r"../kernels/conv_scalar.wgsl"));
         m.insert(
+            "cache_scalar",
+            include_str!(r"../kernels/cache_scalar.wgsl"),
+        );
+        m.insert(
             "index_write_scalar",
             include_str!(r"../kernels/index_write_scalar.wgsl"),
         );

@@ -30,7 +30,6 @@ impl std::ops::Index<usize> for KVCache {
 
 impl KVCache {
     pub fn new(n_layers: i32, shape: Shape, device: &Device) -> Self {
-        println!("N LAYERS: {:?}", n_layers);
         let mut entries = Vec::with_capacity(n_layers as _);
         for _ in 0..n_layers {
             entries.push(KVEntry::allocate(&shape, device));

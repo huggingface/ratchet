@@ -204,13 +204,13 @@ def permute(t0, t1, t2, t3, t4):
 
     #[test]
     fn test_concat() {
-        let t0 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
-        let t1 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
-        let t2 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
-        let t3 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
-        let t4 = Tensor::randn::<f32>(shape![128, 128], Device::CPU);
+        let t0 = Tensor::randn::<f32>(shape![4, 2, 50, 128], Device::CPU);
+        let t1 = Tensor::randn::<f32>(shape![4, 2, 13, 128], Device::CPU);
+        let t2 = Tensor::randn::<f32>(shape![4, 2, 77, 128], Device::CPU);
+        let t3 = Tensor::randn::<f32>(shape![4, 2, 55, 128], Device::CPU);
+        let t4 = Tensor::randn::<f32>(shape![4, 2, 11, 128], Device::CPU);
 
-        let dim = 1;
+        let dim = 2;
         run_concat_trial(ConcatProblem {
             t0,
             t1,
