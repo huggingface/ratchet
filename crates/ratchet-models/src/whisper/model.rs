@@ -283,7 +283,7 @@ mod tests {
     use ratchet_loader::{ggml::GGMLCompatible, Converter};
 
     use crate::{
-        model::Whisper, options::DecodingOptionsBuilder, transcript::StreamedSegment,
+        options::DecodingOptionsBuilder, transcript::StreamedSegment, whisper::model::Whisper,
         whisper::transcribe::transcribe,
     };
 

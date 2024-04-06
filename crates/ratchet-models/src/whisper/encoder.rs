@@ -136,7 +136,7 @@ mod tests {
     use ratchet_loader::ggml::GGMLCompatible;
     use ratchet_nn::Module;
 
-    use crate::{model::Whisper, whisper::encoder::WhisperEncoder};
+    use crate::{whisper::encoder::WhisperEncoder, whisper::model::Whisper};
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();

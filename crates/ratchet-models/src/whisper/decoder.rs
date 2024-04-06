@@ -157,13 +157,13 @@ mod tests {
     };
     use ratchet::{shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::ggml::GGMLCompatible;
-    use ratchet_nn::{Module, MutableModule};
+    use ratchet_nn::Module;
     use tokenizers::Tokenizer;
 
     use crate::{
-        model::Whisper,
         options::{DecodingOptions, DecodingOptionsBuilder},
         whisper::decoder::WhisperDecoder,
+        whisper::model::Whisper,
     };
 
     fn log_init() {

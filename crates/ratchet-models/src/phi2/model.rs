@@ -191,7 +191,7 @@ def ground():
     outputs = model.generate(**inputs, max_length=20, return_dict_in_generate=True, output_logits=True)
     generated_logits = outputs.logits
 
-    result = [torch.unsqueeze(torch.unsqueeze(l, 0), 0).numpy() for l in generated_logits]
+    result = [torch.unsqueeze(l, 0).numpy() for l in generated_logits]
     return result
 "#;
         Python::with_gil(|py| {
@@ -230,7 +230,7 @@ def ground():
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
         let mut loop_cnt = 0;
-        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 20 {
+        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 13 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.forward(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
@@ -249,17 +249,13 @@ def ground():
             loop_cnt += 1;
         }
 
-        let u32_tokens = all_tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
-        let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
-        println!("\nDECODED\n\n{}", decoded);
-
         let ground_logits = ground_truth()?;
-
         let all_equal = all_logits
             .iter()
             .zip(ground_logits.iter())
             .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
         println!("All logits equal: {}", all_equal);
+        assert!(all_equal);
         Ok(())
     }
 }
