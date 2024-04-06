@@ -5,7 +5,7 @@ use ratchet_loader::ggml::GGMLModel;
 use ratchet_nn::{LayerNorm, Module};
 
 use super::residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs};
-use crate::model::Whisper;
+use crate::whisper::model::Whisper;
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {

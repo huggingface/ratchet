@@ -1,10 +1,10 @@
 use std::io::{BufRead, Seek};
 
-use crate::model::Whisper;
+use crate::whisper::model::Whisper;
 use crate::whisper::residual_block::*;
 use ratchet::prelude::*;
 use ratchet_loader::ggml::GGMLModel;
-use ratchet_nn::{Embedding, KVCache, LayerNorm, Module, MutableModule};
+use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
 
 #[derive(Debug)]
 pub(crate) struct DecoderStem {

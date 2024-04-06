@@ -32,7 +32,7 @@ impl Executable {
 
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
+                label: Some("ratchet inference pass"),
                 timestamp_writes: None,
             });
             for step in self.steps.iter() {

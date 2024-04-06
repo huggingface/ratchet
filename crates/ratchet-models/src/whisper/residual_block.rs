@@ -1,5 +1,5 @@
 use super::{mha::*, mlp::MLP};
-use crate::model::Whisper;
+use crate::whisper::model::Whisper;
 use ratchet::{Device, Tensor};
 use ratchet_loader::ggml::GGMLModel;
 use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};

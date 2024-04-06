@@ -230,7 +230,7 @@ def ground():
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
         let mut loop_cnt = 0;
-        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 1000 {
+        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 20 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.forward(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
@@ -251,7 +251,7 @@ def ground():
 
         let u32_tokens = all_tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
         let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
-        println!("DECODED\n\n{}", decoded);
+        println!("\nDECODED\n\n{}", decoded);
 
         let ground_logits = ground_truth()?;
 
