@@ -3,7 +3,6 @@ pub mod gguf;
 pub mod tensor_loader;
 pub mod transcoder;
 pub mod utils;
-use ratchet::gguf::*;
 pub use tensor_loader::TensorLoader;
 
 #[cfg(test)]
@@ -12,7 +11,7 @@ mod tests {
     use std::io::{Cursor, Read, SeekFrom};
 
     use super::*;
-    use ratchet::{Device, DeviceRequest, Tensor};
+    use ratchet::Tensor;
 
     fn read_expected_data<R: std::io::Seek + std::io::Read>(
         reader: &mut R,

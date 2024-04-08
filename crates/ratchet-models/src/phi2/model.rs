@@ -58,7 +58,7 @@ impl Module for DecoderLayer {
             cache,
         })?;
         let ff_hs = self.mlp.forward(xs)?;
-        Ok(attn_output.add(ff_hs)?.add(residual)?)
+        attn_output.add(ff_hs)?.add(residual)
     }
 }
 
@@ -148,7 +148,7 @@ impl Phi2 {
             .collect();
 
         Ok(Tensor::from_data(
-            &mask,
+            mask,
             shape![seq_len, seq_len],
             device.clone(),
         ))
@@ -194,7 +194,7 @@ def ground():
     return result
 "#;
         Python::with_gil(|py| {
-            let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
+            let prg = PyModule::from_code(py, prg, "x.py", "x")?;
             let py_result: Vec<&PyArrayDyn<f32>> = prg.getattr("ground")?.call0()?.extract()?;
             Ok(py_result.into_iter().map(Tensor::from).collect::<_>())
         })

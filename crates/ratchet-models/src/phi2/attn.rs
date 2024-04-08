@@ -1,7 +1,4 @@
-use std::{
-    io::{BufRead, Seek},
-    sync::Arc,
-};
+use std::io::{BufRead, Seek};
 
 use ratchet::{prelude::shape, rvec, Device, Tensor};
 use ratchet_loader::gguf::gguf::Content;
@@ -50,8 +47,7 @@ impl PhiSelfAttention {
             .unwrap()
             .to_u32()?;
         //1 / head_dim
-        let softmax_scale =
-            Tensor::from_data([1.0 / (80 as f32).sqrt()], shape![1], device.clone());
+        let softmax_scale = Tensor::from_data([1.0 / 80_f32.sqrt()], shape![1], device.clone());
         //TODO: hardcoded for Phi2, should read from meta
         let base = 10000.0;
         let dim = (0.4 * (2560f64 / 32f64)) as usize;

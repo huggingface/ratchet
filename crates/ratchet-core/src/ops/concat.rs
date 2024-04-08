@@ -105,7 +105,7 @@ impl MetaOperation for Concat {
             .iter()
             .map(|x| Shape::promote(x.shape().clone(), 4))
             .collect();
-        let input_strides: Vec<Strides> = input_shapes.iter().map(|x| Strides::from(x)).collect();
+        let input_strides: Vec<Strides> = input_shapes.iter().map(Strides::from).collect();
         let promoted_dim = self.dim + promotion;
         let dst_shape = Shape::promote(dst.shape().clone(), 4);
         let dst_strides = Strides::from(&dst_shape);
@@ -187,7 +187,7 @@ def permute(t0, t1, t2, t3, t4):
         let device = GPU_DEVICE.with(|d| d.clone());
 
         let arg_str = format!("{}", dim);
-        let ground = ground_truth(&[&t0, &t1, &t2, &t3, &t4], &arg_str.as_str())?;
+        let ground = ground_truth(&[&t0, &t1, &t2, &t3, &t4], arg_str.as_str())?;
 
         t0 = t0.to(&device)?;
         t1 = t1.to(&device)?;

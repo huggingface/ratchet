@@ -1,12 +1,11 @@
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/k_quants.rs
 
-use anyhow::{anyhow, bail};
-use half::f16;
+use anyhow::anyhow;
 use ratchet::gguf::Align;
 use ratchet::{prelude::shape, Device, Tensor};
 
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, Seek, SeekFrom, Write};
 
 use super::ggml::GgmlDType;
 use super::utils::*;
@@ -55,16 +54,11 @@ impl TensorLoader for gguf::Q4K {
             reader.read_u8s_into(&mut qs_cursor, QK_K / 2)?;
         }
 
-        let mut ds = ds
-            .iter()
-            .map(|d| d.to_le_bytes())
-            .flatten()
-            .collect::<Vec<u8>>();
+        let mut ds = ds.iter().flat_map(|d| d.to_le_bytes()).collect::<Vec<u8>>();
 
         let mut dmins = dmins
             .iter()
-            .map(|d| d.to_le_bytes())
-            .flatten()
+            .flat_map(|d| d.to_le_bytes())
             .collect::<Vec<u8>>();
 
         let mut tensor_data = vec![0u32; 0];
@@ -109,11 +103,10 @@ impl TensorLoader for gguf::Q4K {
             )),
         }?;
 
-        let tensor_blocks = tensor
+        let tensor_blocks = *tensor
             .shape()
             .get(0)
-            .ok_or(anyhow!("Failed to get tensor blocks"))?
-            .clone();
+            .ok_or(anyhow!("Failed to get tensor blocks"))?;
 
         let segments = gguf::Q4K::segments(tensor_blocks);
         let (ds_segment, dmins_segment, scales_segment, qs_segment) = segments
@@ -232,11 +225,10 @@ impl TensorLoader for gguf::Q6K {
             )),
         }?;
 
-        let tensor_blocks = tensor
+        let tensor_blocks = *tensor
             .shape()
             .get(0)
-            .ok_or(anyhow!("Failed to get tensor blocks"))?
-            .clone();
+            .ok_or(anyhow!("Failed to get tensor blocks"))?;
 
         let segments = gguf::Q6K::segments(tensor_blocks);
         let (ql_segment, qh_segment, scales_segment, d_segment) =

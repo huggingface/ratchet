@@ -9,8 +9,7 @@ use crate::error::Result;
 use crate::gguf::TensorLoader;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use ratchet::gguf::Q6K;
-use ratchet::{gguf::Q4K, DType, Device, Shape, Tensor};
+use ratchet::{DType, Device, Shape, Tensor};
 use std::collections::HashMap;
 
 use super::transcoder::GGTranscoder;

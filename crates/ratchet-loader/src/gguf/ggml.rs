@@ -4,7 +4,6 @@
 use ratchet::gguf::{self, GGUFSize, Q4K, Q6K};
 
 use crate::error::Result;
-use crate::gguf::TensorLoader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GgmlDType {
