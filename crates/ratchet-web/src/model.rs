@@ -1,8 +1,8 @@
 use crate::db::*;
 use ratchet_hub::{ApiBuilder, RepoType};
 use ratchet_models::{
-    model::Whisper, registry::AvailableModels, registry::Quantization, transcribe::transcribe,
-    transcript::StreamedSegment,
+    registry::AvailableModels, registry::Quantization, transcribe::transcribe,
+    transcript::StreamedSegment, Whisper,
 };
 use wasm_bindgen::prelude::*;
 
