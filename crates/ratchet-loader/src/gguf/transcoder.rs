@@ -22,16 +22,28 @@ impl GGTranscoder {
             (GgmlDType::F32, DType::F32) => {
                 Tensor::from_bytes(raw_data, dst_dtype, shape, device.clone())
             }
-            (GgmlDType::F16, DType::F32) => {
+            (GgmlDType::F16, DType::F32) | (GgmlDType::F16, DType::F16) => {
                 //Cast whilst WGPU doesn't support f16
                 let f16_data = bytemuck::cast_slice::<u8, f16>(raw_data);
                 let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
                 Ok(Tensor::from_data(f32_data, shape, device.clone()))
             }
-            (GgmlDType::F32, DType::WQ8) => {
+            (GgmlDType::F32, DType::WQ8) | (GgmlDType::F16, DType::WQ8) => {
+                let unquant = if src_dtype == GgmlDType::F32 {
+                    Tensor::from_bytes(raw_data, DType::F32, shape.clone(), Device::CPU)
+                } else {
+                    let f16_data = bytemuck::cast_slice::<u8, f16>(raw_data);
+                    let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
+                    Ok(Tensor::from_data(f32_data, shape.clone(), Device::CPU))
+                };
+
                 let quantizer = Quantizer::new(Quantization::SInt8);
-                let unquant = Tensor::from_bytes(raw_data, dst_dtype, shape, device.clone())?;
-                Ok(quantizer.quantize(unquant))
+                let quant = quantizer.quantize(unquant?);
+                let result = match device {
+                    Device::GPU(_) => quant.to(device)?,
+                    Device::CPU => quant,
+                };
+                Ok(result)
             }
             _ => todo!(),
         }
