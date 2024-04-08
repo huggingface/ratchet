@@ -1,5 +1,5 @@
 use half::f16;
-use ratchet::{DType, Device, Shape, Tensor};
+use ratchet::{DType, Device, Quantization, Quantizer, Shape, Tensor};
 
 use super::ggml::GgmlDType;
 
@@ -22,11 +22,16 @@ impl GGTranscoder {
             (GgmlDType::F32, DType::F32) => {
                 Tensor::from_bytes(raw_data, dst_dtype, shape, device.clone())
             }
-            (GgmlDType::F16, DType::F32) | (GgmlDType::F16, DType::F16) => {
+            (GgmlDType::F16, DType::F32) => {
                 //Cast whilst WGPU doesn't support f16
                 let f16_data = bytemuck::cast_slice::<u8, f16>(raw_data);
                 let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
                 Ok(Tensor::from_data(f32_data, shape, device.clone()))
+            }
+            (GgmlDType::F32, DType::WQ8) => {
+                let quantizer = Quantizer::new(Quantization::SInt8);
+                let unquant = Tensor::from_bytes(raw_data, dst_dtype, shape, device.clone())?;
+                Ok(quantizer.quantize(unquant))
             }
             _ => todo!(),
         }

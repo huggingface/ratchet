@@ -84,8 +84,7 @@ impl Module for Phi2 {
         };
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            #[cfg(feature = "gpu-profiling")]
-            if layer_idx > 1 {
+            if layer_idx > 15 {
                 break;
             }
 

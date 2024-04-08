@@ -6,7 +6,6 @@
 
 use super::ggml::GgmlDType;
 use crate::error::Result;
-use crate::gguf::TensorLoader;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use ratchet::{DType, Device, Shape, Tensor};
