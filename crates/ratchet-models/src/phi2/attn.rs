@@ -27,13 +27,13 @@ impl PhiSelfAttention {
             let key = format!("blk.{}.{}", layer_index, name);
             disk_model.tensor(reader, &key, device)
         };
-        let q = Linear::new(lt("attn_q.weight")?, Some(lt("attn_q.bias")?), true);
-        let k = Linear::new(lt("attn_k.weight")?, Some(lt("attn_k.bias")?), true);
-        let v = Linear::new(lt("attn_v.weight")?, Some(lt("attn_v.bias")?), true);
+        let q = Linear::new(lt("attn_q.weight")?, Some(lt("attn_q.bias")?), false);
+        let k = Linear::new(lt("attn_k.weight")?, Some(lt("attn_k.bias")?), false);
+        let v = Linear::new(lt("attn_v.weight")?, Some(lt("attn_v.bias")?), false);
         let o = Linear::new(
             lt("attn_output.weight")?,
             Some(lt("attn_output.bias")?),
-            true,
+            false,
         );
 
         let n_heads = disk_model

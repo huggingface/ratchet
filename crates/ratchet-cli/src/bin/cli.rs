@@ -104,7 +104,7 @@ fn handle_whisper(matches: &ArgMatches, api: Api) {
 
 fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
-    let model_path = concat!("../../", "/models/microsoft/phi-2/phi2-f16.gguf");
+    let model_path = concat!("../../", "/models/microsoft/phi-2/phi2-f16-t.gguf");
     let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
     let device = Device::request_device(DeviceRequest::GPU)?;
     let content = Content::read(&mut reader)?;
@@ -113,7 +113,14 @@ fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
     let tokenizer =
         Tokenizer::from_file(concat!("../../", "/models/microsoft/phi-2/tokenizer.json")).unwrap();
 
-    let prompt = "def print_prime(n):";
+    let prompt = if let Some(prompt) = matches.get_one::<String>("prompt") {
+        prompt
+    } else {
+        "def print_prime(n):"
+    };
+
+    let max_tokens = matches.get_one::<usize>("max-tokens").unwrap();
+
     print!("{}", prompt);
     let encoding = tokenizer.encode(prompt, true).unwrap();
     let mut tokens = encoding
@@ -124,7 +131,8 @@ fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
     let mut all_logits = vec![];
     let mut all_tokens = tokens.clone();
     let mut loop_cnt = 0;
-    while tokens[tokens.len() - 1] != 50256 && loop_cnt < 10 {
+    let start_time = std::time::Instant::now();
+    while tokens[tokens.len() - 1] != 50256 && loop_cnt < *max_tokens {
         let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
         let result = model.forward(input)?.resolve()?;
         let logits = result.to(&Device::CPU)?;
@@ -142,6 +150,12 @@ fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
         all_tokens.extend(tokens.clone());
         loop_cnt += 1;
     }
+    let elapsed = start_time.elapsed();
+    println!("\nElapsed time: {:?}", elapsed);
+    println!(
+        "tok/sec: {}",
+        all_tokens.len() as f64 / elapsed.as_secs_f64()
+    );
     Ok(())
 }
 
@@ -184,6 +198,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .long("prompt")
                         .required(true)
                         .help("Input prompt."),
+                )
+                .arg(
+                    Arg::new("max-tokens")
+                        .short('m')
+                        .long("max-tokens")
+                        .default_value("256")
+                        .value_parser(value_parser!(usize))
+                        .help("Maximum number of tokens to generate."),
                 ),
         )
         .get_matches();

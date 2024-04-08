@@ -43,12 +43,12 @@ impl std::fmt::Display for UnaryOp {
 
 impl Generate for UnaryOp {
     fn generate(renderer: &mut KernelRenderer) -> anyhow::Result<()> {
+        let path = renderer.templates_path.join("unary.wgsl");
+        renderer.tera.add_template_file(path, Some("unary"))?;
+
         for inplace in [true, false].iter() {
             for func in UnaryOp::iter() {
                 for ke in KernelElement::iter() {
-                    let path = renderer.templates_path.join("unary.wgsl");
-                    renderer.tera.add_template_file(path, Some("unary"))?;
-
                     let mut context = Context::new();
                     let tera_func = match func {
                         UnaryOp::Tanh => String::from("safe_tanh"),

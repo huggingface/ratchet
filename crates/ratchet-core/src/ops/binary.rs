@@ -86,12 +86,18 @@ impl MetaOperation for Binary {
         self.op.kernel_name().to_string()
     }
 
+    fn supports_inplace(&self) -> bool {
+        true
+    }
+
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        format!(
-            "{}_{}",
-            self.op.kernel_name(),
-            self.kernel_element(dst).as_str()
-        )
+        let kn = self.kernel_name();
+        let ke = self.kernel_element(dst).as_str();
+        if inplace {
+            format!("{}_inplace_{}", kn, ke)
+        } else {
+            format!("{}_{}", kn, ke)
+        }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -122,19 +128,15 @@ impl MetaOperation for Binary {
         Ok(wgc![x_groups as _, y_groups as _, 1])
     }
 
-    //TODO: binary inplace!
     fn storage_bind_group_layout(
         &self,
-        _inplace: bool,
+        inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        /*
         if inplace {
             Ok(BindGroupLayoutDescriptor::binary_inplace())
         } else {
             Ok(BindGroupLayoutDescriptor::binary())
         }
-        */
-        Ok(BindGroupLayoutDescriptor::binary())
     }
 
     fn write_metadata(
