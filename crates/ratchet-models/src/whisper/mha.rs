@@ -50,7 +50,6 @@ impl Module for MultiHeadAttention {
         let is_xattn = xa.is_some();
 
         let q = self.q.forward(x.clone())?;
-        let [bs, n_ctx, n_state]: [usize; 3] = q.shape().try_into()?;
 
         let to_project = xa.unwrap_or(x);
         let k = self.k.forward(to_project.clone())?;
@@ -58,15 +57,8 @@ impl Module for MultiHeadAttention {
 
         let (k, v) = if let Some(kv) = cache {
             let prev_entries = kv.entries;
-            let new_entries = prev_entries + n_ctx;
-            let k_cache = kv
-                .k_cache
-                .index_write(k, rvec![0, prev_entries, 0])?
-                .view(shape![bs, new_entries, n_state])?;
-            let v_cache = kv
-                .v_cache
-                .index_write(v, rvec![0, prev_entries, 0])?
-                .view(shape![bs, new_entries, n_state])?;
+            let k_cache = kv.k_cache.cache(k, 1, prev_entries)?;
+            let v_cache = kv.v_cache.cache(v, 1, prev_entries)?;
             (k_cache, v_cache)
         } else {
             (k, v)

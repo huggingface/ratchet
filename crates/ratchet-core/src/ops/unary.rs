@@ -84,10 +84,18 @@ impl Operation for Unary {
 }
 
 impl MetaOperation for Unary {
-    fn kernel_key(&self, dst: &Tensor) -> String {
-        let kn = self.op.kernel_name();
+    fn kernel_name(&self) -> String {
+        self.op.kernel_name().to_string()
+    }
+
+    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
+        let kn = self.kernel_name();
         let ke = self.kernel_element(dst).as_str();
-        format!("{}_{}", kn, ke)
+        if inplace {
+            format!("{}_inplace_{}", kn, ke)
+        } else {
+            format!("{}_{}", kn, ke)
+        }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -95,7 +103,7 @@ impl MetaOperation for Unary {
     }
 
     fn supports_inplace(&self) -> bool {
-        false
+        true
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

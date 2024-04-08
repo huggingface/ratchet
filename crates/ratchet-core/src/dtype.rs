@@ -1,12 +1,17 @@
 use std::{cmp::max, num::NonZeroU64};
-
+pub mod gguf;
+pub mod segments;
+pub use gguf::GGUFDType;
 use half::{bf16, f16};
+pub use segments::Segments;
 use wgpu::{BufferAddress, BufferSize};
 
 use crate::{
     gpu::{MIN_STORAGE_BUFFER_SIZE, STORAGE_BUFFER_ALIGN},
     rvec, RVec,
 };
+
+use self::gguf::{GGUFSize, Q4K, Q6K};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -18,6 +23,7 @@ pub enum DType {
     I32,
     U32,
     WQ8, //Packed Q8 (|--4xQ8(u32)--| |--f32--|)
+    GGUF(gguf::GGUFDType),
 }
 
 impl DType {
@@ -40,6 +46,8 @@ impl DType {
             DType::I32 => 4,
             DType::U32 => 4,
             DType::WQ8 => 4,
+            DType::GGUF(gguf::GGUFDType::Q4K(_)) => Q4K::TYPE_SIZE_WEBGPU,
+            DType::GGUF(gguf::GGUFDType::Q6K(_)) => Q6K::TYPE_SIZE_WEBGPU,
         }
     }
 
@@ -98,7 +106,7 @@ impl From<npyz::DType> for DType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct BufferSegment {
     pub offset: BufferAddress,
     pub size: Option<BufferSize>,

@@ -1,6 +1,6 @@
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-    PoolError, WgpuDevice, WorkgroupCount, UNIFORM_ALIGN,
+    PoolError, WgpuDevice, WorkgroupCount,
 };
 use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
 use encase::internal::WriteInto;
@@ -24,22 +24,24 @@ pub enum LazyOp {
     Conv(Conv),             //Really it's a matmul
     Select(IndexSelect),    //Can probably be Reindex
     IndexWrite(IndexWrite), //Above 2 should be merged
+    Cache(Cache),           //Should be a general class
 }
 
 impl LazyOp {
-    pub fn key(&self, dst: &Tensor) -> String {
+    pub fn name(&self) -> String {
         match self {
-            LazyOp::Binary(b) => b.kernel_key(dst),
-            LazyOp::Matmul(m) => m.kernel_key(dst),
-            LazyOp::RoPE(r) => r.kernel_key(dst),
-            LazyOp::Softmax(s) => s.kernel_key(dst),
-            LazyOp::Unary(u) => u.kernel_key(dst),
-            LazyOp::Reindex(r) => r.kernel_key(dst),
-            LazyOp::Concat(c) => c.kernel_key(dst),
-            LazyOp::Norm(n) => n.kernel_key(dst),
-            LazyOp::Conv(c) => c.kernel_key(dst),
-            LazyOp::Select(s) => s.kernel_key(dst),
-            LazyOp::IndexWrite(iw) => iw.kernel_key(dst),
+            LazyOp::Binary(b) => b.kernel_name(),
+            LazyOp::Matmul(m) => m.kernel_name(),
+            LazyOp::Softmax(s) => s.kernel_name(),
+            LazyOp::Unary(u) => u.kernel_name(),
+            LazyOp::Reindex(r) => r.kernel_name(),
+            LazyOp::Concat(c) => c.kernel_name(),
+            LazyOp::Norm(n) => n.kernel_name(),
+            LazyOp::Conv(c) => c.kernel_name(),
+            LazyOp::Select(s) => s.kernel_name(),
+            LazyOp::IndexWrite(iw) => iw.kernel_name(),
+            LazyOp::RoPE(r) => r.kernel_name(),
+            LazyOp::Cache(c) => c.kernel_name(),
             LazyOp::View(_) => "View".to_string(),
             LazyOp::Const => "Const".to_string(),
         }
@@ -58,6 +60,7 @@ impl LazyOp {
             LazyOp::Conv(c) => c.srcs(),
             LazyOp::Select(s) => s.srcs(),
             LazyOp::IndexWrite(iw) => iw.srcs(),
+            LazyOp::Cache(c) => c.srcs(),
             LazyOp::View(v) => rvec![v.input()],
             LazyOp::Const => rvec![], //end of the line kid
         }
@@ -76,6 +79,7 @@ impl LazyOp {
             LazyOp::Conv(c) => c.supports_inplace(),
             LazyOp::Select(s) => s.supports_inplace(),
             LazyOp::IndexWrite(iw) => iw.supports_inplace(),
+            LazyOp::Cache(c) => c.supports_inplace(),
             LazyOp::View(_v) => true,
             LazyOp::Const => false,
         }
@@ -105,6 +109,7 @@ impl LazyOp {
             LazyOp::Conv(c) => c.check_invariants(),
             LazyOp::Select(s) => s.check_invariants(),
             LazyOp::IndexWrite(iw) => iw.check_invariants(),
+            LazyOp::Cache(c) => c.check_invariants(),
             LazyOp::View(v) => v.check_invariants(),
             LazyOp::Const => {}
         }
@@ -140,8 +145,11 @@ pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
 /// Some types may implement both Operation and MetaOperation, if there is no variance
 /// in output shape or invariants between the members of the family.
 pub trait MetaOperation: Debug + 'static {
-    /// Return the file stem of the kernel source file.
-    fn kernel_key(&self, dst: &Tensor) -> String;
+    /// Kernel Name
+    fn kernel_name(&self) -> String;
+
+    /// Return the string key of the kernel source file.
+    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String;
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -180,13 +188,6 @@ pub trait MetaOperation: Debug + 'static {
         kernel_element: &KernelElement,
     ) -> Result<u64, OperationError>;
 
-    /// # Update
-    /// Some operations may require computing additional info once the dst is resolved.
-    /// I hate this method.
-    fn update(&self, _dst: &Tensor) -> Result<(), OperationError> {
-        Ok(())
-    }
-
     fn compile(
         &self,
         dst: &Tensor,
@@ -194,11 +195,8 @@ pub trait MetaOperation: Debug + 'static {
         device: &WgpuDevice,
         can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
-        self.update(dst)?;
         let kernel_element = self.kernel_element(dst);
-        let prev_offset = uniform.as_ref().len();
         let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
-        assert!(offset - prev_offset <= UNIFORM_ALIGN); //Each kernel has a 256 byte limit
 
         let workgroup_count = self.calculate_dispatch(dst)?;
 
@@ -210,7 +208,7 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let kernel_key = self.kernel_key(dst);
+        let kernel_key = self.kernel_key(can_inplace, dst);
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
             kernel_key: kernel_key.clone(),

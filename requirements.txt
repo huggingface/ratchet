@@ -4,4 +4,4 @@ torch==2.0.1
 requests==2.26.0
 mlx==0.9.0
 git+https://github.com/FL33TW00D/whisper.git@feature/reference#egg=openai-whisper
-
+gguf==0.6.0

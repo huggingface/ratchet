@@ -49,6 +49,10 @@ impl Operation for RoPE {
 }
 
 impl MetaOperation for RoPE {
+    fn kernel_name(&self) -> String {
+        "rope".to_string()
+    }
+
     fn supports_inplace(&self) -> bool {
         true
     }
@@ -57,7 +61,7 @@ impl MetaOperation for RoPE {
         rvec![&self.input]
     }
 
-    fn kernel_key(&self, dst: &Tensor) -> String {
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
         format!("rope_{}", self.kernel_element(dst).as_str())
     }
 

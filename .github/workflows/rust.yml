@@ -147,7 +147,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          cargo nextest run -j 1 --no-fail-fast
+          cargo nextest run -j 1 --no-fail-fast --features=ci
 
       - name: Set up WebDriver for Ubuntu
         if: matrix.os == 'ubuntu-22.04'

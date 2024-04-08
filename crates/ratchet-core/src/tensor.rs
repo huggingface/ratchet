@@ -6,7 +6,6 @@ use crate::{
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
@@ -44,6 +43,8 @@ pub enum TensorError {
 pub struct Tensor {
     pub(crate) inner: Arc<Inner>,
 }
+
+unsafe impl Send for Tensor {}
 
 impl Tensor {
     fn new(op: LazyOp, meta: StorageView, storage: Option<Storage>, device: Device) -> Self {
@@ -332,7 +333,7 @@ impl Tensor {
     //TODO: horrific interface
     pub fn matmul(self, other: Tensor, trans_a: bool, trans_b: bool) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let matmul = Matmul::new(self, other, trans_a, trans_b, RefCell::new(None));
+        let matmul = Matmul::new(self, other, trans_a, trans_b);
         let new_view = matmul.compute_view()?;
         Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
     }
@@ -397,6 +398,13 @@ impl Tensor {
         Ok(Tensor::lazy(op, out_view, device))
     }
 
+    pub fn cache(self, source: Tensor, dim: usize, offset: usize) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let cache = Cache::new(self, source, dim, offset);
+        let new_view = cache.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Cache(cache), new_view, device))
+    }
+
     pub fn broadcast_to(self, shape: Shape) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
         let broadcast = Broadcast::new(self, shape);
@@ -458,6 +466,7 @@ impl Tensor {
                 T::from(sample).expect("Failed to convert sample")
             })
             .collect::<Vec<_>>();
+
         Self::from_data(data, shape, device)
     }
 
@@ -508,10 +517,10 @@ impl Tensor {
         Ok(storage.into_bytes())
     }
 
-    pub(crate) unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
+    pub unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
         data: U,
-        shape: Shape,
         dt: DType,
+        shape: Shape,
         device: Device,
     ) -> Tensor {
         let storage = unsafe { Storage::from_quantized(data.as_ref(), &device) };
@@ -638,6 +647,7 @@ impl Tensor {
             LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::IndexWrite(i) => i.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Cache(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }
@@ -657,6 +667,7 @@ impl Tensor {
         //println!("Allocations: {:#?}", allocations);
 
         for t in execution_order.iter() {
+            log::info!("Compiling: {:?}", t.op().name());
             assert!(t.device().is_gpu());
             if t.resolved() {
                 continue;
@@ -669,8 +680,8 @@ impl Tensor {
                 alignment: t.dt().size_of(),
             }));
 
-            //Can inplace && only 1 consumer
-            let can_inplace = t.op().supports_inplace() && Arc::strong_count(&t.inner) == 1;
+            let to_modify = t.op().srcs()[0];
+            let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
 
             if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);

@@ -1,13 +1,18 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use hf_hub::api::sync::Api;
-use ratchet::{Device, DeviceRequest};
-use ratchet_loader::GGMLCompatible;
-use ratchet_models::model::Whisper;
+use ndarray::Axis;
+use ndarray_stats::QuantileExt;
+use ratchet::{shape, Device, DeviceRequest, Tensor};
+use ratchet_loader::ggml::GGMLCompatible;
+use ratchet_loader::gguf::gguf::Content;
 use ratchet_models::options::DecodingOptionsBuilder;
 use ratchet_models::registry::{AvailableModels, Quantization, Whisper as RegistryWhisper};
 use ratchet_models::transcribe::transcribe;
+use ratchet_models::{Phi2, Whisper};
+use ratchet_nn::Module;
 use std::path::Path;
 use std::process::Command as TermCommand;
+use tokenizers::Tokenizer;
 
 fn ffmpeg_preproc<P: AsRef<Path>>(path: P) -> Vec<f32> {
     let path = path.as_ref();
@@ -71,32 +76,73 @@ pub fn start_logger() {
     }
 }
 
-fn handle_whisper(matches: ArgMatches, api: Api) {
-    if let Some(matches) = matches.subcommand_matches("whisper") {
-        let mut whisper = if let Some(variant) = matches.get_one::<RegistryWhisper>("variant") {
-            let model = AvailableModels::Whisper(variant.clone());
-            let repo = api.model(model.repo_id());
-            let model_path = repo.get(&model.model_id(Quantization::Q8)).unwrap();
+fn handle_whisper(matches: &ArgMatches, api: Api) {
+    let mut whisper = if let Some(variant) = matches.get_one::<RegistryWhisper>("variant") {
+        let model = AvailableModels::Whisper(variant.clone());
+        let repo = api.model(model.repo_id());
+        let model_path = repo.get(&model.model_id(Quantization::Q8)).unwrap();
 
-            let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
-            let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
+        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
+        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
 
-            let device = Device::request_device(DeviceRequest::GPU).unwrap();
-            Whisper::load(&gg_disk, &mut reader, device).unwrap()
-        } else {
-            panic!("Model not found");
-        };
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        Whisper::load(&gg_disk, &mut reader, device).unwrap()
+    } else {
+        panic!("Model not found");
+    };
 
-        if let Some(input) = matches.get_one::<String>("input") {
-            let options = DecodingOptionsBuilder::new().build();
-            let samples = ffmpeg_preproc(input);
-            let transcript =
-                transcribe(&mut whisper, samples, options, Some(|s| println!("{}", s))).unwrap();
-            log::info!("Processing time: {:?}", transcript.processing_time);
-        } else {
-            panic!("Input file not found");
-        };
+    if let Some(input) = matches.get_one::<String>("input") {
+        let options = DecodingOptionsBuilder::new().build();
+        let samples = ffmpeg_preproc(input);
+        let transcript =
+            transcribe(&mut whisper, samples, options, Some(|s| println!("{}", s))).unwrap();
+        log::info!("Processing time: {:?}", transcript.processing_time);
+    } else {
+        panic!("Input file not found");
+    };
+}
+
+fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let model_path = concat!("../../", "/models/microsoft/phi-2/phi2-f16.gguf");
+    let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
+    let device = Device::request_device(DeviceRequest::GPU)?;
+    let content = Content::read(&mut reader)?;
+    let mut model = Phi2::load(content, &mut reader, &device)?;
+
+    let tokenizer =
+        Tokenizer::from_file(concat!("../../", "/models/microsoft/phi-2/tokenizer.json")).unwrap();
+
+    let prompt = "def print_prime(n):";
+    print!("{}", prompt);
+    let encoding = tokenizer.encode(prompt, true).unwrap();
+    let mut tokens = encoding
+        .get_ids()
+        .iter()
+        .map(|&x| x as i32)
+        .collect::<Vec<_>>();
+    let mut all_logits = vec![];
+    let mut all_tokens = tokens.clone();
+    let mut loop_cnt = 0;
+    while tokens[tokens.len() - 1] != 50256 && loop_cnt < 10 {
+        let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
+        let result = model.forward(input)?.resolve()?;
+        let logits = result.to(&Device::CPU)?;
+        all_logits.push(logits.clone());
+        model.cache_mut().update(tokens.len());
+
+        tokens = logits
+            .to_ndarray_view::<f32>()
+            .map_axis(Axis(2), |row| row.argmax_skipnan().unwrap())
+            .iter()
+            .map(|&x| x as i32)
+            .collect::<Vec<_>>();
+        let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
+        print!("{}", tokenizer.decode(&u32_toks, true).unwrap());
+        all_tokens.extend(tokens.clone());
+        loop_cnt += 1;
     }
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -127,10 +173,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .help("Path to the input file"),
                 ),
         )
+        .subcommand(
+            Command::new("phi2")
+                .long_about(
+                    "Cross-platform, GPU accelerated implementation of Microsoft's Phi2 model.",
+                )
+                .arg(
+                    Arg::new("prompt")
+                        .short('p')
+                        .long("prompt")
+                        .required(true)
+                        .help("Input prompt."),
+                ),
+        )
         .get_matches();
 
     let api = Api::new().unwrap();
-    handle_whisper(matches, api);
+    if let Some(matches) = matches.subcommand_matches("phi2") {
+        handle_phi2(matches, api);
+    } else if let Some(matches) = matches.subcommand_matches("whisper") {
+        handle_whisper(matches, api);
+    }
 
     Ok(())
 }

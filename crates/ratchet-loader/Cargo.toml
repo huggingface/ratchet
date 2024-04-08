@@ -13,6 +13,15 @@ anyhow.workspace = true
 bytemuck.workspace = true
 thiserror.workspace = true
 log.workspace = true
+itertools = "0.12.1"
 
 [dev-dependencies]
+wasm-bindgen-test.workspace = true
 hf-hub.workspace = true
+tokio = { version = "1.36.0", features = [
+    "sync",
+    "macros",
+    "io-util",
+    "rt",
+    "time",
+] }

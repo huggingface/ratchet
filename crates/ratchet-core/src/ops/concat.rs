@@ -55,11 +55,15 @@ impl OpGuards for Concat {
 }
 
 impl MetaOperation for Concat {
+    fn kernel_name(&self) -> String {
+        "concat".to_string()
+    }
+
     fn srcs(&self) -> RVec<&Tensor> {
         self.inputs.iter().collect()
     }
 
-    fn kernel_key(&self, dst: &Tensor) -> String {
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
         let ke = self.kernel_element(dst).as_str();
         let num_inputs = self.inputs.len();
         format!("concat{}_{}", num_inputs, ke)
@@ -101,10 +105,12 @@ impl MetaOperation for Concat {
             .iter()
             .map(|x| Shape::promote(x.shape().clone(), 4))
             .collect();
-        let input_strides: Vec<Strides> = input_shapes.iter().map(|x| Strides::from(x)).collect();
+        let input_strides: Vec<Strides> = input_shapes.iter().map(Strides::from).collect();
         let promoted_dim = self.dim + promotion;
         let dst_shape = Shape::promote(dst.shape().clone(), 4);
         let dst_strides = Strides::from(&dst_shape);
+        //YOU MUST WRITE THIS BEFORE STARTING
+        uniform.write_struct_end()?;
 
         let cumsum = input_shapes
             .iter()
@@ -181,7 +187,7 @@ def permute(t0, t1, t2, t3, t4):
         let device = GPU_DEVICE.with(|d| d.clone());
 
         let arg_str = format!("{}", dim);
-        let ground = ground_truth(&[&t0, &t1, &t2, &t3, &t4], &arg_str.as_str())?;
+        let ground = ground_truth(&[&t0, &t1, &t2, &t3, &t4], arg_str.as_str())?;
 
         t0 = t0.to(&device)?;
         t1 = t1.to(&device)?;
@@ -198,13 +204,13 @@ def permute(t0, t1, t2, t3, t4):
 
     #[test]
     fn test_concat() {
-        let t0 = Tensor::randn::<f32>(shape![128, 75], Device::CPU);
-        let t1 = Tensor::randn::<f32>(shape![128, 22], Device::CPU);
-        let t2 = Tensor::randn::<f32>(shape![128, 33], Device::CPU);
-        let t3 = Tensor::randn::<f32>(shape![128, 44], Device::CPU);
-        let t4 = Tensor::randn::<f32>(shape![128, 55], Device::CPU);
+        let t0 = Tensor::randn::<f32>(shape![4, 2, 50, 128], Device::CPU);
+        let t1 = Tensor::randn::<f32>(shape![4, 2, 13, 128], Device::CPU);
+        let t2 = Tensor::randn::<f32>(shape![4, 2, 77, 128], Device::CPU);
+        let t3 = Tensor::randn::<f32>(shape![4, 2, 55, 128], Device::CPU);
+        let t4 = Tensor::randn::<f32>(shape![4, 2, 11, 128], Device::CPU);
 
-        let dim = 1;
+        let dim = 2;
         run_concat_trial(ConcatProblem {
             t0,
             t1,

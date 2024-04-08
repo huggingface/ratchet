@@ -1,11 +1,11 @@
 use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
-use ratchet_loader::GGMLModel;
+use ratchet_loader::ggml::GGMLModel;
 use ratchet_nn::{LayerNorm, Module};
 
 use super::residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs};
-use crate::model::Whisper;
+use crate::whisper::model::Whisper;
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {
@@ -133,10 +133,10 @@ impl WhisperEncoder {
 mod tests {
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest, Tensor};
-    use ratchet_loader::GGMLCompatible;
+    use ratchet_loader::ggml::GGMLCompatible;
     use ratchet_nn::Module;
 
-    use crate::{model::Whisper, whisper::encoder::WhisperEncoder};
+    use crate::{whisper::encoder::WhisperEncoder, whisper::model::Whisper};
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
