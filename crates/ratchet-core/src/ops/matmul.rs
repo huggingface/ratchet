@@ -407,6 +407,11 @@ impl MetaOperation for Matmul {
         out_shape.insert(0, spec.stacks());
         let outStrides = Strides::from(&out_shape);
 
+        println!(
+            "A Shape: {:?} B Shape: {:?} Out Shape: {:?}",
+            a_shape, b_shape, out_shape
+        );
+
         let dimAOuter = spec.dim_a_outer() as i32;
         let dimBOuter = spec.dim_b_outer() as i32;
         let dimInner = spec.dim_inner() as i32;

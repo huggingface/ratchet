@@ -303,7 +303,7 @@ impl TensorLoader for f32 {
         tensor: Tensor,
         writer: &mut R,
     ) -> std::prelude::v1::Result<(), anyhow::Error> {
-        let tensor_data = tensor.to(&ratchet::Device::CPU)?.to_vec::<f32>()?;
+        let tensor_data = tensor.to_vec::<f32>()?;
         let tensor_blocks = tensor
             .shape()
             .get(0)

@@ -44,6 +44,8 @@ pub struct Tensor {
     pub(crate) inner: Arc<Inner>,
 }
 
+unsafe impl Send for Tensor {}
+
 impl Tensor {
     fn new(op: LazyOp, meta: StorageView, storage: Option<Storage>, device: Device) -> Self {
         Self {
