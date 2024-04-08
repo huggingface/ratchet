@@ -165,8 +165,7 @@ impl Phi2 {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::io::Write;
-
+    use hf_hub::api::sync::Api;
     use ndarray::Axis;
     use ndarray_stats::QuantileExt;
     use numpy::PyArrayDyn;
@@ -202,22 +201,21 @@ def ground():
     }
 
     #[test]
+    #[cfg_attr(feature = "ci", ignore)]
     fn load_phi2() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
-        let model_path = concat!(
-            env!("CARGO_RUSTC_CURRENT_DIR"),
-            "/models/microsoft/phi-2/phi2-f16.gguf"
-        );
+        let api = Api::new().unwrap();
+        let model_repo = api.model("FL33TW00D-HF/phi2".to_string());
+        let model_path = model_repo.get("phi2-f16.gguf").unwrap();
+
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;
         let content = gguf::gguf::Content::read(&mut reader)?;
         let mut model = Phi2::load(content, &mut reader, &device)?;
 
-        let tokenizer = Tokenizer::from_file(concat!(
-            env!("CARGO_RUSTC_CURRENT_DIR"),
-            "/models/microsoft/phi-2/tokenizer.json"
-        ))
-        .unwrap();
+        let tokenizer_repo = api.model("microsoft/phi-2".to_string());
+        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
+        let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
         let prompt = "def print_prime(n):";
         print!("{}", prompt);

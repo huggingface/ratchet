@@ -114,25 +114,10 @@ impl Module for PhiSelfAttention {
             (key_states, value_states)
         };
 
-        //let dbg_ks = key_states
-        //    .clone()
-        //    .resolve()
-        //    .unwrap()
-        //    .to(&Device::CPU)
-        //    .unwrap();
-
-        //println!("KEY STATES: \n {:?}", dbg_ks.to_ndarray_view::<f32>());
-
         //TODO: can we just use the built in transposed matmul?
         let mut attn_weights = query_states
             .matmul(key_states.permute(&[0, 1, 3, 2])?, false, false)?
             .mul(self.softmax_scale.clone())?;
-
-        /*
-        assert_eq!(
-            attn_weights.shape(),
-            &shape![batch_size as _, self.n_heads as _, seq_len, seq_len]
-        );*/
 
         if let Some(m) = mask {
             attn_weights = attn_weights.add(m)?;

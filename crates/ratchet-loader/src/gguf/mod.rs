@@ -108,48 +108,4 @@ mod tests {
         }
         Ok(())
     }
-
-    #[tokio::test]
-    #[ignore = "todo"]
-    async fn test_read_f16() -> anyhow::Result<()> {
-        let model_path = concat!(
-            env!("CARGO_RUSTC_CURRENT_DIR"),
-            "/models/microsoft/phi-2/phi2-f16.gguf"
-        );
-        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
-        let device = Device::request_device(DeviceRequest::GPU)?;
-        let content = gguf::Content::read(&mut reader)?;
-
-        let first_blk = content
-            .tensor_infos
-            .keys()
-            .into_iter()
-            .filter(|key| (*key).starts_with("blk.0"))
-            .map(|key| content.tensor_infos.get(key).map(|ti| (key, ti)))
-            .flatten()
-            .collect::<Vec<_>>();
-
-        for b in first_blk {
-            println!("{:?}", b);
-        }
-
-        let tensor_infos = content
-            .tensor_infos
-            .keys()
-            .into_iter()
-            .filter(|key| (*key).starts_with("blk.0"))
-            .map(|key| content.tensor_infos.get(key).map(|ti| (key, ti)))
-            .flatten()
-            .collect::<Vec<_>>();
-
-        tensor_infos.iter().for_each(|(key, ti)| {
-            println!("{:?} {:?}", key, ti);
-        });
-
-        let zeroth = tensor_infos[0];
-        let tensor = content.tensor(&mut reader, zeroth.0, &device);
-        println!("{:?}", tensor);
-
-        Ok(())
-    }
 }
