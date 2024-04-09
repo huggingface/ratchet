@@ -47,6 +47,12 @@ impl WorkgroupCount {
     }
 }
 
+impl ToString for WorkgroupCount {
+    fn to_string(&self) -> String {
+        format!("x{}_y{}_z{}", self.x, self.y, self.z)
+    }
+}
+
 impl Default for WorkgroupCount {
     fn default() -> Self {
         Self::new(1, 1, 1)

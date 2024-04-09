@@ -371,6 +371,7 @@ impl MetaOperation for Matmul {
         let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
         let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
         let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+        println!("Workgroup count: {:?}", workgroup_count);
         Ok(workgroup_count)
     }
 
@@ -422,6 +423,7 @@ impl MetaOperation for Matmul {
             dimBOuter,
             dimInner,
         };
+        println!("Matmul meta: {:?}", meta);
         Ok(uniform.write(&meta)?)
     }
 }
