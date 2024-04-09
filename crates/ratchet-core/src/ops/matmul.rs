@@ -117,7 +117,7 @@ impl MatmulSpec {
         }
     }
 
-    pub fn a_shape(&self) -> &Shape {
+    pub fn lhs_shape(&self) -> &Shape {
         &self.a_shape
     }
 
@@ -193,39 +193,49 @@ pub struct Matmul {
     rhs: Tensor,
     trans_lhs: bool,
     trans_rhs: bool,
+    trans_out: bool,
+    gemv: bool,
 }
 
 impl Matmul {
     pub fn new(lhs: Tensor, rhs: Tensor, trans_lhs: bool, trans_rhs: bool) -> Self {
-        //If lhs is a vector, and rhs is a mat, we want to swap them for speedy matvec
-        println!(
-            "Provided: lhs: {:?} rhs: {:?} trans_lhs: {} trans_rhs: {}",
-            lhs.shape(),
-            rhs.shape(),
-            trans_lhs,
-            trans_rhs
-        );
-        let (lhs, rhs, trans_lhs, trans_rhs) = if lhs.shape().is_vector() && trans_rhs {
-            //Before: y = xAT + b
-            //After:  yT = AxT + b
-            (rhs, lhs, !trans_rhs, !trans_lhs)
-        } else {
-            (lhs, rhs, trans_lhs, trans_rhs)
-        };
+        let (lhs, rhs, trans_lhs, trans_rhs, trans_out, gemv) =
+            if lhs.shape().is_vector() && trans_rhs {
+                //If lhs is a vector, and rhs is a mat, we want to swap them for speedy matvec
+                //Before: y = xAT + b
+                //After:  yT = AxT + b
+                //        y = (yT)T
 
-        println!(
-            "Swapped: lhs: {:?} rhs: {:?} trans_lhs: {} trans_rhs: {}",
-            lhs.shape(),
-            rhs.shape(),
-            trans_lhs,
-            trans_rhs
-        );
+                //println!(
+                //    "\nBefore swap: lhs: {:?} rhs: {:?}",
+                //    lhs.shape(),
+                //    rhs.shape()
+                //);
+                //println!(
+                //    "Before swap: trans_lhs: {} trans_rhs: {}",
+                //    trans_lhs, trans_rhs
+                //);
+
+                (rhs, lhs, false, true, true, true)
+            } else {
+                (lhs, rhs, trans_lhs, trans_rhs, false, false)
+            };
+
+        //if gemv {
+        //    println!("After swap: lhs: {:?} rhs: {:?}", lhs.shape(), rhs.shape());
+        //    println!(
+        //        "After swap: trans_lhs: {} trans_rhs: {} trans_out: {}\n",
+        //        trans_lhs, trans_rhs, trans_out
+        //    );
+        //}
 
         Self {
             lhs,
             rhs,
             trans_lhs,
             trans_rhs,
+            trans_out,
+            gemv,
         }
     }
 
@@ -234,6 +244,7 @@ impl Matmul {
         b: &Tensor,
         trans_lhs: bool,
         trans_rhs: bool,
+        trans_out: bool,
     ) -> anyhow::Result<Shape> {
         let (mut ashape, mut bshape) = (a.shape().clone(), b.shape().clone());
 
@@ -257,8 +268,8 @@ impl Matmul {
         let arank = ashape.rank();
         let brank = bshape.rank();
         let (a_prefix, b_prefix) = (&ashape[..arank - 2], &bshape[..brank - 2]);
-        let c_broadcasted_prefix = Shape::multi_broadcast(&[&a_prefix.into(), &b_prefix.into()])
-            .ok_or_else(|| {
+        let mut c_broadcasted_prefix =
+            Shape::multi_broadcast(&[&a_prefix.into(), &b_prefix.into()]).ok_or_else(|| {
                 anyhow::anyhow!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape)
             })?;
 
@@ -277,12 +288,25 @@ impl Matmul {
             anyhow::bail!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape);
         }
 
-        let mut c_shape_final = c_broadcasted_prefix;
-        if ashape.rank() >= 2 {
-            c_shape_final.push(m);
-        }
-        if bshape.rank() >= 2 {
-            c_shape_final.push(n);
+        let mut c_shape_final = c_broadcasted_prefix.clone();
+        if trans_out {
+            c_broadcasted_prefix.push(n.clone());
+            c_broadcasted_prefix.push(m.clone());
+            if !implicit_n {
+                c_shape_final.push(n.clone());
+            }
+            if !implicit_m {
+                c_shape_final.push(m.clone());
+            }
+        } else {
+            c_broadcasted_prefix.push(m.clone());
+            c_broadcasted_prefix.push(n.clone());
+            if !implicit_m {
+                c_shape_final.push(m.clone());
+            }
+            if !implicit_n {
+                c_shape_final.push(n.clone());
+            }
         }
 
         Ok(c_shape_final)
@@ -291,59 +315,10 @@ impl Matmul {
     pub fn compute_spec(&self, dst: &Tensor) -> MatmulSpec {
         MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_lhs, self.trans_rhs)
     }
-}
 
-#[allow(clippy::too_many_arguments)]
-#[derive(Debug, Clone, ShaderType)]
-pub struct MatmulMeta {
-    aShape: glam::IVec3,
-    aStrides: glam::IVec3,
-    bShape: glam::IVec3,
-    bStrides: glam::IVec3,
-    outShape: glam::IVec3,
-    outStrides: glam::IVec3,
-    dimAOuter: i32,
-    dimBOuter: i32,
-    dimInner: i32,
-}
-
-impl OpMetadata for MatmulMeta {}
-
-impl Operation for Matmul {
-    fn compute_view(&self) -> Result<StorageView, OperationError> {
-        let c_shape =
-            Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_lhs, self.trans_rhs).unwrap();
-        let c_strides = Strides::from(&c_shape);
-        Ok(StorageView::new(c_shape, self.lhs.dt(), c_strides))
-    }
-}
-
-impl OpGuards for Matmul {
-    fn check_shapes(&self) {
-        let c_shape = Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_lhs, self.trans_rhs);
-        assert!(c_shape.is_ok());
-    }
-
-    fn check_dtypes(&self) {
-        let allowed_pairs = [(DType::F32, DType::F32), (DType::F32, DType::WQ8)];
-        if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
-            panic!(
-                "Failed to validate DTypes: {:?}, {:?}",
-                self.lhs.dt(),
-                self.rhs.dt()
-            );
-        }
-    }
-}
-
-impl MetaOperation for Matmul {
-    fn kernel_name(&self) -> String {
-        "MatMul".to_string()
-    }
-
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
+    pub fn gemm_kernel_key(&self, _: bool, dst: &Tensor) -> String {
         let spec = self.compute_spec(dst);
-        println!("SPEC: {:#?}", spec);
+
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
@@ -382,6 +357,83 @@ impl MetaOperation for Matmul {
             }
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[derive(Debug, Clone, ShaderType)]
+pub struct MatmulMeta {
+    aShape: glam::IVec3,
+    aStrides: glam::IVec3,
+    bShape: glam::IVec3,
+    bStrides: glam::IVec3,
+    outShape: glam::IVec3,
+    outStrides: glam::IVec3,
+    dimAOuter: i32,
+    dimBOuter: i32,
+    dimInner: i32,
+}
+
+impl OpMetadata for MatmulMeta {}
+
+impl Operation for Matmul {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let c_shape = Matmul::compute_c_shape(
+            &self.lhs,
+            &self.rhs,
+            self.trans_lhs,
+            self.trans_rhs,
+            self.trans_out,
+        )
+        .unwrap();
+        let c_strides = Strides::from(&c_shape);
+        Ok(StorageView::new(c_shape, self.lhs.dt(), c_strides))
+    }
+}
+
+impl OpGuards for Matmul {
+    fn check_shapes(&self) {
+        let c_shape = Matmul::compute_c_shape(
+            &self.lhs,
+            &self.rhs,
+            self.trans_lhs,
+            self.trans_rhs,
+            self.trans_out,
+        );
+        assert!(c_shape.is_ok());
+    }
+
+    fn check_dtypes(&self) {
+        let allowed_pairs = [(DType::F32, DType::F32), (DType::F32, DType::WQ8)];
+        if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
+            panic!(
+                "Failed to validate DTypes: {:?}, {:?}",
+                self.lhs.dt(),
+                self.rhs.dt()
+            );
+        }
+    }
+}
+
+impl MetaOperation for Matmul {
+    fn kernel_name(&self) -> String {
+        "MatMul".to_string()
+    }
+
+    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
+        if self.gemv {
+            //let mat_fit = self.lhs.shape()[1] % MatmulSpec::TILE_DIM == 0;
+            //sgemv_32_4_false_scalar.wgsl
+            format!(
+                "sgemv_{}_{}_{}_{}",
+                32,
+                4,
+                true,
+                KernelElement::Scalar.as_str()
+            )
+        } else {
+            self.gemm_kernel_key(inplace, dst)
+        }
+    }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.lhs, &self.rhs]
@@ -393,28 +445,44 @@ impl MetaOperation for Matmul {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let spec = self.compute_spec(dst);
+        if self.gemv {
+            let spec = self.compute_spec(dst);
 
-        let TILE_DIM = 32;
-        let a_shape = spec.a_shape();
-        let b_shape = spec.b_shape();
+            let a_shape = spec.lhs_shape();
+            let dimA = if self.trans_lhs {
+                a_shape[1]
+            } else {
+                a_shape[0]
+            };
 
-        let dimA = if self.trans_lhs {
-            a_shape[1]
+            let group_x = WorkgroupCount::div_ceil(dimA, MatmulSpec::TILE_DIM);
+            let group_y = 1;
+            let wgc = wgc![group_x as _, group_y as _, spec.stacks() as _];
+            Ok(wgc)
         } else {
-            a_shape[0]
-        };
-        let dimB = if self.trans_rhs {
-            b_shape[0]
-        } else {
-            b_shape[1]
-        };
+            let spec = self.compute_spec(dst);
 
-        let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
-        let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
-        let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
-        println!("Workgroup count: {:?}", workgroup_count);
-        Ok(workgroup_count)
+            let TILE_DIM = 32;
+            let a_shape = spec.lhs_shape();
+            let b_shape = spec.b_shape();
+
+            let dimA = if self.trans_lhs {
+                a_shape[1]
+            } else {
+                a_shape[0]
+            };
+
+            let dimB = if self.trans_rhs {
+                b_shape[0]
+            } else {
+                b_shape[1]
+            };
+
+            let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
+            let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
+            let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+            Ok(workgroup_count)
+        }
     }
 
     fn storage_bind_group_layout(
@@ -465,7 +533,6 @@ impl MetaOperation for Matmul {
             dimBOuter,
             dimInner,
         };
-        println!("Matmul meta: {:?}", meta);
         Ok(uniform.write(&meta)?)
     }
 }
@@ -602,8 +669,8 @@ def matmul(a, b):
         let prob = SGEMMProblem {
             B: 1,
             M: 1,
-            K: 1024,
-            N: 1024,
+            K: 2560,
+            N: 51200,
             trans_lhs: false,
             trans_rhs: true,
         };
