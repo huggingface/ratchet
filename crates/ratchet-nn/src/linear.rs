@@ -5,7 +5,7 @@ use crate::Module;
 /// # Linear
 ///
 /// PyTorch case: y = xW^T + b
-/// If your weights are already transposed, you can set `transpose` to `false` to avoid the transpose operation.
+/// If your weights are already in the correct layout, you can set `transpose` to `false` to avoid the transpose operation.
 #[derive(derive_new::new, Debug)]
 pub struct Linear {
     pub w: Tensor,
