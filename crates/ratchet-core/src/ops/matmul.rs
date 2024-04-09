@@ -187,7 +187,7 @@ impl MatmulSpec {
     }
 }
 
-#[derive(new, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Matmul {
     lhs: Tensor,
     rhs: Tensor,
@@ -196,6 +196,17 @@ pub struct Matmul {
 }
 
 impl Matmul {
+    pub fn new(lhs: Tensor, rhs: Tensor, trans_a: bool, trans_b: bool) -> Self {
+        //If lhs is a vector, and rhs is a mat, we want to swap them for speedy matvec
+
+        Self {
+            lhs,
+            rhs,
+            trans_a,
+            trans_b,
+        }
+    }
+
     pub fn compute_c_shape(
         a: &Tensor,
         b: &Tensor,
@@ -316,6 +327,8 @@ impl MetaOperation for Matmul {
         if (self.rhs.dt() == DType::WQ8) && (self.trans_a || self.trans_b) {
             panic!("Transposed WQ8 not supported");
         }
+
+        println!("B SHAPE: {:?}", spec.b_shape());
 
         let kernel_stem = if self.rhs.dt() == DType::WQ8 {
             "qgemm"
@@ -548,6 +561,21 @@ def matmul(a, b):
             N: 384,
             trans_a: false,
             trans_b: true,
+        };
+        run_matmul_trial(&device, prob).unwrap();
+    }
+
+    #[test]
+    fn test_sgemv_fast() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let prob = SGEMMProblem {
+            B: 1,
+            M: 1024,
+            K: 1024,
+            N: 1,
+            trans_a: false,
+            trans_b: false,
         };
         run_matmul_trial(&device, prob).unwrap();
     }
