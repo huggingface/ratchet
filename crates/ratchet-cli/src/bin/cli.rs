@@ -105,7 +105,7 @@ fn handle_whisper(matches: &ArgMatches, api: Api) {
 
 fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
-    let model_path = concat!("../../", "/models/microsoft/phi-2/phi2-f16-t.gguf");
+    let model_path = concat!("../../", "/models/microsoft/phi-2/phi2-f16.gguf");
     let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
     let device = Device::request_device(DeviceRequest::GPU)?;
     let content = Content::read(&mut reader)?;

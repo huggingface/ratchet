@@ -32,8 +32,8 @@ impl DecoderLayer {
         let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
 
         let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?), false),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?), false),
+            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?), true),
+            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?), true),
         );
         Ok(Self { ln, self_attn, mlp })
     }
@@ -84,9 +84,9 @@ impl Module for Phi2 {
         };
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            if layer_idx > 15 {
-                break;
-            }
+            //if layer_idx > 15 {
+            //    break;
+            //}
             let input = DecoderLayerInput {
                 x,
                 mask: mask.clone(),
@@ -135,7 +135,7 @@ impl Phi2 {
         };
 
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
-        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?), false);
+        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?), true);
         println!("Loaded Phi2 model");
 
         Ok(Self {
@@ -211,7 +211,7 @@ def ground():
         let _ = env_logger::builder().is_test(true).try_init();
         let api = Api::new().unwrap();
         let model_repo = api.model("FL33TW00D-HF/phi2".to_string());
-        let model_path = model_repo.get("phi2-f16-t.gguf").unwrap();
+        let model_path = model_repo.get("phi2-f16.gguf").unwrap();
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;
