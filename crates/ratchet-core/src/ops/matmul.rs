@@ -191,37 +191,59 @@ impl MatmulSpec {
 pub struct Matmul {
     lhs: Tensor,
     rhs: Tensor,
-    trans_a: bool,
-    trans_b: bool,
+    trans_lhs: bool,
+    trans_rhs: bool,
 }
 
 impl Matmul {
-    pub fn new(lhs: Tensor, rhs: Tensor, trans_a: bool, trans_b: bool) -> Self {
+    pub fn new(lhs: Tensor, rhs: Tensor, trans_lhs: bool, trans_rhs: bool) -> Self {
         //If lhs is a vector, and rhs is a mat, we want to swap them for speedy matvec
+        println!(
+            "Provided: lhs: {:?} rhs: {:?} trans_lhs: {} trans_rhs: {}",
+            lhs.shape(),
+            rhs.shape(),
+            trans_lhs,
+            trans_rhs
+        );
+        let (lhs, rhs, trans_lhs, trans_rhs) = if lhs.shape().is_vector() && trans_rhs {
+            //Before: y = xAT + b
+            //After:  yT = AxT + b
+            (rhs, lhs, !trans_rhs, !trans_lhs)
+        } else {
+            (lhs, rhs, trans_lhs, trans_rhs)
+        };
+
+        println!(
+            "Swapped: lhs: {:?} rhs: {:?} trans_lhs: {} trans_rhs: {}",
+            lhs.shape(),
+            rhs.shape(),
+            trans_lhs,
+            trans_rhs
+        );
 
         Self {
             lhs,
             rhs,
-            trans_a,
-            trans_b,
+            trans_lhs,
+            trans_rhs,
         }
     }
 
     pub fn compute_c_shape(
         a: &Tensor,
         b: &Tensor,
-        trans_a: bool,
-        trans_b: bool,
+        trans_lhs: bool,
+        trans_rhs: bool,
     ) -> anyhow::Result<Shape> {
         let (mut ashape, mut bshape) = (a.shape().clone(), b.shape().clone());
 
         let implicit_m = ashape.rank() < 2;
         let implicit_n = bshape.rank() < 2;
         if implicit_m {
-            ashape.insert(trans_a as usize, 1);
+            ashape.insert(trans_lhs as usize, 1);
         }
         if implicit_n {
-            bshape.insert(!trans_b as usize, 1);
+            bshape.insert(!trans_rhs as usize, 1);
         }
 
         let equalize_rank = |shape: &mut Shape, target_rank: usize| {
@@ -243,11 +265,11 @@ impl Matmul {
         let (mut m, mut ka) = (ashape[arank - 2], ashape[arank - 1]);
         let (mut kb, mut n) = (bshape[brank - 2], bshape[brank - 1]);
 
-        if trans_a {
+        if trans_lhs {
             std::mem::swap(&mut m, &mut ka);
         }
 
-        if trans_b {
+        if trans_rhs {
             std::mem::swap(&mut kb, &mut n);
         }
 
@@ -267,7 +289,7 @@ impl Matmul {
     }
 
     pub fn compute_spec(&self, dst: &Tensor) -> MatmulSpec {
-        MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_a, self.trans_b)
+        MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_lhs, self.trans_rhs)
     }
 }
 
@@ -290,7 +312,7 @@ impl OpMetadata for MatmulMeta {}
 impl Operation for Matmul {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let c_shape =
-            Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_a, self.trans_b).unwrap();
+            Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_lhs, self.trans_rhs).unwrap();
         let c_strides = Strides::from(&c_shape);
         Ok(StorageView::new(c_shape, self.lhs.dt(), c_strides))
     }
@@ -298,7 +320,7 @@ impl Operation for Matmul {
 
 impl OpGuards for Matmul {
     fn check_shapes(&self) {
-        let c_shape = Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_a, self.trans_b);
+        let c_shape = Matmul::compute_c_shape(&self.lhs, &self.rhs, self.trans_lhs, self.trans_rhs);
         assert!(c_shape.is_ok());
     }
 
@@ -321,14 +343,13 @@ impl MetaOperation for Matmul {
 
     fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
         let spec = self.compute_spec(dst);
+        println!("SPEC: {:#?}", spec);
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
-        if (self.rhs.dt() == DType::WQ8) && (self.trans_a || self.trans_b) {
+        if (self.rhs.dt() == DType::WQ8) && (self.trans_lhs || self.trans_rhs) {
             panic!("Transposed WQ8 not supported");
         }
-
-        println!("B SHAPE: {:?}", spec.b_shape());
 
         let kernel_stem = if self.rhs.dt() == DType::WQ8 {
             "qgemm"
@@ -344,8 +365,8 @@ impl MetaOperation for Matmul {
                     a_fit,
                     b_fit,
                     out_fit,
-                    self.trans_a,
-                    self.trans_b,
+                    self.trans_lhs,
+                    self.trans_rhs,
                     ke.as_str()
                 )
             }
@@ -378,8 +399,16 @@ impl MetaOperation for Matmul {
         let a_shape = spec.a_shape();
         let b_shape = spec.b_shape();
 
-        let dimA = if self.trans_a { a_shape[1] } else { a_shape[0] };
-        let dimB = if self.trans_b { b_shape[0] } else { b_shape[1] };
+        let dimA = if self.trans_lhs {
+            a_shape[1]
+        } else {
+            a_shape[0]
+        };
+        let dimB = if self.trans_rhs {
+            b_shape[0]
+        } else {
+            b_shape[1]
+        };
 
         let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
         let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
@@ -454,16 +483,16 @@ mod tests {
     fn ground_truth(
         a: &Tensor,
         b: &Tensor,
-        trans_a: bool,
-        trans_b: bool,
+        trans_lhs: bool,
+        trans_rhs: bool,
     ) -> anyhow::Result<Tensor> {
-        let a_op = if trans_a {
+        let a_op = if trans_lhs {
             "torch.permute(torch.from_numpy(a), [0, 2, 1])"
         } else {
             "torch.from_numpy(a)"
         };
 
-        let b_op = if trans_b {
+        let b_op = if trans_rhs {
             "torch.permute(torch.from_numpy(b), [0, 2, 1])"
         } else {
             "torch.from_numpy(b)"
@@ -490,8 +519,8 @@ def matmul(a, b):
         K: usize,
         #[strategy(1..=512usize)]
         N: usize,
-        trans_a: bool,
-        trans_b: bool,
+        trans_lhs: bool,
+        trans_rhs: bool,
     }
 
     #[proptest(cases = 64)]
@@ -502,12 +531,12 @@ def matmul(a, b):
             M,
             K,
             N,
-            trans_a,
-            trans_b,
+            trans_lhs,
+            trans_rhs,
         } = prob;
         println!(
-            "Running sgemm: B={} M={} N={} K={} trans_a={} trans_b={}",
-            B, M, N, K, trans_a, trans_b
+            "Running sgemm: B={} M={} N={} K={} trans_lhs={} trans_rhs={}",
+            B, M, N, K, trans_lhs, trans_rhs
         );
         run_matmul_trial(&device, prob).unwrap();
     }
@@ -519,17 +548,17 @@ def matmul(a, b):
             M,
             K,
             N,
-            trans_a,
-            trans_b,
+            trans_lhs,
+            trans_rhs,
         } = prob;
 
-        let a_shape = if trans_a {
+        let a_shape = if trans_lhs {
             shape![B, K, M]
         } else {
             shape![B, M, K]
         };
 
-        let b_shape = if trans_b {
+        let b_shape = if trans_rhs {
             shape![B, N, K]
         } else {
             shape![B, K, N]
@@ -537,11 +566,11 @@ def matmul(a, b):
 
         let a = Tensor::randn::<f32>(a_shape, cpu_device.clone());
         let b = Tensor::randn::<f32>(b_shape, cpu_device.clone());
-        let ground = ground_truth(&a, &b, trans_a, trans_b)?;
+        let ground = ground_truth(&a, &b, trans_lhs, trans_rhs)?;
 
         let a_gpu = a.to(device)?;
         let b_gpu = b.to(device)?;
-        let c_gpu = a_gpu.matmul(b_gpu, trans_a, trans_b)?.resolve()?;
+        let c_gpu = a_gpu.matmul(b_gpu, trans_lhs, trans_rhs)?.resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
         println!("RATCHET SGEMM\n{:?}\n", d_gpu);
@@ -559,8 +588,8 @@ def matmul(a, b):
             M: 1500,
             K: 384,
             N: 384,
-            trans_a: false,
-            trans_b: true,
+            trans_lhs: false,
+            trans_rhs: true,
         };
         run_matmul_trial(&device, prob).unwrap();
     }
@@ -569,13 +598,14 @@ def matmul(a, b):
     fn test_sgemv_fast() {
         let _ = env_logger::builder().is_test(true).try_init();
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        //This is what a linear does
         let prob = SGEMMProblem {
             B: 1,
-            M: 1024,
+            M: 1,
             K: 1024,
-            N: 1,
-            trans_a: false,
-            trans_b: false,
+            N: 1024,
+            trans_lhs: false,
+            trans_rhs: true,
         };
         run_matmul_trial(&device, prob).unwrap();
     }
