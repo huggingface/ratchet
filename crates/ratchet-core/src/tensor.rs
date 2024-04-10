@@ -659,12 +659,9 @@ impl Tensor {
         device.begin_pass();
 
         let execution_order = self.execution_order();
-        //let last = execution_order.last().unwrap();
-        //crate::plot::render_to_file(last, "pre-allocations.svg").unwrap();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
-        //println!("Allocations: {:#?}", allocations);
 
         for t in execution_order.iter() {
             log::info!("Compiling: {:?}", t.op().name());

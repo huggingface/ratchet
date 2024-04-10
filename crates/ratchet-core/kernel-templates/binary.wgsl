@@ -1,3 +1,11 @@
+{% if inplace %}
+@group(0) @binding(0)
+var<storage, read_write> A: array<{{ elem }}>;
+
+@group(0) @binding(1)
+var<storage, read> B: array<{{ elem }}>;
+
+{% else %}
 @group(0) @binding(0)
 var<storage, read> A: array<{{ elem }}>;
 
@@ -6,6 +14,7 @@ var<storage, read> B: array<{{ elem }}>;
 
 @group(0) @binding(2)
 var<storage, read_write> Y: array<{{ elem }}>;
+{% endif %}
 
 struct Meta {
     numel: u32,
@@ -26,5 +35,11 @@ fn main(
     if (index >= metadata.numel / {{ elem_size }}u) {
         return;
     }
-    Y[index] = A[index] {{ op }} B[index];
+
+    {% if inplace %}
+        let val = A[index];
+        A[index] = val {{ op }} B[index];
+    {% else %}
+        Y[index] = A[index] {{ op }} B[index];
+    {% endif %}
 }

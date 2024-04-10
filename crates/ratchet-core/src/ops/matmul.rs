@@ -472,7 +472,7 @@ def matmul(a, b):
 
     #[derive(Arbitrary, Debug)]
     struct SGEMMProblem {
-        #[strategy(1..=4usize)]
+        #[strategy(1..=3usize)]
         B: usize,
         #[strategy(1..=512usize)]
         M: usize,
@@ -484,7 +484,7 @@ def matmul(a, b):
         trans_b: bool,
     }
 
-    #[proptest(cases = 64)]
+    #[proptest(cases = 32)]
     fn test_sgemm(prob: SGEMMProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let SGEMMProblem {

@@ -67,6 +67,12 @@ impl Shape {
         self.0.iter().all(|&x| x == 1)
     }
 
+    pub fn is_vector(&self) -> bool {
+        let mut shape = self.clone();
+        shape.squeeze();
+        shape.rank() == 1
+    }
+
     #[inline]
     pub fn left_pad_to(&mut self, scalar: usize, rank: usize) {
         while self.0.len() < rank {
@@ -86,6 +92,11 @@ impl Shape {
         let mut shape = shape;
         shape.left_pad_to(1, rank);
         shape
+    }
+
+    #[inline]
+    pub fn squeeze(&mut self) {
+        self.0.retain(|x| *x != 1);
     }
 
     pub fn drain<R>(&mut self, range: R) -> smallvec::Drain<'_, [usize; 4]>

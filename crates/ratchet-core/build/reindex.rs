@@ -3,7 +3,7 @@ use std::{fs::File, io::Write};
 use strum::IntoEnumIterator;
 use tera::Context;
 
-use crate::{Generate, KernelElement, KernelRenderer};
+use crate::{Generate, KernelElement, KernelRenderer, WgslDType};
 
 #[derive(Debug, Clone, strum_macros::EnumIter)]
 pub enum ReindexOp {
@@ -37,6 +37,7 @@ impl ReindexOp {
     var src_index = dst_index;"#
                 .to_string(),
             ReindexOp::Broadcast => r#"
+    // Broadcasting is valid if dims are equal, or if one of the dims is 1
     var src_index = select(dst_index, vec4<u32>(0u), metadata.src_shape == vec4<u32>(1u));
     "#
             .to_string(),
@@ -46,17 +47,28 @@ impl ReindexOp {
 
 impl Generate for ReindexOp {
     fn generate(renderer: &mut KernelRenderer) -> anyhow::Result<()> {
+        let path = renderer.templates_path.join("reindex.wgsl");
+        renderer.tera.add_template_file(path, Some("reindex"))?;
+
         for op in ReindexOp::iter() {
-            let path = renderer.templates_path.join("reindex.wgsl");
-            renderer.tera.add_template_file(path, Some("reindex"))?;
+            for ke in KernelElement::iter() {
+                if matches!(ke, KernelElement::Vec4 | KernelElement::Vec2)
+                    && !matches!(op, ReindexOp::Broadcast)
+                {
+                    continue;
+                }
 
-            let mut context = Context::new();
-            context.insert("func_body", &op.func_body());
-            let rendered = renderer.tera.render("reindex", &context)?;
+                let mut context = Context::new();
+                context.insert("elem", &ke.as_wgsl(WgslDType::F32));
+                context.insert("elem_size", &ke.as_size());
+                context.insert("func_body", &op.func_body());
 
-            let kernel_fname = format!("{}_{}.wgsl", op, KernelElement::Scalar);
-            let mut file = File::create(renderer.dest_path.join(kernel_fname))?;
-            file.write_all(rendered.as_bytes())?;
+                let rendered = renderer.tera.render("reindex", &context)?;
+
+                let kernel_fname = format!("{}_{}.wgsl", op, ke);
+                let mut file = File::create(renderer.dest_path.join(kernel_fname))?;
+                file.write_all(rendered.as_bytes())?;
+            }
         }
         Ok(())
     }
