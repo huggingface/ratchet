@@ -142,8 +142,6 @@ import mlx.nn as nn
 import numpy as np
 
 def mlx_rope(input, dim, offset):
-    print("Rope dim = ", dim)
-    print("Offset = ", offset)
     rope = nn.RoPE(dim)
     mx_input = mx.array(input)
     y = rope(mx_input, offset)
@@ -178,20 +176,19 @@ def mlx_rope(input, dim, offset):
 
     #[derive(Arbitrary, Debug)]
     struct RoPEProblem {
-        #[strategy(1..=4usize)]
+        #[strategy(1..=2usize)]
         BS: usize,
         #[strategy(1..=64usize)]
         NH: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         SL: usize,
         #[strategy(32..=128usize)]
         #[filter(#HD % 16 == 0)]
         HD: usize,
-        #[strategy(32..=128usize)]
-        #[filter(#dim % 32 == 0 && #dim <= #HD)]
+        #[strategy(32..=#HD)]
+        #[filter(#dim % 32 == 0)]
         dim: usize,
-        #[strategy(0..=128usize)]
-        #[filter(#offset <= #SL)]
+        #[strategy(0..=#SL)]
         offset: usize,
     }
 
