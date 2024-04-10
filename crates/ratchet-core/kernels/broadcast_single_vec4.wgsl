@@ -48,15 +48,16 @@ fn main(
     //dst_offset is index into the output buffer (1D)
     let x_offset = group_id.x * 64u;
     var dst_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
-    if (dst_offset >= metadata.dst_numel) {
-        return;
-    }
 
     if (local_id.x == 0u) {
         let val = X[0];
         broadcasted = vec4<f32>(val);
     }
     workgroupBarrier();
+
+    if (dst_offset >= metadata.dst_numel) {
+        return;
+    }
 
     //Convert 1D offset into 4D index
     let dst_index = offsetToNdIndex(dst_offset, metadata.dst_stride);
