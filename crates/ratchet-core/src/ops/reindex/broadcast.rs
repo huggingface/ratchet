@@ -43,7 +43,7 @@ mod tests {
     };
     use test_strategy::proptest;
 
-    use crate::{test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor};
+    use crate::{shape, test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -99,7 +99,7 @@ def slice(a):
     }
 
     fn run_reindex_trial(prob: BroadcastProblem) -> anyhow::Result<()> {
-        println!("Broadcast problem: {:?}", prob);
+        println!("\n\nBroadcast problem: {:?}", prob);
         let BroadcastProblem { op } = prob;
         let a = op.src.clone();
         let device = GPU_DEVICE.with(|d| d.clone());
@@ -114,6 +114,17 @@ def slice(a):
 
     #[proptest(cases = 16)]
     fn test_broadcast(prob: BroadcastProblem) {
+        run_reindex_trial(prob).unwrap();
+    }
+
+    #[test]
+    fn debug_broadcast() {
+        let prob = BroadcastProblem {
+            op: Broadcast::new(
+                Tensor::randn::<f32>(shape![1], Device::CPU),
+                shape![4, 32, 128, 128],
+            ),
+        };
         run_reindex_trial(prob).unwrap();
     }
 }

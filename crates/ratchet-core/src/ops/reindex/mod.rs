@@ -55,13 +55,40 @@ impl MetaOperation for Reindex {
         }
     }
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
-        //TODO: add support for Vec4
-        KernelElement::Scalar
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+        match self {
+            Reindex::Broadcast(b) => {
+                let src_numel = b.src.shape().numel();
+                let src_outer = b.src.shape()[b.src.rank() - 1];
+                let dst_outer = dst.shape()[dst.rank() - 1];
+
+                if (src_numel == 1 && dst_outer % 4 == 0)
+                    || (src_outer % 4 == 0 && dst_outer % 4 == 0)
+                {
+                    //Special case for src_numel == 1
+                    KernelElement::Vec4
+                } else if src_outer % 2 == 0 && dst_outer % 2 == 0 {
+                    KernelElement::Vec2
+                } else {
+                    KernelElement::Scalar
+                }
+            }
+            _ => KernelElement::Scalar,
+        }
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let numel = dst.shape().numel();
+        let mut numel = dst.shape().numel();
+        match self.kernel_element(dst) {
+            KernelElement::Vec4 => {
+                numel /= 4;
+            }
+            KernelElement::Vec2 => {
+                numel /= 2;
+            }
+            _ => {}
+        }
+
         let x_groups = WorkgroupCount::div_ceil(numel as _, 64);
         let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
             let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
@@ -79,34 +106,50 @@ impl MetaOperation for Reindex {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
+        let ke = self.kernel_element(dst);
         let op_key = match self {
             Reindex::Permute(_) => "permute",
             Reindex::Slice(_) => "slice",
-            Reindex::Broadcast(_) => "broadcast",
+            Reindex::Broadcast(b) => {
+                let src_numel = b.src.shape().numel();
+                let dst_outer = dst.shape()[dst.rank() - 1];
+                if src_numel == 1 && dst_outer % 4 == 0 {
+                    "broadcast_single"
+                } else {
+                    "broadcast"
+                }
+            }
         };
-        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
+
+        format!("{}_{}", op_key, ke.as_str())
     }
 
     fn write_metadata(
         &self,
         uniform: &mut CpuUniform,
         dst: &Tensor,
-        _: &KernelElement,
+        ke: &KernelElement,
     ) -> Result<u64, OperationError> {
         //This is gross
         let srcs = self.srcs();
         let src = srcs.first().unwrap();
-        let src_shape = Shape::promote(src.shape().clone(), 4);
-        let dst_shape = Shape::promote(dst.shape().clone(), 4);
+        let mut src_shape = Shape::promote(src.shape().clone(), 4);
+        let mut dst_shape = Shape::promote(dst.shape().clone(), 4);
+
+        let src_numel = src_shape.numel() as u32;
+        let dst_numel = dst_shape.numel() as u32;
+
+        if matches!(self, Reindex::Broadcast(_)) {
+            src_shape[3] /= ke.as_size();
+            dst_shape[3] /= ke.as_size();
+        }
 
         let src_strides = Strides::from(&src_shape);
         let dst_strides = Strides::from(&dst_shape);
 
         let src_stride = UVec4::from(&src_strides);
         let dst_stride = UVec4::from(&dst_strides);
-        let src_numel = src_shape.numel() as u32;
-        let dst_numel = dst_shape.numel() as u32;
 
         let src_shape = UVec4::from(&src_shape);
         let dst_shape = UVec4::from(&dst_shape);

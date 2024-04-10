@@ -67,8 +67,12 @@ impl Executable {
         let mut profiler = Profiler::new(device.clone(), self.steps.len() as _);
         {
             for step in self.steps.iter() {
-                let timestamp_writes =
-                    Some(profiler.create_timestamp_queries(0, step.kernel_key()));
+                let label = format!(
+                    "{}_{}",
+                    step.kernel_key(),
+                    step.workgroup_count().to_string()
+                );
+                let timestamp_writes = Some(profiler.create_timestamp_queries(0, label.as_str()));
                 let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: None,
                     timestamp_writes,

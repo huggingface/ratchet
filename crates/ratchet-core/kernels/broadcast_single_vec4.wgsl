@@ -1,8 +1,8 @@
 @group(0) @binding(0)
-var<storage, read> X: array<{{ elem }}>;
+var<storage, read> X: array<f32>;
 
 @group(0) @binding(1)
-var<storage, read_write> Y: array<{{ elem }}>;
+var<storage, read_write> Y: array<vec4<f32>>;
 
 struct Meta {
     src_shape: vec4<u32>,
@@ -24,21 +24,18 @@ fn offsetToNdIndex(offset: u32, stride: vec4<u32>) -> vec4<u32> {
     var remaining = offset;
 
     var idx = 0u;
-    {% for i in range(end=3) -%}
-        idx = remaining / stride[{{ i }}];
-        index[{{ i }}] = idx;
-        remaining -= idx * stride[{{ i }}];
-    {%- endfor %}
+    idx = remaining / stride[0];
+        index[0] = idx;
+        remaining -= idx * stride[0];idx = remaining / stride[1];
+        index[1] = idx;
+        remaining -= idx * stride[1];idx = remaining / stride[2];
+        index[2] = idx;
+        remaining -= idx * stride[2];
     index.w = remaining;
     return index;
 }
 
-//Converts 4D index into 1D offset
-fn ndIndexToOffset(index: vec4<u32>, src_offsets: vec4<u32>, stride: vec4<u32>) -> u32 {
-    var offset: u32 = 0u;
-    offset = dot(index + src_offsets, stride);
-    return offset;
-}
+var<workgroup> broadcasted: vec4<f32>;
 
 @compute @workgroup_size(8,8,1)
 fn main( 
@@ -51,17 +48,18 @@ fn main(
     //dst_offset is index into the output buffer (1D)
     let x_offset = group_id.x * 64u;
     var dst_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
-    if (dst_offset >= metadata.dst_numel / {{ elem_size }}u) {
+    if (dst_offset >= metadata.dst_numel) {
         return;
     }
 
+    if (local_id.x == 0u) {
+        let val = X[0];
+        broadcasted = vec4<f32>(val);
+    }
+    workgroupBarrier();
+
     //Convert 1D offset into 4D index
     let dst_index = offsetToNdIndex(dst_offset, metadata.dst_stride);
-
-    {{ func_body }}
-    //Convert 4D index into 1D offset
-    let src_offset = ndIndexToOffset(src_index, metadata.src_offsets, metadata.src_stride);
-
-    //Read from input buffer and write to output buffer
-    Y[dst_offset] = X[src_offset];
+    
+    Y[dst_offset] = broadcasted; 
 }

@@ -34,7 +34,7 @@ impl ComputePipelinePool {
         device: &WgpuDevice,
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
-            //println!("Kernel: {}", kernel_key);
+            //println!("Kernel: {}", desc.kernel_key);
             let shader = KERNELS
                 .get(desc.kernel_key.as_str())
                 .unwrap_or_else(|| panic!("Kernel {} not found", desc.kernel_key));

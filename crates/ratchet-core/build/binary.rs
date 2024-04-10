@@ -32,17 +32,25 @@ impl Generate for BinaryOp {
         });
         let path = renderer.templates_path.join("binary.wgsl");
         renderer.tera.add_template_file(path, Some("binary"))?;
-        for (op_name, op) in &pairs {
-            for ke in KernelElement::iter() {
-                let mut context = Context::new();
-                context.insert("op", op);
-                context.insert("elem", &ke.as_wgsl(WgslDType::F32));
-                context.insert("elem_size", &ke.as_size());
-                let rendered = renderer.tera.render("binary", &context)?;
 
-                let kernel_fname = format!("{}_{}.wgsl", op_name, ke);
-                let mut file = File::create(renderer.dest_path.join(kernel_fname))?;
-                file.write_all(rendered.as_bytes())?;
+        for inplace in [true, false].iter() {
+            for (op_name, op) in &pairs {
+                for ke in KernelElement::iter() {
+                    let mut context = Context::new();
+                    context.insert("inplace", inplace);
+                    context.insert("op", op);
+                    context.insert("elem", &ke.as_wgsl(WgslDType::F32));
+                    context.insert("elem_size", &ke.as_size());
+                    let rendered = renderer.tera.render("binary", &context)?;
+
+                    let kernel_fname = if *inplace {
+                        format!("{}_inplace_{}.wgsl", op_name, ke)
+                    } else {
+                        format!("{}_{}.wgsl", op_name, ke)
+                    };
+                    let mut file = File::create(renderer.dest_path.join(kernel_fname))?;
+                    file.write_all(rendered.as_bytes())?;
+                }
             }
         }
         Ok(())
