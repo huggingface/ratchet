@@ -43,7 +43,9 @@ impl std::fmt::Display for UnaryOp {
 
 impl Generate for UnaryOp {
     fn generate(renderer: &mut KernelRenderer) -> anyhow::Result<()> {
+        println!("TEMPLATES PATH: {:?}", renderer.templates_path);
         let path = renderer.templates_path.join("unary.wgsl");
+        println!("TEMPLATE PATH: {:?}", path);
         renderer.tera.add_template_file(path, Some("unary"))?;
 
         for inplace in [true, false].iter() {

@@ -36,12 +36,11 @@ impl ReindexOp {
             ReindexOp::Slice => r#"
     var src_index = dst_index;"#
                 .to_string(),
-            ReindexOp::Broadcast => format!(
-                r#"
+            ReindexOp::Broadcast => r#"
     // Broadcasting is valid if dims are equal, or if one of the dims is 1
     var src_index = select(dst_index, vec4<u32>(0u), metadata.src_shape == vec4<u32>(1u));
     "#
-            ),
+            .to_string(),
         }
     }
 }

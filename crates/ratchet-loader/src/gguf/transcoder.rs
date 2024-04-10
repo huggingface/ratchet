@@ -1,5 +1,5 @@
 use half::f16;
-use ratchet::{DType, Device, Quantization, Quantizer, Shape, Tensor};
+use ratchet::{DType, Device, Shape, Tensor};
 
 use super::ggml::GgmlDType;
 
