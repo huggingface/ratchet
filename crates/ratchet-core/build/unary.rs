@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write, process::Command};
+use std::{fs::File, io::Write};
 
 use strum::IntoEnumIterator;
 use tera::Context;
@@ -43,17 +43,12 @@ impl std::fmt::Display for UnaryOp {
 
 impl Generate for UnaryOp {
     fn generate(renderer: &mut KernelRenderer) -> anyhow::Result<()> {
-        println!(
-            "\n\ncargo:warning={}\n\n",
-            renderer.templates_path.display()
-        );
-        let path = renderer.templates_path.join("unary.wgsl");
-        println!("\n\ncargo:warning={}\n\n", path.display());
-        renderer.tera.add_template_file(path, Some("unary"))?;
-
         for inplace in [true, false].iter() {
             for func in UnaryOp::iter() {
                 for ke in KernelElement::iter() {
+                    let path = renderer.templates_path.join("unary.wgsl");
+                    renderer.tera.add_template_file(path, Some("unary"))?;
+
                     let mut context = Context::new();
                     let tera_func = match func {
                         UnaryOp::Tanh => String::from("safe_tanh"),
