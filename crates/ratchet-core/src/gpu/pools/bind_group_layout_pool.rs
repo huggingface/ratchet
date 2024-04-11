@@ -88,22 +88,9 @@ impl BindGroupLayoutDescriptor {
         }
     }
 
-    pub fn quaternary() -> RVec<Self> {
-        rvec![
-            Self {
-                entries: (0..4)
-                    .map(|i| wgpu::BindGroupLayoutEntry::compute_storage_buffer(i, true))
-                    .collect()
-            },
-            Self {
-                entries: rvec![wgpu::BindGroupLayoutEntry::compute_storage_buffer(0, false)],
-            }
-        ]
-    }
-
-    pub fn nthary(n: usize) -> Self {
+    pub fn nthary(ro: usize) -> Self {
         Self {
-            entries: Self::entries(n),
+            entries: Self::entries(ro),
         }
     }
 

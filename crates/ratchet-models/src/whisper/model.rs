@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::ggml::{GGMLCompatible, GGMLFormat, GGMLModel};
 use ratchet_loader::LoadError;
-use ratchet_nn::{Module, MutableModule};
+use ratchet_nn::Module;
 
 use ndarray::{s, Dimension};
 use ndarray_stats::QuantileExt;

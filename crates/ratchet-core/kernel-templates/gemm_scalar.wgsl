@@ -195,7 +195,12 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
 
     for (var innerRow = 0; innerRow < 4; innerRow++) {
         for (var innerCol = 0; innerCol < 4; innerCol++) {
-            mm_write(batch, globalRow + innerRow, globalCol + innerCol, acc[innerRow][innerCol]);
+            {% if BIAS %}
+                let val = acc[innerRow][innerCol] + bias[globalCol + innerCol];
+            {% else %}
+                let val = acc[innerRow][innerCol];
+            {% endif %}
+            mm_write(batch, globalRow + innerRow, globalCol + innerCol, val);
         }
     }
 } 

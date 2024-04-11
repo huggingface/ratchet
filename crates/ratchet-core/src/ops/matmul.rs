@@ -191,6 +191,7 @@ impl GEMMSpec {
 pub struct GEMM {
     lhs: Tensor,
     rhs: Tensor,
+    bias: Option<Tensor>,
     trans_lhs: bool,
     trans_rhs: bool,
     trans_out: bool,
@@ -209,13 +210,14 @@ impl GEMM {
             panic!("Transposed output only supported for vector inputs");
         }
 
-        if !bias.as_ref().map_or(false, |b| b.shape().is_vector()) {
-            panic!("Bias must be a vector");
+        if !bias.as_ref().map_or(true, |b| b.shape().is_vector()) {
+            panic!("Bias must be a vector: {:?}", bias);
         }
 
         Self {
             lhs,
             rhs,
+            bias,
             trans_lhs,
             trans_rhs,
             trans_out,
@@ -315,11 +317,14 @@ impl GEMM {
             "sgemm"
         };
 
+        let has_bias = self.bias.is_some();
+
         match ke {
             KernelElement::Scalar => {
                 format!(
-                    "{}_{}_{}_{}_{}_{}_{}",
+                    "{}_{}_{}_{}_{}_{}_{}_{}",
                     kernel_stem,
+                    has_bias,
                     a_fit,
                     b_fit,
                     out_fit,
@@ -330,8 +335,9 @@ impl GEMM {
             }
             _ => {
                 format!(
-                    "{}_{}_{}_{}_{}",
+                    "{}_{}_{}_{}_{}_{}",
                     kernel_stem,
+                    has_bias,
                     a_fit,
                     b_fit,
                     out_fit,
@@ -407,7 +413,11 @@ impl MetaOperation for GEMM {
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.lhs, &self.rhs]
+        if let Some(bias) = &self.bias {
+            rvec![&self.lhs, &self.rhs, bias]
+        } else {
+            rvec![&self.lhs, &self.rhs]
+        }
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
@@ -444,10 +454,12 @@ impl MetaOperation for GEMM {
         &self,
         _inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        let (A, B) = (&self.lhs, &self.rhs);
-        let layout = match (A.dt(), B.dt()) {
-            (DType::F32, DType::F32) => BindGroupLayoutDescriptor::binary(),
-            (DType::F32, DType::WQ8) => BindGroupLayoutDescriptor::ternary(),
+        let (A, B, bias) = (&self.lhs, &self.rhs, &self.bias);
+        let layout = match (A.dt(), B.dt(), bias.is_some()) {
+            (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
+            (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
+            (DType::F32, DType::WQ8, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::F32, DType::WQ8, true) => BindGroupLayoutDescriptor::nthary(4),
             _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
         };
         Ok(layout)
