@@ -11,7 +11,7 @@ use crate::{
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct MatmulSpec {
+pub struct GEMMSpec {
     a_dt: DType,
     b_dt: DType,
     a_shape: Shape,
@@ -25,7 +25,7 @@ pub struct MatmulSpec {
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
 }
 
-impl MatmulSpec {
+impl GEMMSpec {
     //TODO: parameterize these
     pub const TILE_DIM: usize = 32;
     pub const ROW_PER_THREAD: usize = 4;
@@ -188,7 +188,7 @@ impl MatmulSpec {
 }
 
 #[derive(Debug, Clone)]
-pub struct Matmul {
+pub struct GEMM {
     lhs: Tensor,
     rhs: Tensor,
     trans_lhs: bool,
@@ -196,16 +196,21 @@ pub struct Matmul {
     trans_out: bool,
 }
 
-impl Matmul {
+impl GEMM {
     pub fn new(
         lhs: Tensor,
         rhs: Tensor,
+        bias: Option<Tensor>,
         trans_lhs: bool,
         trans_rhs: bool,
         trans_out: bool,
     ) -> Self {
         if !lhs.shape().is_vector() && trans_out {
             panic!("Transposed output only supported for vector inputs");
+        }
+
+        if !bias.as_ref().map_or(false, |b| b.shape().is_vector()) {
+            panic!("Bias must be a vector");
         }
 
         Self {
@@ -290,8 +295,8 @@ impl Matmul {
         Ok(c_shape_final)
     }
 
-    pub fn compute_spec(&self, dst: &Tensor) -> MatmulSpec {
-        MatmulSpec::new(&self.lhs, &self.rhs, dst, self.trans_lhs, self.trans_rhs)
+    pub fn compute_spec(&self, dst: &Tensor) -> GEMMSpec {
+        GEMMSpec::new(&self.lhs, &self.rhs, dst, self.trans_lhs, self.trans_rhs)
     }
 
     pub fn gemm_kernel_key(&self, _: bool, dst: &Tensor) -> String {
@@ -353,9 +358,9 @@ pub struct MatmulMeta {
 
 impl OpMetadata for MatmulMeta {}
 
-impl Operation for Matmul {
+impl Operation for GEMM {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        let c_shape = Matmul::compute_c_shape(
+        let c_shape = GEMM::compute_c_shape(
             &self.lhs,
             &self.rhs,
             self.trans_lhs,
@@ -368,9 +373,9 @@ impl Operation for Matmul {
     }
 }
 
-impl OpGuards for Matmul {
+impl OpGuards for GEMM {
     fn check_shapes(&self) {
-        let c_shape = Matmul::compute_c_shape(
+        let c_shape = GEMM::compute_c_shape(
             &self.lhs,
             &self.rhs,
             self.trans_lhs,
@@ -392,7 +397,7 @@ impl OpGuards for Matmul {
     }
 }
 
-impl MetaOperation for Matmul {
+impl MetaOperation for GEMM {
     fn kernel_name(&self) -> String {
         "MatMul".to_string()
     }
