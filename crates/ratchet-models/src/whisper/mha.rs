@@ -45,7 +45,7 @@ pub struct MHAInputs {
 impl Module for MultiHeadAttention {
     type Input = MHAInputs;
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let MHAInputs {
             x,
             xa,
@@ -55,11 +55,11 @@ impl Module for MultiHeadAttention {
         } = input;
         let is_xattn = xa.is_some();
 
-        let q = self.q.forward(x.clone())?;
+        let q = self.q.schedule(x.clone())?;
 
         let to_project = xa.unwrap_or(x);
-        let k = self.k.forward(to_project.clone())?;
-        let v = self.v.forward(to_project)?;
+        let k = self.k.schedule(to_project.clone())?;
+        let v = self.v.schedule(to_project)?;
 
         let (k, v) = if let Some(kv) = cache {
             let prev_entries = kv.entries;
@@ -119,6 +119,6 @@ impl MultiHeadAttention {
             .permute(&[0, 2, 1, 3])?
             .view(shape![bs, n_ctx, n_state])?;
 
-        self.o.forward(wv)
+        self.o.schedule(wv)
     }
 }

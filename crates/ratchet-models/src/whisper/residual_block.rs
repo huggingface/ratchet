@@ -25,26 +25,26 @@ pub struct ResidualAttentionBlockInputs {
 
 impl Module for ResidualAttentionBlock {
     type Input = ResidualAttentionBlockInputs;
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let ResidualAttentionBlockInputs { x, xa, mask, cache } = input;
 
-        let attn_ln = self.attn_ln.forward(x.clone())?;
+        let attn_ln = self.attn_ln.schedule(x.clone())?;
         let self_attn =
             self.attn
-                .forward(MHAInputs::new(attn_ln, None, mask.clone(), cache, true))?;
+                .schedule(MHAInputs::new(attn_ln, None, mask.clone(), cache, true))?;
 
         let mut attn = self_attn.add(x)?;
 
         if let Some(ref xa_blck) = self.x_attn {
             if let Some(xa_ln) = &self.x_attn_ln {
-                let x_attn_ln = xa_ln.forward(attn.clone())?;
+                let x_attn_ln = xa_ln.schedule(attn.clone())?;
                 let x_attn =
-                    xa_blck.forward(MHAInputs::new(x_attn_ln, xa.clone(), None, None, false))?;
+                    xa_blck.schedule(MHAInputs::new(x_attn_ln, xa.clone(), None, None, false))?;
                 attn = x_attn.add(attn.clone())?;
             }
         }
-        let mlp_ln = self.mlp_ln.forward(attn.clone())?;
-        let mlp = self.mlp.forward(mlp_ln)?;
+        let mlp_ln = self.mlp_ln.schedule(attn.clone())?;
+        let mlp = self.mlp.schedule(mlp_ln)?;
         mlp.add(attn)
     }
 }

@@ -12,12 +12,26 @@ pub use rope::*;
 
 use ratchet::Tensor;
 
+/// # Module
+///
+/// Analagous to `torch.nn.Module` in PyTorch, a `Module` is a trait that represents a neural network
+/// module. However, it has 1 key difference.
+///
+/// In PyTorch, `forward` performs the computation when called. In Ratchet, `schedule` is used to
+/// schedule the computation for future execution. The Tensor returned is lazy, in that it
+/// represents the result of the computation, but the computation itself has not been performed.
+///
+/// If you want to immediately access the result of the computation (say for debugging), call
+/// `.resolve()` on the Tensor to execute the work.
 pub trait Module {
     type Input;
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor>;
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor>;
 }
 
+/// # MutableModule
+///
+/// Ditto above, but can mutate self.
 pub trait MutableModule {
     type Input;
-    fn forward(&mut self, input: Self::Input) -> anyhow::Result<Tensor>;
+    fn schedule(&mut self, input: Self::Input) -> anyhow::Result<Tensor>;
 }

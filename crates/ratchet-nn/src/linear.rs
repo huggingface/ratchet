@@ -15,7 +15,7 @@ pub struct Linear {
 
 impl Module for Linear {
     type Input = Tensor;
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let y = input.matmul(self.w.clone(), false, self.transpose)?;
 
         if let Some(b) = &self.b {

@@ -18,7 +18,7 @@ struct ConvBlock {
 impl Module for ConvBlock {
     type Input = Tensor;
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         input
             .conv1d(
                 self.w.clone(),
@@ -40,8 +40,8 @@ pub(crate) struct EncoderStem {
 impl Module for EncoderStem {
     type Input = Tensor;
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let convolved = self.conv2.forward(self.conv1.forward(input)?)?;
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let convolved = self.conv2.schedule(self.conv1.schedule(input)?)?;
         convolved.permute(&[0, 2, 1])?.add(self.pos_embed.clone())
     }
 }
@@ -75,8 +75,8 @@ pub struct WhisperEncoder {
 impl Module for WhisperEncoder {
     type Input = Tensor;
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let mut x = self.stem.forward(input)?;
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let mut x = self.stem.schedule(input)?;
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
                 x: x.clone(),
@@ -84,9 +84,9 @@ impl Module for WhisperEncoder {
                 mask: None,
                 cache: None,
             };
-            x = block.forward(input)?;
+            x = block.schedule(input)?;
         }
-        self.ln_post.forward(x)
+        self.ln_post.schedule(x)
     }
 }
 
@@ -160,7 +160,7 @@ mod tests {
         let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
         let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
 
-        let result = encoder.forward(input)?.resolve()?;
+        let result = encoder.schedule(input)?.resolve()?;
         let ours = result.to(&Device::CPU)?;
         let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
