@@ -34,8 +34,8 @@ pub struct RLinear {
 
 impl Module for RLinear {
     type Input = Tensor;
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let y = self.w.clone().matmul(input, false, true)?;
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let y = self.w.clone().gemm(input, false, true, false)?;
 
         if let Some(b) = &self.b {
             y.add(b.clone())

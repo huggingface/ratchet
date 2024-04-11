@@ -333,7 +333,20 @@ impl Tensor {
     //TODO: horrific interface
     pub fn matmul(self, other: Tensor, trans_a: bool, trans_b: bool) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let matmul = Matmul::new(self, other, trans_a, trans_b);
+        let matmul = Matmul::new(self, other, trans_a, trans_b, false);
+        let new_view = matmul.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
+    }
+
+    pub fn gemm(
+        self,
+        other: Tensor,
+        trans_a: bool,
+        trans_b: bool,
+        trans_out: bool,
+    ) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let matmul = Matmul::new(self, other, trans_a, trans_b, trans_out);
         let new_view = matmul.compute_view()?;
         Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
     }

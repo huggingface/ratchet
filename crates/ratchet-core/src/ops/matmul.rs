@@ -194,40 +194,19 @@ pub struct Matmul {
     trans_lhs: bool,
     trans_rhs: bool,
     trans_out: bool,
-    gemv: bool,
 }
 
 impl Matmul {
-    pub fn new(lhs: Tensor, rhs: Tensor, trans_lhs: bool, trans_rhs: bool) -> Self {
-        let (lhs, rhs, trans_lhs, trans_rhs, trans_out, gemv) =
-            if lhs.shape().is_vector() && trans_rhs {
-                //If lhs is a vector, and rhs is a mat, we want to swap them for speedy matvec
-                //Before: y = xAT + b
-                //After:  yT = AxT + b
-                //        y = (yT)T
-
-                //println!(
-                //    "\nBefore swap: lhs: {:?} rhs: {:?}",
-                //    lhs.shape(),
-                //    rhs.shape()
-                //);
-                //println!(
-                //    "Before swap: trans_lhs: {} trans_rhs: {}",
-                //    trans_lhs, trans_rhs
-                //);
-
-                (rhs, lhs, false, true, true, true)
-            } else {
-                (lhs, rhs, trans_lhs, trans_rhs, false, false)
-            };
-
-        //if gemv {
-        //    println!("After swap: lhs: {:?} rhs: {:?}", lhs.shape(), rhs.shape());
-        //    println!(
-        //        "After swap: trans_lhs: {} trans_rhs: {} trans_out: {}\n",
-        //        trans_lhs, trans_rhs, trans_out
-        //    );
-        //}
+    pub fn new(
+        lhs: Tensor,
+        rhs: Tensor,
+        trans_lhs: bool,
+        trans_rhs: bool,
+        trans_out: bool,
+    ) -> Self {
+        if !lhs.shape().is_vector() && trans_out {
+            panic!("Transposed output only supported for vector inputs");
+        }
 
         Self {
             lhs,
@@ -235,7 +214,6 @@ impl Matmul {
             trans_lhs,
             trans_rhs,
             trans_out,
-            gemv,
         }
     }
 
@@ -420,19 +398,7 @@ impl MetaOperation for Matmul {
     }
 
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        if self.gemv {
-            //let mat_fit = self.lhs.shape()[1] % MatmulSpec::TILE_DIM == 0;
-            //sgemv_32_4_false_scalar.wgsl
-            format!(
-                "sgemv_{}_{}_{}_{}",
-                32,
-                4,
-                true,
-                KernelElement::Scalar.as_str()
-            )
-        } else {
-            self.gemm_kernel_key(inplace, dst)
-        }
+        self.gemm_kernel_key(inplace, dst)
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -445,44 +411,28 @@ impl MetaOperation for Matmul {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        if self.gemv {
-            let spec = self.compute_spec(dst);
+        let spec = self.compute_spec(dst);
 
-            let a_shape = spec.lhs_shape();
-            let dimA = if self.trans_lhs {
-                a_shape[1]
-            } else {
-                a_shape[0]
-            };
+        let TILE_DIM = 32;
+        let a_shape = spec.lhs_shape();
+        let b_shape = spec.b_shape();
 
-            let group_x = WorkgroupCount::div_ceil(dimA, MatmulSpec::TILE_DIM);
-            let group_y = 1;
-            let wgc = wgc![group_x as _, group_y as _, spec.stacks() as _];
-            Ok(wgc)
+        let dimA = if self.trans_lhs {
+            a_shape[1]
         } else {
-            let spec = self.compute_spec(dst);
+            a_shape[0]
+        };
 
-            let TILE_DIM = 32;
-            let a_shape = spec.lhs_shape();
-            let b_shape = spec.b_shape();
+        let dimB = if self.trans_rhs {
+            b_shape[0]
+        } else {
+            b_shape[1]
+        };
 
-            let dimA = if self.trans_lhs {
-                a_shape[1]
-            } else {
-                a_shape[0]
-            };
-
-            let dimB = if self.trans_rhs {
-                b_shape[0]
-            } else {
-                b_shape[1]
-            };
-
-            let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
-            let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
-            let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
-            Ok(workgroup_count)
-        }
+        let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
+        let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
+        let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+        Ok(workgroup_count)
     }
 
     fn storage_bind_group_layout(

@@ -357,14 +357,7 @@ mod tests {
             vec![[0, pad_size], [0, 0]],
         )]);
 
-        Converter::convert::<_, Whisper>(
-            src_path,
-            dst_path,
-            Quantization::SInt8,
-            to_quant,
-            to_pad,
-            to_transpose,
-        )
-        .unwrap();
+        Converter::convert::<_, Whisper>(src_path, dst_path, Quantization::SInt8, to_quant, to_pad)
+            .unwrap();
     }
 }
