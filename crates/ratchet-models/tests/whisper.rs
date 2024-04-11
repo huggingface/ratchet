@@ -38,7 +38,7 @@ async fn tiny_encoder() -> Result<(), JsValue> {
     let ground = Tensor::from_npy_bytes::<f32>(&ground_npy.to_vec(), &Device::CPU).unwrap();
 
     let encoder = WhisperEncoder::load(&gg, &mut reader, &device).unwrap();
-    let result = encoder.forward(input).unwrap().resolve().unwrap();
+    let result = encoder.schedule(input).unwrap().resolve().unwrap();
     let ours = result.to(&Device::CPU).await.unwrap();
     ground.all_close(&ours, 1e-3, 1e-3).unwrap();
     Ok(())
@@ -66,7 +66,7 @@ async fn tiny_decoder() -> Result<(), JsValue> {
     while tokens[tokens.len() - 1] != 50257 {
         let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
         let result = decoder
-            .forward([audio_ctx.clone(), token_t])
+            .schedule([audio_ctx.clone(), token_t])
             .unwrap()
             .resolve()
             .unwrap();
