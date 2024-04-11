@@ -44,7 +44,7 @@ impl LayerNorm {
 
 impl crate::Module for LayerNorm {
     type Input = Tensor;
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         input.layer_norm(self.weight.clone(), self.bias.clone(), self.eps)
     }
 }
