@@ -132,7 +132,7 @@ pub async fn transcribe(
             decode_options.prompt = Some(Prompt::Tokens(all_tokens[prompt_since_reset..].to_vec()));
         }
 
-        let hs = model.encoder.forward(mel_segment)?.resolve()?;
+        let hs = model.encoder.schedule(mel_segment)?.resolve()?;
 
         let task = DecodingTask::new(decode_options, tokenizer.clone());
         let decoded = task.run(&mut model.decoder, hs, &callback).await?;
