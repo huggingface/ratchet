@@ -1,18 +1,24 @@
 use ratchet::{rvec, shape, Tensor};
-use ratchet_nn::{KVEntry, Linear, Module};
+use ratchet_nn::{KVEntry, Module, RLinear};
 
 #[derive(Debug)]
 pub struct MultiHeadAttention {
-    q: Linear,
-    k: Linear,
-    v: Linear,
-    o: Linear,
+    q: RLinear,
+    k: RLinear,
+    v: RLinear,
+    o: RLinear,
     n_heads: usize,
     dk: Tensor,
 }
 
 impl MultiHeadAttention {
-    pub fn new(q: Linear, k: Linear, v: Linear, o: Linear, n_heads: usize) -> MultiHeadAttention {
+    pub fn new(
+        q: RLinear,
+        k: RLinear,
+        v: RLinear,
+        o: RLinear,
+        n_heads: usize,
+    ) -> MultiHeadAttention {
         let n_state = q.w.shape()[1];
         let dk = (n_state / n_heads) as f32;
         let dk = Tensor::from_data([dk.powf(-0.25)], shape![1], q.w.device().clone());
