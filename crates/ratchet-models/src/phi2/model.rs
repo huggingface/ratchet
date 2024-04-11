@@ -48,16 +48,16 @@ pub struct DecoderLayerInput {
 impl Module for DecoderLayer {
     type Input = DecoderLayerInput;
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let DecoderLayerInput { x, mask, cache } = input;
         let residual = x.clone();
-        let xs = self.ln.forward(x)?;
-        let attn_output = self.self_attn.forward(PhiAttnInput {
+        let xs = self.ln.schedule(x)?;
+        let attn_output = self.self_attn.schedule(PhiAttnInput {
             input: xs.clone(),
             mask,
             cache,
         })?;
-        let ff_hs = self.mlp.forward(xs)?;
+        let ff_hs = self.mlp.schedule(xs)?;
         attn_output.add(ff_hs)?.add(residual)
     }
 }
@@ -74,8 +74,8 @@ pub struct Phi2 {
 impl Module for Phi2 {
     type Input = Tensor;
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let mut x = self.embedding.forward(input)?;
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let mut x = self.embedding.schedule(input)?;
         let [_, seq_len, n_state]: [usize; 3] = x.shape().try_into()?;
         let mask = if seq_len <= 1 {
             None
@@ -89,11 +89,11 @@ impl Module for Phi2 {
                 mask: mask.clone(),
                 cache: Some(self.kv_cache[layer_idx].clone()),
             };
-            x = layer.forward(input)?;
+            x = layer.schedule(input)?;
         }
-        x = self.ln_post.forward(x)?;
+        x = self.ln_post.schedule(x)?;
         x = x.slice(&[0..1, seq_len - 1..seq_len, 0..n_state])?;
-        let logits = self.lm_head.forward(x)?;
+        let logits = self.lm_head.schedule(x)?;
         Ok(logits)
     }
 }
@@ -230,7 +230,7 @@ def ground():
         let mut loop_cnt = 0;
         while tokens[tokens.len() - 1] != 50256 && loop_cnt < 13 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let result = model.forward(input)?.resolve()?;
+            let result = model.schedule(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
             all_logits.push(logits.clone());
             model.cache_mut().update(tokens.len());

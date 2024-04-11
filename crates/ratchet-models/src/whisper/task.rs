@@ -98,7 +98,7 @@ impl DecodingTask {
             };
             let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
 
-            let logits = decoder.forward([audio_ctx.clone(), input_t])?.resolve()?;
+            let logits = decoder.schedule([audio_ctx.clone(), input_t])?.resolve()?;
             decoder.cache_mut().update(input.len());
 
             let mut logits = Self::slice_logits(logits.to(&Device::CPU)?, sliced_vocab_size);

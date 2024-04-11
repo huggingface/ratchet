@@ -74,12 +74,12 @@ pub struct PhiAttnInput {
 impl Module for PhiSelfAttention {
     type Input = PhiAttnInput;
 
-    fn forward(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let PhiAttnInput { input, mask, cache } = input;
         let [batch_size, seq_len, n_state]: [usize; 3] = input.shape().try_into()?;
-        let q = self.q.forward(input.clone())?;
-        let k = self.k.forward(input.clone())?;
-        let v = self.v.forward(input)?;
+        let q = self.q.schedule(input.clone())?;
+        let k = self.k.schedule(input.clone())?;
+        let v = self.v.schedule(input)?;
 
         let h_dim = n_state / self.n_heads as usize;
 
@@ -93,11 +93,11 @@ impl Module for PhiSelfAttention {
         let value_states = v.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
 
         let offset = cache.as_ref().map(|kv| kv.entries).unwrap_or(0);
-        let query_states = self.rope.forward(RotaryInput {
+        let query_states = self.rope.schedule(RotaryInput {
             input: query_states,
             offset,
         })?;
-        let key_states = self.rope.forward(RotaryInput {
+        let key_states = self.rope.schedule(RotaryInput {
             input: key_states,
             offset,
         })?;
@@ -124,6 +124,6 @@ impl Module for PhiSelfAttention {
             .matmul(value_states, false, false)?
             .permute(&[0, 2, 1, 3])?;
         let wv = wv.view(shape![batch_size as _, seq_len, n_state])?;
-        self.o.forward(wv)
+        self.o.schedule(wv)
     }
 }
