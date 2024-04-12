@@ -77,6 +77,7 @@ impl Module for WhisperEncoder {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.stem.schedule(input)?;
+        println!("STEM OUTPUT: {:?}", x.shape());
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
                 x: x.clone(),

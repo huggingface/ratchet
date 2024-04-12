@@ -255,7 +255,13 @@ impl GEMM {
         let (a_prefix, b_prefix) = (&ashape[..arank - 2], &bshape[..brank - 2]);
         let mut c_broadcasted_prefix =
             Shape::multi_broadcast(&[&a_prefix.into(), &b_prefix.into()]).ok_or_else(|| {
-                anyhow::anyhow!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape)
+                anyhow::anyhow!(
+                    "Matmul broadcasting: a: {:?} b: {:?} trans_a: {:?} trans_b: {:?}",
+                    ashape,
+                    bshape,
+                    trans_lhs,
+                    trans_rhs
+                )
             })?;
 
         let (mut m, mut ka) = (ashape[arank - 2], ashape[arank - 1]);
@@ -270,7 +276,7 @@ impl GEMM {
         }
 
         if ka != kb {
-            anyhow::bail!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape);
+            anyhow::bail!("Matmul broadcasting: ka != kb: {} != {}", ka, kb);
         }
 
         let mut c_shape_final = c_broadcasted_prefix.clone();

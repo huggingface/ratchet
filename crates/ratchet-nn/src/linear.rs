@@ -29,6 +29,8 @@ pub struct RLinear {
 impl Module for RLinear {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        println!("R LINEAR INPUT: {:?}", input.shape());
+        println!("R LINEAR WEIGHT: {:?}", self.w.shape());
         self.w
             .clone()
             .gemm(input, self.b.clone(), false, true, false)

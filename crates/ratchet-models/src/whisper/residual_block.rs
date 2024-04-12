@@ -33,7 +33,9 @@ impl Module for ResidualAttentionBlock {
             self.attn
                 .schedule(MHAInputs::new(attn_ln, None, mask.clone(), cache, true))?;
 
-        let mut attn = self_attn.add(x)?;
+        println!("Self attn output: {:?}", self_attn.shape());
+
+        let mut attn = x.add(self_attn)?;
 
         if let Some(ref xa_blck) = self.x_attn {
             if let Some(xa_ln) = &self.x_attn_ln {

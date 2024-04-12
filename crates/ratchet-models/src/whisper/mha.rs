@@ -119,6 +119,7 @@ impl MultiHeadAttention {
             .permute(&[0, 2, 1, 3])?
             .view(shape![bs, n_ctx, n_state])?;
 
-        self.o.schedule(wv)
+        println!("WV: {:?}", wv.shape());
+        self.o.schedule(wv.permute(&[0, 2, 1])?)
     }
 }
