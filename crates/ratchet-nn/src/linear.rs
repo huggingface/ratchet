@@ -16,8 +16,12 @@ pub struct Linear {
 impl Module for Linear {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        //y = xW^T + b
+        //input.gemm(self.w.clone(), self.b.clone(), false, true, false)
+        //if we wanted to reverse this:
+        //yT = Wx^T + bT
         self.w
             .clone()
-            .gemm(input, self.b.clone(), false, self.transpose, true)
+            .gemm(input, self.b.clone(), false, true, true)
     }
 }

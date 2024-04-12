@@ -196,7 +196,11 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     for (var innerRow = 0; innerRow < 4; innerRow++) {
         for (var innerCol = 0; innerCol < 4; innerCol++) {
             {% if BIAS %}
-                let val = acc[innerRow][innerCol] + bias[globalCol + innerCol];
+                {% if TRANS_OUT %}
+                    let val = acc[innerRow][innerCol] + bias[globalRow + innerRow];
+                {% else %}
+                    let val = acc[innerRow][innerCol] + bias[globalCol + innerCol];
+                {% endif %}
             {% else %}
                 let val = acc[innerRow][innerCol];
             {% endif %}

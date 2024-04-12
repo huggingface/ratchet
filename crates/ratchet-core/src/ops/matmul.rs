@@ -645,19 +645,40 @@ def matmul(a, b):
     }
 
     #[test]
-    fn debug_sgemm() {
+    fn debug_sgemm() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let prob = SGEMMProblem {
-            B: 1,
-            M: 1500,
-            K: 384,
-            N: 384,
-            trans_lhs: false,
-            trans_rhs: true,
-            trans_out: true,
-        };
-        run_matmul_trial(&device, prob).unwrap();
+        let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
+
+        let a_shape = shape![1, 1500, 384];
+        let b_shape = shape![1, 384, 384];
+
+        let a = Tensor::randn::<f32>(a_shape, cpu_device.clone());
+        let b = Tensor::randn::<f32>(b_shape, cpu_device.clone());
+
+        //first case, standard y = xAt + b
+        let ground = ground_truth(&a, &b, false, true, false).unwrap();
+
+        let a_gpu = a.to(&device)?;
+        let b_gpu = b.to(&device)?;
+        let c_gpu = a_gpu
+            .clone()
+            .gemm(b_gpu.clone(), None, false, true, false)?
+            .resolve()?;
+
+        //second case, yT = AxT + b
+        let z_gpu = b_gpu
+            .clone()
+            .gemm(a_gpu.clone(), None, false, true, true)?
+            .resolve()?;
+
+        let d_gpu = c_gpu.to(&Device::CPU)?;
+        let z1_gpu = z_gpu.to(&Device::CPU)?;
+        println!("RATCHET SGEMM\n{:?}\n", d_gpu);
+        println!("PYTORCH FP32:\n{:?}", ground);
+        ground.all_close(&d_gpu, 1e-4, 1e-4)?;
+        ground.all_close(&z1_gpu, 1e-4, 1e-4)?;
+        Ok(())
     }
 
     fn qgemm_harness() -> anyhow::Result<(Tensor, Tensor)> {

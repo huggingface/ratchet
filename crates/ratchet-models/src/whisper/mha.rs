@@ -1,4 +1,4 @@
-use ratchet::{rvec, shape, Tensor};
+use ratchet::{rvec, shape, Device, Tensor};
 use ratchet_nn::{KVEntry, Linear, Module};
 
 #[derive(Debug)]
@@ -49,7 +49,14 @@ impl Module for MultiHeadAttention {
         } = input;
         let is_xattn = xa.is_some();
 
+        println!("W shape: {:?}", self.q.w.shape());
+        println!("X shape: {:?}", x.shape());
         let q = self.q.schedule(x.clone())?;
+        println!("Q shape: {:?}", q.shape());
+
+        let qdbg = q.clone().resolve()?;
+        let qcpu = qdbg.to(&Device::CPU)?;
+        println!("Q CPU: {:?}", qcpu.to_ndarray_view::<f32>());
 
         let to_project = xa.unwrap_or(x);
         let k = self.k.schedule(to_project.clone())?;
