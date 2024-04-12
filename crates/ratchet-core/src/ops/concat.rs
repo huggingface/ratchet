@@ -139,7 +139,7 @@ impl MetaOperation for Concat {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use crate::{rvec, shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
 

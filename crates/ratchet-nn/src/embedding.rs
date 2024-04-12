@@ -40,7 +40,7 @@ impl Module for Embedding {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use proptest::arbitrary::Arbitrary;
     use proptest::strategy::{BoxedStrategy, Just, Strategy};

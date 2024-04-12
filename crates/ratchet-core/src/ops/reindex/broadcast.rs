@@ -35,7 +35,7 @@ impl Operation for Broadcast {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use proptest::{
         arbitrary::Arbitrary,
