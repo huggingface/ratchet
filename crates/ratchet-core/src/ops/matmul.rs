@@ -22,15 +22,22 @@ pub struct GEMMSpec {
     c_stack: usize,
     trans_a: bool,
     trans_b: bool,
+    trans_out: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
 }
 
 impl GEMMSpec {
-    //TODO: parameterize these
     pub const TILE_DIM: usize = 32;
     pub const ROW_PER_THREAD: usize = 4;
 
-    pub fn new(A: &Tensor, B: &Tensor, C: &Tensor, trans_a: bool, trans_b: bool) -> Self {
+    pub fn new(
+        A: &Tensor,
+        B: &Tensor,
+        C: &Tensor,
+        trans_a: bool,
+        trans_b: bool,
+        trans_out: bool,
+    ) -> Self {
         let mut a_shape = A.shape().clone();
         let mut b_shape = B.shape().clone();
         let mut c_shape = C.shape().clone();
@@ -92,6 +99,7 @@ impl GEMMSpec {
             c_stack,
             trans_a,
             trans_b,
+            trans_out,
             stack_shape,
         }
     }
@@ -206,10 +214,6 @@ impl GEMM {
         trans_rhs: bool,
         trans_out: bool,
     ) -> Self {
-        if !lhs.shape().is_vector() && trans_out {
-            panic!("Transposed output only supported for vector inputs");
-        }
-
         if !bias.as_ref().map_or(true, |b| b.shape().is_vector()) {
             panic!("Bias must be a vector: {:?}", bias);
         }
@@ -298,7 +302,14 @@ impl GEMM {
     }
 
     pub fn compute_spec(&self, dst: &Tensor) -> GEMMSpec {
-        GEMMSpec::new(&self.lhs, &self.rhs, dst, self.trans_lhs, self.trans_rhs)
+        GEMMSpec::new(
+            &self.lhs,
+            &self.rhs,
+            dst,
+            self.trans_lhs,
+            self.trans_rhs,
+            self.trans_out,
+        )
     }
 
     pub fn gemm_kernel_key(&self, _: bool, dst: &Tensor) -> String {
@@ -319,10 +330,10 @@ impl GEMM {
 
         let has_bias = self.bias.is_some();
 
-        match ke {
+        let key = match ke {
             KernelElement::Scalar => {
                 format!(
-                    "{}_{}_{}_{}_{}_{}_{}_{}",
+                    "{}_{}_{}_{}_{}_{}_{}_{}_{}",
                     kernel_stem,
                     has_bias,
                     a_fit,
@@ -330,21 +341,25 @@ impl GEMM {
                     out_fit,
                     self.trans_lhs,
                     self.trans_rhs,
+                    self.trans_out,
                     ke.as_str()
                 )
             }
             _ => {
                 format!(
-                    "{}_{}_{}_{}_{}_{}",
+                    "{}_{}_{}_{}_{}_{}_{}",
                     kernel_stem,
                     has_bias,
                     a_fit,
                     b_fit,
                     out_fit,
+                    self.trans_out,
                     ke.as_str()
                 )
             }
-        }
+        };
+        println!("Kernel key: {}", key);
+        key
     }
 }
 
@@ -519,6 +534,7 @@ mod tests {
         b: &Tensor,
         trans_lhs: bool,
         trans_rhs: bool,
+        trans_out: bool,
     ) -> anyhow::Result<Tensor> {
         let a_op = if trans_lhs {
             "torch.permute(torch.from_numpy(a), [0, 2, 1])"
@@ -532,12 +548,22 @@ mod tests {
             "torch.from_numpy(b)"
         };
 
+        let result_op = if trans_out {
+            format!(
+                "np.ascontiguousarray(torch.permute(torch.matmul({}, {}), [0, 2, 1]).numpy())",
+                a_op, b_op
+            )
+        } else {
+            format!("torch.matmul({}, {}).numpy()", a_op, b_op)
+        };
+
         let prg = format!(
             r#"
 import torch
+import numpy as np
 def matmul(a, b):
-    return torch.matmul({}, {}).numpy()"#,
-            a_op, b_op
+    return {}"#,
+            result_op
         );
 
         run_py_prg(prg.to_string(), &[a, b], &[])
@@ -555,6 +581,7 @@ def matmul(a, b):
         N: usize,
         trans_lhs: bool,
         trans_rhs: bool,
+        trans_out: bool,
     }
 
     #[proptest(cases = 32)]
@@ -567,10 +594,11 @@ def matmul(a, b):
             N,
             trans_lhs,
             trans_rhs,
+            trans_out,
         } = prob;
         println!(
-            "Running sgemm: B={} M={} N={} K={} trans_lhs={} trans_rhs={}",
-            B, M, N, K, trans_lhs, trans_rhs
+            "Running sgemm: B={} M={} N={} K={} trans_lhs={} trans_rhs={} trans_out={}",
+            B, M, N, K, trans_lhs, trans_rhs, trans_out
         );
         run_matmul_trial(&device, prob).unwrap();
     }
@@ -584,6 +612,7 @@ def matmul(a, b):
             N,
             trans_lhs,
             trans_rhs,
+            trans_out,
         } = prob;
 
         let a_shape = if trans_lhs {
@@ -600,11 +629,13 @@ def matmul(a, b):
 
         let a = Tensor::randn::<f32>(a_shape, cpu_device.clone());
         let b = Tensor::randn::<f32>(b_shape, cpu_device.clone());
-        let ground = ground_truth(&a, &b, trans_lhs, trans_rhs)?;
+        let ground = ground_truth(&a, &b, trans_lhs, trans_rhs, trans_out)?;
 
         let a_gpu = a.to(device)?;
         let b_gpu = b.to(device)?;
-        let c_gpu = a_gpu.matmul(b_gpu, trans_lhs, trans_rhs)?.resolve()?;
+        let c_gpu = a_gpu
+            .gemm(b_gpu, None, trans_lhs, trans_rhs, trans_out)?
+            .resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
         println!("RATCHET SGEMM\n{:?}\n", d_gpu);
@@ -624,6 +655,7 @@ def matmul(a, b):
             N: 384,
             trans_lhs: false,
             trans_rhs: true,
+            trans_out: true,
         };
         run_matmul_trial(&device, prob).unwrap();
     }
@@ -638,7 +670,7 @@ def matmul(a, b):
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
         let (a, b) = qgemm_harness()?;
-        let ground = ground_truth(&a, &b, false, false)?;
+        let ground = ground_truth(&a, &b, false, false, false)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let bq = quantizer.sint8_quantize(b);

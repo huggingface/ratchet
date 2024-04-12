@@ -200,7 +200,13 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
             {% else %}
                 let val = acc[innerRow][innerCol];
             {% endif %}
-            mm_write(batch, globalRow + innerRow, globalCol + innerCol, val);
+
+            {% if TRANS_OUT %}
+                mm_write(batch, globalCol + innerCol, globalRow + innerRow, val);
+            {% else %}
+                mm_write(batch, globalRow + innerRow, globalCol + innerCol, val);
+            {% endif %}
+
         }
     }
 } 

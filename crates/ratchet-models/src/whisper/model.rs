@@ -369,11 +369,9 @@ mod tests {
             "token_embedding.weight",
         ]);
 
-        let to_transpose = to_quant.clone();
-
         let mut dst_path = src_path.clone();
         dst_path.pop();
-        dst_path = dst_path.join("tiny_q8.bin");
+        dst_path = dst_path.join("tiny_f32.bin");
         println!("DST: {:?}", dst_path);
 
         let v3 = false;
@@ -382,15 +380,8 @@ mod tests {
             "decoder.token_embedding.weight",
             vec![[0, pad_size], [0, 0]],
         )]);
-
-        Converter::convert::<_, Whisper>(
-            src_path,
-            dst_path,
-            Quantization::SInt8,
-            to_quant,
-            to_pad,
-            to_transpose,
-        )
-        .unwrap();
+        let quantization = Quantization::None;
+        Converter::convert::<_, Whisper>(src_path, dst_path, quantization, to_quant, to_pad)
+            .unwrap();
     }
 }
