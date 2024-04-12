@@ -195,6 +195,10 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     }
 
     {% for innerRow in range(end=ROW_PER_THREAD) %}
-        mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}] + bias[globalCol / 4]);
+        {% if BIAS %}
+            mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}] + bias[globalCol / 4]);
+        {% else %}
+            mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
+        {% endif %}
     {% endfor %}
   }

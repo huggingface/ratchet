@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::ggml::{GGMLCompatible, GGMLFormat, GGMLModel};
 use ratchet_loader::LoadError;
-use ratchet_nn::{Module, MutableModule};
+use ratchet_nn::Module;
 
 use ndarray::{s, Dimension};
 use ndarray_stats::QuantileExt;
@@ -299,6 +299,22 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
+    const MM0_Q8_GROUND: [u32; 191] = [
+        50364, 639, 307, 264, 4532, 3479, 13460, 264, 881, 34674, 5932, 30340, 295, 5116, 2065,
+        5729, 13, 50524, 50524, 6947, 472, 575, 12023, 4365, 337, 257, 1702, 6034, 3028, 1523,
+        1804, 4651, 4532, 3479, 50668, 50668, 8963, 6742, 300, 1619, 257, 3804, 5214, 2610, 5214,
+        6383, 2643, 5214, 293, 544, 2176, 50816, 50816, 8963, 21800, 281, 747, 604, 1081, 293, 456,
+        366, 867, 34674, 3190, 281, 862, 365, 309, 1184, 50948, 50948, 472, 1487, 365, 1080, 1065,
+        2121, 11377, 4532, 3479, 5864, 293, 1019, 5456, 4122, 300, 51084, 51084, 30686, 25038,
+        1286, 13, 51134, 51134, 30062, 264, 13436, 5533, 412, 264, 10155, 35310, 587, 264, 3874,
+        14701, 1068, 412, 264, 7267, 3096, 2541, 428, 1032, 412, 264, 51272, 51272, 1032, 5675,
+        5300, 264, 16629, 7283, 293, 613, 3190, 3318, 1214, 281, 1254, 257, 4532, 3479, 1002,
+        51420, 51420, 4532, 3479, 8963, 6742, 300, 311, 1270, 257, 7195, 5870, 370, 6239, 13600,
+        370, 1177, 380, 51552, 51552, 321, 2607, 1488, 68, 322, 257, 8963, 264, 16026, 4532, 8379,
+        257, 4532, 3479, 8963, 6742, 300, 311, 51696, 50364, 3718, 14759, 490, 3114, 298, 264,
+        4356, 436, 366, 264, 1101, 436, 366, 13, 50500,
+    ];
+
     #[test]
     pub fn whisper_end_to_end() {
         log_init();
@@ -307,7 +323,7 @@ mod tests {
         let model_path = model.get("tiny_q8.bin").unwrap();
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let audio_path = dataset.get("gb0.wav").unwrap();
+        let audio_path = dataset.get("mm0.wav").unwrap();
         let samples = load_sample(audio_path);
 
         let options = DecodingOptionsBuilder::new().build();
@@ -320,6 +336,14 @@ mod tests {
 
         let empty_cb: Option<fn(StreamedSegment)> = None;
         let transcript = transcribe(&mut whisper, samples, options, empty_cb).unwrap();
+
+        let all_tokens = transcript
+            .segments
+            .iter()
+            .flat_map(|s| s.tokens.clone().into_iter())
+            .collect::<Vec<_>>();
+        assert_eq!(all_tokens, MM0_Q8_GROUND);
+
         println!("{}", transcript.formatted.unwrap());
         println!("Processing time: {:?}", transcript.processing_time);
     }
