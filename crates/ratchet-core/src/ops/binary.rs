@@ -151,7 +151,7 @@ impl MetaOperation for Binary {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use crate::{test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Shape, Tensor};
     use test_strategy::{proptest, Arbitrary};
