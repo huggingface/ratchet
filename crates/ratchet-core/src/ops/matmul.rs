@@ -358,7 +358,6 @@ impl GEMM {
                 )
             }
         };
-        println!("Kernel key: {}", key);
         key
     }
 }

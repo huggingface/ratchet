@@ -49,14 +49,7 @@ impl Module for MultiHeadAttention {
         } = input;
         let is_xattn = xa.is_some();
 
-        println!("W shape: {:?}", self.q.w.shape());
-        println!("X shape: {:?}", x.shape());
         let q = self.q.schedule(x.clone())?;
-        println!("Q shape: {:?}", q.shape());
-
-        let qdbg = q.clone().resolve()?;
-        let qcpu = qdbg.to(&Device::CPU)?;
-        println!("Q CPU: {:?}", qcpu.to_ndarray_view::<f32>());
 
         let to_project = xa.unwrap_or(x);
         let k = self.k.schedule(to_project.clone())?;
@@ -120,8 +113,6 @@ impl MultiHeadAttention {
             .permute(&[0, 2, 1, 3])?
             .view(shape![bs, n_ctx, n_state])?;
 
-        println!("WV SHAPE: {:?}", wv.shape());
-        println!("O SHAPE: {:?}", self.o.w.shape());
         self.o.schedule(wv)
     }
 }
