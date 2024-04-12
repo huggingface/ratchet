@@ -17,7 +17,8 @@ use {rand::prelude::*, rand_distr::StandardNormal};
 
 #[cfg(feature = "testing")]
 use ndarray::{ArrayD, ArrayViewD, Dimension};
-#[cfg(not(target_arch = "wasm32"))]
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "pyo3"))]
 use numpy::PyArrayDyn;
 
 // thiserror error for Tensor
@@ -813,6 +814,7 @@ impl Tensor {
         ))
     }
 
+    #[cfg(feature = "pyo3")]
     pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
         &'s self,
         py: &'p pyo3::Python<'p>,
@@ -826,7 +828,7 @@ impl Tensor {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "pyo3"))]
 impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
     fn from(array: &PyArrayDyn<T>) -> Self {
         Self::from(array.to_owned_array())

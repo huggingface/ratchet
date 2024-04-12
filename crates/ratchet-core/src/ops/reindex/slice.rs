@@ -46,7 +46,7 @@ impl Operation for Slice {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use std::ops::Range;
 

@@ -163,7 +163,7 @@ impl Phi2 {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "pyo3"))]
 mod tests {
     use hf_hub::api::sync::Api;
     use ndarray::Axis;

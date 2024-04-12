@@ -504,7 +504,7 @@ impl MetaOperation for GEMM {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 

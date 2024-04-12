@@ -117,7 +117,7 @@ impl MetaOperation for IndexSelect {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use proptest::arbitrary::Arbitrary;
     use proptest::strategy::{BoxedStrategy, Just, Strategy};
