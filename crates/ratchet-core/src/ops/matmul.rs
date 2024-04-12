@@ -529,6 +529,50 @@ mod tests {
 
     use super::*;
 
+    fn ground_truth_bias(
+        a: &Tensor,
+        b: &Tensor,
+        bias: &Tensor,
+        trans_lhs: bool,
+        trans_rhs: bool,
+        trans_out: bool,
+    ) -> anyhow::Result<Tensor> {
+        let a_op = if trans_lhs {
+            "torch.permute(torch.from_numpy(a), [0, 2, 1])"
+        } else {
+            "torch.from_numpy(a)"
+        };
+
+        let b_op = if trans_rhs {
+            "torch.permute(torch.from_numpy(b), [0, 2, 1])"
+        } else {
+            "torch.from_numpy(b)"
+        };
+
+        let result_op = if trans_out {
+            format!(
+                "np.ascontiguousarray(torch.add(torch.permute(torch.matmul({}, {}), [0, 2, 1]), torch.from_numpy(bias)).numpy())",
+                a_op, b_op
+            )
+        } else {
+            format!(
+                "torch.add(torch.matmul({}, {}), torch.from_numpy(bias)).numpy()",
+                a_op, b_op
+            )
+        };
+
+        let prg = format!(
+            r#"
+import torch
+import numpy as np
+def matmul(a, b, bias):
+    return {}"#,
+            result_op
+        );
+
+        run_py_prg(prg.to_string(), &[a, b, bias], &[])
+    }
+
     fn ground_truth(
         a: &Tensor,
         b: &Tensor,
@@ -635,6 +679,37 @@ def matmul(a, b):
         let b_gpu = b.to(device)?;
         let c_gpu = a_gpu
             .gemm(b_gpu, None, trans_lhs, trans_rhs, trans_out)?
+            .resolve()?;
+
+        let d_gpu = c_gpu.to(&Device::CPU)?;
+        println!("RATCHET SGEMM\n{:?}\n", d_gpu);
+        println!("PYTORCH FP32:\n{:?}", ground);
+        ground.all_close(&d_gpu, 1e-4, 1e-4)?;
+        Ok(())
+    }
+
+    #[test]
+    fn debug_trans_sgemm_vec() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
+
+        let a_shape = shape![1, 1024, 1024];
+        let b_shape = shape![1, 1024, 1024];
+
+        let a = Tensor::randn::<f32>(a_shape, cpu_device.clone());
+        let b = Tensor::randn::<f32>(b_shape, cpu_device.clone());
+        let bias = Tensor::randn::<f32>(shape![1024], cpu_device.clone());
+
+        //first case, standard y = xAt + b
+        let ground = ground_truth_bias(&a, &b, &bias, false, false, true).unwrap();
+
+        let a_gpu = a.to(&device)?;
+        let b_gpu = b.to(&device)?;
+        let bias_gpu = bias.to(&device)?;
+        let c_gpu = a_gpu
+            .clone()
+            .gemm(b_gpu.clone(), Some(bias_gpu), false, false, true)?
             .resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;

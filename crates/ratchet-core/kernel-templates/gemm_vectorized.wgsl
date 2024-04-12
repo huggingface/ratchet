@@ -199,22 +199,25 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     }
 
     {% if TRANS_OUT %}
-        transpose(acc)
+        acc = transpose(acc);
     {% endif %}
 
+    var val: vec4<f32>;
     {% for innerRow in range(end=ROW_PER_THREAD) %}
-        {% if BIAS %}
-            {% if TRANS_OUT %}
-                mm_write(batch, globalCol, globalRow + {{ innerRow }}, acc[{{ innerRow }}] + bias[globalCol / 4]);
+        {% if BIAS -%}
+            {% if TRANS_OUT -%}
+                val = acc[{{ innerRow }}] + bias[globalRow / 4];
             {% else %}
-                mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}] + bias[globalCol / 4]);
+                val = acc[{{ innerRow }}] + bias[globalCol / 4];
             {% endif %}
         {% else %}
-            {% if TRANS_OUT %}
-                mm_write(batch, globalCol, globalRow + {{ innerRow }}, acc[{{ innerRow }}]);
-            {% else %}
-                mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
-            {% endif %}
+            val = acc[{{ innerRow }}];
+        {% endif %}
+
+        {% if TRANS_OUT -%}
+            mm_write(batch, globalCol + {{ innerRow }}, globalRow, val);
+        {% else %}
+            mm_write(batch, globalRow + {{ innerRow }}, globalCol, val);
         {% endif %}
     {% endfor %}
   }

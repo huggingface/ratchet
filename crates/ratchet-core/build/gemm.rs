@@ -36,6 +36,7 @@ impl Gemm {
                                 context.insert("FIT_A_OUTER", &a_fit);
                                 context.insert("FIT_B_OUTER", &b_fit);
                                 context.insert("FIT_INNER", &inner_fit);
+                                context.insert("TRANS_OUT", &trans_out);
                                 context.insert("TILE_DIM", &Self::TILE_DIM);
                                 context.insert("ROW_PER_THREAD", &Self::ROW_PER_THREAD);
                                 context.insert("ELEM_TYPE", &ke.as_wgsl(WgslDType::F32));
