@@ -54,11 +54,21 @@ fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
 }
 {% endif %}
 
+{% if FIT_B_OUTER and FIT_INNER %}
 fn mm_readB(batch: i32, row: i32, col: i32) -> vec4<f32> {
     var value = vec4<f32>(0.0);
     value = getB(batch, row, col);
     return value;
 }
+{% else %}
+fn mm_readB(batch: i32, row: i32, col: i32) -> vec4<f32> {
+    var value = vec4<f32>(0.0);
+    if (row < metadata.bShape.y && col < metadata.bShape.z) {
+        value = getB(batch, row, col);
+    }
+    return value;
+}
+{% endif %}
   
 fn mm_write(batch: i32, row: i32, col: i32, valueIn: vec4<f32>) {
 {% if FIT_A_OUTER and FIT_B_OUTER %}
@@ -82,12 +92,25 @@ var<private> workgroupId: vec3<u32>;
 @group(0) @binding(0) var<storage, read> A: array<vec4<f32>>;
 
 {% if QUANTIZED_B %}
-    @group(0) @binding(1) var<storage, read> B: array<u32>;
-    @group(0) @binding(2) var<storage, read> absmax: array<f32>;
-    @group(0) @binding(3) var<storage, read_write> result: array<vec4<f32>>;
+    {% if BIAS %}
+        @group(0) @binding(1) var<storage, read> B: array<u32>;
+        @group(0) @binding(2) var<storage, read> absmax: array<f32>;
+        @group(0) @binding(3) var<storage, read> bias: array<vec4<f32>>;
+        @group(0) @binding(4) var<storage, read_write> result: array<vec4<f32>>;
+    {% else %}
+        @group(0) @binding(1) var<storage, read> B: array<u32>;
+        @group(0) @binding(2) var<storage, read> absmax: array<f32>;
+        @group(0) @binding(3) var<storage, read_write> result: array<vec4<f32>>;
+    {% endif %}
 {% else %}
-    @group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
-    @group(0) @binding(2) var<storage, read_write> result: array<vec4<f32>>;
+    {% if BIAS %}
+        @group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
+        @group(0) @binding(2) var<storage, read> bias: array<vec4<f32>>;
+        @group(0) @binding(3) var<storage, read_write> result: array<vec4<f32>>;
+    {% else %}
+        @group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
+        @group(0) @binding(2) var<storage, read_write> result: array<vec4<f32>>;
+    {% endif %}
 {% endif %}
 
 struct Meta {
@@ -172,6 +195,10 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     }
 
     {% for innerRow in range(end=ROW_PER_THREAD) %}
-        mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
+        {% if BIAS %}
+            mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}] + bias[globalCol / 4]);
+        {% else %}
+            mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
+        {% endif %}
     {% endfor %}
   }
