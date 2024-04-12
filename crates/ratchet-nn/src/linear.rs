@@ -10,16 +10,11 @@ use crate::Module;
 pub struct Linear {
     pub w: Tensor,
     b: Option<Tensor>,
-    transpose: bool,
 }
 
 impl Module for Linear {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        //y = xW^T + b
-        //input.gemm(self.w.clone(), self.b.clone(), false, true, false)
-        //if we wanted to reverse this:
-        //yT = Wx^T + bT
         self.w
             .clone()
             .gemm(input, self.b.clone(), false, true, true)
