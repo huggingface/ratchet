@@ -329,7 +329,6 @@ impl GEMM {
 
         let has_bias = self.bias.is_some();
 
-        
         match ke {
             KernelElement::Scalar => {
                 format!(

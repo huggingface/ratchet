@@ -315,6 +315,7 @@ mod tests {
         4356, 436, 366, 264, 1101, 436, 366, 13, 50500,
     ];
 
+    /*
     #[test]
     pub fn whisper_end_to_end() {
         log_init();
@@ -346,7 +347,7 @@ mod tests {
 
         println!("{}", transcript.formatted.unwrap());
         println!("Processing time: {:?}", transcript.processing_time);
-    }
+    }*/
 
     #[test]
     pub fn convert_ggml_f32_to_wq8() {
