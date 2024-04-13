@@ -165,7 +165,7 @@ mod tests {
 
         let mut model = Model::load(
             AvailableModels::Whisper(RegistryWhisper::Tiny),
-            Quantization::Q8,
+            Quantization::None,
             js_cb,
         )
         .await
