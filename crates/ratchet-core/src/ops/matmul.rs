@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 
-use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
@@ -279,22 +278,22 @@ impl GEMM {
 
         let mut c_shape_final = c_broadcasted_prefix.clone();
         if trans_out {
-            c_broadcasted_prefix.push(n.clone());
-            c_broadcasted_prefix.push(m.clone());
+            c_broadcasted_prefix.push(n);
+            c_broadcasted_prefix.push(m);
             if !implicit_n {
-                c_shape_final.push(n.clone());
+                c_shape_final.push(n);
             }
             if !implicit_m {
-                c_shape_final.push(m.clone());
+                c_shape_final.push(m);
             }
         } else {
-            c_broadcasted_prefix.push(m.clone());
-            c_broadcasted_prefix.push(n.clone());
+            c_broadcasted_prefix.push(m);
+            c_broadcasted_prefix.push(n);
             if !implicit_m {
-                c_shape_final.push(m.clone());
+                c_shape_final.push(m);
             }
             if !implicit_n {
-                c_shape_final.push(n.clone());
+                c_shape_final.push(n);
             }
         }
 
@@ -330,7 +329,8 @@ impl GEMM {
 
         let has_bias = self.bias.is_some();
 
-        let key = match ke {
+        
+        match ke {
             KernelElement::Scalar => {
                 format!(
                     "{}_{}_{}_{}_{}_{}_{}_{}_{}",
@@ -356,8 +356,7 @@ impl GEMM {
                     ke.as_str()
                 )
             }
-        };
-        key
+        }
     }
 }
 
@@ -593,9 +592,9 @@ def matmul(a, b{}):
         Out,
     }
 
-    impl Into<(bool, bool, bool)> for TransKind {
-        fn into(self) -> (bool, bool, bool) {
-            match self {
+    impl From<TransKind> for (bool, bool, bool) {
+        fn from(val: TransKind) -> Self {
+            match val {
                 TransKind::LHS => (true, false, false),
                 TransKind::LHSAndOut => (true, false, true),
                 TransKind::RHS => (false, true, false),
