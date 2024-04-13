@@ -1,7 +1,7 @@
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/k_quants.rs
 
 use anyhow::anyhow;
-use ratchet::gguf::Align;
+use ratchet::gguf::{Align, Q8_0};
 use ratchet::{prelude::shape, Device, Tensor};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -93,7 +93,7 @@ impl TensorLoader for gguf::Q4K {
     fn write<W: std::io::Seek + std::io::Write>(
         tensor: Tensor,
         writer: &mut W,
-    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+    ) -> anyhow::Result<()> {
         match tensor.dt() {
             DType::GGUF(GGUFDType::Q4K(_)) => Ok(()),
             otherwise => Err(anyhow!(
@@ -162,7 +162,7 @@ impl TensorLoader for gguf::Q6K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
+    ) -> anyhow::Result<Tensor> {
         let mut qls = vec![0u8; tensor_blocks * QK_K / 2];
         let mut qls_cursor = Cursor::new(&mut qls);
 
@@ -212,10 +212,7 @@ impl TensorLoader for gguf::Q6K {
         Ok(inner)
     }
 
-    fn write<R: std::io::Write>(
-        tensor: Tensor,
-        writer: &mut R,
-    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+    fn write<R: std::io::Write>(tensor: Tensor, writer: &mut R) -> anyhow::Result<()> {
         match tensor.dt() {
             DType::GGUF(GGUFDType::Q6K(_)) => Ok(()),
             otherwise => Err(anyhow!(
@@ -273,6 +270,25 @@ impl TensorLoader for gguf::Q6K {
     }
 }
 
+impl TensorLoader for Q8_0 {
+    const GGML_DTYPE: GgmlDType;
+
+    fn read<R: std::io::Seek + std::io::Read>(
+        tensor_blocks: usize,
+        reader: &mut R,
+        device: &Device,
+    ) -> anyhow::Result<Tensor> {
+        todo!()
+    }
+
+    fn write<W: std::io::Seek + std::io::Write>(
+        tensor: Tensor,
+        writer: &mut W,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+}
+
 impl TensorLoader for f32 {
     const GGML_DTYPE: GgmlDType = GgmlDType::F32;
 
@@ -280,7 +296,7 @@ impl TensorLoader for f32 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
+    ) -> anyhow::Result<Tensor> {
         let mut data = vec![0f32; tensor_blocks];
         data.align_standard();
         for _idx in 0..tensor_blocks {
@@ -290,10 +306,7 @@ impl TensorLoader for f32 {
         let tensor = Tensor::from_data(data, shape![tensor_blocks], device.clone());
         Ok(tensor)
     }
-    fn write<R: std::io::Write>(
-        tensor: Tensor,
-        writer: &mut R,
-    ) -> std::prelude::v1::Result<(), anyhow::Error> {
+    fn write<R: std::io::Write>(tensor: Tensor, writer: &mut R) -> anyhow::Result<()> {
         let tensor_data = tensor.to_vec::<f32>()?;
         let tensor_blocks = tensor
             .shape()
