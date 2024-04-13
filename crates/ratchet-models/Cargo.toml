@@ -46,10 +46,11 @@ ratchet-hub = { path = "../ratchet-hub" }
 tsify = "0.4.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ratchet = { path = "../ratchet-core", features = ["pyo3"] }
 hf-hub.workspace = true
 
 [dev-dependencies]
-ratchet = { path = "../ratchet-core", features = ["pyo3"] }
+ratchet = { path = "../ratchet-core" }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 wasm-bindgen-test = "0.3.41"
@@ -60,6 +61,7 @@ hound = { version = "3.5.0" }
 env_logger = "0.11.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+ratchet = { path = "../ratchet-core", features = ["pyo3"] }
 pyo3 = "0.20.2"
 numpy = "0.20.0"
 
