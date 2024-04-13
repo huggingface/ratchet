@@ -205,6 +205,7 @@ def ground(options):
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let path = model.get("tiny_f32.bin").unwrap();
+        println!("MODEL LOADED FROM: {}", path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
