@@ -81,6 +81,7 @@ impl GgmlDType {
             Self::F16 => 2, // 2, [TODO] Think about this. Currently WASM doesn't support F16
             Self::Q4K => Q4K::TYPE_SIZE,
             Self::Q6K => Q6K::TYPE_SIZE,
+            Self::Q8_0 => 34,
             dt => todo!("{:?} not yet supported", dt),
         }
     }

@@ -5,9 +5,19 @@ use crate::{rvec, BufferSegment, RVec, Segments};
 pub const QK_K: usize = 256;
 pub const K_SCALE_SIZE: usize = 12;
 
+pub const QK4_0: usize = 32;
+pub const QK4_1: usize = 32;
+pub const QK5_0: usize = 32;
+pub const QK5_1: usize = 32;
+pub const QK8_0: usize = 32;
+pub const QK8_1: usize = 32;
+
 pub trait GGUFSize {
-    const BLCK_SIZE: usize;
+    //Number of elements this block represents
+    const BLCK_NUMEL: usize;
+    //Size of the block in bytes
     const TYPE_SIZE: usize;
+    //Size of the block in bytes when using WebGPU reduced numeric types (i.e f32 instead of f16)
     const TYPE_SIZE_WEBGPU: usize;
 }
 
@@ -15,7 +25,7 @@ pub trait GGUFSize {
 pub struct Q4K;
 
 impl GGUFSize for Q4K {
-    const BLCK_SIZE: usize = QK_K;
+    const BLCK_NUMEL: usize = QK_K;
     const TYPE_SIZE: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 2;
     const TYPE_SIZE_WEBGPU: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 4;
 }
@@ -46,7 +56,7 @@ impl Segments for Q4K {
 pub struct Q6K;
 
 impl GGUFSize for Q6K {
-    const BLCK_SIZE: usize = QK_K;
+    const BLCK_NUMEL: usize = QK_K;
     const TYPE_SIZE: usize = QK_K / 2 + QK_K / 4 + QK_K / 16 + 4;
     const TYPE_SIZE_WEBGPU: usize = QK_K / 2 + QK_K / 4 + QK_K / 16 + 4;
 }
@@ -73,8 +83,31 @@ impl Segments for Q6K {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
+pub struct Q8_0;
+
+impl GGUFSize for Q8_0 {
+    const BLCK_NUMEL: usize = QK8_0;
+    const TYPE_SIZE: usize = QK8_0 / 2 + 2; //34
+    const TYPE_SIZE_WEBGPU: usize = QK8_0 / 2 + 4; //36
+}
+
+impl Segments for Q8_0 {
+    fn segments(numel: usize) -> RVec<BufferSegment> {
+        let ds_len: u64 = (numel * 4).align() as u64;
+        let offset = 0;
+        let ds_segment = BufferSegment::new(offset, Some(ds_len));
+
+        let qs_len: u64 = (numel * QK8_0 / 2).align() as u64;
+        let offset = offset + ds_len;
+        let qs_segment = BufferSegment::new(offset, Some(qs_len));
+
+        rvec![ds_segment, qs_segment,]
+    }
+}
+
 impl GGUFSize for f32 {
-    const BLCK_SIZE: usize = 1;
+    const BLCK_NUMEL: usize = 1;
     const TYPE_SIZE: usize = 4;
     const TYPE_SIZE_WEBGPU: usize = 4;
 }
@@ -83,6 +116,7 @@ impl GGUFSize for f32 {
 pub enum GGUFDType {
     Q4K(Q4K),
     Q6K(Q6K),
+    Q8_0(Q8_0),
 }
 
 pub trait Align {
@@ -110,6 +144,7 @@ impl GGUFDType {
         match self {
             GGUFDType::Q4K(_) => Q4K::segments(numel),
             GGUFDType::Q6K(_) => Q6K::segments(numel),
+            GGUFDType::Q8_0(_) => Q8_0::segments(numel),
         }
     }
 }
