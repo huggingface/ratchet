@@ -317,7 +317,7 @@ impl GEMM {
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
-        if (self.rhs.dt() == DType::WQ8) && (self.trans_lhs || self.trans_rhs) {
+        if (self.lhs.dt() == DType::WQ8) && (self.trans_lhs || self.trans_rhs) {
             panic!("Transposed WQ8 not supported");
         }
 
@@ -363,11 +363,7 @@ impl GEMM {
 
         let ke = spec.select_kernel_element();
 
-        if (self.rhs.dt() == DType::WQ8) && (self.trans_lhs || self.trans_rhs) {
-            panic!("Transposed WQ8 not supported");
-        }
-
-        let kernel_stem = if self.rhs.dt() == DType::WQ8 {
+        let kernel_stem = if self.lhs.dt() == DType::WQ8 {
             "qgemv"
         } else {
             "sgemv"
@@ -513,8 +509,8 @@ impl MetaOperation for GEMM {
         let layout = match (A.dt(), B.dt(), bias.is_some()) {
             (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
             (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
-            (DType::F32, DType::WQ8, false) => BindGroupLayoutDescriptor::ternary(),
-            (DType::F32, DType::WQ8, true) => BindGroupLayoutDescriptor::nthary(4),
+            (DType::WQ8, DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::WQ8, DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
             _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
         };
         Ok(layout)
