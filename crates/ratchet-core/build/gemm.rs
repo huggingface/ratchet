@@ -15,7 +15,6 @@ impl Gemm {
         let FIT_INNER = [false, true];
         let QUANTIZED_B = [false, true];
         let BIAS = [false, true];
-        let TRANS_OUT = [false, true];
         let ke = KernelElement::Vec4;
 
         let path = renderer.templates_path.join("gemm_vectorized.wgsl");
@@ -25,34 +24,27 @@ impl Gemm {
                 for a_fit in FIT_A_OUTER.iter() {
                     for b_fit in FIT_B_OUTER.iter() {
                         for inner_fit in FIT_INNER.iter() {
-                            for trans_out in TRANS_OUT.iter() {
-                                if Self::ROW_PER_THREAD != 4 && *trans_out {
-                                    continue;
-                                }
+                            let mut context = Context::new();
+                            context.insert("BIAS", &bias);
+                            context.insert("QUANTIZED_B", &quantized);
+                            context.insert("FIT_A_OUTER", &a_fit);
+                            context.insert("FIT_B_OUTER", &b_fit);
+                            context.insert("FIT_INNER", &inner_fit);
+                            context.insert("TILE_DIM", &Self::TILE_DIM);
+                            context.insert("ROW_PER_THREAD", &Self::ROW_PER_THREAD);
+                            context.insert("ELEM_TYPE", &ke.as_wgsl(WgslDType::F32));
+                            context.insert("ELEM_SIZE", &ke.as_size());
 
-                                let mut context = Context::new();
-                                context.insert("BIAS", &bias);
-                                context.insert("QUANTIZED_B", &quantized);
-                                context.insert("FIT_A_OUTER", &a_fit);
-                                context.insert("FIT_B_OUTER", &b_fit);
-                                context.insert("FIT_INNER", &inner_fit);
-                                context.insert("TRANS_OUT", &trans_out);
-                                context.insert("TILE_DIM", &Self::TILE_DIM);
-                                context.insert("ROW_PER_THREAD", &Self::ROW_PER_THREAD);
-                                context.insert("ELEM_TYPE", &ke.as_wgsl(WgslDType::F32));
-                                context.insert("ELEM_SIZE", &ke.as_size());
+                            let rendered = renderer.tera.render("gemm", &context)?;
 
-                                let rendered = renderer.tera.render("gemm", &context)?;
+                            let kernel_stem = if *quantized { "qgemm" } else { "sgemm" };
 
-                                let kernel_stem = if *quantized { "qgemm" } else { "sgemm" };
-
-                                let kernel_fname = format!(
-                                    "{}_{}_{}_{}_{}_{}_{}.wgsl",
-                                    kernel_stem, bias, a_fit, b_fit, inner_fit, trans_out, ke
-                                );
-                                let mut file = File::create(renderer.dest_path.join(kernel_fname))?;
-                                file.write_all(rendered.as_bytes())?;
-                            }
+                            let kernel_fname = format!(
+                                "{}_{}_{}_{}_{}_{}.wgsl",
+                                kernel_stem, bias, a_fit, b_fit, inner_fit, ke
+                            );
+                            let mut file = File::create(renderer.dest_path.join(kernel_fname))?;
+                            file.write_all(rendered.as_bytes())?;
                         }
                     }
                 }

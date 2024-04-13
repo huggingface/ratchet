@@ -149,11 +149,7 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     let numTiles = (metadata.dimInner - 1) / {{ TILE_DIM }} + 1;
     var kStart = 0;
 
-    {% if TRANS_OUT %}
-        var acc: mat4x4<f32>;
-    {% else %}
-        var acc: array<vec4<f32>, {{ ROW_PER_THREAD }}>;
-    {% endif %}
+    var acc: array<vec4<f32>, {{ ROW_PER_THREAD }}>;
 
     // Loop over shared dimension.
     let tileRowB = localRow * {{ ROW_PER_THREAD }};
@@ -198,26 +194,14 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         workgroupBarrier();
     }
 
-    {% if TRANS_OUT %}
-        acc = transpose(acc);
-    {% endif %}
-
     var val: vec4<f32>;
     {% for innerRow in range(end=ROW_PER_THREAD) %}
         {% if BIAS -%}
-            {% if TRANS_OUT -%}
-                val = acc[{{ innerRow }}] + bias[globalRow / 4];
-            {% else %}
-                val = acc[{{ innerRow }}] + bias[globalCol / 4];
-            {% endif %}
+            val = acc[{{ innerRow }}] + bias[globalCol / 4];
         {% else %}
             val = acc[{{ innerRow }}];
         {% endif %}
 
-        {% if TRANS_OUT -%}
-            mm_write(batch, globalCol + {{ innerRow }}, globalRow, val);
-        {% else %}
-            mm_write(batch, globalRow + {{ innerRow }}, globalCol, val);
-        {% endif %}
+        mm_write(batch, globalRow + {{ innerRow }}, globalCol, val);
     {% endfor %}
   }

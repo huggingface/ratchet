@@ -84,10 +84,6 @@ impl Module for Phi2 {
         };
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            if layer_idx > 15 {
-                break;
-            }
-
             let input = DecoderLayerInput {
                 x,
                 mask: mask.clone(),

@@ -5,10 +5,6 @@ lazy_static! {
     pub static ref KERNELS: HashMap<&'static str, &'static str> = {
         let mut m = HashMap::new();
         m.insert(
-            "qgemm_false_true_true_true_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_true_true_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_true_true_false_true_false_true_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_true_false_true_false_true_false_scalar.wgsl"
@@ -19,10 +15,6 @@ lazy_static! {
             include_str!(
                 r"../kernels/generated/sgemm_true_false_true_false_true_true_false_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "qgemm_false_true_false_true_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_true_false_true_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_true_true_false_true_true_false_false_scalar",
@@ -43,18 +35,14 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_false_true_false_false_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_true_false_false_false_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_true_true_false_false_true_false_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_true_false_false_true_false_true_scalar.wgsl"
             ),
         );
         m.insert(
-            "qgemm_false_true_false_true_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_true_false_true_true_vec4.wgsl"),
+            "qgemm_false_false_true_true_vec4",
+            include_str!(r"../kernels/generated/qgemm_false_false_true_true_vec4.wgsl"),
         );
         m.insert(
             "log_inplace_vec4",
@@ -71,12 +59,12 @@ lazy_static! {
             include_str!(r"../kernels/generated/floor_inplace_vec4.wgsl"),
         );
         m.insert(
-            "sgemm_true_true_false_false_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_true_false_false_true_vec4.wgsl"),
-        );
-        m.insert(
             "abs_scalar",
             include_str!(r"../kernels/generated/abs_scalar.wgsl"),
+        );
+        m.insert(
+            "sgemm_false_true_false_true_vec4",
+            include_str!(r"../kernels/generated/sgemm_false_true_false_true_vec4.wgsl"),
         );
         m.insert(
             "sgemm_true_false_false_false_false_false_false_scalar",
@@ -89,6 +77,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/tanh_inplace_vec2.wgsl"),
         );
         m.insert(
+            "qgemm_false_true_true_true_vec4",
+            include_str!(r"../kernels/generated/qgemm_false_true_true_true_vec4.wgsl"),
+        );
+        m.insert(
             "sgemm_true_false_false_false_false_true_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_false_false_false_false_true_true_scalar.wgsl"
@@ -99,14 +91,14 @@ lazy_static! {
             include_str!(r"../kernels/generated/ceil_inplace_vec4.wgsl"),
         );
         m.insert(
+            "sgemm_true_true_false_true_vec4",
+            include_str!(r"../kernels/generated/sgemm_true_true_false_true_vec4.wgsl"),
+        );
+        m.insert(
             "sgemm_false_true_false_true_true_false_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_true_false_true_true_false_true_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "sgemm_false_false_true_false_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_false_true_false_false_vec4.wgsl"),
         );
         m.insert(
             "concat6_scalar",
@@ -131,30 +123,18 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_false_false_true_false_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_false_true_false_true_vec4.wgsl"),
-        );
-        m.insert(
             "gelu_inplace_vec2",
             include_str!(r"../kernels/generated/gelu_inplace_vec2.wgsl"),
         );
         m.insert(
-            "sgemm_true_false_false_false_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_false_false_false_true_vec4.wgsl"),
-        );
-        m.insert(
-            "qgemm_false_false_false_false_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_false_false_false_true_vec4.wgsl"),
+            "sgemm_false_false_true_false_vec4",
+            include_str!(r"../kernels/generated/sgemm_false_false_true_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_true_true_false_true_true_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_true_true_false_true_true_true_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "qgemm_true_false_true_false_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_false_true_false_true_vec4.wgsl"),
         );
         m.insert(
             "gelu_inplace_scalar",
@@ -197,10 +177,6 @@ lazy_static! {
             ),
         );
         m.insert(
-            "qgemm_true_true_true_false_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_true_true_false_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_true_false_true_false_true_false_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_false_true_false_true_false_true_scalar.wgsl"
@@ -233,32 +209,16 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_true_true_true_false_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_true_true_false_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_true_false_false_true_false_false_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_false_false_true_false_false_false_scalar.wgsl"
             ),
         );
         m.insert(
-            "sgemm_false_true_true_true_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_true_true_true_false_vec4.wgsl"),
-        );
-        m.insert(
-            "sgemm_false_false_false_false_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_false_false_false_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_false_false_false_false_false_true_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_false_false_false_false_true_true_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "qgemm_false_false_true_true_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_false_true_true_true_vec4.wgsl"),
         );
         m.insert(
             "mul_scalar",
@@ -275,14 +235,14 @@ lazy_static! {
             include_str!(r"../kernels/generated/cos_inplace_scalar.wgsl"),
         );
         m.insert(
+            "qgemm_true_false_true_true_vec4",
+            include_str!(r"../kernels/generated/qgemm_true_false_true_true_vec4.wgsl"),
+        );
+        m.insert(
             "sgemm_false_true_true_false_false_true_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_true_true_false_false_true_true_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "sgemm_true_true_true_false_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_true_true_false_false_vec4.wgsl"),
         );
         m.insert(
             "log_vec2",
@@ -309,10 +269,6 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_true_true_false_false_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_true_false_false_false_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_true_true_true_true_false_false_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_true_true_true_false_false_false_scalar.wgsl"
@@ -323,18 +279,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/gelu_vec4.wgsl"),
         );
         m.insert(
-            "qgemm_false_false_false_true_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_false_false_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_false_false_true_true_false_true_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_false_true_true_false_true_true_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "qgemm_false_true_false_false_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_true_false_false_false_vec4.wgsl"),
         );
         m.insert(
             "tanh_inplace_scalar",
@@ -345,6 +293,10 @@ lazy_static! {
             include_str!(
                 r"../kernels/generated/sgemm_true_false_true_false_true_false_false_scalar.wgsl"
             ),
+        );
+        m.insert(
+            "qgemm_true_false_true_false_vec4",
+            include_str!(r"../kernels/generated/qgemm_true_false_true_false_vec4.wgsl"),
         );
         m.insert(
             "sqrt_scalar",
@@ -365,18 +317,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/concat3_scalar.wgsl"),
         );
         m.insert(
-            "qgemm_false_false_true_false_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_false_true_false_false_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_false_false_true_false_true_true_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_false_true_false_true_true_true_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "sgemm_true_false_true_false_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_false_true_false_false_vec4.wgsl"),
         );
         m.insert(
             "relu_inplace_vec4",
@@ -397,20 +341,12 @@ lazy_static! {
             include_str!(r"../kernels/generated/sin_inplace_scalar.wgsl"),
         );
         m.insert(
-            "sgemm_false_true_true_true_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_true_true_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "add_inplace_vec2",
             include_str!(r"../kernels/generated/add_inplace_vec2.wgsl"),
         );
         m.insert(
             "layernorm_vec4",
             include_str!(r"../kernels/generated/layernorm_vec4.wgsl"),
-        );
-        m.insert(
-            "qgemm_true_false_true_true_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_false_true_true_false_vec4.wgsl"),
         );
         m.insert(
             "gelu_inplace_vec4",
@@ -423,16 +359,8 @@ lazy_static! {
             ),
         );
         m.insert(
-            "qgemm_false_false_false_true_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_false_false_true_false_vec4.wgsl"),
-        );
-        m.insert(
-            "sgemm_true_false_false_true_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_false_false_true_false_vec4.wgsl"),
-        );
-        m.insert(
-            "sgemm_false_false_true_true_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_false_true_true_false_vec4.wgsl"),
+            "sgemm_false_false_false_true_vec4",
+            include_str!(r"../kernels/generated/sgemm_false_false_false_true_vec4.wgsl"),
         );
         m.insert(
             "sub_scalar",
@@ -443,8 +371,8 @@ lazy_static! {
             include_str!(r"../kernels/generated/neg_scalar.wgsl"),
         );
         m.insert(
-            "qgemm_true_true_true_true_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_true_true_true_false_vec4.wgsl"),
+            "qgemm_true_true_false_false_vec4",
+            include_str!(r"../kernels/generated/qgemm_true_true_false_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_true_true_false_false_false_true_scalar",
@@ -475,10 +403,6 @@ lazy_static! {
             include_str!(r"../kernels/generated/mul_inplace_scalar.wgsl"),
         );
         m.insert(
-            "sgemm_true_true_false_true_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_true_false_true_false_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_false_true_true_false_true_false_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_true_true_false_true_false_false_scalar.wgsl"
@@ -499,10 +423,6 @@ lazy_static! {
         m.insert(
             "log_inplace_vec2",
             include_str!(r"../kernels/generated/log_inplace_vec2.wgsl"),
-        );
-        m.insert(
-            "qgemm_false_true_false_false_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_true_false_false_true_vec4.wgsl"),
         );
         m.insert(
             "floor_inplace_vec2",
@@ -531,8 +451,8 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_false_false_false_false_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_false_false_false_false_vec4.wgsl"),
+            "sgemm_true_true_true_false_vec4",
+            include_str!(r"../kernels/generated/sgemm_true_true_true_false_vec4.wgsl"),
         );
         m.insert(
             "sqrt_inplace_scalar",
@@ -553,6 +473,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/relu_vec4.wgsl"),
         );
         m.insert(
+            "sgemm_false_true_true_false_vec4",
+            include_str!(r"../kernels/generated/sgemm_false_true_true_false_vec4.wgsl"),
+        );
+        m.insert(
             "sub_vec2",
             include_str!(r"../kernels/generated/sub_vec2.wgsl"),
         );
@@ -569,8 +493,12 @@ lazy_static! {
             include_str!(r"../kernels/generated/ceil_inplace_scalar.wgsl"),
         );
         m.insert(
-            "sgemm_true_false_false_true_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_false_false_true_true_vec4.wgsl"),
+            "qgemm_true_false_false_true_vec4",
+            include_str!(r"../kernels/generated/qgemm_true_false_false_true_vec4.wgsl"),
+        );
+        m.insert(
+            "sgemm_true_false_false_false_vec4",
+            include_str!(r"../kernels/generated/sgemm_true_false_false_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_true_true_true_false_false_true_true_scalar",
@@ -595,6 +523,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/add_inplace_vec4.wgsl"),
         );
         m.insert(
+            "sgemm_false_true_false_false_vec4",
+            include_str!(r"../kernels/generated/sgemm_false_true_false_false_vec4.wgsl"),
+        );
+        m.insert(
             "layernorm_vec2",
             include_str!(r"../kernels/generated/layernorm_vec2.wgsl"),
         );
@@ -615,16 +547,8 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_false_false_false_true_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_false_false_true_false_vec4.wgsl"),
-        );
-        m.insert(
             "concat5_scalar",
             include_str!(r"../kernels/generated/concat5_scalar.wgsl"),
-        );
-        m.insert(
-            "sgemm_false_true_true_false_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_true_true_false_true_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_false_true_false_false_true_true_scalar",
@@ -649,16 +573,8 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_true_true_true_true_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_true_true_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "tanh_scalar",
             include_str!(r"../kernels/generated/tanh_scalar.wgsl"),
-        );
-        m.insert(
-            "sgemm_true_true_true_true_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_true_true_true_false_vec4.wgsl"),
         );
         m.insert(
             "log_vec4",
@@ -667,10 +583,6 @@ lazy_static! {
         m.insert(
             "relu_scalar",
             include_str!(r"../kernels/generated/relu_scalar.wgsl"),
-        );
-        m.insert(
-            "qgemm_false_true_true_false_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_true_true_false_false_vec4.wgsl"),
         );
         m.insert(
             "sub_inplace_vec4",
@@ -687,16 +599,12 @@ lazy_static! {
             include_str!(r"../kernels/generated/add_scalar.wgsl"),
         );
         m.insert(
-            "sgemm_false_true_false_true_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_true_false_true_false_vec4.wgsl"),
+            "qgemm_true_false_false_false_vec4",
+            include_str!(r"../kernels/generated/qgemm_true_false_false_false_vec4.wgsl"),
         );
         m.insert(
             "neg_vec2",
             include_str!(r"../kernels/generated/neg_vec2.wgsl"),
-        );
-        m.insert(
-            "sgemm_true_true_false_true_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_true_false_true_true_vec4.wgsl"),
         );
         m.insert(
             "floor_vec2",
@@ -735,16 +643,16 @@ lazy_static! {
             ),
         );
         m.insert(
-            "qgemm_true_true_false_true_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_true_false_true_false_vec4.wgsl"),
+            "qgemm_true_true_false_true_vec4",
+            include_str!(r"../kernels/generated/qgemm_true_true_false_true_vec4.wgsl"),
         );
         m.insert(
             "div_scalar",
             include_str!(r"../kernels/generated/div_scalar.wgsl"),
         );
         m.insert(
-            "qgemm_false_false_false_false_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_false_false_false_false_vec4.wgsl"),
+            "qgemm_false_true_false_false_vec4",
+            include_str!(r"../kernels/generated/qgemm_false_true_false_false_vec4.wgsl"),
         );
         m.insert(
             "exp_scalar",
@@ -765,18 +673,14 @@ lazy_static! {
             include_str!(r"../kernels/generated/neg_inplace_vec4.wgsl"),
         );
         m.insert(
+            "sgemm_false_true_true_true_vec4",
+            include_str!(r"../kernels/generated/sgemm_false_true_true_true_vec4.wgsl"),
+        );
+        m.insert(
             "sgemm_false_false_false_false_true_true_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_false_false_false_true_true_true_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "qgemm_false_false_true_false_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_false_true_false_true_vec4.wgsl"),
-        );
-        m.insert(
-            "qgemm_true_false_false_false_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_false_false_false_true_vec4.wgsl"),
         );
         m.insert(
             "broadcast_vec2",
@@ -785,10 +689,6 @@ lazy_static! {
         m.insert(
             "ceil_vec4",
             include_str!(r"../kernels/generated/ceil_vec4.wgsl"),
-        );
-        m.insert(
-            "sgemm_true_false_true_true_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_false_true_true_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_true_true_false_true_false_true_true_scalar",
@@ -813,8 +713,8 @@ lazy_static! {
             ),
         );
         m.insert(
-            "qgemm_true_true_true_true_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_true_true_true_true_vec4.wgsl"),
+            "sgemm_true_false_true_false_vec4",
+            include_str!(r"../kernels/generated/sgemm_true_false_true_false_vec4.wgsl"),
         );
         m.insert(
             "exp_inplace_scalar",
@@ -833,8 +733,8 @@ lazy_static! {
             ),
         );
         m.insert(
-            "qgemm_true_false_true_true_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_false_true_true_true_vec4.wgsl"),
+            "qgemm_false_false_false_true_vec4",
+            include_str!(r"../kernels/generated/qgemm_false_false_false_true_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_true_false_true_false_false_true_scalar",
@@ -849,20 +749,16 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_true_false_true_true_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_false_true_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "div_inplace_vec4",
             include_str!(r"../kernels/generated/div_inplace_vec4.wgsl"),
         );
         m.insert(
-            "qgemm_false_true_true_false_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_true_true_false_true_vec4.wgsl"),
-        );
-        m.insert(
             "div_vec4",
             include_str!(r"../kernels/generated/div_vec4.wgsl"),
+        );
+        m.insert(
+            "qgemm_false_true_false_true_vec4",
+            include_str!(r"../kernels/generated/qgemm_false_true_false_true_vec4.wgsl"),
         );
         m.insert(
             "cos_inplace_vec2",
@@ -883,6 +779,10 @@ lazy_static! {
         m.insert(
             "slice_scalar",
             include_str!(r"../kernels/generated/slice_scalar.wgsl"),
+        );
+        m.insert(
+            "qgemm_false_false_false_false_vec4",
+            include_str!(r"../kernels/generated/qgemm_false_false_false_false_vec4.wgsl"),
         );
         m.insert(
             "floor_inplace_scalar",
@@ -911,6 +811,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/exp_inplace_vec4.wgsl"),
         );
         m.insert(
+            "sgemm_false_false_true_true_vec4",
+            include_str!(r"../kernels/generated/sgemm_false_false_true_true_vec4.wgsl"),
+        );
+        m.insert(
             "sgemm_true_false_true_true_true_false_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_false_true_true_true_false_true_scalar.wgsl"
@@ -937,6 +841,14 @@ lazy_static! {
             include_str!(
                 r"../kernels/generated/sgemm_false_false_false_false_true_false_false_scalar.wgsl"
             ),
+        );
+        m.insert(
+            "sgemm_false_false_false_false_vec4",
+            include_str!(r"../kernels/generated/sgemm_false_false_false_false_vec4.wgsl"),
+        );
+        m.insert(
+            "sgemm_true_false_true_true_vec4",
+            include_str!(r"../kernels/generated/sgemm_true_false_true_true_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_false_false_false_false_true_false_scalar",
@@ -979,20 +891,8 @@ lazy_static! {
             ),
         );
         m.insert(
-            "qgemm_true_true_false_false_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_true_false_false_false_vec4.wgsl"),
-        );
-        m.insert(
-            "sgemm_false_false_false_true_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_false_false_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "concat7_scalar",
             include_str!(r"../kernels/generated/concat7_scalar.wgsl"),
-        );
-        m.insert(
-            "qgemm_true_false_false_true_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_false_false_true_true_vec4.wgsl"),
         );
         m.insert(
             "sgemm_true_true_true_true_true_false_false_scalar",
@@ -1025,10 +925,6 @@ lazy_static! {
             include_str!(
                 r"../kernels/generated/sgemm_true_true_false_false_false_false_true_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "qgemm_true_false_true_false_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_false_true_false_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_true_false_false_true_false_true_scalar",
@@ -1073,30 +969,14 @@ lazy_static! {
             ),
         );
         m.insert(
-            "qgemm_true_true_false_true_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_true_false_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_true_false_false_false_true_true_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_false_false_false_true_true_false_scalar.wgsl"
             ),
         );
         m.insert(
-            "sgemm_true_false_true_false_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_false_true_false_true_vec4.wgsl"),
-        );
-        m.insert(
-            "qgemm_true_false_false_false_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_false_false_false_false_vec4.wgsl"),
-        );
-        m.insert(
             "broadcast_vec4",
             include_str!(r"../kernels/generated/broadcast_vec4.wgsl"),
-        );
-        m.insert(
-            "qgemm_true_false_false_true_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_false_false_true_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_true_false_false_true_false_false_true_scalar",
@@ -1117,10 +997,6 @@ lazy_static! {
             include_str!(
                 r"../kernels/generated/sgemm_false_false_true_true_false_false_false_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "qgemm_false_false_true_true_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_false_true_true_false_vec4.wgsl"),
         );
         m.insert(
             "neg_inplace_scalar",
@@ -1149,6 +1025,10 @@ lazy_static! {
             ),
         );
         m.insert(
+            "sgemm_true_false_false_true_vec4",
+            include_str!(r"../kernels/generated/sgemm_true_false_false_true_vec4.wgsl"),
+        );
+        m.insert(
             "sgemm_false_false_true_false_false_false_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_false_true_false_false_false_false_scalar.wgsl"
@@ -1167,10 +1047,6 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_false_true_false_true_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_true_false_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_false_true_false_true_true_true_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_true_false_true_true_true_true_scalar.wgsl"
@@ -1185,10 +1061,6 @@ lazy_static! {
         m.insert(
             "neg_vec4",
             include_str!(r"../kernels/generated/neg_vec4.wgsl"),
-        );
-        m.insert(
-            "qgemm_true_true_false_false_true_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_true_false_false_true_vec4.wgsl"),
         );
         m.insert(
             "floor_vec4",
@@ -1207,10 +1079,6 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_false_true_false_false_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_true_false_false_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_true_false_false_true_true_false_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_false_false_true_true_false_false_scalar.wgsl"
@@ -1225,6 +1093,10 @@ lazy_static! {
             include_str!(
                 r"../kernels/generated/sgemm_true_true_true_false_true_true_true_scalar.wgsl"
             ),
+        );
+        m.insert(
+            "qgemm_true_true_true_true_vec4",
+            include_str!(r"../kernels/generated/qgemm_true_true_true_true_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_true_false_true_false_true_true_scalar",
@@ -1257,6 +1129,10 @@ lazy_static! {
             ),
         );
         m.insert(
+            "qgemm_true_true_true_false_vec4",
+            include_str!(r"../kernels/generated/qgemm_true_true_true_false_vec4.wgsl"),
+        );
+        m.insert(
             "sgemm_true_false_false_false_false_false_true_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_false_false_false_false_false_true_scalar.wgsl"
@@ -1287,10 +1163,18 @@ lazy_static! {
             ),
         );
         m.insert(
+            "sgemm_true_true_false_false_vec4",
+            include_str!(r"../kernels/generated/sgemm_true_true_false_false_vec4.wgsl"),
+        );
+        m.insert(
             "sgemm_false_true_true_false_false_false_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_true_true_false_false_false_false_scalar.wgsl"
             ),
+        );
+        m.insert(
+            "sgemm_true_true_true_true_vec4",
+            include_str!(r"../kernels/generated/sgemm_true_true_true_true_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_false_true_true_true_false_true_scalar",
@@ -1367,10 +1251,6 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_false_false_true_true_true_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_false_true_true_true_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_true_false_false_true_true_true_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_true_false_false_true_true_true_false_scalar.wgsl"
@@ -1381,8 +1261,8 @@ lazy_static! {
             include_str!(r"../kernels/generated/div_inplace_vec2.wgsl"),
         );
         m.insert(
-            "qgemm_false_true_true_true_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_false_true_true_true_false_vec4.wgsl"),
+            "qgemm_false_true_true_false_vec4",
+            include_str!(r"../kernels/generated/qgemm_false_true_true_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_true_true_true_false_false_false_true_scalar",
@@ -1405,14 +1285,14 @@ lazy_static! {
             ),
         );
         m.insert(
-            "sgemm_true_false_false_false_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_true_false_false_false_false_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_false_false_false_true_true_false_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_false_false_true_true_false_false_scalar.wgsl"
             ),
+        );
+        m.insert(
+            "qgemm_false_false_true_false_vec4",
+            include_str!(r"../kernels/generated/qgemm_false_false_true_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_false_false_true_true_true_true_false_scalar",
@@ -1435,18 +1315,10 @@ lazy_static! {
             include_str!(r"../kernels/generated/log_inplace_scalar.wgsl"),
         );
         m.insert(
-            "qgemm_true_true_true_false_false_vec4",
-            include_str!(r"../kernels/generated/qgemm_true_true_true_false_false_vec4.wgsl"),
-        );
-        m.insert(
             "sgemm_false_true_true_true_false_true_false_scalar",
             include_str!(
                 r"../kernels/generated/sgemm_false_true_true_true_false_true_false_scalar.wgsl"
             ),
-        );
-        m.insert(
-            "sgemm_false_true_true_false_false_vec4",
-            include_str!(r"../kernels/generated/sgemm_false_true_true_false_false_vec4.wgsl"),
         );
         m.insert(
             "sgemm_true_false_false_false_true_false_false_scalar",
