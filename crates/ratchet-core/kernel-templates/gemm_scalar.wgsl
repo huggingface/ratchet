@@ -193,24 +193,24 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         workgroupBarrier();
     }
 
-    for (var innerRow = 0; innerRow < 4; innerRow++) {
-        for (var innerCol = 0; innerCol < 4; innerCol++) {
-            {% if BIAS %}
+    var val: f32;
+    {% for row in range(end=ROW_PER_THREAD) -%}
+        {%- for col in range(end=4) -%}
+            {%- if BIAS %}
                 {% if TRANS_OUT %}
-                    let val = acc[innerRow][innerCol] + bias[globalRow + innerRow];
+                    val = acc[{{ row }}][{{ col }}] + bias[globalRow + {{ row }}];
                 {% else %}
-                    let val = acc[innerRow][innerCol] + bias[globalCol + innerCol];
+                    val = acc[{{ row }}][{{ col }}] + bias[globalCol + {{ col }}];
                 {% endif %}
-            {% else %}
-                let val = acc[innerRow][innerCol];
-            {% endif %}
+            {%- else %}
+                val = acc[{{ row }}][{{ col }}];
+            {%- endif %}
 
-            {% if TRANS_OUT %}
-                mm_write(batch, globalCol + innerCol, globalRow + innerRow, val);
-            {% else %}
-                mm_write(batch, globalRow + innerRow, globalCol + innerCol, val);
-            {% endif %}
-
-        }
-    }
+            {%- if TRANS_OUT %}
+                mm_write(batch, globalCol + {{ col }}, globalRow + {{ row }}, val);
+            {%- else %}
+                mm_write(batch, globalRow + {{ row }}, globalCol + {{ col }}, val);
+            {%- endif %}
+        {%- endfor -%}
+    {%- endfor -%}
 } 

@@ -2,9 +2,11 @@
 name = "ratchet-models"
 version = "0.1.0"
 edition = "2021"
+resolver = "2"
 
 [features]
 ci = []
+pyo3 = []
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -47,6 +49,7 @@ tsify = "0.4.5"
 hf-hub.workspace = true
 
 [dev-dependencies]
+ratchet = { path = "../ratchet-core", features = ["pyo3"] }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 wasm-bindgen-test = "0.3.41"
