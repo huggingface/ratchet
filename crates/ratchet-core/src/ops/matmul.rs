@@ -376,18 +376,17 @@ impl GEMM {
         let has_bias = self.bias.is_some();
 
         let ROW_SIZE = 16;
-        let YT = 4;
+        let YT = 8;
 
-        let a_fit = spec.dim_a_outer() % ROW_SIZE == 0;
+        let a_fit = spec.lhs_shape()[1] % ROW_SIZE == 0;
 
-        //sgemv_16_4_false_scalar.wgsl
         format!(
             "{}_{}_{}_{}_{}_{}",
             kernel_stem,
             has_bias,
             ROW_SIZE,
             YT,
-            true,
+            a_fit,
             ke.as_str()
         )
     }
