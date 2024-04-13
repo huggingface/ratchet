@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 
-use derive_new::new;
 use encase::ShaderType;
 
 use crate::{
@@ -22,15 +21,22 @@ pub struct GEMMSpec {
     c_stack: usize,
     trans_a: bool,
     trans_b: bool,
+    trans_out: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
 }
 
 impl GEMMSpec {
-    //TODO: parameterize these
     pub const TILE_DIM: usize = 32;
     pub const ROW_PER_THREAD: usize = 4;
 
-    pub fn new(A: &Tensor, B: &Tensor, C: &Tensor, trans_a: bool, trans_b: bool) -> Self {
+    pub fn new(
+        A: &Tensor,
+        B: &Tensor,
+        C: &Tensor,
+        trans_a: bool,
+        trans_b: bool,
+        trans_out: bool,
+    ) -> Self {
         let mut a_shape = A.shape().clone();
         let mut b_shape = B.shape().clone();
         let mut c_shape = C.shape().clone();
@@ -92,12 +98,13 @@ impl GEMMSpec {
             c_stack,
             trans_a,
             trans_b,
+            trans_out,
             stack_shape,
         }
     }
 
     pub fn select_kernel_element(&self) -> KernelElement {
-        if self.trans_a || self.trans_b {
+        if self.trans_a || self.trans_b || self.trans_out {
             //We cannot support transposed with vectorized kernels
             return KernelElement::Scalar;
         }
@@ -206,10 +213,6 @@ impl GEMM {
         trans_rhs: bool,
         trans_out: bool,
     ) -> Self {
-        if !lhs.shape().is_vector() && trans_out {
-            panic!("Transposed output only supported for vector inputs");
-        }
-
         if !bias.as_ref().map_or(true, |b| b.shape().is_vector()) {
             panic!("Bias must be a vector: {:?}", bias);
         }
@@ -275,22 +278,22 @@ impl GEMM {
 
         let mut c_shape_final = c_broadcasted_prefix.clone();
         if trans_out {
-            c_broadcasted_prefix.push(n.clone());
-            c_broadcasted_prefix.push(m.clone());
+            c_broadcasted_prefix.push(n);
+            c_broadcasted_prefix.push(m);
             if !implicit_n {
-                c_shape_final.push(n.clone());
+                c_shape_final.push(n);
             }
             if !implicit_m {
-                c_shape_final.push(m.clone());
+                c_shape_final.push(m);
             }
         } else {
-            c_broadcasted_prefix.push(m.clone());
-            c_broadcasted_prefix.push(n.clone());
+            c_broadcasted_prefix.push(m);
+            c_broadcasted_prefix.push(n);
             if !implicit_m {
-                c_shape_final.push(m.clone());
+                c_shape_final.push(m);
             }
             if !implicit_n {
-                c_shape_final.push(n.clone());
+                c_shape_final.push(n);
             }
         }
 
@@ -298,7 +301,14 @@ impl GEMM {
     }
 
     pub fn compute_spec(&self, dst: &Tensor) -> GEMMSpec {
-        GEMMSpec::new(&self.lhs, &self.rhs, dst, self.trans_lhs, self.trans_rhs)
+        GEMMSpec::new(
+            &self.lhs,
+            &self.rhs,
+            dst,
+            self.trans_lhs,
+            self.trans_rhs,
+            self.trans_out,
+        )
     }
 
     pub fn gemm_kernel_key(&self, _: bool, dst: &Tensor) -> String {
@@ -322,7 +332,7 @@ impl GEMM {
         match ke {
             KernelElement::Scalar => {
                 format!(
-                    "{}_{}_{}_{}_{}_{}_{}_{}",
+                    "{}_{}_{}_{}_{}_{}_{}_{}_{}",
                     kernel_stem,
                     has_bias,
                     a_fit,
@@ -330,6 +340,7 @@ impl GEMM {
                     out_fit,
                     self.trans_lhs,
                     self.trans_rhs,
+                    self.trans_out,
                     ke.as_str()
                 )
             }
@@ -563,8 +574,10 @@ mod tests {
     fn ground_truth(
         a: &Tensor,
         b: &Tensor,
+        bias: Option<&Tensor>,
         trans_lhs: bool,
         trans_rhs: bool,
+        trans_out: bool,
     ) -> anyhow::Result<Tensor> {
         let a_op = if trans_lhs {
             "torch.permute(torch.from_numpy(a), [0, 2, 1])"
@@ -578,32 +591,79 @@ mod tests {
             "torch.from_numpy(b)"
         };
 
+        let inner = if bias.is_some() {
+            format!(
+                "torch.add(torch.matmul({}, {}), torch.from_numpy(bias))",
+                a_op, b_op
+            )
+        } else {
+            format!("torch.matmul({}, {})", a_op, b_op)
+        };
+
+        let result_op = if trans_out {
+            format!(
+                "np.ascontiguousarray(torch.permute({}, [0, 2, 1]).numpy())",
+                inner
+            )
+        } else {
+            format!("{}.numpy()", inner)
+        };
+
         let prg = format!(
             r#"
 import torch
-def matmul(a, b):
-    return torch.matmul({}, {}).numpy()"#,
-            a_op, b_op
+import numpy as np
+def matmul(a, b{}):
+    return {}"#,
+            if bias.is_some() { ", bias" } else { "" },
+            result_op
         );
 
-        run_py_prg(prg.to_string(), &[a, b], &[])
+        let args = if let Some(bias) = bias {
+            vec![a, b, bias]
+        } else {
+            vec![a, b]
+        };
+
+        run_py_prg(prg.to_string(), &args, &[])
+    }
+
+    #[derive(Arbitrary, Clone, Debug)]
+    enum TransKind {
+        LHS,
+        LHSAndOut,
+        RHS,
+        RHSAndOut,
+        Out,
+    }
+
+    impl From<TransKind> for (bool, bool, bool) {
+        fn from(val: TransKind) -> Self {
+            match val {
+                TransKind::LHS => (true, false, false),
+                TransKind::LHSAndOut => (true, false, true),
+                TransKind::RHS => (false, true, false),
+                TransKind::RHSAndOut => (false, true, true),
+                TransKind::Out => (false, false, true),
+            }
+        }
     }
 
     #[derive(Arbitrary, Debug)]
     struct SGEMMProblem {
         #[strategy(1..=3usize)]
         B: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         M: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         K: usize,
-        #[strategy(1..=512usize)]
+        #[strategy(1..=256usize)]
         N: usize,
-        trans_lhs: bool,
-        trans_rhs: bool,
+        has_bias: bool,
+        transpose: TransKind,
     }
 
-    #[proptest(cases = 32)]
+    #[proptest(cases = 64)]
     fn test_sgemm(prob: SGEMMProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let SGEMMProblem {
@@ -611,12 +671,12 @@ def matmul(a, b):
             M,
             K,
             N,
-            trans_lhs,
-            trans_rhs,
+            has_bias,
+            ref transpose,
         } = prob;
         println!(
-            "Running sgemm: B={} M={} N={} K={} trans_lhs={} trans_rhs={}",
-            B, M, N, K, trans_lhs, trans_rhs
+            "Running sgemm: B={} M={} N={} K={} has_bias={} transpose={:?}",
+            B, M, N, K, has_bias, transpose
         );
         run_matmul_trial(&device, prob).unwrap();
     }
@@ -628,9 +688,14 @@ def matmul(a, b):
             M,
             K,
             N,
-            trans_lhs,
-            trans_rhs,
+            mut has_bias,
+            ref transpose,
         } = prob;
+
+        let (trans_lhs, trans_rhs, trans_out) = transpose.clone().into();
+        if trans_out {
+            has_bias = false;
+        }
 
         let a_shape = if trans_lhs {
             shape![B, K, M]
@@ -644,34 +709,32 @@ def matmul(a, b):
             shape![B, K, N]
         };
 
+        let bias = if has_bias {
+            Some(Tensor::randn::<f32>(shape![N], cpu_device.clone()))
+        } else {
+            None
+        };
+        println!("A shape: {:?}", a_shape);
+        println!("B shape: {:?}", b_shape);
+        println!("Bias: {:?}", bias.as_ref().map(|b| b.shape()));
+
         let a = Tensor::randn::<f32>(a_shape, cpu_device.clone());
         let b = Tensor::randn::<f32>(b_shape, cpu_device.clone());
-        let ground = ground_truth(&a, &b, trans_lhs, trans_rhs)?;
+        let ground = ground_truth(&a, &b, bias.as_ref(), trans_lhs, trans_rhs, trans_out)?;
+        println!("Ground shape: {:?}", ground.shape());
 
         let a_gpu = a.to(device)?;
         let b_gpu = b.to(device)?;
-        let c_gpu = a_gpu.matmul(b_gpu, trans_lhs, trans_rhs)?.resolve()?;
+        let bias_gpu = bias.as_ref().map(|b| b.to(device)).transpose()?;
+        let c_gpu = a_gpu
+            .gemm(b_gpu, bias_gpu, trans_lhs, trans_rhs, trans_out)?
+            .resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
         println!("RATCHET SGEMM\n{:?}\n", d_gpu);
         println!("PYTORCH FP32:\n{:?}", ground);
         ground.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
-    }
-
-    #[test]
-    fn debug_sgemm() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let prob = SGEMMProblem {
-            B: 1,
-            M: 1500,
-            K: 384,
-            N: 384,
-            trans_lhs: false,
-            trans_rhs: true,
-        };
-        run_matmul_trial(&device, prob).unwrap();
     }
 
     fn qgemm_harness() -> anyhow::Result<(Tensor, Tensor)> {
@@ -684,7 +747,7 @@ def matmul(a, b):
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
         let (a, b) = qgemm_harness()?;
-        let ground = ground_truth(&a, &b, false, false)?;
+        let ground = ground_truth(&a, &b, None, false, false, false)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let bq = quantizer.sint8_quantize(b);
