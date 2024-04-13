@@ -41,7 +41,12 @@ impl Gemv {
 
                             let kernel_fname = format!(
                                 "{}_{}_{}_{}_{}_{}.wgsl",
-                                kernel_stem, bias, wgx, wgy, fit, ke
+                                kernel_stem,
+                                bias,
+                                wgx,
+                                wgy,
+                                fit,
+                                KernelElement::Scalar
                             );
                             let mut file = File::create(renderer.dest_path.join(kernel_fname))?;
                             file.write_all(rendered.as_bytes())?;

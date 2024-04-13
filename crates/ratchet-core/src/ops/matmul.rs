@@ -415,7 +415,7 @@ impl Operation for GEMM {
         )
         .unwrap();
         let c_strides = Strides::from(&c_shape);
-        Ok(StorageView::new(c_shape, self.lhs.dt(), c_strides))
+        Ok(StorageView::new(c_shape, self.rhs.dt(), c_strides))
     }
 }
 
@@ -432,7 +432,7 @@ impl OpGuards for GEMM {
     }
 
     fn check_dtypes(&self) {
-        let allowed_pairs = [(DType::F32, DType::F32), (DType::F32, DType::WQ8)];
+        let allowed_pairs = [(DType::F32, DType::F32), (DType::WQ8, DType::F32)];
         if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
             panic!(
                 "Failed to validate DTypes: {:?}, {:?}",
@@ -731,16 +731,11 @@ def matmul(a, b{}):
         Ok(())
     }
 
-    fn qgemm_harness() -> anyhow::Result<(Tensor, Tensor)> {
+    #[test]
+    fn test_qgemm() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
-        Ok((a, b))
-    }
-
-    #[test]
-    fn test_qgemm() -> anyhow::Result<()> {
-        let (a, b) = qgemm_harness()?;
         let ground = ground_truth(&a, &b, None, false, false, false)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
@@ -749,6 +744,29 @@ def matmul(a, b{}):
         let a_gpu = a.to(&device)?;
         let b_gpu = bq.to(&device)?;
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
+        let ours = c_gpu.to(&Device::CPU)?;
+
+        println!("RATCHET WQ8\n{:?}\n", ours);
+        println!("PYTORCH FP32:\n{:?}", ground);
+
+        ground.all_close(&ours, 1e1, 1e-1)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_qgemv() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![1, 1024, 1024], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 1, 1024], cpu_device.clone());
+        let ground = ground_truth(&a, &b, None, false, true, true)?;
+
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let aq = quantizer.sint8_quantize(a);
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let a_gpu = aq.to(&device)?;
+        let b_gpu = b.to(&device)?;
+        let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET WQ8\n{:?}\n", ours);
