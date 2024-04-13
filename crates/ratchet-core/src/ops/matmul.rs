@@ -346,6 +346,52 @@ impl GEMM {
             }
         }
     }
+
+    pub fn gemv_kernel_key(&self, _: bool, dst: &Tensor) -> String {
+        let spec = self.compute_spec(dst);
+
+        let (a_fit, b_fit, out_fit) = spec.tile_fit();
+        let ke = spec.select_kernel_element();
+
+        if (self.rhs.dt() == DType::WQ8) && (self.trans_lhs || self.trans_rhs) {
+            panic!("Transposed WQ8 not supported");
+        }
+
+        let kernel_stem = if self.rhs.dt() == DType::WQ8 {
+            "qgemm"
+        } else {
+            "sgemm"
+        };
+
+        let has_bias = self.bias.is_some();
+
+        match ke {
+            KernelElement::Scalar => {
+                format!(
+                    "{}_{}_{}_{}_{}_{}_{}_{}",
+                    kernel_stem,
+                    has_bias,
+                    a_fit,
+                    b_fit,
+                    out_fit,
+                    self.trans_lhs,
+                    self.trans_rhs,
+                    ke.as_str()
+                )
+            }
+            _ => {
+                format!(
+                    "{}_{}_{}_{}_{}_{}",
+                    kernel_stem,
+                    has_bias,
+                    a_fit,
+                    b_fit,
+                    out_fit,
+                    ke.as_str()
+                )
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
