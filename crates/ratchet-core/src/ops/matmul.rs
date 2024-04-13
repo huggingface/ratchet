@@ -104,8 +104,9 @@ impl GEMMSpec {
     }
 
     pub fn select_kernel_element(&self) -> KernelElement {
-        if self.trans_a || self.trans_b || self.trans_out {
+        if self.trans_a || self.trans_b || self.trans_out || self.b_shape.is_vector() {
             //We cannot support transposed with vectorized kernels
+            //If GEMV we use Scalar
             return KernelElement::Scalar;
         }
 
@@ -128,7 +129,7 @@ impl GEMMSpec {
         &self.a_shape
     }
 
-    pub fn b_shape(&self) -> &Shape {
+    pub fn rhs_shape(&self) -> &Shape {
         &self.b_shape
     }
 
@@ -139,7 +140,6 @@ impl GEMMSpec {
     pub fn dim_a_outer(&self) -> usize {
         self.c_shape[0]
     }
-
     pub fn dim_b_outer(&self) -> usize {
         self.c_shape[1]
     }
@@ -361,7 +361,6 @@ impl GEMM {
     pub fn gemv_kernel_key(&self, _: bool, dst: &Tensor) -> String {
         let spec = self.compute_spec(dst);
 
-        let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
         if (self.rhs.dt() == DType::WQ8) && (self.trans_lhs || self.trans_rhs) {
@@ -369,39 +368,28 @@ impl GEMM {
         }
 
         let kernel_stem = if self.rhs.dt() == DType::WQ8 {
-            "qgemm"
+            "qgemv"
         } else {
-            "sgemm"
+            "sgemv"
         };
 
         let has_bias = self.bias.is_some();
 
-        match ke {
-            KernelElement::Scalar => {
-                format!(
-                    "{}_{}_{}_{}_{}_{}_{}_{}",
-                    kernel_stem,
-                    has_bias,
-                    a_fit,
-                    b_fit,
-                    out_fit,
-                    self.trans_lhs,
-                    self.trans_rhs,
-                    ke.as_str()
-                )
-            }
-            _ => {
-                format!(
-                    "{}_{}_{}_{}_{}_{}",
-                    kernel_stem,
-                    has_bias,
-                    a_fit,
-                    b_fit,
-                    out_fit,
-                    ke.as_str()
-                )
-            }
-        }
+        let ROW_SIZE = 16;
+        let YT = 4;
+
+        let a_fit = spec.dim_a_outer() % ROW_SIZE == 0;
+
+        //sgemv_16_4_false_scalar.wgsl
+        format!(
+            "{}_{}_{}_{}_{}_{}",
+            kernel_stem,
+            has_bias,
+            ROW_SIZE,
+            YT,
+            true,
+            ke.as_str()
+        )
     }
 }
 
@@ -462,11 +450,16 @@ impl OpGuards for GEMM {
 
 impl MetaOperation for GEMM {
     fn kernel_name(&self) -> String {
-        "MatMul".to_string()
+        "GEMM".to_string()
     }
 
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        self.gemm_kernel_key(inplace, dst)
+        let kk = if self.rhs.shape().is_vector() {
+            self.gemv_kernel_key(inplace, dst)
+        } else {
+            self.gemm_kernel_key(inplace, dst)
+        };
+        kk
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -485,26 +478,32 @@ impl MetaOperation for GEMM {
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let spec = self.compute_spec(dst);
 
-        let TILE_DIM = 32;
-        let a_shape = spec.lhs_shape();
-        let b_shape = spec.b_shape();
-
-        let dimA = if self.trans_lhs {
-            a_shape[1]
+        if spec.rhs_shape().is_vector() {
+            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], 16);
+            let wgc = wgc![group_x as _, 1, spec.stacks() as _];
+            Ok(wgc)
         } else {
-            a_shape[0]
-        };
+            let TILE_DIM = 32;
+            let a_shape = spec.lhs_shape();
+            let b_shape = spec.rhs_shape();
 
-        let dimB = if self.trans_rhs {
-            b_shape[0]
-        } else {
-            b_shape[1]
-        };
+            let dimA = if self.trans_lhs {
+                a_shape[1]
+            } else {
+                a_shape[0]
+            };
 
-        let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
-        let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
-        let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
-        Ok(workgroup_count)
+            let dimB = if self.trans_rhs {
+                b_shape[0]
+            } else {
+                b_shape[1]
+            };
+
+            let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
+            let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
+            let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+            Ok(workgroup_count)
+        }
     }
 
     fn storage_bind_group_layout(

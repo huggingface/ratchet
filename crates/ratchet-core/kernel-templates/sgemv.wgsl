@@ -3,8 +3,14 @@ var<private> globalId: vec3<u32>;
 var<private> workgroupId: vec3<u32>;
 
 @group(0) @binding(0) var<storage, read> A: array<f32>;
-@group(0) @binding(1) var<storage, read> X: array<f32>;
-@group(0) @binding(2) var<storage, read_write> result: array<f32>;
+{% if BIAS %}
+    @group(0) @binding(1) var<storage, read> X: array<f32>;
+    @group(0) @binding(2) var<storage, read> bias: array<f32>;
+    @group(0) @binding(3) var<storage, read_write> result: array<f32>;
+{% else %}
+    @group(0) @binding(1) var<storage, read> X: array<f32>;
+    @group(0) @binding(2) var<storage, read_write> result: array<f32>;
+{% endif %}
 @group(1) @binding(0) var<uniform> metadata: Meta;
 
 struct Meta {
@@ -64,6 +70,10 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     }
 
     if (jj == 0u) {
-        result[outOffset + row] = work[ii];
+        {% if BIAS %}
+            result[outOffset + row] = work[ii] + bias[row];
+        {% else %}
+            result[outOffset + row] = work[ii];
+        {% endif %}
     }
 }
