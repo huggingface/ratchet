@@ -32,8 +32,8 @@ impl DecoderLayer {
         let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
 
         let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?), true),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?), true),
+            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
+            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?)),
         );
         Ok(Self { ln, self_attn, mlp })
     }
@@ -131,7 +131,7 @@ impl Phi2 {
         };
 
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
-        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?), true);
+        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
 
         Ok(Self {
             embedding,

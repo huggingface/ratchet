@@ -16,7 +16,6 @@ impl Converter {
         dst_quant: Quantization,
         to_quant: HashSet<&str>,
         to_pad: HashMap<&str, Vec<[usize; 2]>>,
-        to_transpose: HashSet<&str>,
     ) -> anyhow::Result<()> {
         let mut reader = std::io::BufReader::new(std::fs::File::open(src_path).unwrap());
         let src = M::load_ggml(&mut reader)?;
@@ -36,24 +35,11 @@ impl Converter {
                 loaded
             };
 
-            let maybe_transposed = if to_transpose.iter().any(|suffix| name.ends_with(suffix)) {
-                log::info!("Transposing {}", name);
-                Tensor::from(
-                    maybe_padded
-                        .into_ndarray::<f32>()
-                        .t()
-                        .as_standard_layout()
-                        .to_owned(),
-                )
-            } else {
-                maybe_padded
-            };
-
             let to_write = if to_quant.iter().any(|suffix| name.ends_with(suffix)) {
                 log::info!("Quantizing {}", name);
-                quantizer.quantize(maybe_transposed)
+                quantizer.quantize(maybe_padded)
             } else {
-                maybe_transposed
+                maybe_padded
             };
             total_write += M::write_tensor(name, to_write, &mut writer)?;
         }

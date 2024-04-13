@@ -194,11 +194,14 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         workgroupBarrier();
     }
 
+    var val: vec4<f32>;
     {% for innerRow in range(end=ROW_PER_THREAD) %}
-        {% if BIAS %}
-            mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}] + bias[globalCol / 4]);
+        {% if BIAS -%}
+            val = acc[{{ innerRow }}] + bias[globalCol / 4];
         {% else %}
-            mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
+            val = acc[{{ innerRow }}];
         {% endif %}
+
+        mm_write(batch, globalRow + {{ innerRow }}, globalCol, val);
     {% endfor %}
   }

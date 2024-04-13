@@ -70,7 +70,7 @@ impl Shape {
     pub fn is_vector(&self) -> bool {
         let mut shape = self.clone();
         shape.squeeze();
-        shape.rank() == 1
+        shape.rank() <= 1
     }
 
     #[inline]
