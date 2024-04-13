@@ -11,7 +11,7 @@ use crate::{
     rvec, RVec,
 };
 
-use self::gguf::{GGUFSize, Q4K, Q6K};
+use self::gguf::{GGUFSize, Q4K, Q6K, Q8_0};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -48,6 +48,7 @@ impl DType {
             DType::WQ8 => 4,
             DType::GGUF(gguf::GGUFDType::Q4K(_)) => Q4K::TYPE_SIZE_WEBGPU,
             DType::GGUF(gguf::GGUFDType::Q6K(_)) => Q6K::TYPE_SIZE_WEBGPU,
+            DType::GGUF(gguf::GGUFDType::Q8_0(_)) => Q8_0::TYPE_SIZE_WEBGPU,
         }
     }
 

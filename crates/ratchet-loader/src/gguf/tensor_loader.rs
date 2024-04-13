@@ -4,12 +4,11 @@ use anyhow::anyhow;
 use ratchet::gguf::Align;
 use ratchet::{prelude::shape, Device, Tensor};
 
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Cursor, Seek, SeekFrom, Write};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io::{Cursor, Seek, SeekFrom};
 
 use super::ggml::GgmlDType;
 use super::utils::*;
-use crate::gguf::utils::WriteHalf;
 use itertools::Itertools;
 use ratchet::gguf::{K_SCALE_SIZE, QK_K};
 use ratchet::DType;
@@ -23,12 +22,12 @@ pub trait TensorLoader: Sized + Clone {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Tensor, anyhow::Error>;
+    ) -> anyhow::Result<Tensor>;
 
     fn write<W: std::io::Seek + std::io::Write>(
         tensor: Tensor,
         writer: &mut W,
-    ) -> std::prelude::v1::Result<(), anyhow::Error>;
+    ) -> anyhow::Result<()>;
 }
 
 impl TensorLoader for gguf::Q4K {
@@ -38,7 +37,7 @@ impl TensorLoader for gguf::Q4K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
+    ) -> anyhow::Result<Tensor> {
         let mut ds = vec![0f32; tensor_blocks];
         let mut dmins = vec![0f32; tensor_blocks];
         let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
