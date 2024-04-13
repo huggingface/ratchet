@@ -12,11 +12,15 @@ impl Gemv {
         let FIT = [false, true];
         let BIAS = [false, true];
         let QUANT = [false, true];
-        let ke = KernelElement::Scalar;
+        let mut ke = KernelElement::Scalar;
 
         let path = renderer.templates_path.join("gemv.wgsl");
         renderer.tera.add_template_file(path, Some("gemv"))?;
         for quant in QUANT.iter() {
+            if *quant {
+                ke = KernelElement::Vec4;
+            }
+
             for wgx in WORKGROUP_X.iter() {
                 for wgy in WORKGROUP_Y.iter() {
                     for fit in FIT.iter() {
