@@ -18,7 +18,13 @@ git clone https://github.com/FL33TW00D/ratchet.git
 cd ratchet/
 ```
 
-### Step 2: Install `just` Command Runner
+### Option 1: Using pyenv
+
+#### Step 1: Install `pyenv`
+
+First, make sure to install [pyenv](https://github.com/pyenv/pyenv#getting-pyenv). `pyenv` lets you manage multiple versions of Python. Please make sure you follow the install guide and source the correct environment variables.
+
+#### Step 2: Install `just` Command Runner
 
 Before installing PyO3, ensure you have `just`, a command runner that simplifies running project-specific commands, installed. If `just` is not already installed on your system, you can install it using Cargo, Rust's package manager:
 
@@ -28,102 +34,43 @@ cargo install just
 
 This step assumes you have Rust and Cargo already installed on your system. If not, please refer to the Rust installation guide to set up Rust and Cargo.
 
+#### Step 3: Install python 3.10.6
 
+Use `just` to install `python3.10.6` and enable it as the local python version for the project.
 
-### Step 3: Setup Python environment
-
-#### Option 1: Using pyenv
-
-##### Step 1: Install PyO3
-
-Use `just` to install PyO3, ensuring Rust can interface with Python:
+> **NOTE** : `PyO3`\*\* needs Python to be built with `enable-shared` flag.
 
 ```sh
 just install-pyo3
 ```
 
-##### Step 2: Configure Python Environment for PyO3
+#### Step 4: Create virtual environment (Optional)
 
-Add the path to the Python interpreter to your shell's configuration file. This path should point to the Python version you plan to use with PyO3.
-
-For `zsh` users, edit `~/.zshrc`:
+This step is optional but _highly_ recommended. You should create and source a virtual environment using your favorite tool (`uv`, `venv`, `virtualenv`...). We'll use the built-in `venv` module:
 
 ```sh
-nano ~/.zshrc
+python -m venv venv
+source venv/bin/activate
 ```
 
-For `bash` users, edit `~/.bashrc`:
+#### Step 5: Install python dependencies
+
+Install the Python dependencies recursively:
 
 ```sh
-nano ~/.bashrc
+python -m pip install -r requirements.txt
 ```
 
-Add the following line at the end of the file, replacing `<your-path>` with the actual path to your Python interpreter (e.g., `~/.pyenv/versions/3.10.6/bin/python`):
+##### Step 6: Configure Python Environment for PyO3
+
+PyO3 uses a build script to determine the Python version and set the correct linker arguments. To override the Python interpreter to the virtual environment, run the following:
 
 ```sh
-export PYO3_PYTHON=<your-path>
-```
-
-After saving the file, apply the changes:
-
-- For `zsh`:
-  ```sh
-  source ~/.zshrc
-  ```
-- For `bash`:
-  ```sh
-  source ~/.bashrc
-  ```
-
-Verify the environment variable is set correctly:
-
-```sh
+export PYO3_PYTHON=$(which python)
 echo $PYO3_PYTHON
 ```
 
-##### Step 3: Install `pyenv` and `pyenv-virtualenv`
-
-If `pyenv` is not installed, you can install it along with `pyenv-virtualenv` to manage Python versions more effectively. This step is optional but recommended.
-
-```sh
-brew install pyenv
-git clone https://github.com/pyenv/pyenv-virtualenv.git $(pyenv root)/plugins/pyenv-virtualenv
-```
-
-Then, add the following lines to your shell's configuration file (`~/.zshrc` for Zsh or `~/.bashrc` for Bash):
-
-```sh
-export PATH="$HOME/.pyenv/bin:$PATH"
-eval "$(pyenv init --path)"
-eval "$(pyenv virtualenv-init -)"
-```
-
-And apply the changes:
-
-- For `zsh`:
-  ```sh
-  source ~/.zshrc
-  ```
-- For `bash`:
-  ```sh
-  source ~/.bashrc
-
-##### Step 4: Set Local Python Version and Install Dependencies
-
-Set the local Python version to 3.10.6 (or whichever version given by PyO3) and verify it:
-
-```sh
-pyenv local 3.10.6
-python --version
-```
-
-Install the required Python packages specified in `requirements.txt`:
-
-```sh
-pip install -r requirements.txt
-```
-
-#### Option 2: Using conda
+### Option 2: Using conda
 
 ##### Step 1: Create a new conda environment
 
@@ -140,6 +87,7 @@ pip install -r requirements.txt
 ##### Step 3: Configure Cargo
 
 Edit `<ROOT>/.cargo/config.toml` to add the linker config:
+
 ```
 # .cargo/config.toml
 [build]
@@ -150,15 +98,17 @@ rustflags = [
     "link-args=-Wl,-rpath,<PATH_TO_CONDA>/envs/ratchet/lib/",
 ]
 ```
-##### Step 4: Test config
+
+### Step 2: Test config
+
+We'll first verify that your pyo3 config is correctly setup:
 
 ```
-# set pyo3 to print the config
-export PYO3_PRINT_CONFIG=1
-cargo build
+PYO3_PRINT_CONFIG=1 cargo build
 ```
 
 Building the project will throw an error(!) and print the config:
+
 ```
 (exit status: 101)
   --- stdout
@@ -170,25 +120,27 @@ Building the project will throw an error(!) and print the config:
   shared=true
   abi3=false
   lib_name=python3.10
-  lib_dir=<CONDA_PATH>/envs/ratchet/lib
-  executable=<CONDA_PATH>/envs/ratchet/bin/python
+  lib_dir=<LOCAL PYTHON LIB>
+  executable=<LOCAL PYTHON EXECUTABLE PATH>
   pointer_width=64
   build_flags=
   suppress_build_script_link_lines=false
 ```
-If that looks like this, you are good to go.
 
-Make sure you unset the `PYO3_PRINT_CONFIG`:
-```
-unset PYO3_PRINT_CONFIG`
-```
+If that looks like this, you are good to go 🎉
 
-### Step 4: Run Tests
+### Step 3: Run Tests
 
 Finally, run the tests for the package using Cargo:
 
 ```sh
 cargo test
+```
+
+To run the `PyO3` tests, add the `pyo3` flag:
+
+```sh
+cargo test --features pyo3
 ```
 
 ### Step 5: Run WASM Tests

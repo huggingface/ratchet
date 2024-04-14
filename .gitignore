@@ -23,3 +23,7 @@ fixtures/
 **/*.bin
 ffmpeg-wasm
 models/**
+
+# Python local env
+venv/
+.venv/
