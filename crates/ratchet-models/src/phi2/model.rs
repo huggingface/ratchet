@@ -207,6 +207,7 @@ def ground():
         let api = Api::new().unwrap();
         let model_repo = api.model("FL33TW00D-HF/phi2".to_string());
         let model_path = model_repo.get("phi2-q8_0.gguf").unwrap();
+        println!("MODEL PATH: {}", model_path.display());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;

@@ -104,8 +104,9 @@ impl GEMMSpec {
     }
 
     pub fn select_kernel_element(&self) -> KernelElement {
-        if self.trans_a || self.trans_b || self.trans_out {
+        if self.trans_a || self.trans_b || self.trans_out || self.b_shape.is_vector() {
             //We cannot support transposed with vectorized kernels
+            //If GEMV we use Scalar
             return KernelElement::Scalar;
         }
 
@@ -128,7 +129,7 @@ impl GEMMSpec {
         &self.a_shape
     }
 
-    pub fn b_shape(&self) -> &Shape {
+    pub fn rhs_shape(&self) -> &Shape {
         &self.b_shape
     }
 
@@ -139,7 +140,6 @@ impl GEMMSpec {
     pub fn dim_a_outer(&self) -> usize {
         self.c_shape[0]
     }
-
     pub fn dim_b_outer(&self) -> usize {
         self.c_shape[1]
     }
@@ -317,11 +317,11 @@ impl GEMM {
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
-        if (self.rhs.dt() == DType::WQ8) && (self.trans_lhs || self.trans_rhs) {
+        if (self.rhs.dt() == DType::WQ8) && self.trans_rhs {
             panic!("Transposed WQ8 not supported");
         }
 
-        let kernel_stem = if self.rhs.dt() == DType::WQ8 {
+        let kernel_stem = if self.lhs.dt() == DType::WQ8 {
             "qgemm"
         } else {
             "sgemm"
@@ -357,6 +357,35 @@ impl GEMM {
             }
         }
     }
+
+    pub fn gemv_kernel_key(&self, _: bool, dst: &Tensor) -> String {
+        let spec = self.compute_spec(dst);
+
+        let ke = spec.select_kernel_element();
+
+        let kernel_stem = if self.lhs.dt() == DType::WQ8 {
+            "qgemv"
+        } else {
+            "sgemv"
+        };
+
+        let has_bias = self.bias.is_some();
+
+        let ROW_SIZE = 16;
+        let YT = 8;
+
+        let a_fit = spec.lhs_shape()[1] % ROW_SIZE == 0;
+
+        format!(
+            "{}_{}_{}_{}_{}_{}",
+            kernel_stem,
+            has_bias,
+            ROW_SIZE,
+            YT,
+            a_fit,
+            ke.as_str()
+        )
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -386,7 +415,7 @@ impl Operation for GEMM {
         )
         .unwrap();
         let c_strides = Strides::from(&c_shape);
-        Ok(StorageView::new(c_shape, self.lhs.dt(), c_strides))
+        Ok(StorageView::new(c_shape, self.rhs.dt(), c_strides))
     }
 }
 
@@ -403,7 +432,7 @@ impl OpGuards for GEMM {
     }
 
     fn check_dtypes(&self) {
-        let allowed_pairs = [(DType::F32, DType::F32), (DType::F32, DType::WQ8)];
+        let allowed_pairs = [(DType::F32, DType::F32), (DType::WQ8, DType::F32)];
         if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
             panic!(
                 "Failed to validate DTypes: {:?}, {:?}",
@@ -416,11 +445,16 @@ impl OpGuards for GEMM {
 
 impl MetaOperation for GEMM {
     fn kernel_name(&self) -> String {
-        "MatMul".to_string()
+        "GEMM".to_string()
     }
 
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        self.gemm_kernel_key(inplace, dst)
+        let kk = if self.rhs.shape().is_vector() {
+            self.gemv_kernel_key(inplace, dst)
+        } else {
+            self.gemm_kernel_key(inplace, dst)
+        };
+        kk
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -439,26 +473,32 @@ impl MetaOperation for GEMM {
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let spec = self.compute_spec(dst);
 
-        let TILE_DIM = 32;
-        let a_shape = spec.lhs_shape();
-        let b_shape = spec.b_shape();
-
-        let dimA = if self.trans_lhs {
-            a_shape[1]
+        if spec.rhs_shape().is_vector() {
+            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], 16);
+            let wgc = wgc![group_x as _, 1, spec.stacks() as _];
+            Ok(wgc)
         } else {
-            a_shape[0]
-        };
+            let TILE_DIM = 32;
+            let a_shape = spec.lhs_shape();
+            let b_shape = spec.rhs_shape();
 
-        let dimB = if self.trans_rhs {
-            b_shape[0]
-        } else {
-            b_shape[1]
-        };
+            let dimA = if self.trans_lhs {
+                a_shape[1]
+            } else {
+                a_shape[0]
+            };
 
-        let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
-        let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
-        let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
-        Ok(workgroup_count)
+            let dimB = if self.trans_rhs {
+                b_shape[0]
+            } else {
+                b_shape[1]
+            };
+
+            let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
+            let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
+            let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+            Ok(workgroup_count)
+        }
     }
 
     fn storage_bind_group_layout(
@@ -469,8 +509,8 @@ impl MetaOperation for GEMM {
         let layout = match (A.dt(), B.dt(), bias.is_some()) {
             (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
             (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
-            (DType::F32, DType::WQ8, false) => BindGroupLayoutDescriptor::ternary(),
-            (DType::F32, DType::WQ8, true) => BindGroupLayoutDescriptor::nthary(4),
+            (DType::WQ8, DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::WQ8, DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
             _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
         };
         Ok(layout)
@@ -691,24 +731,42 @@ def matmul(a, b{}):
         Ok(())
     }
 
-    fn qgemm_harness() -> anyhow::Result<(Tensor, Tensor)> {
+    #[test]
+    fn test_qgemm() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
-        Ok((a, b))
-    }
-
-    #[test]
-    fn test_qgemm() -> anyhow::Result<()> {
-        let (a, b) = qgemm_harness()?;
         let ground = ground_truth(&a, &b, None, false, false, false)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
-        let bq = quantizer.sint8_quantize(b);
+        let aq = quantizer.sint8_quantize(a);
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a_gpu = a.to(&device)?;
-        let b_gpu = bq.to(&device)?;
+        let a_gpu = aq.to(&device)?;
+        let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
+        let ours = c_gpu.to(&Device::CPU)?;
+
+        println!("RATCHET WQ8\n{:?}\n", ours);
+        println!("PYTORCH FP32:\n{:?}", ground);
+
+        ground.all_close(&ours, 1e1, 1e-1)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_qgemv() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![1, 1024, 1024], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 1, 1024], cpu_device.clone());
+        let ground = ground_truth(&a, &b, None, false, true, true)?;
+
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let aq = quantizer.sint8_quantize(a);
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let a_gpu = aq.to(&device)?;
+        let b_gpu = b.to(&device)?;
+        let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET WQ8\n{:?}\n", ours);
