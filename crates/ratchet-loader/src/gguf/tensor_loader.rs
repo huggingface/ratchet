@@ -1,14 +1,15 @@
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/k_quants.rs
 
 use anyhow::anyhow;
-use ratchet::gguf::{Align, Q8_0};
+use ratchet::gguf::Align;
 use ratchet::{prelude::shape, Device, Tensor};
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Cursor, Seek, SeekFrom};
+use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io::{Cursor, Seek, SeekFrom, Write};
 
 use super::ggml::GgmlDType;
 use super::utils::*;
+use crate::gguf::utils::WriteHalf;
 use itertools::Itertools;
 use ratchet::gguf::{K_SCALE_SIZE, QK_K};
 use ratchet::DType;
@@ -22,12 +23,12 @@ pub trait TensorLoader: Sized + Clone {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> anyhow::Result<Tensor>;
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error>;
 
     fn write<W: std::io::Seek + std::io::Write>(
         tensor: Tensor,
         writer: &mut W,
-    ) -> anyhow::Result<()>;
+    ) -> std::prelude::v1::Result<(), anyhow::Error>;
 }
 
 impl TensorLoader for gguf::Q4K {
@@ -37,7 +38,7 @@ impl TensorLoader for gguf::Q4K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> anyhow::Result<Tensor> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         let mut ds = vec![0f32; tensor_blocks];
         let mut dmins = vec![0f32; tensor_blocks];
         let mut scales = vec![0u8; tensor_blocks * K_SCALE_SIZE];
@@ -93,7 +94,7 @@ impl TensorLoader for gguf::Q4K {
     fn write<W: std::io::Seek + std::io::Write>(
         tensor: Tensor,
         writer: &mut W,
-    ) -> anyhow::Result<()> {
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
         match tensor.dt() {
             DType::GGUF(GGUFDType::Q4K(_)) => Ok(()),
             otherwise => Err(anyhow!(
@@ -162,7 +163,7 @@ impl TensorLoader for gguf::Q6K {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> anyhow::Result<Tensor> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         let mut qls = vec![0u8; tensor_blocks * QK_K / 2];
         let mut qls_cursor = Cursor::new(&mut qls);
 
@@ -212,7 +213,10 @@ impl TensorLoader for gguf::Q6K {
         Ok(inner)
     }
 
-    fn write<R: std::io::Write>(tensor: Tensor, writer: &mut R) -> anyhow::Result<()> {
+    fn write<R: std::io::Write>(
+        tensor: Tensor,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
         match tensor.dt() {
             DType::GGUF(GGUFDType::Q6K(_)) => Ok(()),
             otherwise => Err(anyhow!(
@@ -270,25 +274,6 @@ impl TensorLoader for gguf::Q6K {
     }
 }
 
-impl TensorLoader for Q8_0 {
-    const GGML_DTYPE: GgmlDType = GgmlDType::Q8_0;
-
-    fn read<R: std::io::Seek + std::io::Read>(
-        tensor_blocks: usize,
-        reader: &mut R,
-        device: &Device,
-    ) -> anyhow::Result<Tensor> {
-        todo!()
-    }
-
-    fn write<W: std::io::Seek + std::io::Write>(
-        tensor: Tensor,
-        writer: &mut W,
-    ) -> anyhow::Result<()> {
-        todo!()
-    }
-}
-
 impl TensorLoader for f32 {
     const GGML_DTYPE: GgmlDType = GgmlDType::F32;
 
@@ -296,7 +281,7 @@ impl TensorLoader for f32 {
         tensor_blocks: usize,
         reader: &mut R,
         device: &Device,
-    ) -> anyhow::Result<Tensor> {
+    ) -> std::prelude::v1::Result<Tensor, anyhow::Error> {
         let mut data = vec![0f32; tensor_blocks];
         data.align_standard();
         for _idx in 0..tensor_blocks {
@@ -306,7 +291,10 @@ impl TensorLoader for f32 {
         let tensor = Tensor::from_data(data, shape![tensor_blocks], device.clone());
         Ok(tensor)
     }
-    fn write<R: std::io::Write>(tensor: Tensor, writer: &mut R) -> anyhow::Result<()> {
+    fn write<R: std::io::Write>(
+        tensor: Tensor,
+        writer: &mut R,
+    ) -> std::prelude::v1::Result<(), anyhow::Error> {
         let tensor_data = tensor.to_vec::<f32>()?;
         let tensor_blocks = tensor
             .shape()
