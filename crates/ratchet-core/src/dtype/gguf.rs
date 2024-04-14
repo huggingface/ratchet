@@ -5,8 +5,15 @@ use crate::{rvec, BufferSegment, RVec, Segments};
 pub const QK_K: usize = 256;
 pub const K_SCALE_SIZE: usize = 12;
 
+pub const QK4_0: usize = 32;
+pub const QK4_1: usize = 32;
+pub const QK5_0: usize = 32;
+pub const QK5_1: usize = 32;
+pub const QK8_0: usize = 32;
+pub const QK8_1: usize = 32;
+
 pub trait GGUFSize {
-    const BLCK_SIZE: usize;
+    const BLCK_NUMEL: usize;
     const TYPE_SIZE: usize;
     const TYPE_SIZE_WEBGPU: usize;
 }
@@ -15,7 +22,7 @@ pub trait GGUFSize {
 pub struct Q4K;
 
 impl GGUFSize for Q4K {
-    const BLCK_SIZE: usize = QK_K;
+    const BLCK_NUMEL: usize = QK_K;
     const TYPE_SIZE: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 2;
     const TYPE_SIZE_WEBGPU: usize = QK_K / 2 + K_SCALE_SIZE + 2 * 4;
 }
@@ -46,7 +53,7 @@ impl Segments for Q4K {
 pub struct Q6K;
 
 impl GGUFSize for Q6K {
-    const BLCK_SIZE: usize = QK_K;
+    const BLCK_NUMEL: usize = QK_K;
     const TYPE_SIZE: usize = QK_K / 2 + QK_K / 4 + QK_K / 16 + 4;
     const TYPE_SIZE_WEBGPU: usize = QK_K / 2 + QK_K / 4 + QK_K / 16 + 4;
 }
@@ -74,7 +81,7 @@ impl Segments for Q6K {
 }
 
 impl GGUFSize for f32 {
-    const BLCK_SIZE: usize = 1;
+    const BLCK_NUMEL: usize = 1;
     const TYPE_SIZE: usize = 4;
     const TYPE_SIZE_WEBGPU: usize = 4;
 }
