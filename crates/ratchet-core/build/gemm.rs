@@ -13,20 +13,20 @@ impl Gemm {
         let FIT_A_OUTER = [false, true];
         let FIT_B_OUTER = [false, true];
         let FIT_INNER = [false, true];
-        let QUANTIZED_B = [false, true];
+        let QUANT = [false, true];
         let BIAS = [false, true];
         let ke = KernelElement::Vec4;
 
         let path = renderer.templates_path.join("gemm_vectorized.wgsl");
         renderer.tera.add_template_file(path, Some("gemm"))?;
         for bias in BIAS.iter() {
-            for quantized in QUANTIZED_B.iter() {
+            for quant in QUANT.iter() {
                 for a_fit in FIT_A_OUTER.iter() {
                     for b_fit in FIT_B_OUTER.iter() {
                         for inner_fit in FIT_INNER.iter() {
                             let mut context = Context::new();
                             context.insert("BIAS", &bias);
-                            context.insert("QUANTIZED_B", &quantized);
+                            context.insert("QUANT", &quant);
                             context.insert("FIT_A_OUTER", &a_fit);
                             context.insert("FIT_B_OUTER", &b_fit);
                             context.insert("FIT_INNER", &inner_fit);
@@ -37,7 +37,7 @@ impl Gemm {
 
                             let rendered = renderer.tera.render("gemm", &context)?;
 
-                            let kernel_stem = if *quantized { "qgemm" } else { "sgemm" };
+                            let kernel_stem = if *quant { "qgemm" } else { "sgemm" };
 
                             let kernel_fname = format!(
                                 "{}_{}_{}_{}_{}_{}.wgsl",

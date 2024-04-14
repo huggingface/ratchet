@@ -317,11 +317,11 @@ impl GEMM {
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
-        if (self.lhs.dt() == DType::WQ8) && (self.trans_lhs || self.trans_rhs) {
+        if (self.rhs.dt() == DType::WQ8) && self.trans_rhs {
             panic!("Transposed WQ8 not supported");
         }
 
-        let kernel_stem = if self.rhs.dt() == DType::WQ8 {
+        let kernel_stem = if self.lhs.dt() == DType::WQ8 {
             "qgemm"
         } else {
             "sgemm"
@@ -739,10 +739,10 @@ def matmul(a, b{}):
         let ground = ground_truth(&a, &b, None, false, false, false)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
-        let bq = quantizer.sint8_quantize(b);
+        let aq = quantizer.sint8_quantize(a);
         let device = Device::request_device(DeviceRequest::GPU)?;
-        let a_gpu = a.to(&device)?;
-        let b_gpu = bq.to(&device)?;
+        let a_gpu = aq.to(&device)?;
+        let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
