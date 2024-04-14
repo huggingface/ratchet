@@ -1,7 +1,11 @@
 use half::f16;
 use ratchet::{DType, Device, Shape, Tensor};
 
-use super::ggml::GgmlDType;
+use crate::{
+    gguf::tensor_loader::Padding,
+    k_quants::{BlockQ8_0, GgmlType, QK8_0},
+};
+use anyhow::Context;
 
 /// # Transcoder
 /// Transcode GGML quantized types into Ratchet quantized types.
@@ -10,23 +14,41 @@ use super::ggml::GgmlDType;
 pub struct GGTranscoder {}
 
 impl GGTranscoder {
-    pub fn transcode(
-        src_dtype: GgmlDType,
-        dst_dtype: DType,
-        raw_data: &[u8],
+    pub fn transcode<G: GgmlType + Send + Sync + 'static>(
+        data: &[G],
+        n_blocks: usize,
         shape: Shape,
         device: &Device,
     ) -> anyhow::Result<Tensor> {
-        log::info!("Transcoding from {:?} to {:?}", src_dtype, dst_dtype);
-        match (src_dtype, dst_dtype) {
-            (GgmlDType::F32, DType::F32) => {
-                Tensor::from_bytes(raw_data, dst_dtype, shape, device.clone())
+        match G::DTYPE {
+            crate::GgmlDType::F32 => {
+                //It's just F32 dog
+                let data: &[f32] = unsafe { std::mem::transmute(data) };
+                Ok(Tensor::from_data(data, shape, device.clone()))
             }
-            (GgmlDType::F16, DType::F32) | (GgmlDType::F16, DType::F16) => {
+            crate::GgmlDType::F16 => {
                 //Cast whilst WGPU doesn't support f16
-                let f16_data = bytemuck::cast_slice::<u8, f16>(raw_data);
-                let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
+                let data: &[f16] = unsafe { std::mem::transmute(data) };
+                let f32_data = data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
                 Ok(Tensor::from_data(f32_data, shape, device.clone()))
+            }
+            crate::GgmlDType::Q8_0 => {
+                let data: &[BlockQ8_0] = unsafe { std::mem::transmute(data) };
+
+                let mut qs_bytes = Vec::with_capacity(n_blocks * QK8_0);
+                let mut ds_bytes = Vec::with_capacity(n_blocks * 4);
+
+                for b in data {
+                    ds_bytes.extend_from_slice(bytemuck::bytes_of(&b.d.to_f32()));
+                    qs_bytes.extend_from_slice(bytemuck::cast_slice(&b.qs));
+                }
+
+                let _ = ds_bytes.align_standard();
+                let _ = qs_bytes.align_standard();
+
+                qs_bytes.append(&mut ds_bytes);
+
+                Tensor::from_bytes(&qs_bytes, DType::WQ8, shape, device.clone())
             }
             _ => todo!(),
         }

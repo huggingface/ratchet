@@ -65,7 +65,7 @@ pub(super) fn group_for_quantization<'a, 'b, T: crate::k_quants::GgmlType>(
     xs: &'b [f32],
     ys: &'a mut [T],
 ) -> Result<Vec<(&'a mut T, &'b [f32])>> {
-    let block_size = T::BLCK_SIZE;
+    let block_size = T::BLCK_NUMEL;
     let dtype = T::DTYPE;
 
     let expected_blocks = xs.len() / block_size;
@@ -86,7 +86,7 @@ pub(super) fn group_for_dequantization<'a, 'b, T: crate::k_quants::GgmlType>(
     xs: &'a [T],
     ys: &'b mut [f32],
 ) -> Result<Vec<(&'a T, &'b mut [f32])>> {
-    let block_size = T::BLCK_SIZE;
+    let block_size = T::BLCK_NUMEL;
     let dtype = T::DTYPE;
 
     let actual_output_len = ys.len();

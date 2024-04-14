@@ -5,8 +5,10 @@
 //! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
 use super::ggml::GgmlDType;
-use crate::error::Result;
-use crate::gguf::TensorLoader;
+use crate::{
+    error::Result,
+    k_quants::{BlockQ8_0, GgmlType},
+};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use ratchet::{DType, Device, Shape, Tensor};
@@ -65,7 +67,6 @@ impl TensorInfo {
         &self,
         reader: &mut R,
         tensor_data_offset: u64,
-        dst_type: Option<DType>,
         device: &Device,
     ) -> anyhow::Result<Tensor> {
         let tensor_elems = self.shape.numel();
@@ -82,50 +83,42 @@ impl TensorInfo {
         let mut raw_data = vec![0u8; size_in_bytes]; //TODO: MaybeUninit
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
         reader.read_exact(&mut raw_data)?;
-
-        let dst_type = if let Some(dtype) = dst_type {
-            //If user provides a type to transcode to, use it
-            dtype
-        } else {
-            //Else, unquantized types map nicely F32 -> F32
-            self.ggml_dtype.into()
-        };
-
-        ratchet_from_gguf(
-            self.ggml_dtype,
-            dst_type,
-            &raw_data,
-            self.shape.clone(),
-            device,
-        )
+        ratchet_from_gguf(self.ggml_dtype, &raw_data, self.shape.clone(), device)
     }
 }
 
-pub fn from_raw_data(
-    src_dtype: GgmlDType,
-    dst_dtype: DType,
+fn from_raw_data<T: GgmlType + Send + Sync + 'static>(
     raw_data: &[u8],
+    size_in_bytes: usize,
     shape: Shape,
     device: &Device,
 ) -> anyhow::Result<Tensor> {
-    GGTranscoder::transcode(src_dtype, dst_dtype, raw_data, shape, device)
+    let raw_data_ptr = raw_data.as_ptr();
+    let n_blocks = size_in_bytes / std::mem::size_of::<T>();
+    let data = unsafe { std::slice::from_raw_parts(raw_data_ptr as *const T, n_blocks) };
+    GGTranscoder::transcode(data, n_blocks, shape, device)
 }
 
 pub fn ratchet_from_gguf(
     ggml_dtype: GgmlDType,
-    ratchet_dtype: DType,
     raw_data: &[u8],
     shape: Shape,
     device: &Device,
 ) -> anyhow::Result<Tensor> {
     let tensor_elems = shape.numel();
     let block_size = ggml_dtype.block_size();
+    let size_in_bytes = tensor_elems / block_size * ggml_dtype.type_size();
     if tensor_elems % block_size != 0 {
         anyhow::bail!(
             "the number of elements {tensor_elems} is not divisible by the block size {block_size}"
         )
     }
-    from_raw_data(ggml_dtype, ratchet_dtype, raw_data, shape, device)
+    match ggml_dtype {
+        GgmlDType::F32 => from_raw_data::<f32>(raw_data, size_in_bytes, shape, device),
+        GgmlDType::F16 => from_raw_data::<half::f16>(raw_data, size_in_bytes, shape, device),
+        GgmlDType::Q8_0 => from_raw_data::<BlockQ8_0>(raw_data, size_in_bytes, shape, device),
+        _ => anyhow::bail!("unsupported ggml dtype {ggml_dtype:?}"),
+    }
 }
 
 #[derive(Debug)]
@@ -484,7 +477,7 @@ impl Content {
             Some(tensor_info) => tensor_info,
             None => anyhow::bail!("cannot find tensor info for {name}"),
         };
-        tensor_info.read(reader, self.tensor_data_offset, None, device)
+        tensor_info.read(reader, self.tensor_data_offset, device)
     }
 
     /// # Tensor
@@ -497,10 +490,6 @@ impl Content {
         dst_type: DType,
         device: &Device,
     ) -> anyhow::Result<Tensor> {
-        let tensor_info = match self.tensor_infos.get(name) {
-            Some(tensor_info) => tensor_info,
-            None => anyhow::bail!("cannot find tensor info for {name}"),
-        };
-        tensor_info.read(reader, self.tensor_data_offset, Some(dst_type), device)
+        unimplemented!()
     }
 }
