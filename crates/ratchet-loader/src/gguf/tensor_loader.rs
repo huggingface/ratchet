@@ -271,7 +271,7 @@ impl TensorLoader for gguf::Q6K {
 }
 
 impl TensorLoader for Q8_0 {
-    const GGML_DTYPE: GgmlDType;
+    const GGML_DTYPE: GgmlDType = GgmlDType::Q8_0;
 
     fn read<R: std::io::Seek + std::io::Read>(
         tensor_blocks: usize,
