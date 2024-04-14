@@ -6,7 +6,6 @@
 
 use super::ggml::GgmlDType;
 use crate::error::Result;
-use crate::gguf::TensorLoader;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use ratchet::{DType, Device, Shape, Tensor};
@@ -473,7 +472,7 @@ impl Content {
 
     /// # Tensor
     ///
-    /// Load the tensor from the reader into memory.
+    /// Load the GGUF tensor from the reader into memory.
     pub fn tensor<R: std::io::Seek + std::io::Read>(
         &self,
         reader: &mut R,

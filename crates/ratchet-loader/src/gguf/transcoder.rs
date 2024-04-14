@@ -28,6 +28,9 @@ impl GGTranscoder {
                 let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
                 Ok(Tensor::from_data(f32_data, shape, device.clone()))
             }
+            (GgmlDType::Q8_0, DType::WQ8) => {
+                todo!()
+            }
             _ => todo!(),
         }
     }
