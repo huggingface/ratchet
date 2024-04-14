@@ -101,6 +101,7 @@ var<private> workgroupId: vec3<u32>;
         @group(0) @binding(3) var<storage, read_write> result: array<vec4<f32>>;
     {% endif %}
 {% else %}
+    @group(0) @binding(0) var<storage, read> A: array<vec4<f32>>;
     {% if BIAS %}
         @group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
         @group(0) @binding(2) var<storage, read> bias: array<vec4<f32>>;
