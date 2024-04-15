@@ -25,7 +25,7 @@ fn setOutputAtCoords(d0 : i32, d1 : i32, d2 : i32, value : vec4<f32>) {
     }
 
     fn getAbsMax(d0 : i32, d1 : i32, d2 : i32) -> f32 {
-        let abs_index = getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 16;
+        let abs_index = getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 32;
         return scale[abs_index]; 
     }
 {% else %}
@@ -93,7 +93,13 @@ var<private> workgroupId: vec3<u32>;
 {% if QUANT %}
     @group(0) @binding(0) var<storage, read> A: array<u32>;
     @group(0) @binding(1) var<storage, read> scale: array<f32>;
-    @group(0) @binding(2) var<storage, read> B: array<vec4<f32>>;
+
+    {% if TRANS_RHS %}
+        @group(0) @binding(2) var<storage, read> B: array<f32>;
+    {% else %}
+        @group(0) @binding(2) var<storage, read> B: array<vec4<f32>>;
+    {% endif %}
+
     {% if BIAS %}
         @group(0) @binding(3) var<storage, read> bias: array<vec4<f32>>;
         @group(0) @binding(4) var<storage, read_write> result: array<vec4<f32>>;
@@ -102,12 +108,17 @@ var<private> workgroupId: vec3<u32>;
     {% endif %}
 {% else %}
     @group(0) @binding(0) var<storage, read> A: array<vec4<f32>>;
-    {% if BIAS %}
+        
+    {% if TRANS_RHS %} 
+        @group(0) @binding(1) var<storage, read> B: array<f32>;
+    {% else %}
         @group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
+    {% endif %}
+
+    {% if BIAS %}
         @group(0) @binding(2) var<storage, read> bias: array<vec4<f32>>;
         @group(0) @binding(3) var<storage, read_write> result: array<vec4<f32>>;
     {% else %}
-        @group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
         @group(0) @binding(2) var<storage, read_write> result: array<vec4<f32>>;
     {% endif %}
 {% endif %}
@@ -174,7 +185,14 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
             let inputRow = tileRowB + innerRow;
             let inputCol = tileCol;
 
-            mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol);
+            {% if TRANS_RHS %}
+                {% for i in range(end=4) %}
+                    let val{{i}} = mm_readB(batchB, globalCol + {{ i }}, kStart + inputRow);
+                {% endfor %}
+                mm_Bsub[inputRow][inputCol] = vec4<f32>(val0, val1, val2, val3);
+            {% else %}
+                mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol);
+            {% endif %}
         }
         kStart = kStart + {{ TILE_DIM }};
         workgroupBarrier();

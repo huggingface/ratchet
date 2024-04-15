@@ -64,7 +64,7 @@ impl DType {
                     }
                 };
                 let weight_size = aligner(numel / 4, std::mem::size_of::<u32>());
-                let absmax_size = aligner(numel / 16, std::mem::size_of::<f32>());
+                let absmax_size = aligner(numel / 32, std::mem::size_of::<f32>());
                 assert_eq!(weight_size + absmax_size, buffer_bytes);
 
                 let weights = BufferSegment::new(0, Some(weight_size as u64));
@@ -77,6 +77,14 @@ impl DType {
 
                 rvec![BufferSegment::new(0, Some(total_bytes as u64))]
             }
+        }
+    }
+
+    pub fn is_quantized(self) -> bool {
+        match self {
+            DType::WQ8 => true,
+            DType::GGUF(_) => true,
+            _ => false,
         }
     }
 }

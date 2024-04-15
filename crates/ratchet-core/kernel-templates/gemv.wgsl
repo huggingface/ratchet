@@ -65,7 +65,7 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     let aIndex = aOffset + row * metadata.aStrides.y / {{ELEM_SIZE}};
 
     {% if QUANT %}
-        let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 16;
+        let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
         for (var k = i32(globalId.y); k < metadata.dimInner / 4; k+={{workgroup_size_y / 4}}) {
             sum = fma(unpack4x8snorm(A[aIndex + k]) * scale[sIndex + (k/4)], X[k], sum);
         }

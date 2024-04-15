@@ -218,6 +218,7 @@ def ground():
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
+        println!("LOADING COMPLETE");
         let prompt = "def print_prime(n):";
         print!("{}", prompt);
         let encoding = tokenizer.encode(prompt, true).unwrap();
@@ -229,7 +230,7 @@ def ground():
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
         let mut loop_cnt = 0;
-        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 13 {
+        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 500 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.schedule(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;

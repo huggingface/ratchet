@@ -104,25 +104,27 @@ impl GEMMSpec {
     }
 
     pub fn select_kernel_element(&self) -> KernelElement {
-        if self.trans_a || self.trans_b || self.trans_out || self.b_shape.is_vector() {
+        if self.trans_a || self.b_shape.is_vector() {
             //We cannot support transposed with vectorized kernels
             //If GEMV we use Scalar
             return KernelElement::Scalar;
         }
 
-        let checks = [
-            self.dim_inner(),
-            self.c_shape[1],
-            self.a_shape.numel(),
-            self.b_shape.numel(),
-            self.c_shape.numel(),
-        ];
+        return KernelElement::Scalar;
 
-        if checks.iter().all(|&x| x % 4 == 0) {
-            KernelElement::Vec4
-        } else {
-            KernelElement::Scalar
-        }
+        //let checks = [
+        //    self.dim_inner(),
+        //    self.c_shape[1],
+        //    self.a_shape.numel(),
+        //    self.b_shape.numel(),
+        //    self.c_shape.numel(),
+        //];
+
+        //if checks.iter().all(|&x| x % 4 == 0) {
+        //    KernelElement::Vec4
+        //} else {
+        //    KernelElement::Scalar
+        //}
     }
 
     pub fn lhs_shape(&self) -> &Shape {
@@ -215,6 +217,9 @@ impl GEMM {
     ) -> Self {
         if !bias.as_ref().map_or(true, |b| b.shape().is_vector()) {
             panic!("Bias must be a vector: {:?}", bias);
+        }
+        if lhs.dt().is_quantized() && trans_lhs {
+            panic!("Unable to transpose quantized matrix");
         }
 
         Self {
@@ -316,10 +321,6 @@ impl GEMM {
 
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
-
-        if (self.rhs.dt() == DType::WQ8) && self.trans_rhs {
-            panic!("Transposed WQ8 not supported");
-        }
 
         let kernel_stem = if self.lhs.dt() == DType::WQ8 {
             "qgemm"
@@ -454,6 +455,7 @@ impl MetaOperation for GEMM {
         } else {
             self.gemm_kernel_key(inplace, dst)
         };
+        println!("KK: {}", kk);
         kk
     }
 
@@ -551,6 +553,7 @@ impl MetaOperation for GEMM {
             dimBOuter,
             dimInner,
         };
+        println!("META: {:?}", meta);
         Ok(uniform.write(&meta)?)
     }
 }
@@ -735,15 +738,15 @@ def matmul(a, b{}):
     fn test_qgemm() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
-        let ground = ground_truth(&a, &b, None, false, false, false)?;
+        let b = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
+        let ground = ground_truth(&a, &b, None, false, true, true)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let aq = quantizer.sint8_quantize(a);
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = aq.to(&device)?;
         let b_gpu = b.to(&device)?;
-        let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
+        let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET WQ8\n{:?}\n", ours);

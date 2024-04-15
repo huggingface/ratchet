@@ -48,6 +48,11 @@ impl GGTranscoder {
 
                 qs_bytes.append(&mut ds_bytes);
 
+                println!(
+                    "Creating WQ8 tensor of shape: {:?} with num bytes: {}",
+                    shape,
+                    qs_bytes.len()
+                );
                 Tensor::from_bytes(&qs_bytes, DType::WQ8, shape, device.clone())
             }
             _ => todo!(),
