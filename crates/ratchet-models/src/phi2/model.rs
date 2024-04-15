@@ -76,6 +76,9 @@ impl Module for Phi2 {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.embedding.schedule(input)?;
+        let xdbg = x.clone().resolve()?;
+        let xcpu = xdbg.to(&Device::CPU)?;
+        println!("EMBEDDING: {:?}", xcpu.to_ndarray_view::<f32>());
         let [_, seq_len, n_state]: [usize; 3] = x.shape().try_into()?;
         let mask = if seq_len <= 1 {
             None
@@ -106,10 +109,7 @@ impl Phi2 {
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let embedding = Embedding::new(
-            disk_model.tensor(reader, "token_embd.weight", device)?,
-            true,
-        );
+        let embedding = Embedding::new(disk_model.tensor(reader, "token_embd.weight", device)?);
 
         let n_layers = disk_model
             .metadata

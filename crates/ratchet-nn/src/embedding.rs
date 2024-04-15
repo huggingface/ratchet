@@ -4,18 +4,9 @@ use ratchet::{shape, Tensor};
 /// # Embedding
 ///
 /// Standard `torch.nn.Embedding` module.
-/// However, we also support the `transposed` flag, which means that your vocab tensor
-/// is transposed.
-///
-/// This is useful in the following case:
-/// 1. You have quantized your vocabulary tensor & Ratchet does not support fast quantized
-///    transposed matrix multiplication (like the one you use to obtain your logits).
-///    Therefore, you can pretranspose your vocab, to avoid the transposed matmul and
-///    set `transposed` to `true`.
 #[derive(Debug, derive_new::new)]
 pub struct Embedding {
     pub weight: Tensor,
-    pub transposed: bool,
 }
 
 impl Module for Embedding {
@@ -24,18 +15,12 @@ impl Module for Embedding {
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut output_shape = input.shape().clone();
         let weight_rank = self.weight.rank();
-        let weight_dim = if self.transposed { 0 } else { weight_rank - 1 };
+        let weight_dim = weight_rank - 1;
         output_shape.push(self.weight.shape()[weight_dim]);
 
         let flat_shape = shape![input.shape().numel()];
         let flat = input.view(flat_shape)?;
-        let selection_dim = if self.transposed { 1 } else { 0 };
-        let indexed = self.weight.clone().index_select(flat, selection_dim)?;
-        let result = if self.transposed {
-            indexed.permute(&[1, 0])?
-        } else {
-            indexed
-        };
+        let result = self.weight.clone().index_select(flat, 0)?;
         result.view(output_shape)
     }
 }

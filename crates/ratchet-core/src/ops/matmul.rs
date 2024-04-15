@@ -455,7 +455,7 @@ impl MetaOperation for GEMM {
         } else {
             self.gemm_kernel_key(inplace, dst)
         };
-        println!("KK: {}", kk);
+        //println!("KK: {}", kk);
         kk
     }
 
@@ -553,7 +553,7 @@ impl MetaOperation for GEMM {
             dimBOuter,
             dimInner,
         };
-        println!("META: {:?}", meta);
+        //println!("META: {:?}", meta);
         Ok(uniform.write(&meta)?)
     }
 }

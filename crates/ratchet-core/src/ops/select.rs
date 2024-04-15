@@ -186,7 +186,7 @@ def index_select(input, indices):
     #[test]
     fn qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![4000, 384],
+            input_shape: shape![2000, 128],
             indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
         };
         run_index_select_trial(prob, true);

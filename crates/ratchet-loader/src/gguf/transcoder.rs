@@ -1,5 +1,5 @@
 use half::f16;
-use ratchet::{DType, Device, Shape, Tensor};
+use ratchet::{DType, Device, Quantization, Quantizer, Shape, Tensor};
 
 use crate::{
     gguf::tensor_loader::Padding,
@@ -53,7 +53,11 @@ impl GGTranscoder {
                     shape,
                     qs_bytes.len()
                 );
-                Tensor::from_bytes(&qs_bytes, DType::WQ8, shape, device.clone())
+                let x = Tensor::from_bytes(&qs_bytes, DType::WQ8, shape, Device::CPU).unwrap();
+                let quanter = Quantizer::new(Quantization::SInt8);
+                let y = quanter.sint8_dequantize(x);
+                println!("Dequantized tensor: {:?}", y);
+                Ok(y)
             }
             _ => todo!(),
         }

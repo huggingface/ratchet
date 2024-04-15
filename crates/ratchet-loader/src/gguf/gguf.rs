@@ -479,17 +479,4 @@ impl Content {
         };
         tensor_info.read(reader, self.tensor_data_offset, device)
     }
-
-    /// # Tensor
-    ///
-    /// Load the tensor from the reader into memory.
-    pub fn transcode_tensor<R: std::io::Seek + std::io::Read>(
-        &self,
-        reader: &mut R,
-        name: &str,
-        dst_type: DType,
-        device: &Device,
-    ) -> anyhow::Result<Tensor> {
-        unimplemented!()
-    }
 }
