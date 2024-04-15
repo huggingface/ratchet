@@ -1,8 +1,7 @@
+use ratchet::gguf::*;
+
 // Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/mod.rs
-//
-
-use ratchet::gguf::{self, GGUFSize, Q4K, Q6K};
-
+use super::dtype::GGUFInterop;
 use crate::error::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -78,9 +77,10 @@ impl GgmlDType {
     pub fn type_size(&self) -> usize {
         match self {
             Self::F32 => 4,
-            Self::F16 => 2, // 2, [TODO] Think about this. Currently WASM doesn't support F16
+            Self::F16 => 2,
             Self::Q4K => Q4K::TYPE_SIZE,
             Self::Q6K => Q6K::TYPE_SIZE,
+            Self::Q8_0 => Q8_0::TYPE_SIZE,
             dt => todo!("{:?} not yet supported", dt),
         }
     }
@@ -90,7 +90,8 @@ impl GgmlDType {
         match self {
             Self::F32 => 1,
             Self::F16 => 1,
-            Self::Q2K | Self::Q3K | Self::Q4K | Self::Q5K | Self::Q6K | Self::Q8K => gguf::QK_K,
+            Self::Q2K | Self::Q3K | Self::Q4K | Self::Q5K | Self::Q6K | Self::Q8K => QK_K,
+            Self::Q8_0 => QK8_0,
             dt => todo!("{:?} not yet supported", dt),
         }
     }

@@ -1,7 +1,10 @@
 use num::integer::div_floor;
 use num_traits::{AsPrimitive, Float};
 
-use std::fmt::Debug;
+use std::{
+    borrow::{Borrow, BorrowMut},
+    fmt::Debug,
+};
 
 use crate::{gpu::STORAGE_BUFFER_ALIGN, DType, Device, Tensor};
 
@@ -28,11 +31,12 @@ impl Quantizer {
     /// It's a pretty naive quantization scheme, more to come.
     pub fn sint8_quantize(&self, tensor: Tensor) -> Tensor {
         let numel = tensor.shape().numel();
-        assert!(numel % 4 == 0 && numel % 16 == 0);
-        assert!(tensor.dt() == DType::F32); //TODO: f16, bf16
-                                            //TODO: check if tensor is contiguous
         let pack_size = self.format.pack_size();
         let group_size = self.format.group_size();
+
+        assert!(numel % pack_size == 0 && numel % group_size == 0);
+        assert!(tensor.dt() == DType::F32); //TODO: f16, bf16
+                                            //TODO: check if tensor is contiguous
 
         let qmatrix_len = numel / pack_size;
         let amatrix_len = numel / group_size;
@@ -80,21 +84,41 @@ impl Quantizer {
         }
     }
 
-    //TODO: this doesn't work
     pub fn sint8_dequantize(&self, quantized: Tensor) -> Tensor {
         assert!(quantized.dt() == DType::WQ8);
         let numel = quantized.shape().numel();
-        let packed_numel = numel / self.format.pack_size() + numel / self.format.group_size();
+        let original_shape = quantized.shape().clone();
+        let aligner = |numel: usize, size_t: usize| -> usize {
+            let nbytes = numel * size_t;
+            let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+                nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
+            } else {
+                nbytes
+            };
+            aligned
+        };
+
         let pack_size = self.format.pack_size();
         let group_size = self.format.group_size();
-        //Line below is invalid
-        let quantized_matrix = quantized.to_vec::<u32>().unwrap();
+
+        let num_q = numel / pack_size;
+        let num_q_bytes = num_q * std::mem::size_of::<u32>();
+        let aligned_q_bytes = aligner(num_q, std::mem::size_of::<u32>());
+
+        let num_absmax = numel / group_size;
+        let num_absmax_bytes = num_absmax * std::mem::size_of::<f32>();
+
+        let raw_bytes = unsafe { quantized.into_bytes().unwrap() };
+
+        let quantized_matrix = bytemuck::cast_slice::<u8, u32>(&raw_bytes[..num_q_bytes]);
+        let absmax_matrix = bytemuck::cast_slice::<u8, f32>(
+            &raw_bytes[aligned_q_bytes..aligned_q_bytes + num_absmax_bytes],
+        );
+
         let mut dequantized = vec![0.0f32; numel];
 
-        let absmax_start = packed_numel / group_size;
-
-        for i in (0..packed_numel).step_by(pack_size) {
-            let block_absmax = quantized_matrix[absmax_start + div_floor(i, group_size)] as f32;
+        for i in (0..numel).step_by(pack_size) {
+            let block_absmax = absmax_matrix[div_floor(i, group_size)];
             let packed_value = quantized_matrix[div_floor(i, pack_size)] as i32;
             dequantized[i] = ((packed_value << 24) >> 24) as f32 / 127.0 * block_absmax;
             dequantized[i + 1] = ((packed_value << 16) >> 24) as f32 / 127.0 * block_absmax;
@@ -102,7 +126,7 @@ impl Quantizer {
             dequantized[i + 3] = (packed_value >> 24) as f32 / 127.0 * block_absmax;
         }
 
-        Tensor::from_data(dequantized, quantized.shape().clone(), Device::CPU)
+        Tensor::from_data(dequantized, original_shape, Device::CPU)
     }
 
     pub fn sint4_quantize<F: Float + AsPrimitive<i32> + Debug>(
@@ -171,7 +195,7 @@ impl Quantization {
     pub fn group_size(&self) -> usize {
         match self {
             Quantization::None => 1,
-            Quantization::SInt8 => 16,
+            Quantization::SInt8 => 32,
             Quantization::SInt4 => 8,
         }
     }

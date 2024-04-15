@@ -1,17 +1,16 @@
+pub mod dtype;
 pub mod ggml;
 pub mod gguf;
-pub mod tensor_loader;
-pub mod transcoder;
 pub mod utils;
-pub use tensor_loader::TensorLoader;
 
+/*
 #[cfg(test)]
 mod tests {
 
     use std::io::{Cursor, Read, SeekFrom};
 
     use super::*;
-    use ratchet::Tensor;
+    use ratchet::{gguf::Q4K, Device, DeviceRequest, Tensor};
 
     fn read_expected_data<R: std::io::Seek + std::io::Read>(
         reader: &mut R,
@@ -36,7 +35,6 @@ mod tests {
         Ok(actual_data)
     }
 
-    /*
     #[tokio::test]
     async fn test_read_q4k() -> anyhow::Result<()> {
         const Q4K_GGUF: &[u8] = include_bytes!(concat!(
@@ -107,5 +105,6 @@ mod tests {
             assert_eq!(expected_data, actual_data, "{:?} not equal", tensor_name);
         }
         Ok(())
-    }*/
+    }
 }
+*/
