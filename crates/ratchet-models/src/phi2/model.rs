@@ -108,7 +108,7 @@ impl Phi2 {
     ) -> anyhow::Result<Self> {
         let embedding = Embedding::new(
             disk_model.tensor(reader, "token_embd.weight", device)?,
-            false,
+            true,
         );
 
         let n_layers = disk_model
