@@ -137,11 +137,10 @@ impl<M: GGMLCompatible> GGMLModel<M> {
         let header = self.tensors.get(key).ok_or(LoadError::MissingTensor {
             name: key.to_string(),
         })?;
-        let mut data = header.read_data(reader)?;
-        log::debug!("Loading tensor: {} with size: {} bytes", key, data.len());
+        let data = header.read_data(reader)?;
         let shape = header.shape.clone();
         ratchet_from_gguf(header.dtype, &data, shape, device)
-            .map_err(|e| LoadError::InvalidFormat(0))
+            .map_err(|e| LoadError::InvalidFormat(0)) //bad bad error
     }
 }
 
@@ -159,7 +158,6 @@ impl GGMLLoader {
         let mut total_size = 0;
         while reader.stream_position()? != last_position {
             let header = Self::load_single(reader)?;
-            println!("Loaded tensor: {:?}", header);
             total_size += header.data_size() as u64;
             tensor_map.insert(header.name.clone(), header);
         }

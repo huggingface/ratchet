@@ -222,6 +222,24 @@ impl GEMM {
             panic!("Transposed quantized inputs are not supported");
         }
 
+        //println!(
+        //    "MATMUL PROBLEM:
+        //lhs: {:?} {:?}
+        //rhs: {:?} {:?}
+        //bias: {:?}
+        //trans_lhs: {}
+        //trans_rhs: {}
+        //trans_out: {}",
+        //    lhs.shape(),
+        //    lhs.dt(),
+        //    rhs.shape(),
+        //    rhs.dt(),
+        //    bias.is_some(),
+        //    trans_lhs,
+        //    trans_rhs,
+        //    trans_out
+        //);
+
         Self {
             lhs,
             rhs,

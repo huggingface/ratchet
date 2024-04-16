@@ -19,38 +19,63 @@ fn setOutputAtCoords(d0: i32, d1: i32, d2: i32, value: f32) {
     setOutputAtIndex(flatIndex, value);
 }
 
-fn getA(d0: i32, d1: i32, d2: i32) -> f32 {
-    return f32(A[getAIndexFromCoords3D(vec3<i32>(d0, d1, d2))]);
-}
+{% if QUANT %}
+    fn unpack4x8snorm_gguf(x: u32) -> vec4<f32> {
+        return unpack4x8snorm(x) * 127f;
+    }
+
+    fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
+        return unpack4x8snorm_gguf(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
+    }
+
+    fn getAbsMax(d0 : i32, d1 : i32, d2 : i32) -> f32 {
+        let abs_index = getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 32;
+        return scale[abs_index]; 
+    }
+{% else %}
+    fn getA(d0: i32, d1: i32, d2: i32) -> f32 {
+        return f32(A[getAIndexFromCoords3D(vec3<i32>(d0, d1, d2))]);
+    }
+{% endif %}
    
 fn getB(d0: i32, d1: i32, d2: i32) -> f32 {
     return f32(B[getBIndexFromCoords3D(vec3<i32>(d0, d1, d2))]);
 }
    
 {% if FIT_A_OUTER and FIT_INNER %}
-fn mm_readA(batch: i32, row: i32, col: i32) -> f32 {
-    var value = f32(0.0);
-    {% if TRANS_A %}
-        value = getA(batch, col, row);
+    {% if QUANT %}
+        fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
+            var value = vec4<f32>(0.0);
     {% else %}
-        value = getA(batch, row, col);
+        fn mm_readA(batch: i32, row: i32, col: i32) -> f32 {
+            var value = f32(0.0);
     {% endif %}
-    return value;
-}
-{% else %}
-fn mm_readA(batch: i32, row: i32, col: i32) -> f32 {
-    var value = f32(0.0);
-    {% if TRANS_A %}
-        if (row < metadata.aShape.z && col < metadata.aShape.y) {
+        {% if TRANS_A %}
             value = getA(batch, col, row);
-        }
-    {% else %}
-        if (row < metadata.aShape.y && col < metadata.aShape.z) {
+        {% else %}
             value = getA(batch, row, col);
-        }
+        {% endif %}
+        return value;
+    }
+{% else %}
+    {% if QUANT %}
+        fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
+            var value = vec4<f32>(0.0);
+    {% else %}
+        fn mm_readA(batch: i32, row: i32, col: i32) -> f32 {
+            var value = f32(0.0);
     {% endif %}
-    return value;
-}
+        {% if TRANS_A %}
+            if (row < metadata.aShape.z && col < metadata.aShape.y) {
+                value = getA(batch, col, row);
+            }
+        {% else %}
+            if (row < metadata.aShape.y && col < metadata.aShape.z) {
+                value = getA(batch, row, col);
+            }
+        {% endif %}
+        return value;
+    }
 {% endif %}
 
 {% if FIT_B_OUTER and FIT_INNER %}
@@ -97,15 +122,30 @@ var<private> localId: vec3<u32>;
 var<private> globalId: vec3<u32>;
 var<private> workgroupId: vec3<u32>;
 
-@group(0) @binding(0) var<storage, read> A: array<f32>;
-@group(0) @binding(1) var<storage, read> B: array<f32>;
+{% if QUANT %}
+    @group(0) @binding(0) var<storage, read> A: array<u32>;
+    @group(0) @binding(1) var<storage, read> scale: array<f32>;
+    @group(0) @binding(2) var<storage, read> B: array<f32>;
 
-{% if BIAS %}
-    @group(0) @binding(2) var<storage, read> bias: array<f32>;
-    @group(0) @binding(3) var<storage, read_write> result: array<f32>;
+    {% if BIAS %}
+        @group(0) @binding(3) var<storage, read> bias: array<f32>;
+        @group(0) @binding(4) var<storage, read_write> result: array<f32>;
+    {% else %}
+        @group(0) @binding(3) var<storage, read_write> result: array<f32>;
+    {% endif %}
+
 {% else %}
-    @group(0) @binding(2) var<storage, read_write> result: array<f32>;
+    @group(0) @binding(0) var<storage, read> A: array<f32>;
+    @group(0) @binding(1) var<storage, read> B: array<f32>;
+
+    {% if BIAS %}
+        @group(0) @binding(2) var<storage, read> bias: array<f32>;
+        @group(0) @binding(3) var<storage, read_write> result: array<f32>;
+    {% else %}
+        @group(0) @binding(2) var<storage, read_write> result: array<f32>;
+    {% endif %}
 {% endif %}
+
 
 @group(1) @binding(0) var<uniform> metadata: Meta;
 
@@ -151,14 +191,25 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     for (var t = 0; t < numTiles; t++) {
         // Load one tile of A into local memory.
         for (var innerRow = 0; innerRow < 4; innerRow++) {
-            for (var innerCol = 0; innerCol < 4; innerCol++) {
-                let inputRow = tileRowA + innerRow;
-                let inputCol = tileColA + innerCol;
+            {% if QUANT %}
+                let curRow = globalRow + innerRow;
+                let curCol = kStart + i32(localId.x) * 4;
 
-                mm_Asub[inputRow][inputCol] = mm_readA(batchA,
-                    globalRowStart + inputRow,
-                    kStart + inputCol);
-            }
+                let absmax = getAbsMax(batchA, curRow, curCol);
+                let val = mm_readA(batchA, curRow, curCol) * absmax;
+                {% for i in range(end=4) %}
+                    mm_Asub[tileRowA + innerRow][tileColA + {{ i }}] = val[{{ i }}]; 
+                {% endfor %}
+            {% else %}
+                for (var innerCol = 0; innerCol < 4; innerCol++) {
+                    let inputRow = tileRowA + innerRow;
+                    let inputCol = tileColA + innerCol;
+
+                    mm_Asub[inputRow][inputCol] = mm_readA(batchA,
+                        globalRowStart + inputRow,
+                        kStart + inputCol);
+                }
+            {% endif %}
         }
 
         // Load one tile of B into local memory.
@@ -166,6 +217,7 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
             for (var innerCol = 0; innerCol < 4; innerCol++) {
                 let inputRow = tileRowB + innerRow;
                 let inputCol = tileCol + innerCol;
+
                 mm_Bsub[inputRow][inputCol] = mm_readB(batchB,
                     kStart + inputRow,
                     globalCol + innerCol);
