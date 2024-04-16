@@ -32,8 +32,8 @@ impl DecoderLayer {
         let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
 
         let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?), true),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?), true),
+            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
+            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?)),
         );
         Ok(Self { ln, self_attn, mlp })
     }
@@ -76,6 +76,7 @@ impl Module for Phi2 {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.embedding.schedule(input)?;
+
         let [_, seq_len, n_state]: [usize; 3] = x.shape().try_into()?;
         let mask = if seq_len <= 1 {
             None
@@ -132,8 +133,7 @@ impl Phi2 {
         };
 
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
-        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?), true);
-        println!("Loaded Phi2 model");
+        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
 
         Ok(Self {
             embedding,
@@ -165,7 +165,7 @@ impl Phi2 {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "pyo3"))]
 mod tests {
     use hf_hub::api::sync::Api;
     use ndarray::Axis;
@@ -208,7 +208,8 @@ def ground():
         let _ = env_logger::builder().is_test(true).try_init();
         let api = Api::new().unwrap();
         let model_repo = api.model("FL33TW00D-HF/phi2".to_string());
-        let model_path = model_repo.get("phi2-f16.gguf").unwrap();
+        let model_path = model_repo.get("phi2-q8_0.gguf").unwrap();
+        println!("MODEL PATH: {}", model_path.display());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;

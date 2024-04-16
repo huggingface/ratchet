@@ -23,7 +23,7 @@ impl DecoderStem {
             disk_model.load_tensor(&key, reader, device)
         };
         Ok(Self {
-            token_embed: Embedding::new(lt("token_embedding.weight")?, true),
+            token_embed: Embedding::new(lt("token_embedding.weight")?, false),
             pos_embed: lt("positional_embedding")?,
         })
     }
@@ -80,7 +80,12 @@ impl Module for WhisperDecoder {
             x = block.schedule(block_input)?;
         }
         x = self.ln_post.schedule(x)?;
-        let logits = x.matmul(self.stem.token_embed.weight.clone(), false, false)?;
+        let logits = self
+            .stem
+            .token_embed
+            .weight
+            .clone()
+            .gemm(x, None, false, true, true)?;
         Ok(logits)
     }
 }
@@ -145,7 +150,7 @@ impl WhisperDecoder {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "pyo3"))]
 mod tests {
     use hf_hub::api::sync::Api;
     use ndarray::{s, Axis};
@@ -200,6 +205,7 @@ def ground(options):
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let path = model.get("tiny_f32.bin").unwrap();
+        println!("MODEL LOADED FROM: {}", path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
@@ -227,8 +233,14 @@ def ground(options):
             let result = decoder.schedule([audio_ctx.clone(), token_t])?.resolve()?;
 
             let our_logits = result.to(&Device::CPU)?;
-            all_logits.push(our_logits.clone());
             let nd_logits = our_logits.to_ndarray_view::<f32>();
+            all_logits.push(Tensor::from(
+                nd_logits
+                    .slice(s![.., .., ..tokenizer.get_vocab_size(true)])
+                    .to_owned()
+                    .into_dyn(),
+            ));
+
             let sliced = nd_logits
                 .slice(s![.., -1.., ..tokenizer.get_vocab_size(true)])
                 .remove_axis(Axis(1));
@@ -249,11 +261,10 @@ def ground(options):
         println!("Decoded: {}", decoded);
 
         let ground_logits = ground_truth(&audio_path.to_string_lossy(), options)?;
-
         let all_equal = all_logits
             .iter()
             .zip(ground_logits.iter())
-            .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
+            .all(|(our, their)| their.all_close(our, 1e-4, 1e-4).is_ok());
 
         assert!(all_equal);
 

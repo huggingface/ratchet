@@ -21,7 +21,7 @@ impl Storage {
     pub unsafe fn from_quantized<T: NoUninit>(data: &[T], device: &Device) -> Self {
         match device {
             Device::CPU => Storage::CPU(unsafe { CPUBuffer::from_quantized(data) }),
-            _ => todo!(),
+            Device::GPU(g) => Storage::GPU(unsafe { GPUBuffer::from_quantized(data, g) }),
         }
     }
 

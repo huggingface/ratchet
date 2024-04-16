@@ -17,7 +17,8 @@ use {rand::prelude::*, rand_distr::StandardNormal};
 
 #[cfg(feature = "testing")]
 use ndarray::{ArrayD, ArrayViewD, Dimension};
-#[cfg(not(target_arch = "wasm32"))]
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "pyo3"))]
 use numpy::PyArrayDyn;
 
 // thiserror error for Tensor
@@ -523,7 +524,9 @@ impl Tensor {
     /// If the tensor has more than 1 reference, you die.
     /// If the tensor has no storage, you die.
     pub unsafe fn into_bytes(self) -> anyhow::Result<Vec<u8>> {
-        let inner = Arc::try_unwrap(self.inner).unwrap();
+        let inner = Arc::try_unwrap(self.inner).map_err(|_| {
+            anyhow::anyhow!("Cannot convert tensor into bytes with multiple references.")
+        })?;
         let storage = Arc::try_unwrap(inner.storage)
             .unwrap()
             .into_inner()
@@ -575,15 +578,13 @@ impl Tensor {
             .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
-        let segments = self
-            .dt()
-            .segments(self.shape().numel(), gpu_buf.inner().size() as usize);
+        let segments = self.dt().segments(self.shape().numel());
         segments.iter().fold(rvec![], |mut entries, segment| {
             let (offset, size) = (segment.offset, segment.size);
             entries.push(BindGroupEntry {
                 handle,
                 offset,
-                size,
+                size: Some(size),
             });
             entries
         })
@@ -813,6 +814,7 @@ impl Tensor {
         ))
     }
 
+    #[cfg(feature = "pyo3")]
     pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
         &'s self,
         py: &'p pyo3::Python<'p>,
@@ -826,7 +828,7 @@ impl Tensor {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "pyo3"))]
 impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
     fn from(array: &PyArrayDyn<T>) -> Self {
         Self::from(array.to_owned_array())

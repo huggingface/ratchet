@@ -1,10 +1,10 @@
 use ratchet::Tensor;
-use ratchet_nn::{Module, RLinear};
+use ratchet_nn::{Linear, Module};
 
 #[derive(Debug, derive_new::new)]
 pub struct MLP {
-    l1: RLinear,
-    l2: RLinear,
+    l1: Linear,
+    l2: Linear,
 }
 
 impl Module for MLP {

@@ -70,10 +70,7 @@ impl OpGuards for Unary {
 
     fn check_dtypes(&self) {
         let a = &self.input;
-        assert!(matches!(
-            a.dt(),
-            crate::DType::F32 | crate::DType::F16 | crate::DType::WQ8
-        ));
+        assert!(matches!(a.dt(), crate::DType::F32));
     }
 }
 
@@ -155,7 +152,7 @@ impl MetaOperation for Unary {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 

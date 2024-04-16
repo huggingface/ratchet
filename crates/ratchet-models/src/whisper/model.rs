@@ -380,8 +380,8 @@ mod tests {
             "decoder.token_embedding.weight",
             vec![[0, pad_size], [0, 0]],
         )]);
-
-        Converter::convert::<_, Whisper>(src_path, dst_path, Quantization::SInt8, to_quant, to_pad)
+        let quantization = Quantization::SInt8;
+        Converter::convert::<_, Whisper>(src_path, dst_path, quantization, to_quant, to_pad)
             .unwrap();
     }
 }

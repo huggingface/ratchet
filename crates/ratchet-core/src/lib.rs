@@ -92,7 +92,7 @@ pub mod prelude {
     pub use crate::{rvec, shape, Device, DeviceRequest, Tensor};
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "pyo3")]
 pub mod test_util {
     use crate::{DType, Tensor};
     use regex::Regex;

@@ -2,7 +2,7 @@ use super::{mha::*, mlp::MLP};
 use crate::whisper::model::Whisper;
 use ratchet::{Device, Tensor};
 use ratchet_loader::ggml::GGMLModel;
-use ratchet_nn::{KVEntry, LayerNorm, Module, RLinear};
+use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
 use std::io::{BufRead, Seek};
 
 #[derive(Debug)]
@@ -32,8 +32,6 @@ impl Module for ResidualAttentionBlock {
         let self_attn =
             self.attn
                 .schedule(MHAInputs::new(attn_ln, None, mask.clone(), cache, true))?;
-
-        println!("Self attn output: {:?}", self_attn.shape());
 
         let mut attn = x.add(self_attn)?;
 
@@ -67,10 +65,10 @@ impl ResidualAttentionBlock {
         };
         let attn_ln = LayerNorm::new(lt("attn_ln.weight")?, Some(lt("attn_ln.bias")?), 1e-5);
         let attn = MultiHeadAttention::new(
-            RLinear::new(lt("attn.query.weight")?, Some(lt("attn.query.bias")?)),
-            RLinear::new(lt("attn.key.weight")?, None),
-            RLinear::new(lt("attn.value.weight")?, Some(lt("attn.value.bias")?)),
-            RLinear::new(lt("attn.out.weight")?, Some(lt("attn.out.bias")?)),
+            Linear::new(lt("attn.query.weight")?, Some(lt("attn.query.bias")?)),
+            Linear::new(lt("attn.key.weight")?, None),
+            Linear::new(lt("attn.value.weight")?, Some(lt("attn.value.bias")?)),
+            Linear::new(lt("attn.out.weight")?, Some(lt("attn.out.bias")?)),
             n_heads,
         );
         let (x_attn_ln, x_attn) = if enable_x_attn {
@@ -80,16 +78,16 @@ impl ResidualAttentionBlock {
                 1e-5,
             );
             let x_attn = MultiHeadAttention::new(
-                RLinear::new(
+                Linear::new(
                     lt("cross_attn.query.weight")?,
                     Some(lt("cross_attn.query.bias")?),
                 ),
-                RLinear::new(lt("cross_attn.key.weight")?, None),
-                RLinear::new(
+                Linear::new(lt("cross_attn.key.weight")?, None),
+                Linear::new(
                     lt("cross_attn.value.weight")?,
                     Some(lt("cross_attn.value.bias")?),
                 ),
-                RLinear::new(
+                Linear::new(
                     lt("cross_attn.out.weight")?,
                     Some(lt("cross_attn.out.bias")?),
                 ),
@@ -102,8 +100,8 @@ impl ResidualAttentionBlock {
 
         let mlp_ln = LayerNorm::new(lt("mlp_ln.weight")?, Some(lt("mlp_ln.bias")?), 1e-5);
         let mlp = MLP::new(
-            RLinear::new(lt("mlp.0.weight")?, Some(lt("mlp.0.bias")?)),
-            RLinear::new(lt("mlp.2.weight")?, Some(lt("mlp.2.bias")?)),
+            Linear::new(lt("mlp.0.weight")?, Some(lt("mlp.0.bias")?)),
+            Linear::new(lt("mlp.2.weight")?, Some(lt("mlp.2.bias")?)),
         );
         Ok(Self {
             attn_ln,

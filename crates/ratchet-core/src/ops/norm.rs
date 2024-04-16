@@ -124,7 +124,7 @@ impl MetaOperation for Norm {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 

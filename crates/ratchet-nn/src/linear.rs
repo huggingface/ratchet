@@ -10,29 +10,13 @@ use crate::Module;
 pub struct Linear {
     pub w: Tensor,
     b: Option<Tensor>,
-    transpose: bool,
 }
 
 impl Module for Linear {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        input.gemm(self.w.clone(), self.b.clone(), false, self.transpose, false)
-    }
-}
-
-#[derive(derive_new::new, Debug)]
-pub struct RLinear {
-    pub w: Tensor,
-    b: Option<Tensor>,
-}
-
-impl Module for RLinear {
-    type Input = Tensor;
-    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        println!("R LINEAR INPUT: {:?}", input.shape());
-        println!("R LINEAR WEIGHT: {:?}", self.w.shape());
         self.w
             .clone()
-            .gemm(input, self.b.clone(), false, true, false)
+            .gemm(input, self.b.clone(), false, true, true)
     }
 }

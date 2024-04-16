@@ -77,7 +77,6 @@ impl Module for WhisperEncoder {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.stem.schedule(input)?;
-        println!("STEM OUTPUT: {:?}", x.shape());
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
                 x: x.clone(),
@@ -149,6 +148,7 @@ mod tests {
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let path = model.get("tiny_f32.bin").unwrap();
+        println!("Path: {}", path.display());
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
         let ground_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();

@@ -59,10 +59,9 @@ impl MetaOperation for IndexSelect {
     }
 
     fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        let op_key = match (self.input.dt(), self.dim) {
-            (DType::F32, _) => "f32_index_select",
-            (DType::WQ8, 0) => "wq8_index_select",
-            (DType::WQ8, 1) => "wq8_index_select_coarse",
+        let op_key = match self.input.dt() {
+            DType::F32 => "f32_index_select",
+            DType::GGUF(_) => "wq8_index_select",
             _ => unimplemented!(),
         };
         format!("{}_{}", op_key, self.kernel_element(dst).as_str())
@@ -73,10 +72,9 @@ impl MetaOperation for IndexSelect {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let numel = match (self.input.dt(), self.dim) {
-            (DType::F32, _) => dst.shape().numel(),
-            (DType::WQ8, 0) => dst.shape().numel() / 4,
-            (DType::WQ8, 1) => dst.shape().numel(),
+        let numel = match self.input.dt() {
+            DType::F32 => dst.shape().numel(),
+            DType::GGUF(_) => dst.shape().numel() / 4,
             _ => unimplemented!(),
         };
         let wgcx = WorkgroupCount::div_ceil(numel, 64);
@@ -89,7 +87,7 @@ impl MetaOperation for IndexSelect {
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         match self.input.dt() {
             DType::F32 => Ok(BindGroupLayoutDescriptor::binary()),
-            DType::WQ8 => Ok(BindGroupLayoutDescriptor::ternary()),
+            DType::GGUF(_) => Ok(BindGroupLayoutDescriptor::ternary()),
             _ => unimplemented!(),
         }
     }
@@ -117,7 +115,7 @@ impl MetaOperation for IndexSelect {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use proptest::arbitrary::Arbitrary;
     use proptest::strategy::{BoxedStrategy, Just, Strategy};

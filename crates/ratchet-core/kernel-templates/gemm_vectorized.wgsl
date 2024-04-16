@@ -14,29 +14,33 @@ fn setOutputAtIndex(flatIndex : i32, value : vec4<f32>) {
     result[flatIndex] = vec4<f32>(value);
 }
 
+fn unpack4x8snorm_gguf(x: u32) -> vec4<f32> {
+    return unpack4x8snorm(x) * 127f;
+}
+
 fn setOutputAtCoords(d0 : i32, d1 : i32, d2 : i32, value : vec4<f32>) {
     let flatIndex = getOutputIndexFromCoords(vec3<i32>(d0, d1, d2));
     setOutputAtIndex(flatIndex / 4, value);
 }
 
-fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return vec4<f32>(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
-}
-   
-{% if QUANTIZED_B %}
-    fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-        return unpack4x8snorm(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
+{% if QUANT %}
+    fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
+        return unpack4x8snorm_gguf(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
     }
 
     fn getAbsMax(d0 : i32, d1 : i32, d2 : i32) -> f32 {
-        let abs_index = getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 16;
-        return absmax[abs_index]; 
+        let abs_index = getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 32;
+        return scale[abs_index]; 
     }
 {% else %}
-    fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-        return vec4<f32>(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
+    fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
+        return vec4<f32>(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
     }
 {% endif %}
+
+fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
+    return vec4<f32>(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
+}
    
 {% if FIT_A_OUTER and FIT_INNER %}
 fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
@@ -89,20 +93,19 @@ var<private> localId: vec3<u32>;
 var<private> globalId: vec3<u32>;
 var<private> workgroupId: vec3<u32>;
 
-@group(0) @binding(0) var<storage, read> A: array<vec4<f32>>;
 
-{% if QUANTIZED_B %}
+{% if QUANT %}
+    @group(0) @binding(0) var<storage, read> A: array<u32>;
+    @group(0) @binding(1) var<storage, read> scale: array<f32>;
+    @group(0) @binding(2) var<storage, read> B: array<vec4<f32>>;
     {% if BIAS %}
-        @group(0) @binding(1) var<storage, read> B: array<u32>;
-        @group(0) @binding(2) var<storage, read> absmax: array<f32>;
         @group(0) @binding(3) var<storage, read> bias: array<vec4<f32>>;
         @group(0) @binding(4) var<storage, read_write> result: array<vec4<f32>>;
     {% else %}
-        @group(0) @binding(1) var<storage, read> B: array<u32>;
-        @group(0) @binding(2) var<storage, read> absmax: array<f32>;
         @group(0) @binding(3) var<storage, read_write> result: array<vec4<f32>>;
     {% endif %}
 {% else %}
+    @group(0) @binding(0) var<storage, read> A: array<vec4<f32>>;
     {% if BIAS %}
         @group(0) @binding(1) var<storage, read> B: array<vec4<f32>>;
         @group(0) @binding(2) var<storage, read> bias: array<vec4<f32>>;
@@ -159,19 +162,23 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
             let inputRow = tileRow + innerRow;
             let inputCol = tileCol;
             
-            mm_Asub[inputRow][inputCol] = mm_readA(batchA, globalRow + innerRow, kStart + inputCol * 4);
+            {% if QUANT %}
+                let curRow = globalRow + innerRow;
+                let curCol = kStart + inputCol * 4;
+                
+                let absmax = getAbsMax(batchA, curRow, curCol);
+                mm_Asub[inputRow][inputCol] = mm_readA(batchA, curRow, curCol) * absmax;
+            {% else %}
+                mm_Asub[inputRow][inputCol] = mm_readA(batchA, globalRow + innerRow, kStart + inputCol * 4);
+            {% endif %}
         }
 
         // Load one tile of B into local memory.
         for (var innerRow = 0; innerRow < {{ ROW_PER_THREAD }}; innerRow++) {
             let inputRow = tileRowB + innerRow;
             let inputCol = tileCol;
-            {% if QUANTIZED_B %}
-                let absmax = getAbsMax(batchB, kStart + inputRow, globalCol);
-                mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol) * absmax;
-            {% else %}
-                mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol);
-            {% endif %}
+
+            mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol);
         }
         kStart = kStart + {{ TILE_DIM }};
         workgroupBarrier();
@@ -194,11 +201,14 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         workgroupBarrier();
     }
 
+    var val: vec4<f32>;
     {% for innerRow in range(end=ROW_PER_THREAD) %}
-        {% if BIAS %}
-            mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}] + bias[globalCol / 4]);
+        {% if BIAS -%}
+            val = acc[{{ innerRow }}] + bias[globalCol / 4];
         {% else %}
-            mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
+            val = acc[{{ innerRow }}];
         {% endif %}
+
+        mm_write(batch, globalRow + {{ innerRow }}, globalCol, val);
     {% endfor %}
   }

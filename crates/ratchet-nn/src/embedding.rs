@@ -40,11 +40,15 @@ impl Module for Embedding {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pyo3"))]
 mod tests {
+    use hf_hub::api::sync::Api;
     use proptest::arbitrary::Arbitrary;
     use proptest::strategy::{BoxedStrategy, Just, Strategy};
+    use ratchet::{Quantization, Quantizer};
+    use ratchet_loader::gguf::gguf::Content;
     use test_strategy::proptest;
+    use tokenizers::Tokenizer;
 
     use ratchet::test_util::run_py_prg;
     use ratchet::{rvec, shape, Device, DeviceRequest, Shape, Tensor};
@@ -137,5 +141,49 @@ def embedding(weight, indices):
     #[proptest(cases = 16)]
     fn test_embedding(prob: EmbeddingProblem) {
         run_embedding_trial(prob);
+    }
+
+    #[test]
+    fn dbg_phi_embedding() -> anyhow::Result<()> {
+        let api = Api::new().unwrap();
+        let model_repo = api.model("FL33TW00D-HF/phi2".to_string());
+        let model_path = model_repo.get("phi2-q8_0.gguf").unwrap();
+        //let model_path = model_repo.get("phi2-f16.gguf").unwrap();
+
+        println!("MODEL PATH: {}", model_path.display());
+
+        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let content = Content::read(&mut reader)?;
+
+        let token_weight = content.tensor(&mut reader, "token_embd.weight", &Device::CPU)?;
+
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let dequant = quantizer.sint8_dequantize(token_weight);
+        println!("DEQUANT: {:?}", dequant.to_ndarray_view::<f32>());
+
+        let token_weight = content.tensor(&mut reader, "token_embd.weight", &Device::CPU)?;
+
+        //println!("TOKEN WEIGHT: {:?}", token_weight.to_ndarray_view::<f32>());
+        let embedding = Embedding::new(token_weight.to(&device)?, false);
+
+        let tokenizer_repo = api.model("microsoft/phi-2".to_string());
+        let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
+        let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
+
+        let prompt = "def print_prime(n):";
+        print!("{}", prompt);
+        let encoding = tokenizer.encode(prompt, true).unwrap();
+        let mut tokens = encoding
+            .get_ids()
+            .iter()
+            .map(|&x| x as i32)
+            .collect::<Vec<_>>();
+
+        let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
+        let result = embedding.schedule(input).unwrap().resolve().unwrap();
+        let cpu_result = result.to(&Device::CPU).unwrap();
+        println!("CPU RESULT: {:?}", cpu_result.to_ndarray_view::<f32>());
+        Ok(())
     }
 }

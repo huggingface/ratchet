@@ -119,7 +119,7 @@ impl SpectrogramGenerator {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, feature = "pyo3", not(target_arch = "wasm32")))]
 mod tests {
     use super::SpectrogramGenerator;
     use hf_hub::api::sync::Api;
