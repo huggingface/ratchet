@@ -38,6 +38,16 @@ impl GPUBuffer {
         )
     }
 
+    /// # Safety
+    ///
+    /// We don't check the provided shape here.
+    /// The caller should ensure that this data is laid out correctly.
+    /// We also require that all of the elements have the same alignment.
+    pub unsafe fn from_quantized<T: NoUninit>(data: &[T], device: &WgpuDevice) -> Self {
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        Self::from_bytes(bytes, std::mem::align_of::<T>(), device)
+    }
+
     pub(crate) fn from_bytes(bytes: &[u8], alignment: usize, device: &WgpuDevice) -> Self {
         let num_bytes = bytes.len();
         let mut min_bytes = [0; Self::MIN_SIZE];

@@ -147,16 +147,14 @@ impl GGUFInterop for Q8_0 {
 
         qs_bytes.append(&mut ds_bytes);
         let casted = bytemuck::cast_slice::<u8, u32>(&qs_bytes);
-        let inner = unsafe {
-            Tensor::from_quantized::<u32, _>(
+        unsafe {
+            Ok(Tensor::from_quantized::<u32, _>(
                 casted,
                 DType::GGUF(GGUFDType::Q8_0(Q8_0)),
                 shape,
-                Device::CPU,
-            )
-        };
-
-        Ok(inner.to(device)?)
+                device.clone(),
+            ))
+        }
     }
 }
 
