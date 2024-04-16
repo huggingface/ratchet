@@ -321,6 +321,7 @@ mod tests {
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let model_path = model.get("tiny_q8.bin").unwrap();
+        println!("PATH: {:?}", model_path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("mm0.wav").unwrap();
@@ -380,7 +381,7 @@ mod tests {
             "decoder.token_embedding.weight",
             vec![[0, pad_size], [0, 0]],
         )]);
-        let quantization = Quantization::SInt8;
+        let quantization = Quantization::None;
         Converter::convert::<_, Whisper>(src_path, dst_path, quantization, to_quant, to_pad)
             .unwrap();
     }

@@ -8,7 +8,7 @@ use std::{
     mem::MaybeUninit,
 };
 
-use crate::{GgmlDType, LoadError};
+use crate::{gguf::gguf::ratchet_from_gguf, GgmlDType, LoadError};
 
 trait ReadBytesCustom: ReadBytesExt {
     /// Extends to read an exact number of bytes.
@@ -140,24 +140,8 @@ impl<M: GGMLCompatible> GGMLModel<M> {
         let mut data = header.read_data(reader)?;
         log::debug!("Loading tensor: {} with size: {} bytes", key, data.len());
         let shape = header.shape.clone();
-        let mut dt: DType = header.dtype.into();
-        if dt == DType::F16 {
-            log::debug!("Casting {} from F16 to F32", key);
-            //TODO: terrible cast whilst wgpu doesn't support F16
-            let f16_data = bytemuck::cast_slice::<u8, f16>(&data);
-            let f32_data = f16_data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
-            data = bytemuck::cast_slice::<f32, u8>(&f32_data).to_vec();
-            dt = DType::F32;
-        }
-        self.total_bytes_loaded
-            .set(self.total_bytes_loaded.get() + data.len());
-        self.total_loaded.set(self.total_loaded.get() + 1);
-        log::debug!(
-            "Total bytes loaded: {} bytes",
-            self.total_bytes_loaded.get()
-        );
-        log::debug!("Total tensors loaded: {}", self.total_loaded.get());
-        Ok(Tensor::from_bytes(&data, dt, shape, device.clone()).unwrap())
+        ratchet_from_gguf(header.dtype, &data, shape, device)
+            .map_err(|e| LoadError::InvalidFormat(0))
     }
 }
 
@@ -175,6 +159,7 @@ impl GGMLLoader {
         let mut total_size = 0;
         while reader.stream_position()? != last_position {
             let header = Self::load_single(reader)?;
+            println!("Loaded tensor: {:?}", header);
             total_size += header.data_size() as u64;
             tensor_map.insert(header.name.clone(), header);
         }

@@ -4,8 +4,8 @@
 //!
 //! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
-use super::{dtype::GGUFInterop, ggml::GgmlDType};
-use crate::error::Result;
+use super::dtype::GGUFInterop;
+use crate::{error::Result, GgmlDType};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use ratchet::{gguf::Q8_0, Device, Shape, Tensor};
@@ -66,14 +66,14 @@ impl TensorInfo {
         device: &Device,
     ) -> anyhow::Result<Tensor> {
         let tensor_elems = self.shape.numel();
-        let block_size = self.ggml_dtype.block_size();
-        if tensor_elems % block_size != 0 {
+        let block_numel = self.ggml_dtype.block_numel();
+        if tensor_elems % block_numel != 0 {
             anyhow::bail!(
-            "the number of elements {tensor_elems} is not divisible by the block size {block_size}"
+            "the number of elements {tensor_elems} is not divisible by the block size {block_numel}"
         )
         }
 
-        let tensor_blocks = tensor_elems / block_size;
+        let tensor_blocks = tensor_elems / block_numel;
         let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
 
         let mut raw_data = vec![0u8; size_in_bytes]; //TODO: MaybeUninit
@@ -102,7 +102,7 @@ pub fn ratchet_from_gguf(
     device: &Device,
 ) -> anyhow::Result<Tensor> {
     let tensor_elems = shape.numel();
-    let block_size = ggml_dtype.block_size();
+    let block_size = ggml_dtype.block_numel();
     let size_in_bytes = tensor_elems / block_size * ggml_dtype.type_size();
     if tensor_elems % block_size != 0 {
         anyhow::bail!(
@@ -429,8 +429,7 @@ impl Content {
             };
 
             dimensions.reverse();
-            let ggml_dtype = reader.read_u32::<LittleEndian>()?;
-            let ggml_dtype = GgmlDType::from_u32(ggml_dtype)?;
+            let ggml_dtype = GgmlDType::try_from(reader.read_u32::<LittleEndian>()?).unwrap();
             let offset = reader.read_u64::<LittleEndian>()?;
             tensor_infos.insert(
                 tensor_name,
