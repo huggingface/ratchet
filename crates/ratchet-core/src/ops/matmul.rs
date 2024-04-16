@@ -453,7 +453,7 @@ impl MetaOperation for GEMM {
     }
 
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        let kk = if self.rhs.shape().is_vector() {
+        let kk = if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {
             self.gemm_kernel_key(inplace, dst)
@@ -477,7 +477,7 @@ impl MetaOperation for GEMM {
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let spec = self.compute_spec(dst);
 
-        if spec.rhs_shape().is_vector() {
+        if spec.rhs_shape().is_vector() && !self.trans_lhs {
             let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], 16);
             let wgc = wgc![group_x as _, 1, spec.stacks() as _];
             Ok(wgc)
@@ -501,6 +501,7 @@ impl MetaOperation for GEMM {
             let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
             let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
             let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+
             Ok(workgroup_count)
         }
     }
