@@ -76,6 +76,7 @@ impl Module for Phi2 {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.embedding.schedule(input)?;
+
         let [_, seq_len, n_state]: [usize; 3] = x.shape().try_into()?;
         let mask = if seq_len <= 1 {
             None

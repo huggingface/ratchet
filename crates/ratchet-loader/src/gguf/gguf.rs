@@ -5,13 +5,10 @@
 //! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
 use super::{dtype::GGUFInterop, ggml::GgmlDType};
-use crate::{
-    error::Result,
-    k_quants::{BlockQ8_0, GGType},
-};
+use crate::error::Result;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use ratchet::{gguf::Q8_0, DType, Device, Shape, Tensor};
+use ratchet::{gguf::Q8_0, Device, Shape, Tensor};
 use std::collections::HashMap;
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;

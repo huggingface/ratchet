@@ -1,8 +1,8 @@
 use half::{bf16, f16};
-use std::num::NonZeroU64;
+use std::{cmp::max, num::NonZeroU64};
 use wgpu::{BufferAddress, BufferSize};
 
-use crate::RVec;
+use crate::{gpu::MIN_STORAGE_BUFFER_SIZE, rvec, RVec};
 
 use self::gguf::*;
 
@@ -21,14 +21,17 @@ pub enum DType {
     I32,
     U32,
     GGUF(gguf::GGUFDType),
-    WQ8,
 }
 
 impl DType {
     pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
         match self {
             DType::GGUF(g) => g.segments(numel),
-            _ => unimplemented!(),
+            _ => {
+                let mut total_bytes = numel * self.size_of();
+                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
+                rvec![BufferSegment::new(0, total_bytes as u64)]
+            }
         }
     }
 
@@ -49,12 +52,7 @@ impl DType {
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
-            DType::GGUF(g) => match g {
-                GGUFDType::Q4K(_) => 1,
-                GGUFDType::Q6K(_) => 1,
-                GGUFDType::Q8_0(_) => 34,
-            },
-            _ => unimplemented!(),
+            DType::GGUF(g) => g.size_of(),
         }
     }
 

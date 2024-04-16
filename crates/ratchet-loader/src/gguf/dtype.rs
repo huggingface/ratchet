@@ -136,15 +136,27 @@ impl GGUFInterop for Q8_0 {
         let mut ds_bytes = Vec::with_capacity(n_blocks * 4);
 
         for block in data {
-            ds_bytes.extend_from_slice(bytemuck::bytes_of(&block.d.to_f32()));
-            qs_bytes.extend_from_slice(bytemuck::cast_slice(&block.qs));
+            let block_f32 = block.d.to_f32();
+            let block_qs = block.qs;
+            ds_bytes.extend_from_slice(&block_f32.to_le_bytes());
+            qs_bytes.extend_from_slice(bytemuck::cast_slice(&block_qs));
         }
 
         let _ = ds_bytes.align_standard();
         let _ = qs_bytes.align_standard();
 
         qs_bytes.append(&mut ds_bytes);
-        Tensor::from_bytes(&qs_bytes, DType::WQ8, shape, Device::CPU)
+        let casted = bytemuck::cast_slice::<u8, u32>(&qs_bytes);
+        let inner = unsafe {
+            Tensor::from_quantized::<u32, _>(
+                casted,
+                DType::GGUF(GGUFDType::Q8_0(Q8_0)),
+                shape,
+                Device::CPU,
+            )
+        };
+
+        Ok(inner.to(device)?)
     }
 }
 

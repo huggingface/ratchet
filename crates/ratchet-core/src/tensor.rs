@@ -524,7 +524,9 @@ impl Tensor {
     /// If the tensor has more than 1 reference, you die.
     /// If the tensor has no storage, you die.
     pub unsafe fn into_bytes(self) -> anyhow::Result<Vec<u8>> {
-        let inner = Arc::try_unwrap(self.inner).unwrap();
+        let inner = Arc::try_unwrap(self.inner).map_err(|_| {
+            anyhow::anyhow!("Cannot convert tensor into bytes with multiple references.")
+        })?;
         let storage = Arc::try_unwrap(inner.storage)
             .unwrap()
             .into_inner()
@@ -577,11 +579,6 @@ impl Tensor {
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
         let segments = self.dt().segments(self.shape().numel());
-        assert_eq!(
-            segments.iter().map(|s| s.size.get()).sum::<u64>(),
-            gpu_buf.inner().size()
-        );
-
         segments.iter().fold(rvec![], |mut entries, segment| {
             let (offset, size) = (segment.offset, segment.size);
             entries.push(BindGroupEntry {

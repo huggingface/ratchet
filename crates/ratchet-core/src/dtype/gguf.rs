@@ -24,6 +24,13 @@ pub enum GGUFDType {
 }
 
 impl GGUFDType {
+    pub fn size_of(self) -> usize {
+        match self {
+            GGUFDType::Q8_0(_) => 34,
+            _ => unimplemented!(),
+        }
+    }
+
     pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
         match self {
             GGUFDType::Q4K(_) => Q4K::segments(numel),
@@ -89,10 +96,10 @@ pub struct Q8_0;
 impl Segments for Q8_0 {
     fn segments(numel: usize) -> RVec<BufferSegment> {
         let mut offset = 0;
-        let qs_len: u64 = (numel * QK8_0).align() as u64;
+        let qs_len: u64 = numel.align() as u64;
         let qs_segment = BufferSegment::new(offset, qs_len);
 
-        let d_len: u64 = (numel * 4).align() as u64;
+        let d_len: u64 = ((numel / QK8_0) * 4).align() as u64;
         offset += qs_len;
         let d_segment = BufferSegment::new(offset, d_len);
 

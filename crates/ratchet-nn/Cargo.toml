@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["pyo3"]
+pyo3 = ["ratchet/pyo3"]
+
 [dependencies]
 anyhow.workspace = true
 derive-new = "0.6.0"
@@ -13,3 +17,6 @@ ratchet = { path = "../ratchet-core" }
 [dev-dependencies]
 proptest = "1.4.0"
 test-strategy = "0.3.1"
+hf-hub = "0.3.2"
+ratchet-loader = { path = "../ratchet-loader" }
+tokenizers.workspace = true

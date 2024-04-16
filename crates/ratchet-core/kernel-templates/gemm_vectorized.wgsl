@@ -14,6 +14,10 @@ fn setOutputAtIndex(flatIndex : i32, value : vec4<f32>) {
     result[flatIndex] = vec4<f32>(value);
 }
 
+fn unpack4x8snorm_gguf(x: u32) -> vec4<f32> {
+    return unpack4x8snorm(x) * 127f;
+}
+
 fn setOutputAtCoords(d0 : i32, d1 : i32, d2 : i32, value : vec4<f32>) {
     let flatIndex = getOutputIndexFromCoords(vec3<i32>(d0, d1, d2));
     setOutputAtIndex(flatIndex / 4, value);
@@ -21,11 +25,11 @@ fn setOutputAtCoords(d0 : i32, d1 : i32, d2 : i32, value : vec4<f32>) {
 
 {% if QUANT %}
     fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-        return unpack4x8snorm(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
+        return unpack4x8snorm_gguf(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
     }
 
     fn getAbsMax(d0 : i32, d1 : i32, d2 : i32) -> f32 {
-        let abs_index = getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 16;
+        let abs_index = getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 32;
         return scale[abs_index]; 
     }
 {% else %}

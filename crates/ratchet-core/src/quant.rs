@@ -1,12 +1,13 @@
 use num::integer::div_floor;
 use num_traits::{AsPrimitive, Float};
 
-use std::{
-    borrow::{Borrow, BorrowMut},
-    fmt::Debug,
-};
+use std::fmt::Debug;
 
-use crate::{gpu::STORAGE_BUFFER_ALIGN, DType, Device, Tensor};
+use crate::{
+    gguf::{GGUFDType, Q8_0},
+    gpu::STORAGE_BUFFER_ALIGN,
+    DType, Device, Tensor,
+};
 
 /// Quantizer
 ///
@@ -26,9 +27,7 @@ impl Quantizer {
     }
 
     /// Quantizes a float 32 tensor into a packed uint32 tensor.
-    /// This is the rust equivalent of: https://www.w3.org/TR/WGSL/#pack4x8snorm-builtin
-    /// This allows us to call `unpack4x8snorm` in the shader.
-    /// It's a pretty naive quantization scheme, more to come.
+    /// GGUF Q8_0
     pub fn sint8_quantize(&self, tensor: Tensor) -> Tensor {
         let numel = tensor.shape().numel();
         let pack_size = self.format.pack_size();
@@ -55,21 +54,22 @@ impl Quantizer {
         let mut quantized_matrix = vec![0u32; aligner(qmatrix_len, std::mem::size_of::<u32>())];
         let mut absmax_matrix = vec![0f32; aligner(amatrix_len, std::mem::size_of::<f32>())];
 
-        let sf = 127.0f32;
         let mut block_absmax = f32::NEG_INFINITY;
 
         let matrix = tensor.to_vec::<f32>().unwrap();
 
         for i in (0..numel).step_by(pack_size) {
             if i % group_size == 0 {
-                block_absmax = matrix[i..i + group_size]
+                let amax = matrix[i..i + group_size]
                     .iter()
                     .fold(f32::NEG_INFINITY, |acc, &x| acc.max(x.abs()));
+                let d = amax / ((1 << 7) - 1) as f32;
+                block_absmax = d;
             }
-            let packed_value: i32 = ((matrix[i] / block_absmax * sf).round() as i32 & 0xFF)
-                | (((matrix[i + 1] / block_absmax * sf).round() as i32 & 0xFF) << 8)
-                | (((matrix[i + 2] / block_absmax * sf).round() as i32 & 0xFF) << 16)
-                | (((matrix[i + 3] / block_absmax * sf).round() as i32 & 0xFF) << 24);
+            let packed_value: i32 = ((matrix[i] / block_absmax).round() as i32 & 0xFF)
+                | (((matrix[i + 1] / block_absmax).round() as i32 & 0xFF) << 8)
+                | (((matrix[i + 2] / block_absmax).round() as i32 & 0xFF) << 16)
+                | (((matrix[i + 3] / block_absmax).round() as i32 & 0xFF) << 24);
             quantized_matrix[i / pack_size] = packed_value as u32;
             absmax_matrix[i / group_size] = block_absmax;
         }
@@ -77,7 +77,7 @@ impl Quantizer {
         unsafe {
             Tensor::from_quantized(
                 quantized_matrix,
-                DType::WQ8,
+                DType::GGUF(GGUFDType::Q8_0(Q8_0)),
                 tensor.shape().clone(),
                 Device::CPU,
             )
@@ -85,7 +85,7 @@ impl Quantizer {
     }
 
     pub fn sint8_dequantize(&self, quantized: Tensor) -> Tensor {
-        assert!(quantized.dt() == DType::WQ8);
+        assert!(matches!(quantized.dt(), DType::GGUF(GGUFDType::Q8_0(_))));
         let numel = quantized.shape().numel();
         let original_shape = quantized.shape().clone();
         let aligner = |numel: usize, size_t: usize| -> usize {
@@ -120,10 +120,10 @@ impl Quantizer {
         for i in (0..numel).step_by(pack_size) {
             let block_absmax = absmax_matrix[div_floor(i, group_size)];
             let packed_value = quantized_matrix[div_floor(i, pack_size)] as i32;
-            dequantized[i] = ((packed_value << 24) >> 24) as f32 / 127.0 * block_absmax;
-            dequantized[i + 1] = ((packed_value << 16) >> 24) as f32 / 127.0 * block_absmax;
-            dequantized[i + 2] = ((packed_value << 8) >> 24) as f32 / 127.0 * block_absmax;
-            dequantized[i + 3] = (packed_value >> 24) as f32 / 127.0 * block_absmax;
+            dequantized[i] = ((packed_value << 24) >> 24) as f32 * block_absmax;
+            dequantized[i + 1] = ((packed_value << 16) >> 24) as f32 * block_absmax;
+            dequantized[i + 2] = ((packed_value << 8) >> 24) as f32 * block_absmax;
+            dequantized[i + 3] = (packed_value >> 24) as f32 * block_absmax;
         }
 
         Tensor::from_data(dequantized, original_shape, Device::CPU)
