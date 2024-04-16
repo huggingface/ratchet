@@ -20,6 +20,11 @@ struct Meta {
 @group(1) @binding(0)
 var<uniform> metadata: Meta;
 
+fn unpack4x8snorm_gguf(x: u32) -> vec4<f32> {
+    return unpack4x8snorm(x) * 127f;
+}
+
+
 @compute @workgroup_size(8,8,1)
 fn main( 
         @builtin(local_invocation_id) local_id: vec3<u32>,
@@ -41,5 +46,5 @@ fn main(
     let left_rank_i = tid / (right_numel * metadata.ids_numel);
 
     let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
-    Y[tid] = unpack4x8snorm(X[src_i]) * A[src_i / 4u];
+    Y[tid] = unpack4x8snorm_gguf(X[src_i]) * A[src_i / 8u];
 }

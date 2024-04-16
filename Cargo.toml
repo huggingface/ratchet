@@ -38,3 +38,4 @@ wasm-bindgen = "0.2.91"
 wasm-bindgen-test = "0.3.34"
 npyz = { version = "0.8.3"}
 hf-hub = "0.3.2"
+tokenizers = "0.15.2"

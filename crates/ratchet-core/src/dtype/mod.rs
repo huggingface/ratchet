@@ -1,17 +1,15 @@
-use std::{cmp::max, num::NonZeroU64};
-pub mod gguf;
-pub mod segments;
-pub use gguf::GGUFDType;
 use half::{bf16, f16};
-pub use segments::Segments;
+use std::{cmp::max, num::NonZeroU64};
 use wgpu::{BufferAddress, BufferSize};
 
-use crate::{
-    gpu::{MIN_STORAGE_BUFFER_SIZE, STORAGE_BUFFER_ALIGN},
-    rvec, RVec,
-};
+use crate::{gpu::MIN_STORAGE_BUFFER_SIZE, rvec, RVec};
 
-use self::gguf::{GGUFSize, Q4K, Q6K};
+use self::gguf::*;
+
+pub mod gguf;
+mod segments;
+
+pub use segments::*;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
 pub enum DType {
@@ -22,16 +20,25 @@ pub enum DType {
     F32,
     I32,
     U32,
-    WQ8, //Packed Q8 (|--4xQ8(u32)--| |--f32--|)
     GGUF(gguf::GGUFDType),
 }
 
 impl DType {
+    pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
+        match self {
+            DType::GGUF(g) => g.segments(numel),
+            _ => {
+                let mut total_bytes = numel * self.size_of();
+                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
+                rvec![BufferSegment::new(0, total_bytes as u64)]
+            }
+        }
+    }
+
     pub fn to_u32(self) -> u32 {
         match self {
             DType::F32 => 0,
             DType::F16 => 1,
-            DType::WQ8 => 64,
             _ => unimplemented!(),
         }
     }
@@ -45,38 +52,14 @@ impl DType {
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
-            DType::WQ8 => 4,
-            DType::GGUF(gguf::GGUFDType::Q4K(_)) => Q4K::TYPE_SIZE_WEBGPU,
-            DType::GGUF(gguf::GGUFDType::Q6K(_)) => Q6K::TYPE_SIZE_WEBGPU,
+            DType::GGUF(g) => g.size_of(),
         }
     }
 
-    pub fn segments(&self, numel: usize, buffer_bytes: usize) -> RVec<BufferSegment> {
+    pub fn is_quantized(self) -> bool {
         match self {
-            DType::WQ8 => {
-                let aligner = |numel: usize, size_t: usize| -> usize {
-                    let nbytes = numel * size_t;
-
-                    if nbytes % STORAGE_BUFFER_ALIGN != 0 {
-                        nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
-                    } else {
-                        nbytes
-                    }
-                };
-                let weight_size = aligner(numel / 4, std::mem::size_of::<u32>());
-                let absmax_size = aligner(numel / 16, std::mem::size_of::<f32>());
-                assert_eq!(weight_size + absmax_size, buffer_bytes);
-
-                let weights = BufferSegment::new(0, Some(weight_size as u64));
-                let absmax = BufferSegment::new(weight_size as u64, Some(absmax_size as u64));
-                rvec![weights, absmax]
-            }
-            _ => {
-                let mut total_bytes = numel * self.size_of();
-                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
-
-                rvec![BufferSegment::new(0, Some(total_bytes as u64))]
-            }
+            DType::GGUF(_) => true,
+            _ => false,
         }
     }
 }
@@ -109,13 +92,15 @@ impl From<npyz::DType> for DType {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct BufferSegment {
     pub offset: BufferAddress,
-    pub size: Option<BufferSize>,
+    pub size: BufferSize,
 }
 
 impl BufferSegment {
-    pub fn new(offset: BufferAddress, size: Option<u64>) -> Self {
-        let size = size.map(NonZeroU64::new).unwrap();
-        Self { offset, size }
+    pub fn new(offset: BufferAddress, size: u64) -> Self {
+        Self {
+            offset,
+            size: NonZeroU64::new(size).expect("Invalid u64"),
+        }
     }
 }
 
@@ -160,3 +145,43 @@ map_type!(i32, I32);
 map_type!(u32, U32);
 map_half_type!(f16, F16);
 map_half_type!(bf16, BF16);
+
+//Handy trait for WebGPU buffer alignment
+pub trait Align {
+    fn calculate_alignment(&self) -> usize;
+    fn align(&self) -> usize;
+}
+
+impl Align for usize {
+    fn calculate_alignment(&self) -> usize {
+        let remainder = self % 256;
+        if remainder == 0 {
+            0
+        } else {
+            256 - remainder
+        }
+    }
+
+    fn align(&self) -> usize {
+        self + &self.calculate_alignment()
+    }
+}
+
+pub trait Padding {
+    fn align_standard(&mut self) -> usize;
+}
+
+impl<T: Clone + Default> Padding for Vec<T> {
+    fn align_standard(&mut self) -> usize {
+        let length = &self.len();
+        let alignment = length.calculate_alignment();
+        if alignment != 0 {
+            let default_value: T = Default::default();
+            let mut padding = vec![default_value; alignment];
+            self.append(&mut padding);
+            alignment
+        } else {
+            0
+        }
+    }
+}

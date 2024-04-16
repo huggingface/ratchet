@@ -39,6 +39,10 @@ struct Meta {
     dimInner: i32,
 }
 
+fn unpack4x8snorm_gguf(x: u32) -> vec4<f32> {
+    return unpack4x8snorm(x) * 127f;
+}
+
 var<workgroup> work: array<{{ ELEM_TYPE }}, {{workgroup_size_x * workgroup_size_y / ELEM_SIZE}}>;
 
 @compute @workgroup_size({{workgroup_size_x}},{{workgroup_size_y}},{{workgroup_size_z}})
@@ -65,9 +69,9 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     let aIndex = aOffset + row * metadata.aStrides.y / {{ELEM_SIZE}};
 
     {% if QUANT %}
-        let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 16;
+        let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
         for (var k = i32(globalId.y); k < metadata.dimInner / 4; k+={{workgroup_size_y / 4}}) {
-            sum = fma(unpack4x8snorm(A[aIndex + k]) * scale[sIndex + (k/4)], X[k], sum);
+            sum = fma(unpack4x8snorm_gguf(A[aIndex + k]) * scale[sIndex + (k/8)], X[k], sum);
         }
     {% else %}
         for (var k = i32(globalId.y); k < metadata.dimInner; k+={{workgroup_size_y}}) {

@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use encase::ShaderType;
 
 use crate::{
+    gguf::{GGUFDType, Q8_0},
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, DType, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata,
     Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
@@ -217,6 +218,10 @@ impl GEMM {
             panic!("Bias must be a vector: {:?}", bias);
         }
 
+        if matches!(lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) && trans_lhs {
+            panic!("Transposed quantized inputs are not supported");
+        }
+
         Self {
             lhs,
             rhs,
@@ -317,11 +322,7 @@ impl GEMM {
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let ke = spec.select_kernel_element();
 
-        if (self.rhs.dt() == DType::WQ8) && self.trans_rhs {
-            panic!("Transposed WQ8 not supported");
-        }
-
-        let kernel_stem = if self.lhs.dt() == DType::WQ8 {
+        let kernel_stem = if matches!(self.lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) {
             "qgemm"
         } else {
             "sgemm"
@@ -363,7 +364,7 @@ impl GEMM {
 
         let ke = spec.select_kernel_element();
 
-        let kernel_stem = if self.lhs.dt() == DType::WQ8 {
+        let kernel_stem = if matches!(self.lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) {
             "qgemv"
         } else {
             "sgemv"
@@ -432,7 +433,10 @@ impl OpGuards for GEMM {
     }
 
     fn check_dtypes(&self) {
-        let allowed_pairs = [(DType::F32, DType::F32), (DType::WQ8, DType::F32)];
+        let allowed_pairs = [
+            (DType::F32, DType::F32),
+            (DType::GGUF(GGUFDType::Q8_0(Q8_0)), DType::F32),
+        ];
         if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
             panic!(
                 "Failed to validate DTypes: {:?}, {:?}",
@@ -449,7 +453,7 @@ impl MetaOperation for GEMM {
     }
 
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        let kk = if self.rhs.shape().is_vector() {
+        let kk = if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {
             self.gemm_kernel_key(inplace, dst)
@@ -473,7 +477,7 @@ impl MetaOperation for GEMM {
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let spec = self.compute_spec(dst);
 
-        if spec.rhs_shape().is_vector() {
+        if spec.rhs_shape().is_vector() && !self.trans_lhs {
             let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], 16);
             let wgc = wgc![group_x as _, 1, spec.stacks() as _];
             Ok(wgc)
@@ -497,6 +501,7 @@ impl MetaOperation for GEMM {
             let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
             let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
             let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
+
             Ok(workgroup_count)
         }
     }
@@ -509,8 +514,8 @@ impl MetaOperation for GEMM {
         let layout = match (A.dt(), B.dt(), bias.is_some()) {
             (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
             (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
-            (DType::WQ8, DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
-            (DType::WQ8, DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
+            (DType::GGUF(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::GGUF(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
             _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
         };
         Ok(layout)
@@ -746,7 +751,7 @@ def matmul(a, b{}):
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
-        println!("RATCHET WQ8\n{:?}\n", ours);
+        println!("RATCHET QUANT\n{:?}\n", ours);
         println!("PYTORCH FP32:\n{:?}", ground);
 
         ground.all_close(&ours, 1e1, 1e-1)?;
@@ -769,7 +774,7 @@ def matmul(a, b{}):
         let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
-        println!("RATCHET WQ8\n{:?}\n", ours);
+        println!("RATCHET QUANT\n{:?}\n", ours);
         println!("PYTORCH FP32:\n{:?}", ground);
 
         ground.all_close(&ours, 1e1, 1e-1)?;
