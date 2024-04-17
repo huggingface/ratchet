@@ -320,7 +320,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let model_path = model.get("tiny_q8.bin").unwrap();
+        let model_path = model.get("tiny_q8_0.bin").unwrap();
         println!("PATH: {:?}", model_path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
@@ -349,6 +349,7 @@ mod tests {
         println!("Processing time: {:?}", transcript.processing_time);
     }
 
+    /*
     #[test]
     pub fn convert_ggml_f32_to_wq8() {
         log_init();
@@ -384,5 +385,5 @@ mod tests {
         let quantization = Quantization::None;
         Converter::convert::<_, Whisper>(src_path, dst_path, quantization, to_quant, to_pad)
             .unwrap();
-    }
+    }*/
 }

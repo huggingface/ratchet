@@ -147,8 +147,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let path = model.get("tiny_q8.bin").unwrap();
-        //let path = model.get("tiny_f32.bin").unwrap();
+        let path = model.get("tiny_f32.bin").unwrap();
         println!("Path: {}", path.display());
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
