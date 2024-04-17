@@ -5,6 +5,7 @@ pub mod gguf;
 mod k_quants;
 
 pub use converter::*;
+use ratchet::gguf::{GGUFDType, Q8_0};
 
 pub const STORAGE_BUFFER_ALIGN: usize = 256;
 
@@ -51,6 +52,7 @@ impl From<GgmlDType> for ratchet::DType {
         match val {
             GgmlDType::F32 => ratchet::DType::F32,
             GgmlDType::F16 => ratchet::DType::F16,
+            GgmlDType::Q8_0 => ratchet::DType::GGUF(GGUFDType::Q8_0(Q8_0)),
             _ => unimplemented!(),
         }
     }
@@ -124,7 +126,7 @@ impl GgmlDType {
     }
 
     /// The block size, i.e. the number of elements stored in each block.
-    pub fn block_size(&self) -> usize {
+    pub fn block_numel(&self) -> usize {
         match self {
             Self::F32 => 1,
             Self::F16 => 1,
@@ -139,6 +141,6 @@ impl GgmlDType {
     }
 
     pub fn tensor_size(&self, numel: usize) -> usize {
-        numel * self.type_size() / self.block_size()
+        numel * self.type_size() / self.block_numel()
     }
 }

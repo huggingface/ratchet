@@ -88,11 +88,10 @@ impl GPUBuffer {
     #[allow(unused)]
     pub fn deep_clone(&self, device: &WgpuDevice) -> Self {
         let clone = device
-            .get_or_create_buffer(&BufferDescriptor::new(
-                self.inner.size(),
-                self.inner.usage(),
-                false,
-            ))
+            .get_or_create_buffer(
+                &BufferDescriptor::new(self.inner.size(), self.inner.usage(), false),
+                true,
+            )
             .unwrap();
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });

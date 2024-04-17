@@ -1,4 +1,4 @@
-use ratchet::{rvec, shape, Tensor};
+use ratchet::{rvec, shape, Device, Tensor};
 use ratchet_nn::{KVEntry, Linear, Module};
 
 #[derive(Debug)]

@@ -9,6 +9,24 @@ use crate::{
     Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 
+//https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
+#[derive(Debug, Clone)]
+pub enum GEMVHeuristic {
+    VeryTall,
+    Tall,
+    Square,
+    Fat,
+}
+
+impl GEMVHeuristic {
+    pub fn as_workload(&self) -> (usize, usize) {
+        match self {
+            GEMVHeuristic::Fat => (4, 256),
+            _ => (16, 16),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct GEMMSpec {
@@ -24,6 +42,7 @@ pub struct GEMMSpec {
     trans_b: bool,
     trans_out: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
+    heuristic: GEMVHeuristic,
 }
 
 impl GEMMSpec {
@@ -88,6 +107,15 @@ impl GEMMSpec {
             stack_dims,
             stack_shape.numel(),
         );
+
+        let heuristic = match (a_shape[0], a_shape[1]) {
+            (arows, acols) if arows > acols * 4 => GEMVHeuristic::VeryTall,
+            (arows, acols) if arows > acols * 2 => GEMVHeuristic::Tall,
+            (arows, acols) if acols > arows * 2 => GEMVHeuristic::Fat,
+            _ => GEMVHeuristic::Square,
+        };
+        //println!("SELECTED HEURISTIC: {:?} for {:?}", heuristic, a_shape);
+
         Self {
             a_dt,
             b_dt,
@@ -101,6 +129,7 @@ impl GEMMSpec {
             trans_b,
             trans_out,
             stack_shape,
+            heuristic,
         }
     }
 
@@ -222,6 +251,24 @@ impl GEMM {
             panic!("Transposed quantized inputs are not supported");
         }
 
+        //println!(
+        //    "MATMUL PROBLEM:
+        //lhs: {:?} {:?}
+        //rhs: {:?} {:?}
+        //bias: {:?}
+        //trans_lhs: {}
+        //trans_rhs: {}
+        //trans_out: {}",
+        //    lhs.shape(),
+        //    lhs.dt(),
+        //    rhs.shape(),
+        //    rhs.dt(),
+        //    bias.is_some(),
+        //    trans_lhs,
+        //    trans_rhs,
+        //    trans_out
+        //);
+
         Self {
             lhs,
             rhs,
@@ -263,7 +310,13 @@ impl GEMM {
         let (a_prefix, b_prefix) = (&ashape[..arank - 2], &bshape[..brank - 2]);
         let mut c_broadcasted_prefix =
             Shape::multi_broadcast(&[&a_prefix.into(), &b_prefix.into()]).ok_or_else(|| {
-                anyhow::anyhow!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape)
+                anyhow::anyhow!(
+                    "Matmul broadcasting: a: {:?} b: {:?} trans_a: {:?} trans_b: {:?}",
+                    ashape,
+                    bshape,
+                    trans_lhs,
+                    trans_rhs
+                )
             })?;
 
         let (mut m, mut ka) = (ashape[arank - 2], ashape[arank - 1]);
@@ -278,7 +331,7 @@ impl GEMM {
         }
 
         if ka != kb {
-            anyhow::bail!("Matmul broadcasting: a: {:?} b: {:?}", ashape, bshape);
+            anyhow::bail!("Matmul broadcasting: ka != kb: {} != {}", ka, kb);
         }
 
         let mut c_shape_final = c_broadcasted_prefix.clone();
@@ -372,16 +425,15 @@ impl GEMM {
 
         let has_bias = self.bias.is_some();
 
-        let ROW_SIZE = 16;
-        let YT = 8;
+        let (TILE_X, YT) = spec.heuristic.as_workload();
 
-        let a_fit = spec.lhs_shape()[1] % ROW_SIZE == 0;
+        let a_fit = spec.lhs_shape()[1] % TILE_X == 0;
 
         format!(
             "{}_{}_{}_{}_{}_{}",
             kernel_stem,
             has_bias,
-            ROW_SIZE,
+            TILE_X,
             YT,
             a_fit,
             ke.as_str()
@@ -478,7 +530,8 @@ impl MetaOperation for GEMM {
         let spec = self.compute_spec(dst);
 
         if spec.rhs_shape().is_vector() && !self.trans_lhs {
-            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], 16);
+            let (TILE_X, YT) = spec.heuristic.as_workload();
+            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TILE_X);
             let wgc = wgc![group_x as _, 1, spec.stacks() as _];
             Ok(wgc)
         } else {

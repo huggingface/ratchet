@@ -22,7 +22,6 @@ impl Module for Embedding {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        println!("EMBEDDING VOCAB SIZE: {:?}", self.weight.shape());
         let mut output_shape = input.shape().clone();
         let weight_rank = self.weight.rank();
         let weight_dim = if self.transposed { 0 } else { weight_rank - 1 };

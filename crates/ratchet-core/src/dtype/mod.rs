@@ -4,8 +4,6 @@ use wgpu::{BufferAddress, BufferSize};
 
 use crate::{gpu::MIN_STORAGE_BUFFER_SIZE, rvec, RVec};
 
-use self::gguf::*;
-
 pub mod gguf;
 mod segments;
 
@@ -39,6 +37,7 @@ impl DType {
         match self {
             DType::F32 => 0,
             DType::F16 => 1,
+            DType::GGUF(g) => g.to_u32(),
             _ => unimplemented!(),
         }
     }

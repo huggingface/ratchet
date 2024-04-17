@@ -42,7 +42,7 @@ num = "0.4.1"
 rand_distr = { version = "0.4.3", optional = true }
 rand = { version = "0.8.4", optional = true }
 lazy_static = "1.4.0"
-glam = { version = "0.25.0" }
+glam = { version = "0.27.0" }
 regex = "1.10.3"
 npyz = { version = "0.8.3", optional = true }
 ndarray = { version = "0.15.6", optional = true}

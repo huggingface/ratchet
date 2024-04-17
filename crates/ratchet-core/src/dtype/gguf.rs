@@ -26,8 +26,16 @@ pub enum GGUFDType {
 impl GGUFDType {
     pub fn size_of(self) -> usize {
         match self {
-            GGUFDType::Q8_0(_) => 34,
+            GGUFDType::Q8_0(_) => 36, //32 + 4
             _ => unimplemented!(),
+        }
+    }
+
+    pub(crate) fn to_u32(self) -> u32 {
+        match self {
+            GGUFDType::Q8_0(_) => 8,
+            GGUFDType::Q4K(_) => 12,
+            GGUFDType::Q6K(_) => 14,
         }
     }
 

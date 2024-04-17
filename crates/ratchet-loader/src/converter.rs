@@ -41,6 +41,7 @@ impl Converter {
             } else {
                 maybe_padded
             };
+            log::info!("Writing tensor {} {:?}", name, to_write.shape());
             total_write += M::write_tensor(name, to_write, &mut writer)?;
         }
         log::info!("Total tensor data written: {} bytes", total_write);

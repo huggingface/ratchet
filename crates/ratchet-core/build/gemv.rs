@@ -7,8 +7,8 @@ pub struct Gemv;
 
 impl Gemv {
     pub fn generate_kernel(renderer: &mut KernelRenderer) -> anyhow::Result<()> {
-        let WORKGROUP_X = [16, 32];
-        let WORKGROUP_Y = [4, 8];
+        let WORKGROUP_X = [4, 8, 16, 32, 64];
+        let WORKGROUP_Y = [4, 8, 16, 32, 256];
         let FIT = [false, true];
         let BIAS = [false, true];
         let QUANT = [false, true];
@@ -23,6 +23,10 @@ impl Gemv {
 
             for wgx in WORKGROUP_X.iter() {
                 for wgy in WORKGROUP_Y.iter() {
+                    if wgx * wgy > 1024 {
+                        continue;
+                    }
+
                     for fit in FIT.iter() {
                         for bias in BIAS.iter() {
                             let mut context = Context::new();

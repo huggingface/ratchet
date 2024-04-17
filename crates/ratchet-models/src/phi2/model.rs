@@ -85,6 +85,10 @@ impl Module for Phi2 {
         };
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
+            //if layer_idx > 15 {
+            //    break;
+            //}
+
             let input = DecoderLayerInput {
                 x,
                 mask: mask.clone(),
@@ -100,13 +104,14 @@ impl Module for Phi2 {
 }
 
 impl Phi2 {
-    const MAX_CACHE: usize = 1024;
+    const MAX_CACHE: usize = 1024; //TODO: configurable
 
     pub fn load<R: BufRead + Seek>(
         disk_model: Content,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
+        println!("Starting loading Phi2 model");
         let embedding = Embedding::new(
             disk_model.tensor(reader, "token_embd.weight", device)?,
             false,
