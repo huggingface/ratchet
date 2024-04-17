@@ -36,8 +36,13 @@ impl BufferAllocator {
         self.pool.read().get(handle).unwrap()
     }
 
-    pub fn create_buffer(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> PooledGPUBuffer {
-        self.pool.write().get_or_create(desc, device)
+    pub fn create_buffer(
+        &self,
+        desc: &BufferDescriptor,
+        device: &WgpuDevice,
+        immediate: bool,
+    ) -> PooledGPUBuffer {
+        self.pool.write().get_or_create(desc, device, immediate)
     }
 
     pub fn create_buffer_init(
@@ -46,7 +51,7 @@ impl BufferAllocator {
         contents: &[u8],
         device: &WgpuDevice,
     ) -> PooledGPUBuffer {
-        let buf = self.pool.write().get_or_create(desc, device);
+        let buf = self.pool.write().get_or_create(desc, device, true);
         device.queue().write_buffer(&buf.inner, 0, contents);
         device.queue().submit(None);
         device.poll(wgpu::Maintain::Wait);
@@ -65,7 +70,7 @@ impl BufferAllocator {
             false,
         );
 
-        let resource = self.pool.write().get_or_create(&desc, device);
+        let resource = self.pool.write().get_or_create(&desc, device, true);
         device
             .queue()
             .write_buffer(&resource.inner, 0, uniform.as_slice());
@@ -99,12 +104,12 @@ impl BufferAllocator {
         }
 
         if std::env::var("RATCHET_DEBUG").is_ok() {
-            return self.create_buffer(&descriptor, device);
+            return self.create_buffer(&descriptor, device, true);
         }
 
         match closest_index {
             Some(idx) => free.remove(idx),
-            None => self.create_buffer(&descriptor, device),
+            None => self.create_buffer(&descriptor, device, true),
         }
     }
 
@@ -219,6 +224,7 @@ impl BufferAllocator {
                 let buf = self.create_buffer(
                     &BufferDescriptor::new(rounded_size as _, BufferUsages::standard(), false),
                     device,
+                    false,
                 );
                 shared_objects.push(buf.clone());
                 assignments.insert(record.id.unwrap(), buf);
@@ -239,6 +245,11 @@ impl BufferAllocator {
                 }
             }
         }
+
+        //We use `immediate` = false here,
+        //and submit the queue after all allocations are done.
+        device.queue().submit(None);
+        device.poll(wgpu::Maintain::Wait);
         Ok(())
     }
 

@@ -67,7 +67,12 @@ impl BufferPool {
         }
     }
 
-    pub fn get_or_create(&self, desc: &BufferDescriptor, device: &WgpuDevice) -> PooledGPUBuffer {
+    pub fn get_or_create(
+        &self,
+        desc: &BufferDescriptor,
+        device: &WgpuDevice,
+        immediate: bool,
+    ) -> PooledGPUBuffer {
         let descriptor = if (desc.size as usize) < MIN_STORAGE_BUFFER_SIZE {
             BufferDescriptor {
                 size: MIN_STORAGE_BUFFER_SIZE as _,
@@ -85,8 +90,10 @@ impl BufferPool {
                 usage,
                 mapped_at_creation,
             });
-            device.queue().submit(None);
-            device.poll(wgpu::Maintain::Wait);
+            if immediate {
+                device.queue().submit(None);
+                device.poll(wgpu::Maintain::Wait);
+            }
             buf
         }))
     }
