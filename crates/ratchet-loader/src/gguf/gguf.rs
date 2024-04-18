@@ -11,6 +11,9 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use ratchet::{gguf::Q8_0, Device, Shape, Tensor};
 use std::collections::HashMap;
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +32,7 @@ impl TryFrom<u32> for Magic {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VersionedMagic {
     GgufV1,
@@ -51,6 +55,7 @@ impl VersionedMagic {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug)]
 pub struct TensorInfo {
     pub ggml_dtype: GgmlDType,
@@ -117,8 +122,9 @@ pub fn ratchet_from_gguf(
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug)]
-pub struct Content {
+pub struct Header {
     pub magic: VersionedMagic,
     pub metadata: HashMap<String, Value>,
     pub tensor_infos: HashMap<String, TensorInfo>,
@@ -176,6 +182,7 @@ pub enum ValueType {
     Array,
 }
 
+#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub enum Value {
     U8(u8),
@@ -365,27 +372,9 @@ impl ValueType {
         };
         Ok(v)
     }
-
-    fn to_u32(self) -> u32 {
-        match self {
-            Self::U8 => 0,
-            Self::I8 => 1,
-            Self::U16 => 2,
-            Self::I16 => 3,
-            Self::U32 => 4,
-            Self::I32 => 5,
-            Self::F32 => 6,
-            Self::Bool => 7,
-            Self::String => 8,
-            Self::Array => 9,
-            Self::U64 => 10,
-            Self::I64 => 11,
-            Self::F64 => 12,
-        }
-    }
 }
 
-impl Content {
+impl Header {
     pub fn read<R: std::io::Seek + std::io::Read>(reader: &mut R) -> Result<Self> {
         let magic = VersionedMagic::read(reader)?;
 
@@ -451,6 +440,7 @@ impl Content {
             _ => DEFAULT_ALIGNMENT,
         };
         let tensor_data_offset = (position + alignment - 1) / alignment * alignment;
+        log::info!("TENSOR DATA OFFSET: {tensor_data_offset}");
         Ok(Self {
             magic,
             metadata,

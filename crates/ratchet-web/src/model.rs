@@ -1,14 +1,16 @@
 use crate::db::*;
 use ratchet_hub::{ApiBuilder, RepoType};
+use ratchet_loader::gguf::gguf;
 use ratchet_models::{
     registry::AvailableModels, registry::Quantization, transcribe::transcribe,
-    transcript::StreamedSegment, Whisper,
+    transcript::StreamedSegment, Phi2, Whisper,
 };
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug)]
 pub enum WebModel {
     Whisper(Whisper),
+    Phi2(Phi2),
 }
 
 impl WebModel {
@@ -35,17 +37,25 @@ impl WebModel {
                     .unwrap();
                 serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
             }
+            WebModel::Phi2(model) => {
+                let input: String = serde_wasm_bindgen::from_value(input)?;
+                serde_wasm_bindgen::to_value(&input).map_err(|e| e.into())
+            }
         }
     }
 
-    pub async fn from_stored(stored: StoredModel) -> Result<WebModel, anyhow::Error> {
+    pub async fn from_stored(stored: ModelRecord) -> Result<WebModel, anyhow::Error> {
         match stored.model {
-            AvailableModels::Whisper(_) => {
-                //TODO: 🚨 this is where we copy from JS memory to WASM arena
-                //this lil `to_vec` call!
-                let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
-                Ok(WebModel::Whisper(model))
-            }
+            //AvailableModels::Whisper(_) => {
+            //    //TODO: 🚨 this is where we copy from JS memory to WASM arena
+            //    //this lil `to_vec` call!
+            //    let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
+            //    Ok(WebModel::Whisper(model))
+            //}
+            //AvailableModels::Phi(_) => {
+            //    let model = Phi2::from_bytes(&stored.bytes.to_vec()).await?;
+            //    Ok(WebModel::Phi2(model))
+            //}
             _ => Err(anyhow::anyhow!("Unknown model type")),
         }
     }
@@ -90,16 +100,38 @@ impl Model {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
         })? {
-            log::warn!("Model not found in db, fetching from remote");
-            let model_bytes = if progress.is_undefined() {
-                model_repo.get(&key.model_id()).await?
-            } else {
-                model_repo
-                    .get_with_progress(&key.model_id(), progress)
-                    .await?
-            };
-            let model = StoredModel::new(&key, model_bytes, model.into());
-            db.put_model(&key, model).await.unwrap();
+            //log::warn!("Model not found in db, fetching from remote");
+            //let model_bytes = if progress.is_undefined() {
+            //    model_repo.get(&key.model_id()).await?
+            //} else {
+            //    model_repo
+            //        .get_with_progress(&key.model_id(), progress)
+            //        .await?
+            //};
+            //let model = ModelRecord::new(&key, model_bytes, model.into());
+            //db.put_model(&key, model).await.unwrap();
+            let header: gguf::Header = serde_wasm_bindgen::from_value(
+                model_repo.fetch_gguf_header(&key.model_id()).await?,
+            )?;
+
+            let (first_key, first_info) = header.tensor_infos.iter().next().unwrap();
+            log::info!("First key: {:?}", first_key);
+            log::info!("First info: {:?}", first_info);
+            let tensor_elems = first_info.shape.numel();
+            log::info!("Tensor elems: {:?}", tensor_elems);
+            let block_numel = first_info.ggml_dtype.block_numel();
+            log::info!("Block numel: {:?}", block_numel);
+            let tensor_blocks = tensor_elems / block_numel;
+            log::info!("Tensor blocks: {:?}", tensor_blocks);
+            let size_in_bytes = (tensor_blocks * first_info.ggml_dtype.type_size()) as u64;
+            log::info!("Size in bytes: {:?}", size_in_bytes);
+            let first_tensor = model_repo
+                .fetch_range(
+                    &key.model_id(),
+                    first_info.offset,
+                    first_info.offset + size_in_bytes,
+                )
+                .await?;
         }
         let model = db.get_model(&key).await.unwrap().unwrap();
         Ok(Model {
@@ -120,6 +152,7 @@ mod tests {
     use super::*;
     use ratchet_hub::{ApiBuilder, RepoType};
     use ratchet_models::options::DecodingOptionsBuilder;
+    use ratchet_models::registry::Phi as RegistryPhi;
     use ratchet_models::registry::Whisper as RegistryWhisper;
     use wasm_bindgen_test::*;
 
@@ -155,8 +188,9 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
+    /*
     #[wasm_bindgen_test]
-    async fn browser_end_to_end() -> Result<(), JsValue> {
+    async fn whisper_browser() -> Result<(), JsValue> {
         log_init();
         let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
             log::info!("Provided closure got progress: {}", p);
@@ -190,6 +224,24 @@ mod tests {
         let input = serde_wasm_bindgen::to_value(&input).unwrap();
         let result = model.run(input).await.unwrap();
         log::warn!("Result: {:?}", result);
+        Ok(())
+    }*/
+
+    #[wasm_bindgen_test]
+    async fn phi_browser() -> Result<(), JsValue> {
+        log_init();
+        let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
+            log::info!("Provided closure got progress: {}", p);
+        });
+        let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
+        let mut model = Model::load(
+            AvailableModels::Phi(RegistryPhi::Phi2),
+            Quantization::Q8_0,
+            js_cb,
+        )
+        .await
+        .unwrap();
+
         Ok(())
     }
 }

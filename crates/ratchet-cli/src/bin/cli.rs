@@ -4,7 +4,7 @@ use ndarray::Axis;
 use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, DeviceRequest, Tensor};
 use ratchet_loader::ggml::GGMLCompatible;
-use ratchet_loader::gguf::gguf::Content;
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_models::options::DecodingOptionsBuilder;
 use ratchet_models::registry::{AvailableModels, Quantization, Whisper as RegistryWhisper};
 use ratchet_models::transcribe::transcribe;
@@ -110,7 +110,7 @@ fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
     println!("MODEL PATH: {}", model_path.display());
     let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
     let device = Device::request_device(DeviceRequest::GPU)?;
-    let content = Content::read(&mut reader)?;
+    let content = Header::read(&mut reader)?;
     let mut model = Phi2::load(content, &mut reader, &device)?;
 
     let tokenizer =

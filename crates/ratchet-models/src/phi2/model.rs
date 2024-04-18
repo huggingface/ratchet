@@ -1,7 +1,7 @@
 use std::io::{BufRead, Seek};
 
 use ratchet::{shape, Device, Tensor};
-use ratchet_loader::gguf::gguf::Content;
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
 
 use super::{
@@ -18,7 +18,7 @@ pub struct DecoderLayer {
 
 impl DecoderLayer {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &Content,
+        disk_model: &Header,
         reader: &mut R,
         layer_index: usize,
         device: &Device,
@@ -107,7 +107,7 @@ impl Phi2 {
     const MAX_CACHE: usize = 1024; //TODO: configurable
 
     pub fn load<R: BufRead + Seek>(
-        disk_model: Content,
+        disk_model: Header,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
@@ -146,6 +146,14 @@ impl Phi2 {
             lm_head,
             kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], device),
         })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
+        let content = Header::read(&mut reader)?;
+        Self::load(content, &mut reader, &device)
     }
 
     pub fn generate_mask(seq_len: usize, device: &Device) -> anyhow::Result<Tensor> {

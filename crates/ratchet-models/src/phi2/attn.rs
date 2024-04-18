@@ -1,7 +1,7 @@
 use std::io::{BufRead, Seek};
 
 use ratchet::{prelude::shape, rvec, Device, Tensor};
-use ratchet_loader::gguf::gguf::Content;
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{KVEntry, Linear, Module, RotaryEmbedding, RotaryInput};
 
 #[derive(Debug)]
@@ -18,7 +18,7 @@ pub struct PhiSelfAttention {
 
 impl PhiSelfAttention {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &Content,
+        disk_model: &Header,
         reader: &mut R,
         layer_index: usize,
         device: &Device,

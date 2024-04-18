@@ -25,6 +25,7 @@ wasm-opt = ['-O3', '--enable-simd']
 [dependencies]
 ratchet-models = { path = "../ratchet-models" }
 ratchet-hub = { path = "../ratchet-hub" }
+ratchet-loader = { path = "../ratchet-loader" }
 wasm-bindgen = "0.2.84"
 wasm-bindgen-futures = "0.4.39"
 js-sys = "0.3.64"
@@ -39,6 +40,7 @@ log.workspace = true
 hound = "3.5.1"
 fern = "0.6.2"
 chrono = "0.4.34"
+uuid = { version = "1.5.0", features=["v4","serde"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.6", features = ["js"] }

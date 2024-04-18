@@ -46,7 +46,7 @@ mod tests {
     use proptest::arbitrary::Arbitrary;
     use proptest::strategy::{BoxedStrategy, Just, Strategy};
     use ratchet::{Quantization, Quantizer};
-    use ratchet_loader::gguf::gguf::Content;
+    use ratchet_loader::gguf::gguf::Header;
     use test_strategy::proptest;
     use tokenizers::Tokenizer;
 
