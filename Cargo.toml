@@ -26,7 +26,6 @@ debug = 2
 
 [workspace.dependencies]
 wgpu = { version = "0.18", features = ["expose-ids", "fragile-send-sync-non-atomic-wasm"] }
-anyhow = "1.0.40"
 bytemuck = { version = "1.14.0", features=["wasm_simd", "aarch64_simd", "extern_crate_alloc"] }
 num-traits = "0.2.17"
 half = { version = "2.3.1", features = ["num-traits", "bytemuck"] }
@@ -34,8 +33,12 @@ derive-new = "0.6.0"
 log = "0.4.20"
 thiserror = "1.0.56"
 byteorder = "1.5.0"
-wasm-bindgen = "0.2.91"
-wasm-bindgen-test = "0.3.34"
 npyz = { version = "0.8.3"}
 hf-hub = "0.3.2"
 tokenizers = "0.15.2"
+serde = "1.0.197"
+anyhow = "1.0.79"
+
+js-sys = "0.3.64"
+wasm-bindgen = "0.2.91"
+wasm-bindgen-test = "0.3.34"

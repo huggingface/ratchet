@@ -9,6 +9,9 @@ use super::{
     mlp::MLP,
 };
 
+#[cfg(target_arch = "wasm32")]
+use {js_sys::Uint8Array, std::collections::HashMap, wasm_bindgen::prelude::*};
+
 #[derive(Debug)]
 pub struct DecoderLayer {
     ln: LayerNorm,
@@ -111,7 +114,6 @@ impl Phi2 {
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        println!("Starting loading Phi2 model");
         let embedding = Embedding::new(
             disk_model.tensor(reader, "token_embd.weight", device)?,
             false,
@@ -149,11 +151,47 @@ impl Phi2 {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+    pub async fn from_web(
+        header: Header,
+        tensors: HashMap<String, Uint8Array>,
+    ) -> anyhow::Result<Self> {
+        use ratchet_loader::gguf::gguf::ratchet_from_gguf;
+
         let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
-        let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
-        let content = Header::read(&mut reader)?;
-        Self::load(content, &mut reader, &device)
+        let embedding = Embedding::new(
+            ratchet_from_gguf_web(tensors.remove("token_embd.weight"))?,
+            false,
+        );
+
+        let n_layers = disk_model
+            .metadata
+            .get("phi2.block_count")
+            .unwrap()
+            .to_u32()? as i32;
+
+        let layers = (0..n_layers)
+            .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
+                blocks.push(DecoderLayer::load(&disk_model, reader, i as _, &device));
+                blocks
+            })
+            .into_iter()
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        let mut lt = |name: &str| {
+            let key = format!("output{}", name);
+            disk_model.tensor(reader, &key, device)
+        };
+
+        let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
+        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
+
+        Ok(Self {
+            embedding,
+            layers,
+            ln_post,
+            lm_head,
+            kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], &device),
+        })
     }
 
     pub fn generate_mask(seq_len: usize, device: &Device) -> anyhow::Result<Tensor> {

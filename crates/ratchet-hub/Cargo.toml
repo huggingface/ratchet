@@ -22,18 +22,19 @@ wasm-opt = ['-O3', '--enable-simd']
 [dependencies]
 ratchet = { path = "../ratchet-core" }
 ratchet-loader = { path = "../ratchet-loader" }
-wasm-bindgen = "0.2.84"
-wasm-bindgen-futures = "0.4.39"
-js-sys = "0.3.64"
-indexed_db_futures = "0.4.1"
+js-sys.workspace = true 
 thiserror.workspace = true
 anyhow.workspace = true
-serde = "1.0.197"
+log.workspace = true
+wasm-bindgen.workspace = true
+serde.workspace = true 
+
+wasm-bindgen-futures = "0.4.39"
+indexed_db_futures = "0.4.1"
 serde-wasm-bindgen = "0.6.5"
 serde_bytes = "0.11.14"
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
-log.workspace = true
 fern = "0.6.2"
 chrono = "0.4.34"
 gloo-net = { version = "0.5.0", default-features = false, features = ["http"] }

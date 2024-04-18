@@ -17,7 +17,7 @@ itertools = "0.12.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.84"
-serde = { version = "1.0.130", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true

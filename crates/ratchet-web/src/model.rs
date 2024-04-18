@@ -1,9 +1,11 @@
 use crate::db::*;
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_loader::gguf::gguf;
+use ratchet_loader::{gguf::gguf, GgmlDType};
 use ratchet_models::{
-    registry::AvailableModels, registry::Quantization, transcribe::transcribe,
-    transcript::StreamedSegment, Phi2, Whisper,
+    registry::{AvailableModels, Quantization},
+    transcribe::transcribe,
+    transcript::StreamedSegment,
+    Phi2, TensorMap, WebTensor, Whisper,
 };
 use wasm_bindgen::prelude::*;
 
@@ -100,38 +102,27 @@ impl Model {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
         })? {
-            //log::warn!("Model not found in db, fetching from remote");
-            //let model_bytes = if progress.is_undefined() {
-            //    model_repo.get(&key.model_id()).await?
-            //} else {
-            //    model_repo
-            //        .get_with_progress(&key.model_id(), progress)
-            //        .await?
-            //};
-            //let model = ModelRecord::new(&key, model_bytes, model.into());
-            //db.put_model(&key, model).await.unwrap();
             let header: gguf::Header = serde_wasm_bindgen::from_value(
                 model_repo.fetch_gguf_header(&key.model_id()).await?,
             )?;
 
-            let (first_key, first_info) = header.tensor_infos.iter().next().unwrap();
-            log::info!("First key: {:?}", first_key);
-            log::info!("First info: {:?}", first_info);
-            let tensor_elems = first_info.shape.numel();
-            log::info!("Tensor elems: {:?}", tensor_elems);
-            let block_numel = first_info.ggml_dtype.block_numel();
-            log::info!("Block numel: {:?}", block_numel);
-            let tensor_blocks = tensor_elems / block_numel;
-            log::info!("Tensor blocks: {:?}", tensor_blocks);
-            let size_in_bytes = (tensor_blocks * first_info.ggml_dtype.type_size()) as u64;
-            log::info!("Size in bytes: {:?}", size_in_bytes);
-            let first_tensor = model_repo
-                .fetch_range(
-                    &key.model_id(),
-                    first_info.offset,
-                    first_info.offset + size_in_bytes,
-                )
-                .await?;
+            let mut tensor_map = TensorMap::with_capacity(header.tensor_infos.len());
+            for (name, ti) in header.tensor_infos.iter() {
+                let tensor_elems = ti.shape.numel();
+                let block_numel = ti.ggml_dtype.block_numel();
+                let tensor_blocks = tensor_elems / block_numel;
+                let size_in_bytes = (tensor_blocks * ti.ggml_dtype.type_size()) as u64;
+                let tensor_data = model_repo
+                    .fetch_range(
+                        &key.model_id(),
+                        first_info.offset,
+                        first_info.offset + size_in_bytes,
+                    )
+                    .await?;
+
+                let web_tensor = WebTensor::new(ti.ggml_dtype, tensor_data, ti.shape.clone());
+                tensor_map.insert(name.clone(), web_tensor);
+            }
         }
         let model = db.get_model(&key).await.unwrap().unwrap();
         Ok(Model {
