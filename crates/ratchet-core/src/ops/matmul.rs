@@ -487,7 +487,6 @@ impl MetaOperation for GEMM {
     }
 
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        
         if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {

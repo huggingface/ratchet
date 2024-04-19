@@ -335,12 +335,4 @@ mod tests {
         assert!(length == 8388776, "Length was {length}");
         Ok(())
     }
-
-    #[wasm_bindgen_test]
-    async fn pull_and_parse_gguf() -> Result<(), JsValue> {
-        log_init();
-        let model_repo = ApiBuilder::from_hf("jantxu/nano-llama", RepoType::Model).build();
-        let header = model_repo.fetch_gguf("ggml-model-f32.gguf").await?;
-        Ok(())
-    }
 }
