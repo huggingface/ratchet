@@ -1,6 +1,9 @@
 use crate::db::*;
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_loader::{gguf::gguf, GgmlDType};
+use ratchet_loader::{
+    gguf::gguf::{self, Header},
+    GgmlDType,
+};
 use ratchet_models::{
     registry::{AvailableModels, Quantization},
     transcribe::transcribe,
@@ -46,18 +49,25 @@ impl WebModel {
         }
     }
 
-    pub async fn from_stored(stored: ModelRecord) -> Result<WebModel, anyhow::Error> {
-        match stored.model {
+    pub async fn from_stored(
+        model_record: ModelRecord,
+        tensor_map: TensorMap,
+    ) -> Result<WebModel, anyhow::Error> {
+        match model_record.model {
             //AvailableModels::Whisper(_) => {
             //    //TODO: 🚨 this is where we copy from JS memory to WASM arena
             //    //this lil `to_vec` call!
             //    let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
             //    Ok(WebModel::Whisper(model))
             //}
-            //AvailableModels::Phi(_) => {
-            //    let model = Phi2::from_bytes(&stored.bytes.to_vec()).await?;
-            //    Ok(WebModel::Phi2(model))
-            //}
+            AvailableModels::Phi(_) => {
+                log::info!("MODEL HEADER: {:?}", model_record.header);
+                log::info!("TENSOR MAP: {:?}", tensor_map);
+
+                let header = serde_wasm_bindgen::from_value::<Header>(model_record.header).unwrap();
+                let model = Phi2::from_web(header, tensor_map).await?;
+                Ok(WebModel::Phi2(model))
+            }
             _ => Err(anyhow::anyhow!("Unknown model type")),
         }
     }
@@ -91,19 +101,19 @@ impl Model {
         progress: &js_sys::Function,
     ) -> Result<Model, JsValue> {
         log::warn!("Loading model: {:?}", model);
-        let key = ModelKey::from_available(&model, quantization);
-        let model_repo = ApiBuilder::from_hf(&key.repo_id(), RepoType::Model).build();
+        let model_key = ModelKey::from_available(&model, quantization);
+        let model_repo = ApiBuilder::from_hf(&model_key.repo_id(), RepoType::Model).build();
         let db = RatchetDB::open().await.map_err(|e| {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
         })?;
-        log::warn!("Loading model: {:?}", key);
-        if let None = db.get_model(&key).await.map_err(|e| {
+        log::warn!("Loading model: {:?}", model_key);
+        let var_name = if let None = db.get_model(&model_key).await.map_err(|e| {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
         })? {
             let header: gguf::Header = serde_wasm_bindgen::from_value(
-                model_repo.fetch_gguf_header(&key.model_id()).await?,
+                model_repo.fetch_gguf_header(&model_key.model_id()).await?,
             )?;
 
             let mut tensor_map = TensorMap::with_capacity(header.tensor_infos.len());
@@ -113,20 +123,28 @@ impl Model {
                 let tensor_blocks = tensor_elems / block_numel;
                 let size_in_bytes = (tensor_blocks * ti.ggml_dtype.type_size()) as u64;
                 let tensor_data = model_repo
-                    .fetch_range(
-                        &key.model_id(),
-                        first_info.offset,
-                        first_info.offset + size_in_bytes,
-                    )
+                    .fetch_range(&model_key.model_id(), ti.offset, ti.offset + size_in_bytes)
                     .await?;
 
-                let web_tensor = WebTensor::new(ti.ggml_dtype, tensor_data, ti.shape.clone());
-                tensor_map.insert(name.clone(), web_tensor);
+                let record = TensorRecord::new(name.clone(), model_key.clone(), tensor_data);
+                db.put_tensor(record).await.map_err(|e| {
+                    let e: JsError = e.into();
+                    Into::<JsValue>::into(e)
+                })?;
             }
-        }
-        let model = db.get_model(&key).await.unwrap().unwrap();
+
+            let model_record = ModelRecord::new(model_key.clone(), model.clone(), header);
+            db.put_model(&model_key, model_record).await.map_err(|e| {
+                let e: JsError = e.into();
+                Into::<JsValue>::into(e)
+            })?;
+        };
+        log::warn!("Fetching from db: {:?}", model_key);
+        let model_record = db.get_model(&model_key).await.unwrap().unwrap();
+        log::warn!("Fetching tensors: {:?}", model_key);
+        let tensors = db.get_tensors(&model_key).await.unwrap();
         Ok(Model {
-            inner: WebModel::from_stored(model).await.unwrap(),
+            inner: WebModel::from_stored(model_record, tensors).await.unwrap(),
         })
     }
 
@@ -226,8 +244,8 @@ mod tests {
         });
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
         let mut model = Model::load(
-            AvailableModels::Phi(RegistryPhi::Phi2),
-            Quantization::Q8_0,
+            AvailableModels::Phi(RegistryPhi::NanoLlama),
+            Quantization::F32,
             js_cb,
         )
         .await

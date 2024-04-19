@@ -34,6 +34,7 @@ pub enum Whisper {
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum Phi {
     Phi2,
+    NanoLlama,
 }
 
 /// # Available Models
@@ -66,7 +67,9 @@ impl AvailableModels {
             },
             AvailableModels::Phi(p) => match p {
                 Phi::Phi2 => "FL33TW00D-HF/phi2",
+                Phi::NanoLlama => "jantxu/nano-llama", //TODO: remove just testing
             },
+
             _ => unimplemented!(),
         };
         id.to_string()
@@ -85,13 +88,14 @@ impl AvailableModels {
             },
             AvailableModels::Phi(p) => match p {
                 Phi::Phi2 => "phi2",
+                Phi::NanoLlama => "ggml-model-f32.gguf",
             },
             _ => unimplemented!(),
         };
         match quantization {
             Quantization::Q8 => format!("{}_q8.bin", model_stem),
             Quantization::Q8_0 => format!("{}-q8_0.gguf", model_stem),
-            Quantization::F32 => format!("{}_f32.bin", model_stem),
+            Quantization::F32 => format!("{}", model_stem),
         }
     }
 }

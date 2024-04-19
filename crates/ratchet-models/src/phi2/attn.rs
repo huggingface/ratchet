@@ -1,5 +1,6 @@
 use std::io::{BufRead, Seek};
 
+use crate::{ratchet_from_gguf_web, TensorMap};
 use ratchet::{prelude::shape, rvec, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{KVEntry, Linear, Module, RotaryEmbedding, RotaryInput};
@@ -27,17 +28,41 @@ impl PhiSelfAttention {
             let key = format!("blk.{}.{}", layer_index, name);
             disk_model.tensor(reader, &key, device)
         };
+        Self::load_inner(disk_model, lt, device)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        tensors: &mut TensorMap,
+        layer_index: usize,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let mut lt = |name: &str| {
+            let key = format!("blk.{}.{}", layer_index, name);
+            let tensor = tensors
+                .remove(&key)
+                .ok_or_else(|| anyhow::anyhow!("missing tensor"))?;
+            ratchet_from_gguf_web(tensor, device)
+        };
+        Self::load_inner(header, lt, device)
+    }
+
+    fn load_inner<F>(header: &Header, mut lt: F, device: &Device) -> anyhow::Result<Self>
+    where
+        F: FnMut(&str) -> anyhow::Result<Tensor>,
+    {
         let q = Linear::new(lt("attn_q.weight")?, Some(lt("attn_q.bias")?));
         let k = Linear::new(lt("attn_k.weight")?, Some(lt("attn_k.bias")?));
         let v = Linear::new(lt("attn_v.weight")?, Some(lt("attn_v.bias")?));
         let o = Linear::new(lt("attn_output.weight")?, Some(lt("attn_output.bias")?));
 
-        let n_heads = disk_model
+        let n_heads = header
             .metadata
             .get("phi2.attention.head_count")
             .unwrap()
             .to_u32()?;
-        let n_kv_heads = disk_model
+        let n_kv_heads = header
             .metadata
             .get("phi2.attention.head_count_kv")
             .unwrap()

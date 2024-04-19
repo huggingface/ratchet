@@ -1,5 +1,6 @@
 use std::io::{BufRead, Seek};
 
+use crate::ratchet_from_gguf_web;
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
@@ -10,7 +11,10 @@ use super::{
 };
 
 #[cfg(target_arch = "wasm32")]
-use {js_sys::Uint8Array, std::collections::HashMap, wasm_bindgen::prelude::*};
+use {
+    crate::TensorMap, js_sys::Uint8Array, ratchet_loader::gguf::gguf::ratchet_from_gguf,
+    std::collections::HashMap, wasm_bindgen::prelude::*,
+};
 
 #[derive(Debug)]
 pub struct DecoderLayer {
@@ -30,6 +34,32 @@ impl DecoderLayer {
         let mut lt = |name: &str| {
             let key = format!("blk.{}.{}", layer_index, name);
             disk_model.tensor(reader, &key, device)
+        };
+
+        let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
+
+        let mlp = MLP::new(
+            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
+            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?)),
+        );
+        Ok(Self { ln, self_attn, mlp })
+    }
+
+    //TODO: there is most certainly a way to reduce the duplication here
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        tensors: &mut TensorMap,
+        layer_index: usize,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let self_attn = PhiSelfAttention::from_web(header, tensors, layer_index, device)?;
+        let mut lt = |name: &str| {
+            let key = format!("blk.{}.{}", layer_index, name);
+            let tensor = tensors
+                .remove(&key)
+                .ok_or_else(|| anyhow::anyhow!("missing tensor"))?;
+            ratchet_from_gguf_web(tensor, device)
         };
 
         let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
@@ -88,10 +118,6 @@ impl Module for Phi2 {
         };
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            //if layer_idx > 15 {
-            //    break;
-            //}
-
             let input = DecoderLayerInput {
                 x,
                 mask: mask.clone(),
@@ -110,24 +136,17 @@ impl Phi2 {
     const MAX_CACHE: usize = 1024; //TODO: configurable
 
     pub fn load<R: BufRead + Seek>(
-        disk_model: Header,
+        header: Header,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let embedding = Embedding::new(
-            disk_model.tensor(reader, "token_embd.weight", device)?,
-            false,
-        );
+        let embedding = Embedding::new(header.tensor(reader, "token_embd.weight", device)?);
 
-        let n_layers = disk_model
-            .metadata
-            .get("phi2.block_count")
-            .unwrap()
-            .to_u32()? as i32;
+        let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
-                blocks.push(DecoderLayer::load(&disk_model, reader, i as _, device));
+                blocks.push(DecoderLayer::load(&header, reader, i as _, device));
                 blocks
             })
             .into_iter()
@@ -135,7 +154,7 @@ impl Phi2 {
 
         let mut lt = |name: &str| {
             let key = format!("output{}", name);
-            disk_model.tensor(reader, &key, device)
+            header.tensor(reader, &key, device)
         };
 
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
@@ -150,28 +169,27 @@ impl Phi2 {
         })
     }
 
+    //TODO: dedup
     #[cfg(target_arch = "wasm32")]
-    pub async fn from_web(
-        header: Header,
-        tensors: HashMap<String, Uint8Array>,
-    ) -> anyhow::Result<Self> {
-        use ratchet_loader::gguf::gguf::ratchet_from_gguf;
-
+    pub async fn from_web(header: Header, mut tensors: TensorMap) -> anyhow::Result<Self> {
         let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
-        let embedding = Embedding::new(
-            ratchet_from_gguf_web(tensors.remove("token_embd.weight"))?,
-            false,
-        );
+        let embedding = Embedding::new(ratchet_from_gguf_web(
+            tensors
+                .remove("token_embd.weight")
+                .ok_or_else(|| anyhow::anyhow!("missing tensor"))?,
+            &device,
+        )?);
 
-        let n_layers = disk_model
-            .metadata
-            .get("phi2.block_count")
-            .unwrap()
-            .to_u32()? as i32;
+        let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
-                blocks.push(DecoderLayer::load(&disk_model, reader, i as _, &device));
+                blocks.push(DecoderLayer::from_web(
+                    &header,
+                    &mut tensors,
+                    i as _,
+                    &device,
+                ));
                 blocks
             })
             .into_iter()
@@ -179,7 +197,10 @@ impl Phi2 {
 
         let mut lt = |name: &str| {
             let key = format!("output{}", name);
-            disk_model.tensor(reader, &key, device)
+            let tensor = tensors
+                .remove(&key)
+                .ok_or_else(|| anyhow::anyhow!("missing tensor"))?;
+            ratchet_from_gguf_web(tensor, &device)
         };
 
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);

@@ -1,6 +1,10 @@
 use indexed_db_futures::prelude::*;
 use js_sys::Uint8Array;
-use ratchet_models::registry::{AvailableModels, Quantization};
+use ratchet_loader::gguf::gguf::Header;
+use ratchet_models::{
+    registry::{AvailableModels, Quantization},
+    TensorMap, WebTensor,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
@@ -107,6 +111,50 @@ impl RatchetDB {
         Ok(())
     }
 
+    pub async fn get_tensors(&self, key: &ModelKey) -> Result<TensorMap> {
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readonly)?;
+        let store = tx.object_store(Self::MODEL_STORE)?;
+        let req = store.get(&Self::serialize(key)?)?.await?;
+        let model: ModelRecord = Self::deserialize(req)?.unwrap();
+
+        log::warn!("Model: {:?}", model);
+        let header = serde_wasm_bindgen::from_value::<Header>(model.header).unwrap();
+
+        log::warn!("GOT HEADER: {:?}", header);
+
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::TENSOR_STORE, IdbTransactionMode::Readonly)?;
+        let store = tx.object_store(Self::TENSOR_STORE)?;
+        let index = store.index(Self::TENSOR_INDEX)?;
+        let matches = index.get_all_with_key(&Self::serialize(key)?)?.await?;
+
+        let mut map = TensorMap::new();
+        for record in matches {
+            let record: TensorRecord = Self::deserialize(Some(record))?.unwrap();
+            let ti = header.tensor_infos.get(&record.name).unwrap();
+            let tensor = WebTensor::new(ti.ggml_dtype, record.bytes, ti.shape.clone());
+            map.insert(record.name, tensor);
+        }
+        Ok(map)
+    }
+
+    pub async fn put_tensor(&self, tensor: TensorRecord) -> Result<()> {
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::TENSOR_STORE, IdbTransactionMode::Readwrite)?;
+        let store = tx.object_store(Self::TENSOR_STORE)?;
+        store
+            .put_key_val(
+                &Self::serialize(&tensor.tensor_id)?,
+                &Self::serialize(&tensor)?,
+            )?
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_tokenizer<S: AsRef<str>>(
         &self,
         repo_id: S,
@@ -139,7 +187,7 @@ impl RatchetDB {
 }
 
 #[wasm_bindgen]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelKey {
     repo_id: String,
     model_id: String,
@@ -198,19 +246,34 @@ impl ModelKey {
 pub struct ModelRecord {
     pub key: ModelKey,
     pub model: AvailableModels,
+    #[serde(with = "serde_wasm_bindgen::preserve")]
+    pub header: JsValue,
+}
+
+impl ModelRecord {
+    pub fn new(key: ModelKey, model: AvailableModels, header: Header) -> Self {
+        let header = serde_wasm_bindgen::to_value(&header).unwrap();
+        Self { key, model, header }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TensorRecord {
     pub tensor_id: Uuid,
+    pub name: String,
     pub model_key: ModelKey,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub bytes: Uint8Array,
 }
 
-impl ModelRecord {
-    pub fn new(key: ModelKey, model: AvailableModels) -> Self {
-        Self { key, model }
+impl TensorRecord {
+    pub fn new(name: String, model_key: ModelKey, bytes: Uint8Array) -> Self {
+        Self {
+            tensor_id: Uuid::new_v4(),
+            name,
+            model_key,
+            bytes,
+        }
     }
 }
 
