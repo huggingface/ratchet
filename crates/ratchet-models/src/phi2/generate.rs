@@ -1,12 +1,16 @@
 #![cfg(target_arch = "wasm32")]
-use crate::Phi2;
+use crate::phi2::Phi2;
 use ndarray::Axis;
 use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, Tensor};
 use ratchet_nn::Module;
 use tokenizers::Tokenizer;
 
-pub async fn infer(model: &mut Phi2, tokenizer: Tokenizer, prompt: String) -> anyhow::Result<()> {
+pub async fn generate(
+    model: &mut Phi2,
+    tokenizer: Tokenizer,
+    prompt: String,
+) -> anyhow::Result<()> {
     use web_time::Instant;
     log::warn!("Prompt: {}", prompt);
     let encoding = tokenizer.encode(prompt, true).unwrap();

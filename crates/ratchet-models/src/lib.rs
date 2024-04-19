@@ -1,9 +1,6 @@
-mod phi2;
+pub mod phi2;
 pub mod registry;
-mod whisper;
-
-pub use phi2::*;
-pub use whisper::*;
+pub mod whisper;
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, derive_new::new)]

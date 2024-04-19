@@ -10,7 +10,7 @@ use ndarray::{s, Dimension};
 use ndarray_stats::QuantileExt;
 use ratchet::NDArrayExt;
 
-use crate::options::Language;
+use crate::whisper::options::Language;
 use crate::whisper::task::DecodingTask;
 use crate::whisper::tokenizer::WhisperTokenizer;
 

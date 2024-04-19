@@ -1,7 +1,6 @@
+use crate::whisper::tokenizer::WhisperTokenizer;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-
-use crate::tokenizer::WhisperTokenizer;
 
 #[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]

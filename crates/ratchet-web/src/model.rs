@@ -4,13 +4,14 @@ use ratchet_loader::{
     gguf::gguf::{self, Header},
     GgmlDType,
 };
-use ratchet_models::{
-    infer,
-    registry::{AvailableModels, Quantization},
-    transcribe::transcribe,
-    transcript::StreamedSegment,
-    Phi2, TensorMap, WebTensor, Whisper,
-};
+use ratchet_models::phi2::generate;
+use ratchet_models::phi2::Phi2;
+use ratchet_models::registry::AvailableModels;
+use ratchet_models::registry::Quantization;
+use ratchet_models::whisper::transcribe::transcribe;
+use ratchet_models::whisper::transcript::StreamedSegment;
+use ratchet_models::whisper::Whisper;
+use ratchet_models::TensorMap;
 use tokenizers::Tokenizer;
 use wasm_bindgen::prelude::*;
 
@@ -49,7 +50,7 @@ impl WebModel {
                 let model_repo = ApiBuilder::from_hf("microsoft/phi-2", RepoType::Model).build();
                 let model_bytes = model_repo.get("tokenizer.json").await?;
                 let tokenizer = Tokenizer::from_bytes(model_bytes.to_vec()).unwrap();
-                infer(model, tokenizer, input).await.unwrap();
+                generate(model, tokenizer, input).await.unwrap();
                 Ok(JsValue::NULL)
             }
         }
@@ -166,7 +167,6 @@ impl Model {
 mod tests {
     use super::*;
     use ratchet_hub::{ApiBuilder, RepoType};
-    use ratchet_models::options::DecodingOptionsBuilder;
     use ratchet_models::registry::Phi as RegistryPhi;
     use ratchet_models::registry::Whisper as RegistryWhisper;
     use tokenizers::Tokenizer;
