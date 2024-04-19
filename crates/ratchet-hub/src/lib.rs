@@ -182,6 +182,9 @@ impl Api {
     }
 
     pub async fn fetch_gguf_header(&self, file_name: &str) -> Result<JsValue, JsValue> {
+        //TODO: we should fetch bytes when needed for header
+        const MAX_HEADER_SIZE: u32 = 8_000_000; //We assume header is 8MB maximum
+
         let file_url = format!("{}/{}", self.endpoint, file_name);
         log::debug!("Fetching file: {}", file_url);
 
@@ -205,14 +208,12 @@ impl Api {
 
         let mut recv_len = 0;
 
-        let MAX_HEADER_SIZE = 10_000_000; //We assume header is 10MB maximum
         let buf = Uint8Array::new_with_length(MAX_HEADER_SIZE);
         while let Ok(result) = JsFuture::from(reader.read()).await?.dyn_into::<Object>() {
             let done = Reflect::get(&result, &"done".into())?
                 .as_bool()
                 .unwrap_or(true);
             if done {
-                log::error!("Failed to read header: Done flag set");
                 break;
             }
 

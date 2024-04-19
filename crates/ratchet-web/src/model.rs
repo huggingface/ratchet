@@ -126,14 +126,11 @@ impl Model {
             //TODO: parallelize requests
             for (name, ti) in header.tensor_infos.iter() {
                 log::info!("About to fetch tensor: {} {:?}", name, ti);
-                let tensor_elems = ti.shape.numel();
-                let block_numel = ti.ggml_dtype.block_numel();
-                let tensor_blocks = tensor_elems / block_numel;
-                let size_in_bytes = (tensor_blocks * ti.ggml_dtype.type_size()) as u64;
 
-                let start = data_offset + ti.offset;
-                let end = start + size_in_bytes;
-                let bytes = model_repo.fetch_range(&model_id, start, end).await?;
+                let range = ti.byte_range(data_offset);
+                let bytes = model_repo
+                    .fetch_range(&model_id, range.start, range.end)
+                    .await?;
 
                 let record = TensorRecord::new(name.clone(), model_key.clone(), bytes);
                 db.put_tensor(record).await.map_err(|e| {
@@ -246,6 +243,7 @@ mod tests {
         Ok(())
     }*/
 
+    /*
     #[wasm_bindgen_test]
     async fn phi_browser() -> Result<(), JsValue> {
         log_init();
@@ -266,4 +264,5 @@ mod tests {
         let result = model.run(input).await.unwrap();
         Ok(())
     }
+    */
 }

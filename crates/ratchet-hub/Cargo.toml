@@ -29,18 +29,15 @@ log.workspace = true
 wasm-bindgen.workspace = true
 serde.workspace = true 
 
-wasm-bindgen-futures = "0.4.39"
-indexed_db_futures = "0.4.1"
-serde-wasm-bindgen = "0.6.5"
-serde_bytes = "0.11.14"
-console_error_panic_hook = "0.1.7"
-console_log = "1.0.0"
-fern = "0.6.2"
-chrono = "0.4.34"
-gloo-net = { version = "0.5.0", default-features = false, features = ["http"] }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2.6", features = ["js"] }
+wasm-bindgen-futures = { workspace = true }
+indexed_db_futures = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+serde_bytes = { workspace = true }
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
+fern = { workspace = true }
+chrono = { workspace = true }
+gloo-net = { workspace = true, features = ["http"] }
 
 [dependencies.web-sys]
 features = [
@@ -61,7 +58,10 @@ features = [
   'CacheStorage',
   'IdbKeyRange',
 ]
-version = "0.3.64"
+workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.6", features = ["js"] }
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true

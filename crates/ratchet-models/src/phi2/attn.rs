@@ -1,9 +1,11 @@
 use std::io::{BufRead, Seek};
 
-use crate::{ratchet_from_gguf_web, TensorMap};
 use ratchet::{prelude::shape, rvec, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{KVEntry, Linear, Module, RotaryEmbedding, RotaryInput};
+
+#[cfg(target_arch = "wasm32")]
+use crate::{ratchet_from_gguf_web, TensorMap};
 
 #[derive(Debug)]
 pub struct PhiSelfAttention {
