@@ -165,10 +165,10 @@ mod tests {
     use ratchet_nn::Module;
     use tokenizers::Tokenizer;
 
-    use crate::{
+    use crate::whisper::{
+        decoder::WhisperDecoder,
+        model::Whisper,
         options::{DecodingOptions, DecodingOptionsBuilder},
-        whisper::decoder::WhisperDecoder,
-        whisper::model::Whisper,
     };
 
     fn log_init() {
