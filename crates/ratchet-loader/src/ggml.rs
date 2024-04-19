@@ -1,6 +1,5 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use half::f16;
-use ratchet::{DType, Device, Shape, Tensor};
+use ratchet::{Device, Shape, Tensor};
 use std::{
     cell::Cell,
     collections::HashMap,

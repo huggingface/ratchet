@@ -92,7 +92,7 @@ impl AvailableModels {
         match quantization {
             Quantization::Q8 => format!("{}_q8.bin", model_stem),
             Quantization::Q8_0 => format!("{}-q8_0.gguf", model_stem),
-            Quantization::F32 => format!("{}", model_stem),
+            Quantization::F32 => model_stem.to_string(),
         }
     }
 }

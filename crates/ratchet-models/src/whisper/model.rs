@@ -274,13 +274,12 @@ impl Whisper {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use std::{
-        collections::{HashMap, HashSet},
         path::PathBuf,
     };
 
     use hf_hub::api::sync::Api;
-    use ratchet::{Device, DeviceRequest, Quantization};
-    use ratchet_loader::{ggml::GGMLCompatible, Converter};
+    use ratchet::{Device, DeviceRequest};
+    use ratchet_loader::{ggml::GGMLCompatible};
 
     use crate::{
         options::DecodingOptionsBuilder, transcript::StreamedSegment, whisper::model::Whisper,

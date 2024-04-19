@@ -487,12 +487,12 @@ impl MetaOperation for GEMM {
     }
 
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        let kk = if self.rhs.shape().is_vector() && !self.trans_lhs {
+        
+        if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {
             self.gemm_kernel_key(inplace, dst)
-        };
-        kk
+        }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
