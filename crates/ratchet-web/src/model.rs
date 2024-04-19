@@ -55,8 +55,6 @@ impl WebModel {
     ) -> Result<WebModel, anyhow::Error> {
         match model_record.model {
             //AvailableModels::Whisper(_) => {
-            //    //TODO: 🚨 this is where we copy from JS memory to WASM arena
-            //    //this lil `to_vec` call!
             //    let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
             //    Ok(WebModel::Whisper(model))
             //}
@@ -117,16 +115,20 @@ impl Model {
             )?;
 
             let mut tensor_map = TensorMap::with_capacity(header.tensor_infos.len());
+            let model_id = model_key.model_id();
+            let data_offset = header.tensor_data_offset;
             for (name, ti) in header.tensor_infos.iter() {
+                log::info!("About to fetch tensor: {} {:?}", name, ti);
                 let tensor_elems = ti.shape.numel();
                 let block_numel = ti.ggml_dtype.block_numel();
                 let tensor_blocks = tensor_elems / block_numel;
                 let size_in_bytes = (tensor_blocks * ti.ggml_dtype.type_size()) as u64;
-                let tensor_data = model_repo
-                    .fetch_range(&model_key.model_id(), ti.offset, ti.offset + size_in_bytes)
-                    .await?;
 
-                let record = TensorRecord::new(name.clone(), model_key.clone(), tensor_data);
+                let start = data_offset + ti.offset;
+                let end = start + size_in_bytes;
+                let bytes = model_repo.fetch_range(&model_id, start, end).await?;
+
+                let record = TensorRecord::new(name.clone(), model_key.clone(), bytes);
                 db.put_tensor(record).await.map_err(|e| {
                     let e: JsError = e.into();
                     Into::<JsValue>::into(e)
@@ -244,8 +246,8 @@ mod tests {
         });
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
         let mut model = Model::load(
-            AvailableModels::Phi(RegistryPhi::NanoLlama),
-            Quantization::F32,
+            AvailableModels::Phi(RegistryPhi::Phi2),
+            Quantization::Q8_0,
             js_cb,
         )
         .await

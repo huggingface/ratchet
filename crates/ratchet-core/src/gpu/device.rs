@@ -52,6 +52,7 @@ impl WgpuDevice {
         let adapter = Self::select_adapter().await?;
         #[cfg(not(target_arch = "wasm32"))]
         let adapter = Self::select_adapter()?;
+        log::info!("Adapter: {:?}", adapter.get_info());
         log::info!("Active GPU: {}", adapter.get_info().name);
 
         #[allow(unused_mut)]
@@ -79,6 +80,7 @@ impl WgpuDevice {
         } else {
             device_request
         }?;
+        log::info!("Device: {:?}", device.limits());
 
         Ok(Self {
             queue: Arc::new(queue),
