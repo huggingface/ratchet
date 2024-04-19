@@ -279,9 +279,9 @@ mod tests {
     use ratchet::{Device, DeviceRequest};
     use ratchet_loader::ggml::GGMLCompatible;
 
-    use crate::{
-        options::DecodingOptionsBuilder, transcript::StreamedSegment, whisper::model::Whisper,
-        whisper::transcribe::transcribe,
+    use crate::whisper::{
+        model::Whisper, options::DecodingOptionsBuilder, transcribe::transcribe,
+        transcript::StreamedSegment,
     };
 
     fn log_init() {
