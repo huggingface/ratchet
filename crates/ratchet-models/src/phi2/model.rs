@@ -244,6 +244,7 @@ impl Phi2 {
 
 #[cfg(target_arch = "wasm32")]
 pub async fn infer(model: &mut Phi2, tokenizer: Tokenizer, prompt: String) -> anyhow::Result<()> {
+    use web_time::Instant;
     log::warn!("Prompt: {}", prompt);
     let encoding = tokenizer.encode(prompt, true).unwrap();
     let mut tokens = encoding
@@ -254,6 +255,7 @@ pub async fn infer(model: &mut Phi2, tokenizer: Tokenizer, prompt: String) -> an
     let mut all_logits = vec![];
     let mut all_tokens = tokens.clone();
     let mut loop_cnt = 0;
+    let start = Instant::now();
     while tokens[tokens.len() - 1] != 50256 && loop_cnt < 256 {
         let input = Tensor::from_data(
             tokens.clone(),
@@ -276,6 +278,9 @@ pub async fn infer(model: &mut Phi2, tokenizer: Tokenizer, prompt: String) -> an
         all_tokens.extend(tokens.clone());
         loop_cnt += 1;
     }
+    let elapsed = start.elapsed();
+    log::warn!("Elapsed: {:?}", elapsed);
+    log::warn!("Tok/s {}", all_tokens.len() as f64 / elapsed.as_secs_f64());
     Ok(())
 }
 
