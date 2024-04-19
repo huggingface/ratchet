@@ -119,10 +119,7 @@ impl RatchetDB {
         let req = store.get(&Self::serialize(key)?)?.await?;
         let model: ModelRecord = Self::deserialize(req)?.unwrap();
 
-        log::warn!("Model: {:?}", model);
         let header = serde_wasm_bindgen::from_value::<Header>(model.header).unwrap();
-
-        log::warn!("GOT HEADER: {:?}", header);
 
         let tx = self
             .inner

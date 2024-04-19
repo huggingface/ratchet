@@ -10,6 +10,7 @@ use crate::{error::Result, GgmlDType};
 use byteorder::{LittleEndian, ReadBytesExt};
 use ratchet::{gguf::Q8_0, Device, Shape, Tensor};
 use std::collections::HashMap;
+use std::ops::Range;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -85,6 +86,18 @@ impl TensorInfo {
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
         reader.read_exact(&mut raw_data)?;
         ratchet_from_gguf(self.ggml_dtype, &raw_data, self.shape.clone(), device)
+    }
+
+    // JS doesn't support range types
+    pub fn byte_range(&self, tensor_data_offset: u64) -> (u64, u64) {
+        let tensor_elems = self.shape.numel();
+        let block_numel = self.ggml_dtype.block_numel();
+        let tensor_blocks = tensor_elems / block_numel;
+        let size_in_bytes = (tensor_blocks * self.ggml_dtype.type_size()) as u64;
+
+        let start = tensor_data_offset + self.offset;
+        let end = start + size_in_bytes;
+        (start, end)
     }
 }
 

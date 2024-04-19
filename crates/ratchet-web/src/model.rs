@@ -123,23 +123,26 @@ impl Model {
             let mut tensor_map = TensorMap::with_capacity(header.tensor_infos.len());
             let model_id = model_key.model_id();
             let data_offset = header.tensor_data_offset;
-            //TODO: parallelize requests
-            for (name, ti) in header.tensor_infos.iter() {
-                log::info!("About to fetch tensor: {} {:?}", name, ti);
-                let tensor_elems = ti.shape.numel();
-                let block_numel = ti.ggml_dtype.block_numel();
-                let tensor_blocks = tensor_elems / block_numel;
-                let size_in_bytes = (tensor_blocks * ti.ggml_dtype.type_size()) as u64;
 
-                let start = data_offset + ti.offset;
-                let end = start + size_in_bytes;
-                let bytes = model_repo.fetch_range(&model_id, start, end).await?;
+            //for (name, ti) in header.tensor_infos.iter() {
+            //    log::info!("About to fetch tensor: {} {:?}", name, ti);
+            //    let byte_range = ti.byte_range(data_offset);
+            //    let promises = model_repo.fetch_range(&model_id, start, end)?;
 
-                let record = TensorRecord::new(name.clone(), model_key.clone(), bytes);
-                db.put_tensor(record).await.map_err(|e| {
-                    let e: JsError = e.into();
-                    Into::<JsValue>::into(e)
-                })?;
+            //    let record = TensorRecord::new(name.clone(), model_key.clone(), bytes);
+            //    db.put_tensor(record).await.map_err(|e| {
+            //        let e: JsError = e.into();
+            //        Into::<JsValue>::into(e)
+            //    })?;
+            //}
+
+            //iterate through in chunks of 4
+            for chunk in header.tensor_infos.chunks(4) {
+                let ranges = chunk
+                    .iter()
+                    .map(|ti| ti.byte_range(data_offset))
+                    .collect::<Vec<_>>();
+                let promises = model_repo.fetch_ranges(&model_id, ranges)?;
             }
 
             let model_record = ModelRecord::new(model_key.clone(), model.clone(), header);

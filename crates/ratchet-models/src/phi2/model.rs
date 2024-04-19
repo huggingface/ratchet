@@ -1,9 +1,11 @@
 use std::io::{BufRead, Seek};
 
-use crate::ratchet_from_gguf_web;
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
+
+#[cfg(target_arch = "wasm32")]
+use crate::ratchet_from_gguf_web;
 use tokenizers::Tokenizer;
 
 use super::{
