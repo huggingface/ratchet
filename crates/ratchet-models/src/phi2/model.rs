@@ -4,11 +4,14 @@ use crate::ratchet_from_gguf_web;
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
+use tokenizers::Tokenizer;
 
 use super::{
     attn::{PhiAttnInput, PhiSelfAttention},
     mlp::MLP,
 };
+use ndarray::Axis;
+use ndarray_stats::QuantileExt;
 
 #[cfg(target_arch = "wasm32")]
 use {
@@ -102,6 +105,7 @@ pub struct Phi2 {
     pub ln_post: LayerNorm,
     pub lm_head: Linear,
     pub kv_cache: KVCache,
+    pub device: Device,
 }
 
 impl Module for Phi2 {
@@ -166,6 +170,7 @@ impl Phi2 {
             ln_post,
             lm_head,
             kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], device),
+            device: device.clone(),
         })
     }
 
@@ -212,6 +217,7 @@ impl Phi2 {
             ln_post,
             lm_head,
             kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], &device),
+            device,
         })
     }
 
@@ -234,6 +240,43 @@ impl Phi2 {
     pub fn cache_mut(&mut self) -> &mut KVCache {
         &mut self.kv_cache
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn infer(model: &mut Phi2, tokenizer: Tokenizer, prompt: String) -> anyhow::Result<()> {
+    log::warn!("Prompt: {}", prompt);
+    let encoding = tokenizer.encode(prompt, true).unwrap();
+    let mut tokens = encoding
+        .get_ids()
+        .iter()
+        .map(|&x| x as i32)
+        .collect::<Vec<_>>();
+    let mut all_logits = vec![];
+    let mut all_tokens = tokens.clone();
+    let mut loop_cnt = 0;
+    while tokens[tokens.len() - 1] != 50256 && loop_cnt < 256 {
+        let input = Tensor::from_data(
+            tokens.clone(),
+            shape![1, tokens.len()],
+            model.device.clone(),
+        );
+        let result = model.schedule(input)?.resolve()?;
+        let logits = result.to(&Device::CPU).await?;
+        all_logits.push(logits.clone());
+        model.cache_mut().update(tokens.len());
+
+        tokens = logits
+            .to_ndarray_view::<f32>()
+            .map_axis(Axis(2), |row| row.argmax_skipnan().unwrap())
+            .iter()
+            .map(|&x| x as i32)
+            .collect::<Vec<_>>();
+        let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
+        log::warn!("{}", tokenizer.decode(&u32_toks, true).unwrap());
+        all_tokens.extend(tokens.clone());
+        loop_cnt += 1;
+    }
+    Ok(())
 }
 
 #[cfg(all(test, not(target_arch = "wasm32"), feature = "pyo3"))]

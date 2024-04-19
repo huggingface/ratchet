@@ -5,11 +5,13 @@ use ratchet_loader::{
     GgmlDType,
 };
 use ratchet_models::{
+    infer,
     registry::{AvailableModels, Quantization},
     transcribe::transcribe,
     transcript::StreamedSegment,
     Phi2, TensorMap, WebTensor, Whisper,
 };
+use tokenizers::Tokenizer;
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug)]
@@ -44,7 +46,11 @@ impl WebModel {
             }
             WebModel::Phi2(model) => {
                 let input: String = serde_wasm_bindgen::from_value(input)?;
-                serde_wasm_bindgen::to_value(&input).map_err(|e| e.into())
+                let model_repo = ApiBuilder::from_hf("microsoft/phi-2", RepoType::Model).build();
+                let model_bytes = model_repo.get("tokenizer.json").await?;
+                let tokenizer = Tokenizer::from_bytes(model_bytes.to_vec()).unwrap();
+                infer(model, tokenizer, input).await.unwrap();
+                Ok(JsValue::NULL)
             }
         }
     }
@@ -117,6 +123,7 @@ impl Model {
             let mut tensor_map = TensorMap::with_capacity(header.tensor_infos.len());
             let model_id = model_key.model_id();
             let data_offset = header.tensor_data_offset;
+            //TODO: parallelize requests
             for (name, ti) in header.tensor_infos.iter() {
                 log::info!("About to fetch tensor: {} {:?}", name, ti);
                 let tensor_elems = ti.shape.numel();
@@ -165,6 +172,7 @@ mod tests {
     use ratchet_models::options::DecodingOptionsBuilder;
     use ratchet_models::registry::Phi as RegistryPhi;
     use ratchet_models::registry::Whisper as RegistryWhisper;
+    use tokenizers::Tokenizer;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
@@ -182,7 +190,7 @@ mod tests {
                 ))
             })
             .level_for("tokenizers", log::LevelFilter::Off)
-            .level(log::LevelFilter::Info)
+            .level(log::LevelFilter::Warn)
             .chain(fern::Output::call(console_log::log))
             .apply();
         match logger {
@@ -253,6 +261,9 @@ mod tests {
         .await
         .unwrap();
 
+        let input = "A skier slides down a frictionless slope of height 40m and length 80m. What's the skier speed at the bottom?".to_string();
+        let input = serde_wasm_bindgen::to_value(&input).unwrap();
+        let result = model.run(input).await.unwrap();
         Ok(())
     }
 }

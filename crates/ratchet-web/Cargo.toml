@@ -41,6 +41,7 @@ hound = "3.5.1"
 fern = "0.6.2"
 chrono = "0.4.34"
 uuid = { version = "1.5.0", features=["v4","serde"] }
+tokenizers = { version = "0.13.4", default-features = false, features=["unstable_wasm"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.6", features = ["js"] }
