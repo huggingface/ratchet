@@ -1,7 +1,7 @@
 use super::{mha::*, mlp::MLP};
 use crate::whisper::model::Whisper;
 use ratchet::{Device, Tensor};
-use ratchet_loader::ggml::GGMLModel;
+use ratchet_loader::{ggml::GGMLModel, gguf::gguf::Header};
 use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
 use std::io::{BufRead, Seek};
 
@@ -51,17 +51,16 @@ impl Module for ResidualAttentionBlock {
 
 impl ResidualAttentionBlock {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
+        header: &Header,
         reader: &mut R,
         layer_index: usize,
         n_heads: usize,
         prefix: &str,
-        enable_x_attn: bool,
         device: &Device,
     ) -> anyhow::Result<Self> {
         let mut lt = |name: &str| {
             let key = format!("{}.blocks.{}.{}", prefix, layer_index, name);
-            disk_model.load_tensor(&key, reader, device)
+            header.tensor(reader, &key, device)
         };
         let attn_ln = LayerNorm::new(lt("attn_ln.weight")?, Some(lt("attn_ln.bias")?), 1e-5);
         let attn = MultiHeadAttention::new(
@@ -71,7 +70,7 @@ impl ResidualAttentionBlock {
             Linear::new(lt("attn.out.weight")?, Some(lt("attn.out.bias")?)),
             n_heads,
         );
-        let (x_attn_ln, x_attn) = if enable_x_attn {
+        let (x_attn_ln, x_attn) = if prefix == "decoder" {
             let x_attn_ln = LayerNorm::new(
                 lt("cross_attn_ln.weight")?,
                 Some(lt("cross_attn_ln.bias")?),

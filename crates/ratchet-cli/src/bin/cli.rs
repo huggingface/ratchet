@@ -5,7 +5,7 @@ use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, DeviceRequest, Tensor};
 use ratchet_loader::ggml::GGMLCompatible;
 use ratchet_loader::gguf::gguf::Header;
-use ratchet_models::registry::{AvailableModels, Quantization, Whisper as RegistryWhisper};
+use ratchet_models::registry::{AvailableModels, Quantization, WhisperVariants as RegistryWhisper};
 use ratchet_models::whisper::options::DecodingOptionsBuilder;
 use ratchet_models::whisper::transcribe::transcribe;
 use ratchet_models::{phi2::Phi2, whisper::Whisper};

@@ -1,3 +1,4 @@
+mod config;
 mod decoder;
 mod encoder;
 mod logit_mutators;

@@ -1,9 +1,8 @@
 use std::io::{BufRead, Seek};
 
-use crate::whisper::model::Whisper;
 use crate::whisper::residual_block::*;
 use ratchet::prelude::*;
-use ratchet_loader::ggml::GGMLModel;
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
 
 #[derive(Debug)]
@@ -14,13 +13,13 @@ pub(crate) struct DecoderStem {
 
 impl DecoderStem {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
+        header: &Header,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
         let mut lt = |name: &str| {
             let key = format!("decoder.{}", name);
-            disk_model.load_tensor(&key, reader, device)
+            header.tensor(reader, &key, device)
         };
         Ok(Self {
             token_embed: Embedding::new(lt("token_embedding.weight")?),
@@ -109,23 +108,21 @@ impl WhisperDecoder {
     }
 
     pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
+        header: &Header,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let hparams = &disk_model.header.hparams;
-        let stem = DecoderStem::load(disk_model, reader, device)?;
+        let stem = DecoderStem::load(header, reader, device)?;
         let (n_layers, n_heads) = (hparams.n_text_layer, hparams.n_text_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
                 blocks.push(ResidualAttentionBlock::load(
-                    disk_model,
+                    header,
                     reader,
                     i as _,
                     n_heads as _,
                     "decoder",
-                    true,
                     device,
                 ));
                 blocks
@@ -135,7 +132,7 @@ impl WhisperDecoder {
 
         let mut lt = |name: &str| {
             let key = format!("decoder.ln.{}", name);
-            disk_model.load_tensor(&key, reader, device)
+            header.tensor(reader, &key, device)
         };
 
         let n_state = hparams.n_text_state as usize;

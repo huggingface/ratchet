@@ -14,7 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
     serde(rename_all = "snake_case")
 )]
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
-pub enum Whisper {
+pub enum WhisperVariants {
     Tiny,
     Base,
     Small,
@@ -22,6 +22,20 @@ pub enum Whisper {
     LargeV2,
     LargeV3,
     DistilLargeV3,
+}
+
+impl WhisperVariants {
+    pub fn repo_id(&self) -> &str {
+        match self {
+            WhisperVariants::Tiny => "FL33TW00D-HF/whisper-tiny",
+            WhisperVariants::Base => "FL33TW00D-HF/whisper-base",
+            WhisperVariants::Small => "FL33TW00D-HF/whisper-small",
+            WhisperVariants::Medium => "FL33TW00D-HF/whisper-medium",
+            WhisperVariants::LargeV2 => "FL33TW00D-HF/whisper-large-v2",
+            WhisperVariants::LargeV3 => "FL33TW00D-HF/whisper-large-v3",
+            WhisperVariants::DistilLargeV3 => "FL33TW00D-HF/distil-whisper-large-v3",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +46,7 @@ pub enum Whisper {
     serde(rename_all = "snake_case")
 )]
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
-pub enum Phi {
+pub enum PhiVariants {
     Phi2,
 }
 
@@ -48,24 +62,16 @@ pub enum Phi {
 )]
 #[cfg_attr(target_arch = "wasm32", tsify(from_wasm_abi))]
 pub enum AvailableModels {
-    Whisper(Whisper),
-    Phi(Phi),
+    Whisper(WhisperVariants),
+    Phi(PhiVariants),
 }
 
 impl AvailableModels {
     pub fn repo_id(&self) -> String {
         let id = match self {
-            AvailableModels::Whisper(w) => match w {
-                Whisper::Tiny => "FL33TW00D-HF/whisper-tiny",
-                Whisper::Base => "FL33TW00D-HF/whisper-base",
-                Whisper::Small => "FL33TW00D-HF/whisper-small",
-                Whisper::Medium => "FL33TW00D-HF/whisper-medium",
-                Whisper::LargeV2 => "FL33TW00D-HF/whisper-large-v2",
-                Whisper::LargeV3 => "FL33TW00D-HF/whisper-large-v3",
-                Whisper::DistilLargeV3 => "FL33TW00D-HF/distil-whisper-large-v3",
-            },
+            AvailableModels::Whisper(w) => w.repo_id(),
             AvailableModels::Phi(p) => match p {
-                Phi::Phi2 => "FL33TW00D-HF/phi2",
+                PhiVariants::Phi2 => "FL33TW00D-HF/phi2",
             },
 
             _ => unimplemented!(),
@@ -76,16 +82,16 @@ impl AvailableModels {
     pub fn model_id(&self, quantization: Quantization) -> String {
         let model_stem = match self {
             AvailableModels::Whisper(w) => match w {
-                Whisper::Tiny => "tiny",
-                Whisper::Base => "base",
-                Whisper::Small => "small",
-                Whisper::Medium => "medium",
-                Whisper::LargeV2 => "large-v2",
-                Whisper::LargeV3 => "large-v3",
-                Whisper::DistilLargeV3 => "distil-large-v3",
+                WhisperVariants::Tiny => "tiny",
+                WhisperVariants::Base => "base",
+                WhisperVariants::Small => "small",
+                WhisperVariants::Medium => "medium",
+                WhisperVariants::LargeV2 => "large-v2",
+                WhisperVariants::LargeV3 => "large-v3",
+                WhisperVariants::DistilLargeV3 => "distil-large-v3",
             },
             AvailableModels::Phi(p) => match p {
-                Phi::Phi2 => "phi2",
+                PhiVariants::Phi2 => "phi2",
             },
             _ => unimplemented!(),
         };

@@ -1,195 +1,84 @@
-use std::io::{BufRead, Seek, SeekFrom};
-
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ratchet::{shape, Device, Tensor};
-use ratchet_loader::ggml::{GGMLCompatible, GGMLFormat, GGMLModel};
-use ratchet_loader::LoadError;
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::Module;
+use std::io::{BufRead, Seek};
 
 use ndarray::{s, Dimension};
 use ndarray_stats::QuantileExt;
 use ratchet::NDArrayExt;
 
-use crate::whisper::options::Language;
-use crate::whisper::task::DecodingTask;
-use crate::whisper::tokenizer::WhisperTokenizer;
+#[cfg(not(target_arch = "wasm32"))]
+use hf_hub::api::sync::Api;
 
-use super::decoder::WhisperDecoder;
+#[cfg(target_arch = "wasm32")]
+use {ratchet_hub::ApiBuilder, ratchet_hub::RepoType, wasm_bindgen::JsError};
+
+use crate::registry::WhisperVariants;
+use crate::whisper::{options::Language, task::DecodingTask, tokenizer::WhisperTokenizer};
+
 use super::encoder::WhisperEncoder;
 use super::spectrogram::SpectrogramGenerator;
-
-#[derive(Debug)]
-pub struct WhisperGGMLHeader {
-    pub format: GGMLFormat,
-    pub hparams: HyperParameters,
-    pub filters: MelFilters,
-    pub n_tokens: i32,
-}
-
-#[derive(Debug, Clone)]
-pub struct HyperParameters {
-    pub n_vocab: i32,
-    pub n_audio_ctx: i32,
-    pub n_audio_state: i32,
-    pub n_audio_head: i32,
-    pub n_audio_layer: i32,
-    pub n_text_ctx: i32,
-    pub n_text_state: i32,
-    pub n_text_head: i32,
-    pub n_text_layer: i32,
-    pub n_mels: i32,
-    pub ftype: i32,
-}
-
-impl HyperParameters {
-    pub fn read<R: BufRead>(reader: &mut R) -> Result<Self, std::io::Error> {
-        let n_vocab = reader.read_i32::<LittleEndian>()?;
-        let n_audio_ctx = reader.read_i32::<LittleEndian>()?;
-        let n_audio_state = reader.read_i32::<LittleEndian>()?;
-        let n_audio_head = reader.read_i32::<LittleEndian>()?;
-        let n_audio_layer = reader.read_i32::<LittleEndian>()?;
-        let n_text_ctx = reader.read_i32::<LittleEndian>()?;
-        let n_text_state = reader.read_i32::<LittleEndian>()?;
-        let n_text_head = reader.read_i32::<LittleEndian>()?;
-        let n_text_layer = reader.read_i32::<LittleEndian>()?;
-        let n_mels = reader.read_i32::<LittleEndian>()?;
-        let ftype = reader.read_i32::<LittleEndian>()?;
-        Ok(Self {
-            n_vocab,
-            n_audio_ctx,
-            n_audio_state,
-            n_audio_head,
-            n_audio_layer,
-            n_text_ctx,
-            n_text_state,
-            n_text_head,
-            n_text_layer,
-            n_mels,
-            ftype,
-        })
-    }
-
-    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_i32::<LittleEndian>(self.n_vocab)?;
-        writer.write_i32::<LittleEndian>(self.n_audio_ctx)?;
-        writer.write_i32::<LittleEndian>(self.n_audio_state)?;
-        writer.write_i32::<LittleEndian>(self.n_audio_head)?;
-        writer.write_i32::<LittleEndian>(self.n_audio_layer)?;
-        writer.write_i32::<LittleEndian>(self.n_text_ctx)?;
-        writer.write_i32::<LittleEndian>(self.n_text_state)?;
-        writer.write_i32::<LittleEndian>(self.n_text_head)?;
-        writer.write_i32::<LittleEndian>(self.n_text_layer)?;
-        writer.write_i32::<LittleEndian>(self.n_mels)?;
-        writer.write_i32::<LittleEndian>(self.ftype)?;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct MelFilters {
-    pub n_mel: i32,
-    pub n_fft: i32,
-    pub mels: Vec<f32>,
-}
-
-impl MelFilters {
-    pub fn read<R: BufRead>(reader: &mut R) -> Result<Self, std::io::Error> {
-        let n_mel = reader.read_i32::<LittleEndian>()?;
-        let n_fft = reader.read_i32::<LittleEndian>()?;
-
-        let mels = (0..(n_mel * n_fft))
-            .map(|_| reader.read_f32::<LittleEndian>())
-            .collect::<Result<Vec<f32>, std::io::Error>>()?;
-
-        Ok(Self { n_mel, n_fft, mels })
-    }
-
-    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_i32::<LittleEndian>(self.n_mel)?;
-        writer.write_i32::<LittleEndian>(self.n_fft)?;
-        for mel in &self.mels {
-            writer.write_f32::<LittleEndian>(*mel)?;
-        }
-        Ok(())
-    }
-}
+use super::{config::Config, decoder::WhisperDecoder};
 
 #[derive(Debug)]
 pub struct Whisper {
     pub specgen: SpectrogramGenerator,
     pub encoder: WhisperEncoder,
     pub decoder: WhisperDecoder,
-    pub hparams: HyperParameters,
+    pub config: Config,
     pub device: Device,
 }
 
 impl Whisper {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
+        header: Header,
         reader: &mut R,
         device: Device,
     ) -> anyhow::Result<Self> {
-        let encoder = WhisperEncoder::load(disk_model, reader, &device)?;
-        let decoder = WhisperDecoder::load(disk_model, reader, &device)?;
-        //TODO: remove clones
-        let generator = SpectrogramGenerator::new(disk_model.header.filters.mels.clone());
+        let encoder = WhisperEncoder::load(&header, reader, &device)?;
+        let decoder = WhisperDecoder::load(&header, reader, &device)?;
+
+        let config: Config =
+            serde_json::from_slice(&Self::fetch_resource(WhisperVariants::Tiny, "config.json")?)?;
+        let mel_bytes = Self::fetch_resource(WhisperVariants::Tiny, "melfilters.bytes")?;
+        let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
+        <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
+            &mel_bytes,
+            &mut mel_filters,
+        );
+        let generator = SpectrogramGenerator::new(mel_filters);
         Ok(Self {
             specgen: generator,
             encoder,
             decoder,
-            hparams: disk_model.header.hparams.clone(),
+            config,
             device,
         })
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-        let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
-        let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
-        let disk_model = Whisper::load_ggml(&mut reader)?;
-        let result = Self::load(&disk_model, &mut reader, device);
-        result
-    }
-}
-
-impl GGMLCompatible for Whisper {
-    type ModelHeader = WhisperGGMLHeader;
-
-    fn load_header<R: BufRead + Seek>(reader: &mut R) -> Result<Self::ModelHeader, LoadError> {
-        let format = GGMLFormat::read(reader)?;
-        let hparams = HyperParameters::read(reader)?;
-        let filters = MelFilters::read(reader)?;
-        let n_tokens = reader.read_i32::<LittleEndian>()?;
-        for _ in 0..n_tokens {
-            let token_len = reader.read_u32::<LittleEndian>()?;
-            reader.seek(SeekFrom::Current(token_len as i64))?;
-        }
-        Ok(Self::ModelHeader {
-            format,
-            hparams,
-            filters,
-            n_tokens,
-        })
+    pub async fn fetch_resource(
+        variant: WhisperVariants,
+        resource: &str,
+    ) -> Result<Vec<u8>, JsError> {
+        let repo_id = variant.repo_id();
+        let model_repo = ApiBuilder::from_hf(repo_id, RepoType::Model).build();
+        model_repo.get(resource).await?
     }
 
-    fn write_header<W: std::io::Write>(
-        header: &Self::ModelHeader,
-        writer: &mut W,
-    ) -> std::io::Result<()> {
-        header.format.write(writer)?;
-        header.hparams.write(writer)?;
-        header.filters.write(writer)?;
-        writer.write_i32::<LittleEndian>(header.n_tokens)?;
-        for _ in 0..header.n_tokens {
-            writer.write_u32::<LittleEndian>(0)?;
-        }
-        Ok(())
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn fetch_resource(variant: WhisperVariants, resource: &str) -> anyhow::Result<Vec<u8>> {
+        let api = Api::new().unwrap();
+        let repo_id = variant.repo_id();
+
+        let repo = api.model(repo_id.to_string());
+        Ok(std::fs::read(repo.get(resource).unwrap())?)
     }
 }
 
 impl Whisper {
     pub fn is_multilingual(&self) -> bool {
-        self.hparams.n_vocab >= 51865
+        self.config.n_vocab >= 51865
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -201,14 +90,14 @@ impl Whisper {
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU)?;
-        let logits = DecodingTask::slice_logits(cpu_logits, self.hparams.n_vocab as usize);
+        let logits = DecodingTask::slice_logits(cpu_logits, self.config.n_vocab as usize);
 
         let device = logits.device().clone();
         let mut nd_logits = logits.into_ndarray::<f32>();
 
-        let languages_end = if self.hparams.n_vocab == 51865 {
+        let languages_end = if self.config.n_vocab == 51865 {
             50358
-        } else if self.hparams.n_vocab == 51866 {
+        } else if self.config.n_vocab == 51866 {
             50359
         } else {
             panic!("Unsupported number of tokens")
@@ -240,14 +129,14 @@ impl Whisper {
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU).await?;
-        let logits = DecodingTask::slice_logits(cpu_logits, self.hparams.n_vocab as usize);
+        let logits = DecodingTask::slice_logits(cpu_logits, self.config.n_vocab as usize);
 
         let device = logits.device().clone();
         let mut nd_logits = logits.into_ndarray::<f32>();
 
-        let languages_end = if self.hparams.n_vocab == 51865 {
+        let languages_end = if self.config.n_vocab == 51865 {
             50358
-        } else if self.hparams.n_vocab == 51866 {
+        } else if self.config.n_vocab == 51866 {
             50359
         } else {
             panic!("Unsupported number of tokens")
@@ -277,7 +166,6 @@ mod tests {
 
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest};
-    use ratchet_loader::ggml::GGMLCompatible;
 
     use crate::whisper::{
         model::Whisper, options::DecodingOptionsBuilder, transcribe::transcribe,
@@ -317,7 +205,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let model_path = model.get("tiny_q8_0.bin").unwrap();
+        let model_path = model.get("tiny_q8_0.gguf").unwrap();
         println!("PATH: {:?}", model_path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());

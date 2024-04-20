@@ -1,11 +1,10 @@
 use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
-use ratchet_loader::ggml::GGMLModel;
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{LayerNorm, Module};
 
 use super::residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs};
-use crate::whisper::model::Whisper;
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {
@@ -48,13 +47,13 @@ impl Module for EncoderStem {
 
 impl EncoderStem {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
+        header: &Header,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
         let mut lt = |name: &str| {
             let key = format!("encoder.{}", name);
-            disk_model.load_tensor(&key, reader, device)
+            header.tensor(reader, &key, device)
         };
 
         Ok(Self {
@@ -92,23 +91,21 @@ impl Module for WhisperEncoder {
 
 impl WhisperEncoder {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
+        header: &Header,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let hparams = &disk_model.header.hparams;
-        let stem = EncoderStem::load(disk_model, reader, device)?;
+        let stem = EncoderStem::load(header, reader, device)?;
         let (n_layers, n_heads) = (hparams.n_audio_layer, hparams.n_audio_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
                 blocks.push(ResidualAttentionBlock::load(
-                    disk_model,
+                    header,
                     reader,
                     i as _,
                     n_heads as _,
                     "encoder",
-                    false,
                     device,
                 ));
                 blocks
@@ -118,7 +115,7 @@ impl WhisperEncoder {
 
         let mut lt = |name: &str| {
             let key = format!("encoder.ln_post.{}", name);
-            disk_model.load_tensor(&key, reader, device)
+            header.tensor(reader, &key, device)
         };
 
         Ok(Self {
