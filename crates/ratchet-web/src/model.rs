@@ -1,14 +1,24 @@
 use crate::db::*;
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_models::{
-    registry::AvailableModels, registry::Quantization, transcribe::transcribe,
-    transcript::StreamedSegment, Whisper,
+use ratchet_loader::{
+    gguf::gguf::{self, Header},
+    GgmlDType,
 };
+use ratchet_models::phi2::generate;
+use ratchet_models::phi2::Phi2;
+use ratchet_models::registry::AvailableModels;
+use ratchet_models::registry::Quantization;
+use ratchet_models::whisper::transcribe::transcribe;
+use ratchet_models::whisper::transcript::StreamedSegment;
+use ratchet_models::whisper::Whisper;
+use ratchet_models::TensorMap;
+use tokenizers::Tokenizer;
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug)]
 pub enum WebModel {
     Whisper(Whisper),
+    Phi2(Phi2),
 }
 
 impl WebModel {
@@ -35,16 +45,33 @@ impl WebModel {
                     .unwrap();
                 serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
             }
+            WebModel::Phi2(model) => {
+                let input: String = serde_wasm_bindgen::from_value(input)?;
+                let model_repo = ApiBuilder::from_hf("microsoft/phi-2", RepoType::Model).build();
+                let model_bytes = model_repo.get("tokenizer.json").await?;
+                let tokenizer = Tokenizer::from_bytes(model_bytes.to_vec()).unwrap();
+                generate(model, tokenizer, input).await.unwrap();
+                Ok(JsValue::NULL)
+            }
         }
     }
 
-    pub async fn from_stored(stored: StoredModel) -> Result<WebModel, anyhow::Error> {
-        match stored.model {
-            AvailableModels::Whisper(_) => {
-                //TODO: 🚨 this is where we copy from JS memory to WASM arena
-                //this lil `to_vec` call!
-                let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
-                Ok(WebModel::Whisper(model))
+    pub async fn from_stored(
+        model_record: ModelRecord,
+        tensor_map: TensorMap,
+    ) -> Result<WebModel, anyhow::Error> {
+        match model_record.model {
+            //AvailableModels::Whisper(_) => {
+            //    let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
+            //    Ok(WebModel::Whisper(model))
+            //}
+            AvailableModels::Phi(_) => {
+                log::info!("MODEL HEADER: {:?}", model_record.header);
+                log::info!("TENSOR MAP: {:?}", tensor_map);
+
+                let header = serde_wasm_bindgen::from_value::<Header>(model_record.header).unwrap();
+                let model = Phi2::from_web(header, tensor_map).await?;
+                Ok(WebModel::Phi2(model))
             }
             _ => Err(anyhow::anyhow!("Unknown model type")),
         }
@@ -79,31 +106,52 @@ impl Model {
         progress: &js_sys::Function,
     ) -> Result<Model, JsValue> {
         log::warn!("Loading model: {:?}", model);
-        let key = ModelKey::from_available(&model, quantization);
-        let model_repo = ApiBuilder::from_hf(&key.repo_id(), RepoType::Model).build();
+        let model_key = ModelKey::from_available(&model, quantization);
+        let model_repo = ApiBuilder::from_hf(&model_key.repo_id(), RepoType::Model).build();
         let db = RatchetDB::open().await.map_err(|e| {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
         })?;
-        log::warn!("Loading model: {:?}", key);
-        if let None = db.get_model(&key).await.map_err(|e| {
+        log::warn!("Loading model: {:?}", model_key);
+        let var_name = if let None = db.get_model(&model_key).await.map_err(|e| {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
         })? {
-            log::warn!("Model not found in db, fetching from remote");
-            let model_bytes = if progress.is_undefined() {
-                model_repo.get(&key.model_id()).await?
-            } else {
-                model_repo
-                    .get_with_progress(&key.model_id(), progress)
-                    .await?
-            };
-            let model = StoredModel::new(&key, model_bytes, model.into());
-            db.put_model(&key, model).await.unwrap();
-        }
-        let model = db.get_model(&key).await.unwrap().unwrap();
+            let header: gguf::Header = serde_wasm_bindgen::from_value(
+                model_repo.fetch_gguf_header(&model_key.model_id()).await?,
+            )?;
+
+            let mut tensor_map = TensorMap::with_capacity(header.tensor_infos.len());
+            let model_id = model_key.model_id();
+            let data_offset = header.tensor_data_offset;
+            //TODO: parallelize requests
+            for (name, ti) in header.tensor_infos.iter() {
+                log::info!("About to fetch tensor: {} {:?}", name, ti);
+
+                let range = ti.byte_range(data_offset);
+                let bytes = model_repo
+                    .fetch_range(&model_id, range.start, range.end)
+                    .await?;
+
+                let record = TensorRecord::new(name.clone(), model_key.clone(), bytes);
+                db.put_tensor(record).await.map_err(|e| {
+                    let e: JsError = e.into();
+                    Into::<JsValue>::into(e)
+                })?;
+            }
+
+            let model_record = ModelRecord::new(model_key.clone(), model.clone(), header);
+            db.put_model(&model_key, model_record).await.map_err(|e| {
+                let e: JsError = e.into();
+                Into::<JsValue>::into(e)
+            })?;
+        };
+        log::warn!("Fetching from db: {:?}", model_key);
+        let model_record = db.get_model(&model_key).await.unwrap().unwrap();
+        log::warn!("Fetching tensors: {:?}", model_key);
+        let tensors = db.get_tensors(&model_key).await.unwrap();
         Ok(Model {
-            inner: WebModel::from_stored(model).await.unwrap(),
+            inner: WebModel::from_stored(model_record, tensors).await.unwrap(),
         })
     }
 
@@ -119,8 +167,9 @@ impl Model {
 mod tests {
     use super::*;
     use ratchet_hub::{ApiBuilder, RepoType};
-    use ratchet_models::options::DecodingOptionsBuilder;
+    use ratchet_models::registry::Phi as RegistryPhi;
     use ratchet_models::registry::Whisper as RegistryWhisper;
+    use tokenizers::Tokenizer;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
@@ -138,7 +187,7 @@ mod tests {
                 ))
             })
             .level_for("tokenizers", log::LevelFilter::Off)
-            .level(log::LevelFilter::Info)
+            .level(log::LevelFilter::Warn)
             .chain(fern::Output::call(console_log::log))
             .apply();
         match logger {
@@ -155,8 +204,9 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
+    /*
     #[wasm_bindgen_test]
-    async fn browser_end_to_end() -> Result<(), JsValue> {
+    async fn whisper_browser() -> Result<(), JsValue> {
         log_init();
         let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
             log::info!("Provided closure got progress: {}", p);
@@ -191,5 +241,28 @@ mod tests {
         let result = model.run(input).await.unwrap();
         log::warn!("Result: {:?}", result);
         Ok(())
+    }*/
+
+    /*
+    #[wasm_bindgen_test]
+    async fn phi_browser() -> Result<(), JsValue> {
+        log_init();
+        let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
+            log::info!("Provided closure got progress: {}", p);
+        });
+        let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
+        let mut model = Model::load(
+            AvailableModels::Phi(RegistryPhi::Phi2),
+            Quantization::Q8_0,
+            js_cb,
+        )
+        .await
+        .unwrap();
+
+        let input = "A skier slides down a frictionless slope of height 40m and length 80m. What's the skier speed at the bottom?".to_string();
+        let input = serde_wasm_bindgen::to_value(&input).unwrap();
+        let result = model.run(input).await.unwrap();
+        Ok(())
     }
+    */
 }

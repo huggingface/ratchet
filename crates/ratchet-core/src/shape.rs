@@ -5,6 +5,7 @@ use std::{
     slice::Iter,
 };
 
+#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct Shape(RVec<usize>);
 

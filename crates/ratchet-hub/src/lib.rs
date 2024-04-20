@@ -1,6 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 use gloo_net::http::Request;
 use js_sys::{Object, Reflect, Uint8Array};
+use ratchet_loader::gguf::gguf::{self, TensorInfo};
 use util::{js_error, js_to_js_error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -135,7 +136,123 @@ impl Api {
             .send()
             .await
             .unwrap();
+
         if !response.ok() {
+            return Err(
+                js_error(format!("Failed to fetch file: {}", response.status()).as_str()).into(),
+            );
+        }
+
+        let content_len = response
+            .headers()
+            .get("Content-Length")
+            .ok_or(js_error("No content length"))?
+            .parse::<u32>()
+            .map_err(|p| js_error(format!("Failed to parse content length: {}", p).as_str()))?;
+
+        let reader = response
+            .body()
+            .ok_or(js_error("No body"))?
+            .get_reader()
+            .dyn_into::<web_sys::ReadableStreamDefaultReader>()?;
+
+        let mut recv_len = 0;
+
+        let buf = Uint8Array::new_with_length(content_len);
+        while let Ok(result) = JsFuture::from(reader.read()).await?.dyn_into::<Object>() {
+            let done = Reflect::get(&result, &"done".into())?
+                .as_bool()
+                .unwrap_or(true);
+            if done {
+                break;
+            }
+
+            if let Ok(chunk) = Reflect::get(&result, &"value".into()) {
+                let chunk_array: Uint8Array = chunk.dyn_into()?;
+                buf.set(&chunk_array, recv_len);
+                recv_len += chunk_array.length();
+                let req_progress = (recv_len as f64 / content_len as f64) * 100.0;
+                if let Some(progress) = progress_cb.as_ref() {
+                    progress.call1(&JsValue::NULL, &req_progress.into())?;
+                }
+            }
+        }
+
+        Ok(buf)
+    }
+
+    pub async fn fetch_gguf_header(&self, file_name: &str) -> Result<JsValue, JsValue> {
+        //TODO: we should fetch bytes when needed for header
+        const MAX_HEADER_SIZE: u32 = 8_000_000; //We assume header is 8MB maximum
+
+        let file_url = format!("{}/{}", self.endpoint, file_name);
+        log::debug!("Fetching file: {}", file_url);
+
+        let response = Request::get(&file_url)
+            .mode(RequestMode::Cors)
+            .send()
+            .await
+            .unwrap();
+
+        if !response.ok() {
+            return Err(
+                js_error(format!("Failed to fetch file: {}", response.status()).as_str()).into(),
+            );
+        }
+
+        let reader = response
+            .body()
+            .ok_or(js_error("No body"))?
+            .get_reader()
+            .dyn_into::<web_sys::ReadableStreamDefaultReader>()?;
+
+        let mut recv_len = 0;
+
+        let buf = Uint8Array::new_with_length(MAX_HEADER_SIZE);
+        while let Ok(result) = JsFuture::from(reader.read()).await?.dyn_into::<Object>() {
+            let done = Reflect::get(&result, &"done".into())?
+                .as_bool()
+                .unwrap_or(true);
+            if done {
+                break;
+            }
+
+            if let Ok(chunk) = Reflect::get(&result, &"value".into()) {
+                let chunk_array: Uint8Array = chunk.dyn_into()?;
+                if recv_len + chunk_array.length() >= MAX_HEADER_SIZE {
+                    break;
+                }
+                buf.set(&chunk_array, recv_len);
+                recv_len += chunk_array.length();
+            }
+        }
+
+        let header = gguf::Header::read(&mut std::io::BufReader::new(std::io::Cursor::new(
+            buf.to_vec(),
+        )))
+        .map_err(|e| js_error(format!("Failed to read header: {:?}", e).as_str()))?;
+
+        Ok(serde_wasm_bindgen::to_value(&header).unwrap())
+    }
+
+    pub async fn fetch_range(
+        &self,
+        file_name: &str,
+        start: u64,
+        end: u64,
+    ) -> Result<Uint8Array, JsValue> {
+        let file_url = format!("{}/{}", self.endpoint, file_name);
+        log::debug!("Fetching file: {}", file_url);
+
+        let response = Request::get(&file_url)
+            .mode(RequestMode::Cors)
+            .header("Range", format!("bytes={}-{}", start, end).as_str())
+            .send()
+            .await
+            .unwrap();
+
+        //206 is the status code for partial content
+        if response.status() != 206 {
             return Err(
                 js_error(format!("Failed to fetch file: {}", response.status()).as_str()).into(),
             );
@@ -168,12 +285,9 @@ impl Api {
                 let chunk_array: Uint8Array = chunk.dyn_into()?;
                 buf.set(&chunk_array, recv_len);
                 recv_len += chunk_array.length();
-                let req_progress = (recv_len as f64 / content_len as f64) * 100.0;
-                if let Some(progress) = progress_cb.as_ref() {
-                    progress.call1(&JsValue::NULL, &req_progress.into())?;
-                }
             }
         }
+        log::info!("Successfully fetched range: {}-{}", start, end);
         Ok(buf)
     }
 }

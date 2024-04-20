@@ -13,15 +13,13 @@ anyhow.workspace = true
 bytemuck.workspace = true
 thiserror.workspace = true
 log.workspace = true
-itertools = "0.12.1"
+itertools = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.84"
+serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true
 hf-hub.workspace = true
-tokio = { version = "1.36.0", features = [
-    "sync",
-    "macros",
-    "io-util",
-    "rt",
-    "time",
-] }
+tokio = { workspace = true, features = ["sync", "macros", "io-util", "rt", "time"] }

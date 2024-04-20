@@ -6,7 +6,7 @@ use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, DeviceRequest, Tensor};
 use ratchet_hub::{ApiBuilder, RepoType};
 use ratchet_loader::ggml::GGMLCompatible;
-use ratchet_models::{Whisper, WhisperDecoder, WhisperEncoder};
+use ratchet_models::whisper::{Whisper, WhisperDecoder, WhisperEncoder};
 use ratchet_nn::Module;
 use std::path::PathBuf;
 use wasm_bindgen::prelude::*;

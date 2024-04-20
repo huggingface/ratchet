@@ -26,24 +26,25 @@ ratchet-loader = { path = "../ratchet-loader" }
 byteorder.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
-derive-new.workspace = true
+derive-new = { workspace = true }
 log.workspace = true
-ndarray-stats = "0.5.1"
-num = "0.4.1"
-realfft = "3.3.0"
-ndarray = "0.15.6"
-cfg-if = "1.0.0"
-serde = "1.0.197"
+ndarray-stats = { workspace = true }
+num = { workspace = true }
+realfft = { workspace = true }
+ndarray = { workspace = true }
+cfg-if = { workspace = true }
+serde = { workspace = true }
 tokenizers = { version = "0.13.4", default-features = false, features=["unstable_wasm"] }
-lazy_static = "1.4.0"
-web-time = "1.0.0"
-clap = "4.5.3"
+lazy_static = { workspace = true }
+web-time = { workspace = true }
+clap = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }  
 serde-wasm-bindgen = "0.4.5"
 ratchet-hub = { path = "../ratchet-hub" }
 tsify = "0.4.5"
+js-sys = { workspace = true } 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ratchet = { path = "../ratchet-core", features = ["pyo3"] }
@@ -51,14 +52,14 @@ hf-hub.workspace = true
 
 [dev-dependencies]
 ratchet = { path = "../ratchet-core" }
-console_error_panic_hook = "0.1.7"
-console_log = "1.0.0"
-wasm-bindgen-test = "0.3.41"
-wasm-bindgen = "0.2.91"
-wasm-bindgen-futures = "0.4.41"
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
+wasm-bindgen-test = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
 npyz = { workspace = true }
-hound = { version = "3.5.0" }
-env_logger = "0.11.2"
+hound = { workspace = true }
+env_logger = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 ratchet = { path = "../ratchet-core", features = ["pyo3"] }

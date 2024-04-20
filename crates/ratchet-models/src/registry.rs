@@ -9,10 +9,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Debug, Clone)]
 #[cfg_attr(
     target_arch = "wasm32",
-    derive(tsify::Tsify, serde::Serialize, serde::Deserialize)
+    derive(tsify::Tsify, serde::Serialize, serde::Deserialize),
+    tsify(from_wasm_abi),
+    serde(rename_all = "snake_case")
 )]
-#[cfg_attr(target_arch = "wasm32", tsify(from_wasm_abi))]
-#[cfg_attr(target_arch = "wasm32", serde(rename_all = "snake_case"))]
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum Whisper {
     Tiny,
@@ -22,6 +22,18 @@ pub enum Whisper {
     LargeV2,
     LargeV3,
     DistilLargeV3,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    target_arch = "wasm32",
+    derive(tsify::Tsify, serde::Serialize, serde::Deserialize),
+    tsify(from_wasm_abi),
+    serde(rename_all = "snake_case")
+)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
+pub enum Phi {
+    Phi2,
 }
 
 /// # Available Models
@@ -37,6 +49,7 @@ pub enum Whisper {
 #[cfg_attr(target_arch = "wasm32", tsify(from_wasm_abi))]
 pub enum AvailableModels {
     Whisper(Whisper),
+    Phi(Phi),
 }
 
 impl AvailableModels {
@@ -51,6 +64,10 @@ impl AvailableModels {
                 Whisper::LargeV3 => "FL33TW00D-HF/whisper-large-v3",
                 Whisper::DistilLargeV3 => "FL33TW00D-HF/distil-whisper-large-v3",
             },
+            AvailableModels::Phi(p) => match p {
+                Phi::Phi2 => "FL33TW00D-HF/phi2",
+            },
+
             _ => unimplemented!(),
         };
         id.to_string()
@@ -67,11 +84,15 @@ impl AvailableModels {
                 Whisper::LargeV3 => "large-v3",
                 Whisper::DistilLargeV3 => "distil-large-v3",
             },
+            AvailableModels::Phi(p) => match p {
+                Phi::Phi2 => "phi2",
+            },
             _ => unimplemented!(),
         };
         match quantization {
             Quantization::Q8 => format!("{}_q8.bin", model_stem),
-            Quantization::F32 => format!("{}_f32.bin", model_stem),
+            Quantization::Q8_0 => format!("{}-q8_0.gguf", model_stem),
+            Quantization::F32 => model_stem.to_string(),
         }
     }
 }
@@ -80,5 +101,6 @@ impl AvailableModels {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub enum Quantization {
     Q8,
+    Q8_0,
     F32,
 }

@@ -10,12 +10,12 @@ pyo3 = ["ratchet/pyo3"]
 
 [dependencies]
 anyhow.workspace = true
-derive-new = "0.6.0"
+derive-new = { workspace = true }
 ratchet = { path = "../ratchet-core" }
 
 [dev-dependencies]
-proptest = "1.4.0"
-test-strategy = "0.3.1"
-hf-hub = "0.3.2"
+proptest = { workspace = true }
+test-strategy = { workspace = true }
+hf-hub = { workspace = true }
 ratchet-loader = { path = "../ratchet-loader" }
 tokenizers.workspace = true

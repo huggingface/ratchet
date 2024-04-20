@@ -251,24 +251,6 @@ impl GEMM {
             panic!("Transposed quantized inputs are not supported");
         }
 
-        //println!(
-        //    "MATMUL PROBLEM:
-        //lhs: {:?} {:?}
-        //rhs: {:?} {:?}
-        //bias: {:?}
-        //trans_lhs: {}
-        //trans_rhs: {}
-        //trans_out: {}",
-        //    lhs.shape(),
-        //    lhs.dt(),
-        //    rhs.shape(),
-        //    rhs.dt(),
-        //    bias.is_some(),
-        //    trans_lhs,
-        //    trans_rhs,
-        //    trans_out
-        //);
-
         Self {
             lhs,
             rhs,
@@ -505,12 +487,11 @@ impl MetaOperation for GEMM {
     }
 
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        let kk = if self.rhs.shape().is_vector() && !self.trans_lhs {
+        if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {
             self.gemm_kernel_key(inplace, dst)
-        };
-        kk
+        }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -530,7 +511,7 @@ impl MetaOperation for GEMM {
         let spec = self.compute_spec(dst);
 
         if spec.rhs_shape().is_vector() && !self.trans_lhs {
-            let (TILE_X, YT) = spec.heuristic.as_workload();
+            let (TILE_X, _) = spec.heuristic.as_workload();
             let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TILE_X);
             let wgc = wgc![group_x as _, 1, spec.stacks() as _];
             Ok(wgc)

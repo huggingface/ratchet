@@ -90,12 +90,12 @@ impl Quantizer {
         let original_shape = quantized.shape().clone();
         let aligner = |numel: usize, size_t: usize| -> usize {
             let nbytes = numel * size_t;
-            let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+
+            if nbytes % STORAGE_BUFFER_ALIGN != 0 {
                 nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
             } else {
                 nbytes
-            };
-            aligned
+            }
         };
 
         let pack_size = self.format.pack_size();

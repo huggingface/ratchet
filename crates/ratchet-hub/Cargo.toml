@@ -21,24 +21,23 @@ wasm-opt = ['-O3', '--enable-simd']
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 ratchet = { path = "../ratchet-core" }
-wasm-bindgen = "0.2.84"
-wasm-bindgen-futures = "0.4.39"
-js-sys = "0.3.64"
-indexed_db_futures = "0.4.1"
+ratchet-loader = { path = "../ratchet-loader" }
+js-sys.workspace = true 
 thiserror.workspace = true
 anyhow.workspace = true
-serde = "1.0.197"
-serde-wasm-bindgen = "0.6.5"
-serde_bytes = "0.11.14"
-console_error_panic_hook = "0.1.7"
-console_log = "1.0.0"
 log.workspace = true
-fern = "0.6.2"
-chrono = "0.4.34"
-gloo-net = { version = "0.5.0", default-features = false, features = ["http"] }
+wasm-bindgen.workspace = true
+serde.workspace = true 
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2.6", features = ["js"] }
+wasm-bindgen-futures = { workspace = true }
+indexed_db_futures = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+serde_bytes = { workspace = true }
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
+fern = { workspace = true }
+chrono = { workspace = true }
+gloo-net = { workspace = true, features = ["http"] }
 
 [dependencies.web-sys]
 features = [
@@ -59,7 +58,10 @@ features = [
   'CacheStorage',
   'IdbKeyRange',
 ]
-version = "0.3.64"
+workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.6", features = ["js"] }
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true

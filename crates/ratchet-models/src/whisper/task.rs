@@ -2,7 +2,7 @@ use super::{
     decoder::WhisperDecoder, logit_mutators::*, samplers::*, spectrogram::*,
     tokenizer::WhisperTokenizer, transcript::*,
 };
-use crate::options::{DecodingOptions, Prompt};
+use crate::whisper::options::{DecodingOptions, Prompt};
 use ndarray::{s, Axis};
 use ratchet::{shape, Device, Tensor};
 use ratchet_nn::{Module, MutableModule};

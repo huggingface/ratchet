@@ -679,7 +679,7 @@ impl Tensor {
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
 
         for t in execution_order.iter() {
-            log::info!("Compiling: {:?}", t.op().name());
+            log::debug!("Compiling: {:?}", t.op().name());
             assert!(t.device().is_gpu());
             if t.resolved() {
                 continue;

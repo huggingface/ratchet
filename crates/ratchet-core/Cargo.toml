@@ -13,14 +13,14 @@ testing = ["dep:npyz", "dep:ndarray"]
 pyo3 = ["dep:pyo3", "dep:numpy"]
 
 [build-dependencies]
-tera = "1.19.0"
+tera = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
-globwalk = "0.8.1"
-strum = "0.25"
-strum_macros = "0.25"
-serde = { version = "1.0.130", features = ["derive"] }
-pathdiff = "0.2.1"
+globwalk = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+pathdiff = { workspace = true }
 
 [dependencies]
 wgpu = { workspace = true }
@@ -30,41 +30,46 @@ derive-new = { workspace = true }
 num-traits = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
-rustc-hash = "1.1.0"
-slotmap = "1.0.7"
-parking_lot = "0.12.1"
-smallvec = "1.11.2"
-encase = { git="https://github.com/cwfitzgerald/encase", branch="add-member", features=["smallvec","glam"] }
-pollster = "0.3.0"
-anyhow = "1.0.79"
-getrandom = { version = "0.2", features = ["js"] } # Needed for wasm support in `num` trait
-num = "0.4.1"
-rand_distr = { version = "0.4.3", optional = true }
-rand = { version = "0.8.4", optional = true }
-lazy_static = "1.4.0"
-glam = { version = "0.27.0" }
-regex = "1.10.3"
-npyz = { version = "0.8.3", optional = true }
-ndarray = { version = "0.15.6", optional = true}
+serde = { workspace = true, features = ["derive"] }
+anyhow.workspace = true 
+
+rustc-hash = { workspace = true }
+slotmap = { workspace = true }
+parking_lot = { workspace = true }
+smallvec = { workspace = true }
+encase = { workspace = true, features = ["smallvec", "glam"] }
+pollster = { workspace = true }
+getrandom = { workspace = true, features = ["js"] } # Needed for wasm support in `num` trait
+num = { workspace = true }
+rand_distr = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+lazy_static = { workspace = true }
+glam = { workspace = true }
+regex = { workspace = true }
+npyz = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
 
 #Plotting
-dot3 = { version = "0.1.0", optional = true }
-tempfile = { version = "3.3.0", optional = true }
+dot3 = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 
 # Profiling
-tabled = { version = "0.15.0", optional = true }
-itertools = { version = "0.12.1", optional = true }
+tabled = { workspace = true, optional = true }
+itertools = { workspace = true, optional = true }
 
-pyo3 = { version = "0.20.2", features=["auto-initialize"], optional = true } 
-numpy = { version = "0.20.0", optional = true }
+pyo3 = { workspace = true, features = ["auto-initialize"], optional = true } 
+numpy = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true 
+
 futures-intrusive = "0.5.0"
 async-trait = "0.1.77"
+smallvec = { version = "1.11.2", features = ["serde"] }
 
 [dev-dependencies]
-env_logger = "0.11.1"
-rand = "0.8.4"
-test-strategy = "0.3.1"
-proptest = "1.4.0"
-ndarray = { version = "0.15.6"}
+env_logger = { workspace = true }
+rand = { workspace = true }
+test-strategy = { workspace = true }
+proptest = { workspace = true }
+ndarray = { workspace = true }

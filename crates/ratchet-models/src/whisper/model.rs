@@ -10,7 +10,7 @@ use ndarray::{s, Dimension};
 use ndarray_stats::QuantileExt;
 use ratchet::NDArrayExt;
 
-use crate::options::Language;
+use crate::whisper::options::Language;
 use crate::whisper::task::DecodingTask;
 use crate::whisper::tokenizer::WhisperTokenizer;
 
@@ -273,18 +273,15 @@ impl Whisper {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::{
-        collections::{HashMap, HashSet},
-        path::PathBuf,
-    };
+    use std::path::PathBuf;
 
     use hf_hub::api::sync::Api;
-    use ratchet::{Device, DeviceRequest, Quantization};
-    use ratchet_loader::{ggml::GGMLCompatible, Converter};
+    use ratchet::{Device, DeviceRequest};
+    use ratchet_loader::ggml::GGMLCompatible;
 
-    use crate::{
-        options::DecodingOptionsBuilder, transcript::StreamedSegment, whisper::model::Whisper,
-        whisper::transcribe::transcribe,
+    use crate::whisper::{
+        model::Whisper, options::DecodingOptionsBuilder, transcribe::transcribe,
+        transcript::StreamedSegment,
     };
 
     fn log_init() {

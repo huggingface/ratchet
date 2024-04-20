@@ -29,6 +29,7 @@ pub enum LoadError {
     MissingTensor { name: String },
 }
 
+#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GgmlDType {
     F32,

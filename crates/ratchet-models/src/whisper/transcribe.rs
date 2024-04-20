@@ -1,5 +1,5 @@
-use crate::options::*;
 use crate::whisper::model::Whisper;
+use crate::whisper::options::*;
 use crate::whisper::{spectrogram::*, task::*, tokenizer::*, transcript::*};
 use ratchet_nn::Module;
 use std::cmp::min;

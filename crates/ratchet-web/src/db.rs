@@ -1,7 +1,12 @@
 use indexed_db_futures::prelude::*;
 use js_sys::Uint8Array;
-use ratchet_models::registry::{AvailableModels, Quantization};
+use ratchet_loader::gguf::gguf::Header;
+use ratchet_models::{
+    registry::{AvailableModels, Quantization},
+    TensorMap, WebTensor,
+};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug, thiserror::Error)]
@@ -37,6 +42,8 @@ impl RatchetDB {
     pub const DB_NAME: &'static str = "ratchet";
     pub const MODEL_STORE: &'static str = "models";
     pub const TOKENIZER_STORE: &'static str = "tokenizers";
+    pub const TENSOR_STORE: &'static str = "tensors";
+    pub const TENSOR_INDEX: &'static str = "model_key";
 
     fn serialize(o: &impl Serialize) -> Result<JsValue> {
         serde_wasm_bindgen::to_value(o).map_err(|e| e.into())
@@ -52,15 +59,29 @@ impl RatchetDB {
         let mut db_req: OpenDbRequest = IdbDatabase::open_u32(Self::DB_NAME, Self::DB_VERSION)?;
 
         db_req.set_on_upgrade_needed(Some(|evt: &IdbVersionChangeEvent| -> Result<(), JsValue> {
-            let create_if_needed =
+            let create_store_if_needed =
                 |evt: &IdbVersionChangeEvent, store_key: &'static str| -> Result<(), JsValue> {
                     if let None = evt.db().object_store_names().find(|n| n == store_key) {
                         evt.db().create_object_store(store_key)?;
                     }
                     Ok(())
                 };
-            create_if_needed(evt, Self::MODEL_STORE)?;
-            create_if_needed(evt, Self::TOKENIZER_STORE)?;
+
+            let create_store_with_index_if_needed = |evt: &IdbVersionChangeEvent,
+                                                     store_key: &'static str,
+                                                     index_key: &'static str|
+             -> Result<(), JsValue> {
+                if let None = evt.db().object_store_names().find(|n| n == store_key) {
+                    let store = evt.db().create_object_store(store_key)?;
+                    store.create_index(index_key, &IdbKeyPath::str(index_key))?;
+                }
+                Ok(())
+            };
+
+            create_store_if_needed(evt, Self::MODEL_STORE)?;
+            create_store_if_needed(evt, Self::TOKENIZER_STORE)?;
+            create_store_with_index_if_needed(evt, Self::TENSOR_STORE, Self::TENSOR_INDEX)?;
+
             Ok(())
         }));
 
@@ -69,7 +90,7 @@ impl RatchetDB {
         })
     }
 
-    pub async fn get_model(&self, key: &ModelKey) -> Result<Option<StoredModel>> {
+    pub async fn get_model(&self, key: &ModelKey) -> Result<Option<ModelRecord>> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readonly)?;
@@ -79,7 +100,7 @@ impl RatchetDB {
         Self::deserialize(req)
     }
 
-    pub async fn put_model(&self, key: &ModelKey, model: StoredModel) -> Result<()> {
+    pub async fn put_model(&self, key: &ModelKey, model: ModelRecord) -> Result<()> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readwrite)?;
@@ -90,10 +111,54 @@ impl RatchetDB {
         Ok(())
     }
 
+    pub async fn get_tensors(&self, key: &ModelKey) -> Result<TensorMap> {
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::MODEL_STORE, IdbTransactionMode::Readonly)?;
+        let store = tx.object_store(Self::MODEL_STORE)?;
+        let req = store.get(&Self::serialize(key)?)?.await?;
+        let model: ModelRecord = Self::deserialize(req)?.unwrap();
+
+        log::warn!("Model: {:?}", model);
+        let header = serde_wasm_bindgen::from_value::<Header>(model.header).unwrap();
+
+        log::warn!("GOT HEADER: {:?}", header);
+
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::TENSOR_STORE, IdbTransactionMode::Readonly)?;
+        let store = tx.object_store(Self::TENSOR_STORE)?;
+        let index = store.index(Self::TENSOR_INDEX)?;
+        let matches = index.get_all_with_key(&Self::serialize(key)?)?.await?;
+
+        let mut map = TensorMap::new();
+        for record in matches {
+            let record: TensorRecord = Self::deserialize(Some(record))?.unwrap();
+            let ti = header.tensor_infos.get(&record.name).unwrap();
+            let tensor = WebTensor::new(ti.ggml_dtype, record.bytes, ti.shape.clone());
+            map.insert(record.name, tensor);
+        }
+        Ok(map)
+    }
+
+    pub async fn put_tensor(&self, tensor: TensorRecord) -> Result<()> {
+        let tx = self
+            .inner
+            .transaction_on_one_with_mode(Self::TENSOR_STORE, IdbTransactionMode::Readwrite)?;
+        let store = tx.object_store(Self::TENSOR_STORE)?;
+        store
+            .put_key_val(
+                &Self::serialize(&tensor.tensor_id)?,
+                &Self::serialize(&tensor)?,
+            )?
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_tokenizer<S: AsRef<str>>(
         &self,
         repo_id: S,
-    ) -> Result<Option<StoredTokenizer>> {
+    ) -> Result<Option<TokenizerRecord>> {
         let tx = self
             .inner
             .transaction_on_one_with_mode(Self::TOKENIZER_STORE, IdbTransactionMode::Readonly)?;
@@ -105,7 +170,7 @@ impl RatchetDB {
     pub async fn put_tokenizer<S: AsRef<str>>(
         &self,
         repo_id: S,
-        tokenizer: StoredTokenizer,
+        tokenizer: TokenizerRecord,
     ) -> Result<()> {
         let tx = self
             .inner
@@ -122,7 +187,7 @@ impl RatchetDB {
 }
 
 #[wasm_bindgen]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelKey {
     repo_id: String,
     model_id: String,
@@ -178,27 +243,42 @@ impl ModelKey {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct StoredModel {
-    pub repo_id: String,
-    pub model_id: String,
-    #[serde(with = "serde_wasm_bindgen::preserve")]
-    pub bytes: Uint8Array,
+pub struct ModelRecord {
+    pub key: ModelKey,
     pub model: AvailableModels,
+    #[serde(with = "serde_wasm_bindgen::preserve")]
+    pub header: JsValue,
 }
 
-impl StoredModel {
-    pub fn new(key: &ModelKey, bytes: Uint8Array, model: AvailableModels) -> Self {
+impl ModelRecord {
+    pub fn new(key: ModelKey, model: AvailableModels, header: Header) -> Self {
+        let header = serde_wasm_bindgen::to_value(&header).unwrap();
+        Self { key, model, header }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TensorRecord {
+    pub tensor_id: Uuid,
+    pub name: String,
+    pub model_key: ModelKey,
+    #[serde(with = "serde_wasm_bindgen::preserve")]
+    pub bytes: Uint8Array,
+}
+
+impl TensorRecord {
+    pub fn new(name: String, model_key: ModelKey, bytes: Uint8Array) -> Self {
         Self {
-            repo_id: key.repo_id.clone(),
-            model_id: key.model_id.clone(),
+            tensor_id: Uuid::new_v4(),
+            name,
+            model_key,
             bytes,
-            model,
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct StoredTokenizer {
+pub struct TokenizerRecord {
     pub repo_id: String,
     pub tokenizer_id: String,
     #[serde(with = "serde_wasm_bindgen::preserve")]

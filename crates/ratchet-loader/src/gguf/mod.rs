@@ -43,7 +43,7 @@ mod tests {
 
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(Q4K_GGUF.to_vec()));
         let device = Device::request_device(DeviceRequest::CPU)?;
-        let content = gguf::Content::read(&mut reader)?;
+        let content = gguf::Header::read(&mut reader)?;
 
         println!(
             "{:?}",
