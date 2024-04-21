@@ -25,7 +25,7 @@ inherits = "release"
 debug = 2
 
 [workspace.dependencies]
-wgpu = { version = "0.18", features = ["expose-ids", "fragile-send-sync-non-atomic-wasm"] }
+wgpu = { version = "0.19.4", features = [ "fragile-send-sync-non-atomic-wasm"] }
 bytemuck = { version = "1.14.0", features=["wasm_simd", "aarch64_simd", "extern_crate_alloc"] }
 num-traits = "0.2.17"
 half = { version = "2.3.1", features = ["num-traits", "bytemuck"] }
