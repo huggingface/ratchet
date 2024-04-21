@@ -132,29 +132,35 @@ pub fn kernels() -> &'static HashMap<&'static str, &'static str> {
 }
     "#;
 
-    writeln!(file, "{}", HEADER.trim())?;
+    writeln!(file, "{}", HEADER.trim_matches('\n'))?;
 
-    for entry in Iterator::chain(
-        globwalk::glob(
-            manifest_dir
-                .join(KERNEL_GENERATED_DIR)
-                .join("**.wgsl")
-                .to_string_lossy(),
-        )?,
-        globwalk::glob(
-            manifest_dir
-                .join(KERNEL_HANDWRITTEN_DIR)
-                .join("**.wgsl")
-                .to_string_lossy(),
-        )?,
-    )
-    .flatten()
-    {
-        let path = entry.path();
+    let paths = {
+        let mut paths: Vec<PathBuf> = Iterator::chain(
+            globwalk::glob(
+                manifest_dir
+                    .join(KERNEL_GENERATED_DIR)
+                    .join("**.wgsl")
+                    .to_string_lossy(),
+            )?,
+            globwalk::glob(
+                manifest_dir
+                    .join(KERNEL_HANDWRITTEN_DIR)
+                    .join("**.wgsl")
+                    .to_string_lossy(),
+            )?,
+        )
+        .flatten()
+        .map(|entry| entry.path().to_owned())
+        .collect();
+        paths.sort();
+        paths
+    };
+
+    for path in paths {
         let name = path.file_stem().unwrap().to_str().unwrap();
 
         // Account for Windows-isms
-        let diff = pathdiff::diff_paths(path, &out_dir)
+        let diff = pathdiff::diff_paths(&path, &out_dir)
             .ok_or(anyhow::format_err!("Failed to get path diff"))?;
         let normalized_path = diff.to_string_lossy().replace("\\", "/");
 
@@ -164,7 +170,7 @@ pub fn kernels() -> &'static HashMap<&'static str, &'static str> {
         )?;
     }
 
-    writeln!(file, "{}", FOOTER.trim())?;
+    writeln!(file, "{}", FOOTER.trim_matches('\n'))?;
 
     Ok(())
 }
