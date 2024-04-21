@@ -20,6 +20,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tera::Tera;
 
+const KERNEL_TEMPLATES_DIR: &str = "kernel-templates";
+const KERNEL_HANDWRITTEN_DIR: &str = "kernel-handwritten";
+const KERNEL_GENERATED_DIR: &str = "kernel-generated";
+const KERNELS_RS: &str = "kernels.rs";
+
 /// # Generate
 ///
 /// This trait is used to generate the kernels for the different operations.
@@ -87,14 +92,15 @@ impl Default for KernelRenderer {
         let base_path = Path::new(env!("CARGO_MANIFEST_DIR"));
         KernelRenderer {
             tera: Tera::default(),
-            dest_path: base_path.join("kernels").join("generated"),
-            templates_path: base_path.join("kernel-templates"),
+            dest_path: base_path.join(KERNEL_GENERATED_DIR),
+            templates_path: base_path.join(KERNEL_TEMPLATES_DIR),
         }
     }
 }
 
 impl KernelRenderer {
     fn generate(&mut self) -> anyhow::Result<()> {
+        std::fs::create_dir_all(&self.dest_path)?;
         UnaryOp::generate(self)?;
         BinaryOp::generate(self)?;
         ReindexOp::generate(self)?;
@@ -107,8 +113,9 @@ impl KernelRenderer {
 }
 
 fn embed_kernels() -> anyhow::Result<()> {
-    let out_dir = env!("CARGO_MANIFEST_DIR").to_string() + "/src";
-    let mut file = std::fs::File::create(Path::new(&out_dir).join("kernels.rs")).context(
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let out_dir = manifest_dir.join("src");
+    let mut file = std::fs::File::create(out_dir.join(KERNELS_RS)).context(
         "Failed to create `src/kernels.rs`. Make sure you have `src` directory in your project.",
     )?;
     writeln!(
@@ -123,13 +130,27 @@ fn embed_kernels() -> anyhow::Result<()> {
         "pub static ref KERNELS: HashMap<&'static str, &'static str> = {{"
     )?;
     writeln!(&mut file, "    let mut m = HashMap::new();")?;
-    for entry in
-        globwalk::glob(env!("CARGO_MANIFEST_DIR").to_string() + "/kernels/**.wgsl")?.flatten()
+
+    for entry in Iterator::chain(
+        globwalk::glob(
+            manifest_dir
+                .join(KERNEL_GENERATED_DIR)
+                .join("**.wgsl")
+                .to_string_lossy(),
+        )?,
+        globwalk::glob(
+            manifest_dir
+                .join(KERNEL_HANDWRITTEN_DIR)
+                .join("**.wgsl")
+                .to_string_lossy(),
+        )?,
+    )
+    .flatten()
     {
         let path = entry.path();
         let name = path.file_stem().unwrap().to_str().unwrap();
 
-        let diff = pathdiff::diff_paths(path, Path::new(out_dir.as_str()))
+        let diff = pathdiff::diff_paths(path, &out_dir)
             .ok_or(anyhow::format_err!("Failed to get path diff"))?;
 
         writeln!(
@@ -147,6 +168,10 @@ fn embed_kernels() -> anyhow::Result<()> {
 }
 
 fn main() {
+    // Only run the build script when the templates change to prevent unnecessary rebuilds
+    println!("cargo:rerun-if-changed={KERNEL_HANDWRITTEN_DIR}");
+    println!("cargo:rerun-if-changed={KERNEL_TEMPLATES_DIR}");
+
     let mut generator = KernelRenderer::default();
     generator.generate().unwrap();
     embed_kernels().unwrap();
