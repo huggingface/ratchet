@@ -1,7 +1,6 @@
 use super::{mha::*, mlp::MLP};
-use crate::whisper::model::Whisper;
 use ratchet::{Device, Tensor};
-use ratchet_loader::{ggml::GGMLModel, gguf::gguf::Header};
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
 use std::io::{BufRead, Seek};
 
@@ -59,15 +58,29 @@ impl ResidualAttentionBlock {
         device: &Device,
     ) -> anyhow::Result<Self> {
         let mut lt = |name: &str| {
-            let key = format!("{}.blocks.{}.{}", prefix, layer_index, name);
+            let key = format!("model.{}.layers.{}.{}", prefix, layer_index, name);
             header.tensor(reader, &key, device)
         };
-        let attn_ln = LayerNorm::new(lt("attn_ln.weight")?, Some(lt("attn_ln.bias")?), 1e-5);
+        let attn_ln = LayerNorm::new(
+            lt("self_attn_layer_norm.weight")?,
+            Some(lt("self_attn_layer_norm.bias")?),
+            1e-5,
+        );
+        //model.encoder.layers.0.self_attn.v_proj.weight
         let attn = MultiHeadAttention::new(
-            Linear::new(lt("attn.query.weight")?, Some(lt("attn.query.bias")?)),
-            Linear::new(lt("attn.key.weight")?, None),
-            Linear::new(lt("attn.value.weight")?, Some(lt("attn.value.bias")?)),
-            Linear::new(lt("attn.out.weight")?, Some(lt("attn.out.bias")?)),
+            Linear::new(
+                lt("self_attn.q_proj.weight")?,
+                Some(lt("self_attn.q_proj.bias")?),
+            ),
+            Linear::new(lt("self_attn.k_proj.weight")?, None),
+            Linear::new(
+                lt("self_attn.v_proj.weight")?,
+                Some(lt("self_attn.v_proj.bias")?),
+            ),
+            Linear::new(
+                lt("self_attn.out_proj.weight")?,
+                Some(lt("self_attn.out_proj.bias")?),
+            ),
             n_heads,
         );
         let (x_attn_ln, x_attn) = if prefix == "decoder" {
@@ -97,10 +110,14 @@ impl ResidualAttentionBlock {
             (None, None)
         };
 
-        let mlp_ln = LayerNorm::new(lt("mlp_ln.weight")?, Some(lt("mlp_ln.bias")?), 1e-5);
+        let mlp_ln = LayerNorm::new(
+            lt("final_layer_norm.weight")?,
+            Some(lt("final_layer_norm.bias")?),
+            1e-5,
+        );
         let mlp = MLP::new(
-            Linear::new(lt("mlp.0.weight")?, Some(lt("mlp.0.bias")?)),
-            Linear::new(lt("mlp.2.weight")?, Some(lt("mlp.2.bias")?)),
+            Linear::new(lt("fc1.weight")?, Some(lt("fc1.bias")?)),
+            Linear::new(lt("fc2.weight")?, Some(lt("fc2.bias")?)),
         );
         Ok(Self {
             attn_ln,

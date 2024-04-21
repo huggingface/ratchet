@@ -96,7 +96,6 @@ impl AvailableModels {
             _ => unimplemented!(),
         };
         match quantization {
-            Quantization::Q8 => format!("{}_q8.bin", model_stem),
             Quantization::Q8_0 => format!("{}-q8_0.gguf", model_stem),
             Quantization::F32 => model_stem.to_string(),
         }
@@ -106,7 +105,6 @@ impl AvailableModels {
 #[derive(Debug)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub enum Quantization {
-    Q8,
     Q8_0,
     F32,
 }

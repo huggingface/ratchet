@@ -1,10 +1,8 @@
-mod converter;
 mod error;
 pub mod ggml;
 pub mod gguf;
 mod k_quants;
 
-pub use converter::*;
 use ratchet::gguf::{GGUFDType, Q8_0};
 
 pub const STORAGE_BUFFER_ALIGN: usize = 256;

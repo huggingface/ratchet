@@ -5,6 +5,8 @@ use ratchet::prelude::*;
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
 
+use super::config::Config;
+
 #[derive(Debug)]
 pub(crate) struct DecoderStem {
     pub token_embed: Embedding,
@@ -109,11 +111,12 @@ impl WhisperDecoder {
 
     pub fn load<R: BufRead + Seek>(
         header: &Header,
+        config: &Config,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
         let stem = DecoderStem::load(header, reader, device)?;
-        let (n_layers, n_heads) = (hparams.n_text_layer, hparams.n_text_head);
+        let (n_layers, n_heads) = (config.n_text_layer, config.n_text_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -135,13 +138,13 @@ impl WhisperDecoder {
             header.tensor(reader, &key, device)
         };
 
-        let n_state = hparams.n_text_state as usize;
+        let n_state = config.n_text_ctx as usize;
         Ok(Self {
             stem,
             blocks,
-            mask: Self::load_mask(hparams.n_text_ctx as _, device),
+            mask: Self::load_mask(config.n_text_ctx as _, device),
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
-            cache: KVCache::new(n_layers, shape![1, Self::MAX_CACHE, n_state], device),
+            cache: KVCache::new(n_layers as _, shape![1, Self::MAX_CACHE, n_state], device),
             device: device.clone(),
         })
     }
@@ -158,10 +161,11 @@ mod tests {
         types::{IntoPyDict, PyTuple},
     };
     use ratchet::{shape, Device, DeviceRequest, Tensor};
-    use ratchet_loader::ggml::GGMLCompatible;
+    use ratchet_loader::gguf::gguf;
     use ratchet_nn::Module;
     use tokenizers::Tokenizer;
 
+    use crate::whisper::decoder::Config;
     use crate::whisper::{
         decoder::WhisperDecoder,
         model::Whisper,
@@ -202,6 +206,8 @@ def ground(options):
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let path = model.get("tiny_f32.bin").unwrap();
+        let config_path = model.get("config.json").unwrap();
+        let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
         println!("MODEL LOADED FROM: {}", path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
@@ -214,11 +220,11 @@ def ground(options):
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
-        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
+        let header = gguf::Header::read(&mut reader).unwrap();
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let audio_ctx = Tensor::from_npy_path::<f32, _>(hs_npy, &device)?;
-        let mut decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device)?;
+        let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device)?;
 
         let mut tokens = vec![50258, 50259, 50359];
         let mut all_tokens = tokens.clone();

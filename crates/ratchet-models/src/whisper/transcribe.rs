@@ -12,7 +12,7 @@ pub fn transcribe(
     mut decode_options: DecodingOptions,
     callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
-    let n_mels = model.hparams.n_mels as usize;
+    let n_mels = model.config.n_mels as usize;
     let runtime = Instant::now();
     let mel = model.specgen.generate(audio)?.to(&model.device)?;
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;

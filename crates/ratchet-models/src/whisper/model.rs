@@ -35,20 +35,21 @@ impl Whisper {
         reader: &mut R,
         device: Device,
     ) -> anyhow::Result<Self> {
-        let encoder = WhisperEncoder::load(&header, reader, &device)?;
-        let decoder = WhisperDecoder::load(&header, reader, &device)?;
-
-        let config: Config =
-            serde_json::from_slice(&Self::fetch_resource(WhisperVariants::Tiny, "config.json")?)?;
         let mel_bytes = Self::fetch_resource(WhisperVariants::Tiny, "melfilters.bytes")?;
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
             &mel_bytes,
             &mut mel_filters,
         );
-        let generator = SpectrogramGenerator::new(mel_filters);
+        let specgen = SpectrogramGenerator::new(mel_filters);
+
+        let config: Config =
+            serde_json::from_slice(&Self::fetch_resource(WhisperVariants::Tiny, "config.json")?)?;
+        let encoder = WhisperEncoder::load(&header, &config, reader, &device)?;
+        let decoder = WhisperDecoder::load(&header, &config, reader, &device)?;
+
         Ok(Self {
-            specgen: generator,
+            specgen,
             encoder,
             decoder,
             config,
@@ -166,6 +167,7 @@ mod tests {
 
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest};
+    use ratchet_loader::gguf::gguf;
 
     use crate::whisper::{
         model::Whisper, options::DecodingOptionsBuilder, transcribe::transcribe,
@@ -214,11 +216,11 @@ mod tests {
 
         let options = DecodingOptionsBuilder::new().build();
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
-        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
+        let header = gguf::Header::read(&mut reader).unwrap();
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
-        let mut whisper = Whisper::load(&gg_disk, &mut reader, device).unwrap();
+        let mut whisper = Whisper::load(header, &mut reader, device).unwrap();
 
         let empty_cb: Option<fn(StreamedSegment)> = None;
         let transcript = transcribe(&mut whisper, samples, options, empty_cb).unwrap();
