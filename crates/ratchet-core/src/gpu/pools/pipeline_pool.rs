@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::{gpu::WgpuDevice, KERNELS};
+use crate::{gpu::WgpuDevice, kernels};
 
 use super::{
     PipelineLayoutHandle, StaticResourcePool, StaticResourcePoolAccessor,
@@ -35,7 +35,7 @@ impl ComputePipelinePool {
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
             //println!("Kernel: {}", desc.kernel_key);
-            let shader = KERNELS
+            let shader = kernels()
                 .get(desc.kernel_key.as_str())
                 .unwrap_or_else(|| panic!("Kernel {} not found", desc.kernel_key));
 

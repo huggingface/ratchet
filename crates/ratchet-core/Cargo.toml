@@ -43,7 +43,6 @@ getrandom = { workspace = true, features = ["js"] } # Needed for wasm support in
 num = { workspace = true }
 rand_distr = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-lazy_static = { workspace = true }
 glam = { workspace = true }
 regex = { workspace = true }
 npyz = { workspace = true, optional = true }
