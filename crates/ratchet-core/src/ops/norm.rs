@@ -68,7 +68,7 @@ impl MetaOperation for Norm {
         }
     }
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
         let op_key = match self {
             Norm::LayerNorm(_) => "layernorm",
         };

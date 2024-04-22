@@ -214,7 +214,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api = Api::new().unwrap();
     if let Some(matches) = matches.subcommand_matches("phi2") {
-        handle_phi2(matches, api);
+        let _ = handle_phi2(matches, api);
     } else if let Some(matches) = matches.subcommand_matches("whisper") {
         handle_whisper(matches, api);
     }

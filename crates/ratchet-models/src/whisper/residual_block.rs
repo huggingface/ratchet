@@ -5,7 +5,7 @@ use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
 use std::io::{BufRead, Seek};
 
 #[cfg(target_arch = "wasm32")]
-use {crate::TensorMap, ratchet_loader::ratchet_from_gguf_web};
+use {crate::ratchet_from_gguf_web, crate::TensorMap};
 
 #[derive(Debug)]
 pub struct ResidualAttentionBlock {

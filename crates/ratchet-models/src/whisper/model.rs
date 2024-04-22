@@ -12,8 +12,8 @@ use hf_hub::api::sync::Api;
 
 #[cfg(target_arch = "wasm32")]
 use {
-    crate::TensorMap, js_sys::Uint8Array, ratchet_hub::ApiBuilder, ratchet_hub::RepoType,
-    ratchet_loader::gguf::gguf::ratchet_from_gguf_web, wasm_bindgen::prelude::*,
+    crate::ratchet_from_gguf_web, crate::TensorMap, js_sys::Uint8Array, ratchet_hub::ApiBuilder,
+    ratchet_hub::RepoType, wasm_bindgen::prelude::*,
 };
 
 use crate::registry::WhisperVariants;
@@ -210,9 +210,12 @@ mod tests {
     use ratchet::{Device, DeviceRequest};
     use ratchet_loader::gguf::gguf;
 
-    use crate::whisper::{
-        model::Whisper, options::DecodingOptionsBuilder, transcribe::transcribe,
-        transcript::StreamedSegment,
+    use crate::{
+        registry::WhisperVariants,
+        whisper::{
+            model::Whisper, options::DecodingOptionsBuilder, transcribe::transcribe,
+            transcript::StreamedSegment,
+        },
     };
 
     fn log_init() {
@@ -261,7 +264,8 @@ mod tests {
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
-        let mut whisper = Whisper::load(header, &mut reader, device).unwrap();
+        let mut whisper =
+            Whisper::load(header, WhisperVariants::Tiny, &mut reader, device).unwrap();
 
         let empty_cb: Option<fn(StreamedSegment)> = None;
         let transcript = transcribe(&mut whisper, samples, options, empty_cb).unwrap();

@@ -6,7 +6,7 @@ use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
 use std::io::{BufRead, Seek};
 
 #[cfg(target_arch = "wasm32")]
-use {crate::TensorMap, ratchet_loader::gguf::gguf::ratchet_from_gguf_web};
+use {crate::ratchet_from_gguf_web, crate::TensorMap};
 
 #[derive(Debug)]
 pub(crate) struct DecoderStem {
@@ -35,7 +35,8 @@ impl DecoderStem {
     ) -> anyhow::Result<Self> {
         let mut lt = |name: &str| {
             let key = format!("model.decoder.{}", name);
-            ratchet_from_gguf_web(header, tensor_map, &key, device)
+            let wt = tensor_map.remove(&key).unwrap();
+            ratchet_from_gguf_web(wt, device)
         };
         Self::load_inner(lt)
     }
@@ -138,7 +139,7 @@ impl WhisperDecoder {
         device: &Device,
     ) -> anyhow::Result<Self> {
         let (n_layers, n_heads) = (config.n_text_layer, config.n_text_head);
-        let stem = DecoderStem::load(header, reader, device)?;
+        let stem = DecoderStem::from_web(header, tensor_map, device)?;
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -157,7 +158,8 @@ impl WhisperDecoder {
 
         let mut lt = |name: &str| {
             let key = format!("model.decoder.layer_norm.{}", name);
-            header.tensor(reader, &key, device)
+            let wt = tensor_map.remove(&key).unwrap();
+            ratchet_from_gguf_web(wt, device)
         };
 
         let n_state = config.n_audio_state as _;
