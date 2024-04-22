@@ -102,8 +102,9 @@ impl AvailableModels {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum Quantization {
     Q8_0,
     F32,

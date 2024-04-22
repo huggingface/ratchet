@@ -38,7 +38,7 @@ export default function Home() {
     }, [])
 
     async function loadModel() {
-        setModel(await Model.load(selectedModel, Quantization.Q8, (p: number) => setProgress(p)));
+        setModel(await Model.load(selectedModel, Quantization.Q8_0, (p: number) => setProgress(p)));
         setLoadedModel(selectedModel);
         setProgress(0);
     }

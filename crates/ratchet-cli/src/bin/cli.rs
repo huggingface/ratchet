@@ -77,10 +77,15 @@ pub fn start_logger() {
 }
 
 fn handle_whisper(matches: &ArgMatches, api: Api) {
+    let quantization = matches
+        .get_one::<Quantization>("quantization")
+        .unwrap_or(&Quantization::Q8_0);
+
     let mut whisper = if let Some(variant) = matches.get_one::<RegistryWhisper>("variant") {
         let model = AvailableModels::Whisper(variant.clone());
         let repo = api.model(model.repo_id());
-        let model_path = repo.get(&model.model_id(Quantization::Q8_0)).unwrap();
+        let model_path = repo.get(&model.model_id(quantization.clone())).unwrap();
+        println!("MODEL PATH: {}", model_path.display());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -180,6 +185,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .default_value("small")
                         .help("Whisper model variant to use.")
                         .value_parser(value_parser!(RegistryWhisper)),
+                )
+                .arg(
+                    Arg::new("quantization")
+                        .short('q')
+                        .long("quantization")
+                        .default_value("f32")
+                        .help("Model quantization to use.")
+                        .value_parser(value_parser!(Quantization)),
                 )
                 .arg(
                     Arg::new("input")

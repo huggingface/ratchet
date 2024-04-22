@@ -102,7 +102,6 @@ impl Model {
         quantization: Quantization,
         progress: &js_sys::Function,
     ) -> Result<Model, JsValue> {
-        log::warn!("Loading model: {:?}", model);
         let model_key = ModelKey::from_available(&model, quantization);
         let model_repo = ApiBuilder::from_hf(&model_key.repo_id(), RepoType::Model).build();
         let db = RatchetDB::open().await.map_err(|e| {
@@ -118,19 +117,27 @@ impl Model {
                 model_repo.fetch_gguf_header(&model_key.model_id()).await?,
             )?;
 
-            let mut tensor_map = TensorMap::with_capacity(header.tensor_infos.len());
             let model_id = model_key.model_id();
             let data_offset = header.tensor_data_offset;
-            //TODO: parallelize requests
-            for (name, ti) in header.tensor_infos.iter() {
-                log::info!("About to fetch tensor: {} {:?}", name, ti);
 
+            let content_len = header
+                .tensor_infos
+                .values()
+                .fold(0, |acc, ti| acc + ti.size_in_bytes());
+
+            let mut total_progress = 0.0;
+
+            for (name, ti) in header.tensor_infos.iter() {
                 let range = ti.byte_range(data_offset);
                 let bytes = model_repo
                     .fetch_range(&model_id, range.start, range.end)
                     .await?;
 
-                let record = TensorRecord::new(name.clone(), model_key.clone(), bytes);
+                let req_progress = (bytes.length() as f64) / (content_len as f64) * 100.0;
+                total_progress += req_progress;
+                progress.call1(&JsValue::NULL, &total_progress.into());
+
+                let record = TensorRecord::new(name.to_string(), model_key.clone(), bytes);
                 db.put_tensor(record).await.map_err(|e| {
                     let e: JsError = e.into();
                     Into::<JsValue>::into(e)
@@ -212,14 +219,14 @@ mod tests {
 
         let mut model = Model::load(
             AvailableModels::Whisper(WhisperVariants::Tiny),
-            Quantization::F32,
+            Quantization::Q8_0,
             js_cb,
         )
         .await
         .unwrap();
 
         let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-        let audio_bytes = data_repo.get("jfk.wav").await?;
+        let audio_bytes = data_repo.get("gb0.wav").await?;
         let sample = load_sample(&audio_bytes.to_vec());
 
         let decode_options = DecodingOptionsBuilder::default().build();
