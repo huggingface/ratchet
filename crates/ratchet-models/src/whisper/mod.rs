@@ -15,6 +15,7 @@ pub mod tokenizer;
 pub mod transcribe;
 pub mod transcript;
 
+pub use config::Config;
 pub use decoder::WhisperDecoder;
 pub use encoder::WhisperEncoder;
 pub use model::Whisper;

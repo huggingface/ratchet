@@ -5,7 +5,8 @@ use ndarray::{s, Axis};
 use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, DeviceRequest, Tensor};
 use ratchet_hub::{ApiBuilder, RepoType};
-use ratchet_models::whisper::{Whisper, WhisperDecoder, WhisperEncoder};
+use ratchet_loader::gguf::gguf;
+use ratchet_models::whisper::{Config, Whisper, WhisperDecoder, WhisperEncoder};
 use ratchet_nn::Module;
 use std::path::PathBuf;
 use wasm_bindgen::prelude::*;
@@ -21,14 +22,16 @@ fn log_init() {
 async fn tiny_encoder() -> Result<(), JsValue> {
     log_init();
     let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
-    let model_data = model_repo.get("tiny_f32.bin").await?;
+    let model_data = model_repo.get("tiny_f32.gguf").await?;
+    let config_data = model_repo.get("config.json").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
     let input_npy = ground_repo.get("jfk_tiny_encoder_input.npy").await?;
     let ground_npy = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;
 
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(model_data.to_vec()));
-    let gg = Whisper::load_ggml(&mut reader).unwrap();
+    let header = gguf::Header::read(&mut reader).unwrap();
+    let config: Config = serde_json::from_slice(&config_data.to_vec()).unwrap();
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
 
@@ -36,7 +39,7 @@ async fn tiny_encoder() -> Result<(), JsValue> {
     let input = Tensor::from_npy_bytes::<f32>(input_data, &device).unwrap();
     let ground = Tensor::from_npy_bytes::<f32>(&ground_npy.to_vec(), &Device::CPU).unwrap();
 
-    let encoder = WhisperEncoder::load(&gg, &mut reader, &device).unwrap();
+    let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device).unwrap();
     let result = encoder.schedule(input).unwrap().resolve().unwrap();
     let ours = result.to(&Device::CPU).await.unwrap();
     ground.all_close(&ours, 1e-3, 1e-3).unwrap();
@@ -46,18 +49,19 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 #[wasm_bindgen_test]
 async fn tiny_decoder() -> Result<(), JsValue> {
     let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
-    let model_data = model_repo.get("tiny_f32.bin").await?;
+    let model_data = model_repo.get("tiny_f32.gguf").await?;
+    let config_data = model_repo.get("config.json").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
     let hs_data = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;
 
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(model_data.to_vec()));
-    let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
-    assert_eq!(gg_disk.tensors.len(), 167);
+    let header = gguf::Header::read(&mut reader).unwrap();
+    let config: Config = serde_json::from_slice(&config_data.to_vec()).unwrap();
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
     let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device).unwrap();
-    let mut decoder = WhisperDecoder::load(&gg_disk, &mut reader, &device).unwrap();
+    let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device).unwrap();
 
     let mut tokens = vec![50258, 50259, 50359];
     let mut all_tokens = tokens.clone();

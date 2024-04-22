@@ -11,7 +11,7 @@ use ratchet::NDArrayExt;
 use hf_hub::api::sync::Api;
 
 #[cfg(target_arch = "wasm32")]
-use {ratchet_hub::ApiBuilder, ratchet_hub::RepoType, wasm_bindgen::JsError};
+use {js_sys::Uint8Array, ratchet_hub::ApiBuilder, ratchet_hub::RepoType, wasm_bindgen::JsError};
 
 use crate::registry::WhisperVariants;
 use crate::whisper::{options::Language, task::DecodingTask, tokenizer::WhisperTokenizer};
@@ -30,6 +30,7 @@ pub struct Whisper {
 }
 
 impl Whisper {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load<R: BufRead + Seek>(
         header: Header,
         reader: &mut R,
@@ -58,13 +59,42 @@ impl Whisper {
     }
 
     #[cfg(target_arch = "wasm32")]
+    pub async fn load<R: BufRead + Seek>(
+        header: Header,
+        reader: &mut R,
+        device: Device,
+    ) -> Result<Self, JsError> {
+        let mel_bytes = Self::fetch_resource(WhisperVariants::Tiny, "melfilters.bytes").await?;
+        let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
+        <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
+            &mel_bytes,
+            &mut mel_filters,
+        );
+        let specgen = SpectrogramGenerator::new(mel_filters);
+
+        let config: Config = serde_json::from_slice(
+            &Self::fetch_resource(WhisperVariants::Tiny, "config.json").await?,
+        )?;
+        let encoder = WhisperEncoder::load(&header, &config, reader, &device).unwrap();
+        let decoder = WhisperDecoder::load(&header, &config, reader, &device).unwrap();
+
+        Ok(Self {
+            specgen,
+            encoder,
+            decoder,
+            config,
+            device,
+        })
+    }
+
+    #[cfg(target_arch = "wasm32")]
     pub async fn fetch_resource(
         variant: WhisperVariants,
         resource: &str,
     ) -> Result<Vec<u8>, JsError> {
         let repo_id = variant.repo_id();
         let model_repo = ApiBuilder::from_hf(repo_id, RepoType::Model).build();
-        model_repo.get(resource).await?
+        Ok(model_repo.get(resource).await?.to_vec())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
