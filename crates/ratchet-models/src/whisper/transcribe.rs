@@ -12,7 +12,7 @@ pub fn transcribe(
     mut decode_options: DecodingOptions,
     callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
-    let n_mels = model.hparams.n_mels as usize;
+    let n_mels = model.config.n_mels;
     let runtime = Instant::now();
     let mel = model.specgen.generate(audio)?.to(&model.device)?;
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
@@ -90,7 +90,7 @@ pub async fn transcribe(
     callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
     let runtime = Instant::now();
-    let n_mels = model.hparams.n_mels as usize;
+    let n_mels = model.config.n_mels as usize;
     let mel = model.specgen.generate(audio)?.to(&model.device).await?;
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
 

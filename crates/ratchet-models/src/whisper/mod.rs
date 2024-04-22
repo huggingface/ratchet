@@ -1,3 +1,4 @@
+mod config;
 mod decoder;
 mod encoder;
 mod logit_mutators;
@@ -14,6 +15,7 @@ pub mod tokenizer;
 pub mod transcribe;
 pub mod transcript;
 
+pub use config::Config;
 pub use decoder::WhisperDecoder;
 pub use encoder::WhisperEncoder;
 pub use model::Whisper;

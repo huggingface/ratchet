@@ -60,16 +60,13 @@ impl WebModel {
         model_record: ModelRecord,
         tensor_map: TensorMap,
     ) -> Result<WebModel, anyhow::Error> {
+        let header = serde_wasm_bindgen::from_value::<Header>(model_record.header).unwrap();
         match model_record.model {
-            //AvailableModels::Whisper(_) => {
-            //    let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
-            //    Ok(WebModel::Whisper(model))
-            //}
+            AvailableModels::Whisper(variant) => {
+                let model = Whisper::from_web(header, tensor_map, variant).await?;
+                Ok(WebModel::Whisper(model))
+            }
             AvailableModels::Phi(_) => {
-                log::info!("MODEL HEADER: {:?}", model_record.header);
-                log::info!("TENSOR MAP: {:?}", tensor_map);
-
-                let header = serde_wasm_bindgen::from_value::<Header>(model_record.header).unwrap();
                 let model = Phi2::from_web(header, tensor_map).await?;
                 Ok(WebModel::Phi2(model))
             }
@@ -167,8 +164,9 @@ impl Model {
 mod tests {
     use super::*;
     use ratchet_hub::{ApiBuilder, RepoType};
-    use ratchet_models::registry::Phi as RegistryPhi;
-    use ratchet_models::registry::Whisper as RegistryWhisper;
+    use ratchet_models::registry::PhiVariants;
+    use ratchet_models::registry::WhisperVariants;
+    use ratchet_models::whisper::options::DecodingOptionsBuilder;
     use tokenizers::Tokenizer;
     use wasm_bindgen_test::*;
 
@@ -204,7 +202,6 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
-    /*
     #[wasm_bindgen_test]
     async fn whisper_browser() -> Result<(), JsValue> {
         log_init();
@@ -214,7 +211,7 @@ mod tests {
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
         let mut model = Model::load(
-            AvailableModels::Whisper(RegistryWhisper::Tiny),
+            AvailableModels::Whisper(WhisperVariants::Tiny),
             Quantization::F32,
             js_cb,
         )
@@ -241,7 +238,7 @@ mod tests {
         let result = model.run(input).await.unwrap();
         log::warn!("Result: {:?}", result);
         Ok(())
-    }*/
+    }
 
     /*
     #[wasm_bindgen_test]

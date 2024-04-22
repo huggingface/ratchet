@@ -162,7 +162,7 @@ pub fn kernels() -> &'static HashMap<&'static str, &'static str> {
         // Account for Windows-isms
         let diff = pathdiff::diff_paths(&path, &out_dir)
             .ok_or(anyhow::format_err!("Failed to get path diff"))?;
-        let normalized_path = diff.to_string_lossy().replace("\\", "/");
+        let normalized_path = diff.to_string_lossy().replace('\\', "/");
 
         writeln!(
             &mut file,

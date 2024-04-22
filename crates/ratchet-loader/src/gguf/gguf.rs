@@ -1,7 +1,5 @@
 //! Support for the GGUF file format.
-//!
 //! Spec: https://github.com/philpax/ggml/blob/gguf-spec/docs/gguf.md
-//!
 //! Adapted from https://github.com/huggingface/candle/blob/5ebcfeaf0f5af69bb2f74385e8d6b020d4a3b8df/candle-core/src/quantized/gguf_file.rs
 
 use super::dtype::GGUFInterop;
@@ -462,7 +460,6 @@ impl Header {
     }
 
     /// # Tensor
-    ///
     /// Load the GGUF tensor from the reader into memory.
     pub fn tensor<R: std::io::Seek + std::io::Read>(
         &self,

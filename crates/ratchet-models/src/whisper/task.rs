@@ -5,7 +5,7 @@ use super::{
 use crate::whisper::options::{DecodingOptions, Prompt};
 use ndarray::{s, Axis};
 use ratchet::{shape, Device, Tensor};
-use ratchet_nn::{Module, MutableModule};
+use ratchet_nn::Module;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {

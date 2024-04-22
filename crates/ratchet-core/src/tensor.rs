@@ -828,7 +828,7 @@ impl Tensor {
     }
 }
 
-#[cfg(all(feature = "pyo3"))]
+#[cfg(feature = "pyo3")]
 impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
     fn from(array: &PyArrayDyn<T>) -> Self {
         Self::from(array.to_owned_array())

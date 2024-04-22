@@ -1,9 +1,11 @@
 use super::{mha::*, mlp::MLP};
-use crate::whisper::model::Whisper;
 use ratchet::{Device, Tensor};
-use ratchet_loader::ggml::GGMLModel;
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
 use std::io::{BufRead, Seek};
+
+#[cfg(target_arch = "wasm32")]
+use {crate::ratchet_from_gguf_web, crate::TensorMap};
 
 #[derive(Debug)]
 pub struct ResidualAttentionBlock {
@@ -51,45 +53,85 @@ impl Module for ResidualAttentionBlock {
 
 impl ResidualAttentionBlock {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
+        header: &Header,
         reader: &mut R,
         layer_index: usize,
         n_heads: usize,
         prefix: &str,
-        enable_x_attn: bool,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let lt = |name: &str| {
+            let key = format!("model.{}.layers.{}.{}", prefix, layer_index, name);
+            header.tensor(reader, &key, device)
+        };
+        Self::load_inner(lt, prefix, n_heads)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        tensor_map: &mut TensorMap,
+        layer_index: usize,
+        n_heads: usize,
+        prefix: &str,
         device: &Device,
     ) -> anyhow::Result<Self> {
         let mut lt = |name: &str| {
-            let key = format!("{}.blocks.{}.{}", prefix, layer_index, name);
-            disk_model.load_tensor(&key, reader, device)
+            let key = format!("model.{}.layers.{}.{}", prefix, layer_index, name);
+            let tensor = tensor_map
+                .remove(&key)
+                .ok_or_else(|| anyhow::anyhow!("missing tensor"))?;
+            ratchet_from_gguf_web(tensor, device)
         };
-        let attn_ln = LayerNorm::new(lt("attn_ln.weight")?, Some(lt("attn_ln.bias")?), 1e-5);
+        Self::load_inner(lt, prefix, n_heads)
+    }
+
+    pub fn load_inner<F>(mut lt: F, prefix: &str, n_heads: usize) -> anyhow::Result<Self>
+    where
+        F: FnMut(&str) -> anyhow::Result<Tensor>,
+    {
+        let attn_ln = LayerNorm::new(
+            lt("self_attn_layer_norm.weight")?,
+            Some(lt("self_attn_layer_norm.bias")?),
+            1e-5,
+        );
+        //model.encoder.layers.0.self_attn.v_proj.weight
         let attn = MultiHeadAttention::new(
-            Linear::new(lt("attn.query.weight")?, Some(lt("attn.query.bias")?)),
-            Linear::new(lt("attn.key.weight")?, None),
-            Linear::new(lt("attn.value.weight")?, Some(lt("attn.value.bias")?)),
-            Linear::new(lt("attn.out.weight")?, Some(lt("attn.out.bias")?)),
+            Linear::new(
+                lt("self_attn.q_proj.weight")?,
+                Some(lt("self_attn.q_proj.bias")?),
+            ),
+            Linear::new(lt("self_attn.k_proj.weight")?, None),
+            Linear::new(
+                lt("self_attn.v_proj.weight")?,
+                Some(lt("self_attn.v_proj.bias")?),
+            ),
+            Linear::new(
+                lt("self_attn.out_proj.weight")?,
+                Some(lt("self_attn.out_proj.bias")?),
+            ),
             n_heads,
         );
-        let (x_attn_ln, x_attn) = if enable_x_attn {
+
+        let (x_attn_ln, x_attn) = if prefix == "decoder" {
             let x_attn_ln = LayerNorm::new(
-                lt("cross_attn_ln.weight")?,
-                Some(lt("cross_attn_ln.bias")?),
+                lt("encoder_attn_layer_norm.weight")?,
+                Some(lt("encoder_attn_layer_norm.bias")?),
                 1e-5,
             );
             let x_attn = MultiHeadAttention::new(
                 Linear::new(
-                    lt("cross_attn.query.weight")?,
-                    Some(lt("cross_attn.query.bias")?),
+                    lt("encoder_attn.q_proj.weight")?,
+                    Some(lt("encoder_attn.q_proj.bias")?),
                 ),
-                Linear::new(lt("cross_attn.key.weight")?, None),
+                Linear::new(lt("encoder_attn.k_proj.weight")?, None),
                 Linear::new(
-                    lt("cross_attn.value.weight")?,
-                    Some(lt("cross_attn.value.bias")?),
+                    lt("encoder_attn.v_proj.weight")?,
+                    Some(lt("encoder_attn.v_proj.bias")?),
                 ),
                 Linear::new(
-                    lt("cross_attn.out.weight")?,
-                    Some(lt("cross_attn.out.bias")?),
+                    lt("encoder_attn.out_proj.weight")?,
+                    Some(lt("encoder_attn.out_proj.bias")?),
                 ),
                 n_heads,
             );
@@ -98,10 +140,14 @@ impl ResidualAttentionBlock {
             (None, None)
         };
 
-        let mlp_ln = LayerNorm::new(lt("mlp_ln.weight")?, Some(lt("mlp_ln.bias")?), 1e-5);
+        let mlp_ln = LayerNorm::new(
+            lt("final_layer_norm.weight")?,
+            Some(lt("final_layer_norm.bias")?),
+            1e-5,
+        );
         let mlp = MLP::new(
-            Linear::new(lt("mlp.0.weight")?, Some(lt("mlp.0.bias")?)),
-            Linear::new(lt("mlp.2.weight")?, Some(lt("mlp.2.bias")?)),
+            Linear::new(lt("fc1.weight")?, Some(lt("fc1.bias")?)),
+            Linear::new(lt("fc2.weight")?, Some(lt("fc2.bias")?)),
         );
         Ok(Self {
             attn_ln,

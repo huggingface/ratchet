@@ -3,9 +3,8 @@ use hf_hub::api::sync::Api;
 use ndarray::Axis;
 use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, DeviceRequest, Tensor};
-use ratchet_loader::ggml::GGMLCompatible;
-use ratchet_loader::gguf::gguf::Header;
-use ratchet_models::registry::{AvailableModels, Quantization, Whisper as RegistryWhisper};
+use ratchet_loader::gguf::gguf::{self, Header};
+use ratchet_models::registry::{AvailableModels, Quantization, WhisperVariants as RegistryWhisper};
 use ratchet_models::whisper::options::DecodingOptionsBuilder;
 use ratchet_models::whisper::transcribe::transcribe;
 use ratchet_models::{phi2::Phi2, whisper::Whisper};
@@ -81,13 +80,12 @@ fn handle_whisper(matches: &ArgMatches, api: Api) {
     let mut whisper = if let Some(variant) = matches.get_one::<RegistryWhisper>("variant") {
         let model = AvailableModels::Whisper(variant.clone());
         let repo = api.model(model.repo_id());
-        let model_path = repo.get(&model.model_id(Quantization::Q8)).unwrap();
+        let model_path = repo.get(&model.model_id(Quantization::Q8_0)).unwrap();
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
-        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
-
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        Whisper::load(&gg_disk, &mut reader, device).unwrap()
+        let header = gguf::Header::read(&mut reader).unwrap();
+        Whisper::load(header, variant.clone(), &mut reader, device).unwrap()
     } else {
         panic!("Model not found");
     };
@@ -216,7 +214,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api = Api::new().unwrap();
     if let Some(matches) = matches.subcommand_matches("phi2") {
-        handle_phi2(matches, api);
+        let _ = handle_phi2(matches, api);
     } else if let Some(matches) = matches.subcommand_matches("whisper") {
         handle_whisper(matches, api);
     }

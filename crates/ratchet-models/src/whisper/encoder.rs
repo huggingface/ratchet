@@ -1,11 +1,16 @@
 use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
-use ratchet_loader::ggml::GGMLModel;
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{LayerNorm, Module};
 
-use super::residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs};
-use crate::whisper::model::Whisper;
+use super::{
+    config::Config,
+    residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs},
+};
+
+#[cfg(target_arch = "wasm32")]
+use {crate::ratchet_from_gguf_web, crate::TensorMap};
 
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {
@@ -48,19 +53,39 @@ impl Module for EncoderStem {
 
 impl EncoderStem {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
+        header: &Header,
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let mut lt = |name: &str| {
-            let key = format!("encoder.{}", name);
-            disk_model.load_tensor(&key, reader, device)
+        let lt = |name: &str| {
+            let key = format!("model.encoder.{}", name);
+            header.tensor(reader, &key, device)
         };
+        Self::load_inner(lt)
+    }
 
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        tensor_map: &mut TensorMap,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let mut lt = |name: &str| {
+            let key = format!("model.encoder.{}", name);
+            let wt = tensor_map.remove(&key).unwrap();
+            ratchet_from_gguf_web(wt, device)
+        };
+        Self::load_inner(lt)
+    }
+
+    fn load_inner<F>(mut lt: F) -> anyhow::Result<Self>
+    where
+        F: FnMut(&str) -> anyhow::Result<Tensor>,
+    {
         Ok(Self {
             conv1: ConvBlock::new(lt("conv1.weight")?, lt("conv1.bias")?, 1, 1),
             conv2: ConvBlock::new(lt("conv2.weight")?, lt("conv2.bias")?, 2, 1),
-            pos_embed: lt("positional_embedding")?,
+            pos_embed: lt("embed_positions.weight")?,
         })
     }
 }
@@ -91,34 +116,71 @@ impl Module for WhisperEncoder {
 }
 
 impl WhisperEncoder {
-    pub fn load<R: BufRead + Seek>(
-        disk_model: &GGMLModel<Whisper>,
-        reader: &mut R,
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        config: &Config,
+        tensor_map: &mut TensorMap,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let hparams = &disk_model.header.hparams;
-        let stem = EncoderStem::load(disk_model, reader, device)?;
-        let (n_layers, n_heads) = (hparams.n_audio_layer, hparams.n_audio_head);
+        let stem = EncoderStem::from_web(header, tensor_map, device)?;
+        let (n_layers, n_heads) = (config.n_audio_layer, config.n_audio_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
-                blocks.push(ResidualAttentionBlock::load(
-                    disk_model,
-                    reader,
+                blocks.push(ResidualAttentionBlock::from_web(
+                    header,
+                    tensor_map,
                     i as _,
                     n_heads as _,
                     "encoder",
-                    false,
                     device,
                 ));
                 blocks
             })
             .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<_, _>>()?;
 
         let mut lt = |name: &str| {
-            let key = format!("encoder.ln_post.{}", name);
-            disk_model.load_tensor(&key, reader, device)
+            let key = format!("model.encoder.layer_norm.{}", name);
+            let wt = tensor_map.remove(&key).unwrap();
+            ratchet_from_gguf_web(wt, device)
+        };
+
+        Ok(Self {
+            stem,
+            blocks,
+            ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
+        })
+    }
+
+    pub fn load<R: BufRead + Seek>(
+        header: &Header,
+        config: &Config,
+        reader: &mut R,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let stem = EncoderStem::load(header, reader, device)?;
+        let (n_layers, n_heads) = (config.n_audio_layer, config.n_audio_head);
+
+        let blocks = (0..n_layers)
+            .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
+                blocks.push(ResidualAttentionBlock::load(
+                    header,
+                    reader,
+                    i as _,
+                    n_heads as _,
+                    "encoder",
+                    device,
+                ));
+                blocks
+            })
+            .into_iter()
+            .collect::<Result<_, _>>()?;
+
+        let mut lt = |name: &str| {
+            let key = format!("model.encoder.layer_norm.{}", name);
+            header.tensor(reader, &key, device)
         };
 
         Ok(Self {
@@ -133,10 +195,10 @@ impl WhisperEncoder {
 mod tests {
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest, Tensor};
-    use ratchet_loader::ggml::GGMLCompatible;
+    use ratchet_loader::gguf::gguf;
     use ratchet_nn::Module;
 
-    use crate::{whisper::encoder::WhisperEncoder, whisper::model::Whisper};
+    use crate::whisper::{config::Config, encoder::WhisperEncoder};
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -147,18 +209,20 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let path = model.get("tiny_f32.bin").unwrap();
-        println!("Path: {}", path.display());
+        let model_path = model.get("tiny_f32.gguf").unwrap();
+        println!("Path: {}", model_path.display());
+        let config_path = model.get("config.json").unwrap();
+
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
         let ground_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
 
-        let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
-        let gg_disk = Whisper::load_ggml(&mut reader).unwrap();
-        assert_eq!(gg_disk.tensors.len(), 167);
-
+        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
+        let header = gguf::Header::read(&mut reader).unwrap();
+        let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let encoder = WhisperEncoder::load(&gg_disk, &mut reader, &device)?;
+
+        let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
         let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
 
         let result = encoder.schedule(input)?.resolve()?;
