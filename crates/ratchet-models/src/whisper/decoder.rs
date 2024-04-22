@@ -20,12 +20,12 @@ impl DecoderStem {
         device: &Device,
     ) -> anyhow::Result<Self> {
         let mut lt = |name: &str| {
-            let key = format!("decoder.{}", name);
+            let key = format!("model.decoder.{}", name);
             header.tensor(reader, &key, device)
         };
         Ok(Self {
-            token_embed: Embedding::new(lt("token_embedding.weight")?),
-            pos_embed: lt("positional_embedding")?,
+            token_embed: Embedding::new(lt("embed_tokens.weight")?),
+            pos_embed: lt("embed_positions.weight")?,
         })
     }
 }
@@ -134,11 +134,11 @@ impl WhisperDecoder {
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut lt = |name: &str| {
-            let key = format!("decoder.ln.{}", name);
+            let key = format!("model.decoder.layer_norm.{}", name);
             header.tensor(reader, &key, device)
         };
 
-        let n_state = config.n_text_ctx as usize;
+        let n_state = 384;
         Ok(Self {
             stem,
             blocks,
@@ -205,7 +205,7 @@ def ground(options):
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let path = model.get("tiny_f32.bin").unwrap();
+        let path = model.get("tiny_f32.gguf").unwrap();
         let config_path = model.get("config.json").unwrap();
         let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
         println!("MODEL LOADED FROM: {}", path.display());

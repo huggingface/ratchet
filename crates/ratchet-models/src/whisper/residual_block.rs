@@ -85,23 +85,23 @@ impl ResidualAttentionBlock {
         );
         let (x_attn_ln, x_attn) = if prefix == "decoder" {
             let x_attn_ln = LayerNorm::new(
-                lt("cross_attn_ln.weight")?,
-                Some(lt("cross_attn_ln.bias")?),
+                lt("encoder_attn_layer_norm.weight")?,
+                Some(lt("encoder_attn_layer_norm.bias")?),
                 1e-5,
             );
             let x_attn = MultiHeadAttention::new(
                 Linear::new(
-                    lt("cross_attn.query.weight")?,
-                    Some(lt("cross_attn.query.bias")?),
+                    lt("encoder_attn.q_proj.weight")?,
+                    Some(lt("encoder_attn.q_proj.bias")?),
                 ),
-                Linear::new(lt("cross_attn.key.weight")?, None),
+                Linear::new(lt("encoder_attn.k_proj.weight")?, None),
                 Linear::new(
-                    lt("cross_attn.value.weight")?,
-                    Some(lt("cross_attn.value.bias")?),
+                    lt("encoder_attn.v_proj.weight")?,
+                    Some(lt("encoder_attn.v_proj.bias")?),
                 ),
                 Linear::new(
-                    lt("cross_attn.out.weight")?,
-                    Some(lt("cross_attn.out.bias")?),
+                    lt("encoder_attn.out_proj.weight")?,
+                    Some(lt("encoder_attn.out_proj.bias")?),
                 ),
                 n_heads,
             );
