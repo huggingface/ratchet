@@ -63,7 +63,7 @@ impl Whisper {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn from_web<R: BufRead + Seek>(
+    pub async fn from_web(
         header: Header,
         mut tensors: TensorMap,
         variant: WhisperVariants,

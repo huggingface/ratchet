@@ -96,8 +96,8 @@ impl AvailableModels {
             _ => unimplemented!(),
         };
         match quantization {
-            Quantization::Q8_0 => format!("{}-q8_0.gguf", model_stem),
-            Quantization::F32 => model_stem.to_string(),
+            Quantization::Q8_0 => format!("{}_q8_0.gguf", model_stem),
+            Quantization::F32 => format!("{}_f32.gguf", model_stem),
         }
     }
 }

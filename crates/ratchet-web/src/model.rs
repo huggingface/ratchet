@@ -164,8 +164,9 @@ impl Model {
 mod tests {
     use super::*;
     use ratchet_hub::{ApiBuilder, RepoType};
-    use ratchet_models::registry::Phi as RegistryPhi;
-    use ratchet_models::registry::Whisper as RegistryWhisper;
+    use ratchet_models::registry::PhiVariants;
+    use ratchet_models::registry::WhisperVariants;
+    use ratchet_models::whisper::options::DecodingOptionsBuilder;
     use tokenizers::Tokenizer;
     use wasm_bindgen_test::*;
 
@@ -201,7 +202,6 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
-    /*
     #[wasm_bindgen_test]
     async fn whisper_browser() -> Result<(), JsValue> {
         log_init();
@@ -211,7 +211,7 @@ mod tests {
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
         let mut model = Model::load(
-            AvailableModels::Whisper(RegistryWhisper::Tiny),
+            AvailableModels::Whisper(WhisperVariants::Tiny),
             Quantization::F32,
             js_cb,
         )
@@ -238,7 +238,7 @@ mod tests {
         let result = model.run(input).await.unwrap();
         log::warn!("Result: {:?}", result);
         Ok(())
-    }*/
+    }
 
     /*
     #[wasm_bindgen_test]
