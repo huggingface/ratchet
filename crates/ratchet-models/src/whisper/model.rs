@@ -235,42 +235,4 @@ mod tests {
         println!("{}", transcript.formatted.unwrap());
         println!("Processing time: {:?}", transcript.processing_time);
     }
-
-    /*
-    #[test]
-    pub fn convert_ggml_f32_to_wq8() {
-        log_init();
-        let api = Api::new().unwrap();
-        let model = api.model("ggerganov/whisper.cpp".to_string());
-        let src_path = model.get("ggml-tiny.bin").unwrap();
-
-        let to_quant = HashSet::from([
-            "attn.query.weight",
-            "attn.key.weight",
-            "attn.value.weight",
-            "attn.out.weight",
-            "cross_attn.query.weight",
-            "cross_attn.key.weight",
-            "cross_attn.value.weight",
-            "cross_attn.out.weight",
-            "mlp.0.weight",
-            "mlp.2.weight",
-            "token_embedding.weight",
-        ]);
-
-        let mut dst_path = src_path.clone();
-        dst_path.pop();
-        dst_path = dst_path.join("tiny_q8.bin");
-        println!("DST: {:?}", dst_path);
-
-        let v3 = false;
-        let pad_size = if v3 { 6 } else { 7 };
-        let to_pad = HashMap::from([(
-            "decoder.token_embedding.weight",
-            vec![[0, pad_size], [0, 0]],
-        )]);
-        let quantization = Quantization::None;
-        Converter::convert::<_, Whisper>(src_path, dst_path, quantization, to_quant, to_pad)
-            .unwrap();
-    }*/
 }

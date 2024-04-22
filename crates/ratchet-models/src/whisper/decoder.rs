@@ -138,7 +138,7 @@ impl WhisperDecoder {
             header.tensor(reader, &key, device)
         };
 
-        let n_state = 384;
+        let n_state = config.n_audio_state as _;
         Ok(Self {
             stem,
             blocks,

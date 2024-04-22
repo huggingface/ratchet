@@ -159,7 +159,6 @@ mod tests {
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let header = gguf::Header::read(&mut reader).unwrap();
         let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
-        println!("CONFIG: {:#?}", config);
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
