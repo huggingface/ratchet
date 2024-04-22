@@ -4,6 +4,9 @@ use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{KVEntry, LayerNorm, Linear, Module};
 use std::io::{BufRead, Seek};
 
+#[cfg(target_arch = "wasm32")]
+use {crate::TensorMap, ratchet_loader::ratchet_from_gguf_web};
+
 #[derive(Debug)]
 pub struct ResidualAttentionBlock {
     attn_ln: LayerNorm,
@@ -57,10 +60,36 @@ impl ResidualAttentionBlock {
         prefix: &str,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let mut lt = |name: &str| {
+        let lt = |name: &str| {
             let key = format!("model.{}.layers.{}.{}", prefix, layer_index, name);
             header.tensor(reader, &key, device)
         };
+        Self::load_inner(lt, prefix, n_heads)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        tensor_map: &mut TensorMap,
+        layer_index: usize,
+        n_heads: usize,
+        prefix: &str,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let mut lt = |name: &str| {
+            let key = format!("model.{}.layers.{}.{}", prefix, layer_index, name);
+            let tensor = tensor_map
+                .remove(&key)
+                .ok_or_else(|| anyhow::anyhow!("missing tensor"))?;
+            ratchet_from_gguf_web(tensor, device)
+        };
+        Self::load_inner(lt, prefix, n_heads)
+    }
+
+    pub fn load_inner<F>(mut lt: F, prefix: &str, n_heads: usize) -> anyhow::Result<Self>
+    where
+        F: FnMut(&str) -> anyhow::Result<Tensor>,
+    {
         let attn_ln = LayerNorm::new(
             lt("self_attn_layer_norm.weight")?,
             Some(lt("self_attn_layer_norm.bias")?),
@@ -83,6 +112,7 @@ impl ResidualAttentionBlock {
             ),
             n_heads,
         );
+
         let (x_attn_ln, x_attn) = if prefix == "decoder" {
             let x_attn_ln = LayerNorm::new(
                 lt("encoder_attn_layer_norm.weight")?,

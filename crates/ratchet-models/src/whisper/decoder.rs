@@ -1,11 +1,12 @@
-use std::io::{BufRead, Seek};
-
+use super::config::Config;
 use crate::whisper::residual_block::*;
 use ratchet::prelude::*;
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
+use std::io::{BufRead, Seek};
 
-use super::config::Config;
+#[cfg(target_arch = "wasm32")]
+use {crate::TensorMap, ratchet_loader::gguf::gguf::ratchet_from_gguf_web};
 
 #[derive(Debug)]
 pub(crate) struct DecoderStem {
@@ -19,10 +20,30 @@ impl DecoderStem {
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let mut lt = |name: &str| {
+        let lt = |name: &str| {
             let key = format!("model.decoder.{}", name);
             header.tensor(reader, &key, device)
         };
+        Self::load_inner(lt)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        tensor_map: &mut TensorMap,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let mut lt = |name: &str| {
+            let key = format!("model.decoder.{}", name);
+            ratchet_from_gguf_web(header, tensor_map, &key, device)
+        };
+        Self::load_inner(lt)
+    }
+
+    fn load_inner<F>(mut lt: F) -> anyhow::Result<Self>
+    where
+        F: FnMut(&str) -> anyhow::Result<Tensor>,
+    {
         Ok(Self {
             token_embed: Embedding::new(lt("embed_tokens.weight")?),
             pos_embed: lt("embed_positions.weight")?,
@@ -107,6 +128,47 @@ impl WhisperDecoder {
             .flat_map(|i| (0..n_ctx).map(move |j| if j > i { f32::NEG_INFINITY } else { 0f32 }))
             .collect();
         Tensor::from_data(mask, shape![n_ctx, n_ctx], device.clone())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        config: &Config,
+        tensor_map: &mut TensorMap,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let (n_layers, n_heads) = (config.n_text_layer, config.n_text_head);
+        let stem = DecoderStem::load(header, reader, device)?;
+
+        let blocks = (0..n_layers)
+            .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
+                blocks.push(ResidualAttentionBlock::from_web(
+                    header,
+                    tensor_map,
+                    i as _,
+                    n_heads as _,
+                    "decoder",
+                    device,
+                ));
+                blocks
+            })
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut lt = |name: &str| {
+            let key = format!("model.decoder.layer_norm.{}", name);
+            header.tensor(reader, &key, device)
+        };
+
+        let n_state = config.n_audio_state as _;
+        Ok(Self {
+            stem,
+            blocks,
+            mask: Self::load_mask(config.n_text_ctx as _, device),
+            ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
+            cache: KVCache::new(n_layers as _, shape![1, Self::MAX_CACHE, n_state], device),
+            device: device.clone(),
+        })
     }
 
     pub fn load<R: BufRead + Seek>(

@@ -11,7 +11,10 @@ use ratchet::NDArrayExt;
 use hf_hub::api::sync::Api;
 
 #[cfg(target_arch = "wasm32")]
-use {js_sys::Uint8Array, ratchet_hub::ApiBuilder, ratchet_hub::RepoType, wasm_bindgen::JsError};
+use {
+    crate::TensorMap, js_sys::Uint8Array, ratchet_hub::ApiBuilder, ratchet_hub::RepoType,
+    ratchet_loader::gguf::gguf::ratchet_from_gguf_web, wasm_bindgen::prelude::*,
+};
 
 use crate::registry::WhisperVariants;
 use crate::whisper::{options::Language, task::DecodingTask, tokenizer::WhisperTokenizer};
@@ -33,10 +36,11 @@ impl Whisper {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load<R: BufRead + Seek>(
         header: Header,
+        variant: WhisperVariants,
         reader: &mut R,
         device: Device,
     ) -> anyhow::Result<Self> {
-        let mel_bytes = Self::fetch_resource(WhisperVariants::Tiny, "melfilters.bytes")?;
+        let mel_bytes = Self::fetch_resource(&variant, "melfilters.bytes")?;
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
             &mel_bytes,
@@ -45,7 +49,7 @@ impl Whisper {
         let specgen = SpectrogramGenerator::new(mel_filters);
 
         let config: Config =
-            serde_json::from_slice(&Self::fetch_resource(WhisperVariants::Tiny, "config.json")?)?;
+            serde_json::from_slice(&Self::fetch_resource(&variant, "config.json")?)?;
         let encoder = WhisperEncoder::load(&header, &config, reader, &device)?;
         let decoder = WhisperDecoder::load(&header, &config, reader, &device)?;
 
@@ -59,12 +63,15 @@ impl Whisper {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn load<R: BufRead + Seek>(
+    pub async fn from_web<R: BufRead + Seek>(
         header: Header,
-        reader: &mut R,
-        device: Device,
-    ) -> Result<Self, JsError> {
-        let mel_bytes = Self::fetch_resource(WhisperVariants::Tiny, "melfilters.bytes").await?;
+        mut tensors: TensorMap,
+        variant: WhisperVariants,
+    ) -> anyhow::Result<Self> {
+        let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
+        let mel_bytes = Self::fetch_resource(&variant, "melfilters.bytes")
+            .await
+            .unwrap();
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
             &mel_bytes,
@@ -72,11 +79,11 @@ impl Whisper {
         );
         let specgen = SpectrogramGenerator::new(mel_filters);
 
-        let config: Config = serde_json::from_slice(
-            &Self::fetch_resource(WhisperVariants::Tiny, "config.json").await?,
-        )?;
-        let encoder = WhisperEncoder::load(&header, &config, reader, &device).unwrap();
-        let decoder = WhisperDecoder::load(&header, &config, reader, &device).unwrap();
+        let config: Config =
+            serde_json::from_slice(&Self::fetch_resource(&variant, "config.json").await.unwrap())?;
+
+        let encoder = WhisperEncoder::from_web(&header, &config, &mut tensors, &device)?;
+        let decoder = WhisperDecoder::from_web(&header, &config, &mut tensors, &device)?;
 
         Ok(Self {
             specgen,
@@ -89,16 +96,20 @@ impl Whisper {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn fetch_resource(
-        variant: WhisperVariants,
+        variant: &WhisperVariants,
         resource: &str,
-    ) -> Result<Vec<u8>, JsError> {
+    ) -> Result<Vec<u8>, JsValue> {
         let repo_id = variant.repo_id();
         let model_repo = ApiBuilder::from_hf(repo_id, RepoType::Model).build();
-        Ok(model_repo.get(resource).await?.to_vec())
+        let resp = model_repo.get(resource).await;
+        match resp {
+            Ok(data) => Ok(data.to_vec()),
+            Err(e) => Err(JsError::new(format!("Failed to fetch resource").as_str()).into()),
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn fetch_resource(variant: WhisperVariants, resource: &str) -> anyhow::Result<Vec<u8>> {
+    pub fn fetch_resource(variant: &WhisperVariants, resource: &str) -> anyhow::Result<Vec<u8>> {
         let api = Api::new().unwrap();
         let repo_id = variant.repo_id();
 
@@ -121,7 +132,7 @@ impl Whisper {
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU)?;
-        let logits = DecodingTask::slice_logits(cpu_logits, self.config.n_vocab as usize);
+        let logits = DecodingTask::slice_logits(cpu_logits, self.config.n_vocab);
 
         let device = logits.device().clone();
         let mut nd_logits = logits.into_ndarray::<f32>();

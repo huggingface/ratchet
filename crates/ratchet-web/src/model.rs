@@ -60,16 +60,13 @@ impl WebModel {
         model_record: ModelRecord,
         tensor_map: TensorMap,
     ) -> Result<WebModel, anyhow::Error> {
+        let header = serde_wasm_bindgen::from_value::<Header>(model_record.header).unwrap();
         match model_record.model {
-            //AvailableModels::Whisper(_) => {
-            //    let model = Whisper::from_bytes(&stored.bytes.to_vec()).await?;
-            //    Ok(WebModel::Whisper(model))
-            //}
+            AvailableModels::Whisper(variant) => {
+                let model = Whisper::from_web(header, tensor_map, variant).await?;
+                Ok(WebModel::Whisper(model))
+            }
             AvailableModels::Phi(_) => {
-                log::info!("MODEL HEADER: {:?}", model_record.header);
-                log::info!("TENSOR MAP: {:?}", tensor_map);
-
-                let header = serde_wasm_bindgen::from_value::<Header>(model_record.header).unwrap();
                 let model = Phi2::from_web(header, tensor_map).await?;
                 Ok(WebModel::Phi2(model))
             }

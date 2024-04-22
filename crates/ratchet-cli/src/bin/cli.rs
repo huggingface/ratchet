@@ -85,7 +85,7 @@ fn handle_whisper(matches: &ArgMatches, api: Api) {
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let header = gguf::Header::read(&mut reader).unwrap();
-        Whisper::load(header, &mut reader, device).unwrap()
+        Whisper::load(header, variant.clone(), &mut reader, device).unwrap()
     } else {
         panic!("Model not found");
     };

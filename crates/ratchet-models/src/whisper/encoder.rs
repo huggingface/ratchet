@@ -9,6 +9,9 @@ use super::{
     residual_block::{ResidualAttentionBlock, ResidualAttentionBlockInputs},
 };
 
+#[cfg(target_arch = "wasm32")]
+use {crate::ratchet_from_gguf_web, crate::TensorMap};
+
 #[derive(Debug, derive_new::new)]
 struct ConvBlock {
     w: Tensor,
@@ -54,11 +57,31 @@ impl EncoderStem {
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let mut lt = |name: &str| {
+        let lt = |name: &str| {
             let key = format!("model.encoder.{}", name);
             header.tensor(reader, &key, device)
         };
+        Self::load_inner(lt)
+    }
 
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        tensor_map: &mut TensorMap,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let mut lt = |name: &str| {
+            let key = format!("model.encoder.{}", name);
+            let wt = tensor_map.remove(&key).unwrap();
+            ratchet_from_gguf_web(wt, device)
+        };
+        Self::load_inner(lt)
+    }
+
+    fn load_inner<F>(mut lt: F) -> anyhow::Result<Self>
+    where
+        F: FnMut(&str) -> anyhow::Result<Tensor>,
+    {
         Ok(Self {
             conv1: ConvBlock::new(lt("conv1.weight")?, lt("conv1.bias")?, 1, 1),
             conv2: ConvBlock::new(lt("conv2.weight")?, lt("conv2.bias")?, 2, 1),
@@ -93,6 +116,43 @@ impl Module for WhisperEncoder {
 }
 
 impl WhisperEncoder {
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web(
+        header: &Header,
+        config: &Config,
+        tensor_map: &mut TensorMap,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
+        let stem = EncoderStem::from_web(header, tensor_map, device)?;
+        let (n_layers, n_heads) = (config.n_audio_layer, config.n_audio_head);
+
+        let blocks = (0..n_layers)
+            .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
+                blocks.push(ResidualAttentionBlock::from_web(
+                    header,
+                    tensor_map,
+                    i as _,
+                    n_heads as _,
+                    "encoder",
+                    device,
+                ));
+                blocks
+            })
+            .into_iter()
+            .collect::<Result<_, _>>()?;
+
+        let mut lt = |name: &str| {
+            let key = format!("model.encoder.layer_norm.{}", name);
+            header.tensor(reader, &key, device)
+        };
+
+        Ok(Self {
+            stem,
+            blocks,
+            ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
+        })
+    }
+
     pub fn load<R: BufRead + Seek>(
         header: &Header,
         config: &Config,
@@ -115,7 +175,7 @@ impl WhisperEncoder {
                 blocks
             })
             .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<_, _>>()?;
 
         let mut lt = |name: &str| {
             let key = format!("model.encoder.layer_norm.{}", name);
