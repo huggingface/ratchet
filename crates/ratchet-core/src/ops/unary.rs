@@ -25,6 +25,8 @@ pub enum UnaryOp {
     Floor,
     Ceil,
     Neg,
+    Silu,
+    Sigmoid,
 }
 
 impl UnaryOp {
@@ -42,6 +44,8 @@ impl UnaryOp {
             UnaryOp::Floor => "floor",
             UnaryOp::Ceil => "ceil",
             UnaryOp::Neg => "neg",
+            UnaryOp::Silu => "silu",
+            UnaryOp::Sigmoid => "sigmoid",
         }
     }
 }
@@ -191,7 +195,7 @@ def {}(a):
         );
 
         let prg = match op {
-            UnaryOp::Gelu => func_prg,
+            UnaryOp::Gelu | UnaryOp::Silu | UnaryOp::Sigmoid => func_prg,
             _ => imp_prg,
         };
 
@@ -228,6 +232,8 @@ def {}(a):
             UnaryOp::Floor => a_gpu.floor()?,
             UnaryOp::Ceil => a_gpu.ceil()?,
             UnaryOp::Neg => a_gpu.neg()?,
+            UnaryOp::Silu => a_gpu.silu()?,
+            UnaryOp::Sigmoid => a_gpu.sigmoid()?,
         }
         .resolve()?;
 
@@ -241,7 +247,7 @@ def {}(a):
         Ok(())
     }
 
-    #[proptest(cases = 128)]
+    #[proptest(cases = 256)]
     fn test_unary(prob: UnaryProblem) {
         run_unary_trial(prob).unwrap();
     }
