@@ -1,6 +1,6 @@
 [package]
 name = "ratchet-web"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 description = "A web-first, cross-platform ML framework."
@@ -42,6 +42,7 @@ fern = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 tokenizers = { version = "0.13.4", default-features = false, features=["unstable_wasm"] }
+futures = "0.3.30"
 [dependencies.web-sys]
 features = [
   'console',

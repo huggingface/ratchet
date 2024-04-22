@@ -87,14 +87,17 @@ impl TensorInfo {
     }
 
     pub fn byte_range(&self, tensor_data_offset: u64) -> Range<u64> {
-        let tensor_elems = self.shape.numel();
-        let block_numel = self.ggml_dtype.block_numel();
-        let tensor_blocks = tensor_elems / block_numel;
-        let size_in_bytes = tensor_blocks * self.ggml_dtype.type_size();
-
+        let size_in_bytes = self.size_in_bytes();
         let start = tensor_data_offset + self.offset;
         let end = start + size_in_bytes as u64;
         start..end
+    }
+
+    pub fn size_in_bytes(&self) -> usize {
+        let tensor_elems = self.shape.numel();
+        let block_numel = self.ggml_dtype.block_numel();
+        let tensor_blocks = tensor_elems / block_numel;
+        tensor_blocks * self.ggml_dtype.type_size()
     }
 }
 
