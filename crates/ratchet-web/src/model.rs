@@ -124,34 +124,24 @@ impl Model {
                 .tensor_infos
                 .values()
                 .fold(0, |acc, ti| acc + ti.size_in_bytes());
-            log::warn!("ABOUT TO DOWNLOAD: {}", content_len);
 
             let mut total_progress = 0.0;
 
-            let mut all_infos = header.tensor_infos.iter().collect::<Vec<_>>();
-            all_infos.sort_by(|(_, t1), (_, t2)| t1.size_in_bytes().cmp(&t2.size_in_bytes()));
-            for chunk in all_infos.chunks(4) {
-                let mut futures = Vec::new();
+            for (name, ti) in header.tensor_infos.iter() {
+                let range = ti.byte_range(data_offset);
+                let bytes = model_repo
+                    .fetch_range(&model_id, range.start, range.end)
+                    .await?;
 
-                for (_, ti) in chunk {
-                    let range = ti.byte_range(data_offset);
-                    let req = model_repo.fetch_range(&model_id, range.start, range.end);
-                    futures.push(req);
-                }
+                let req_progress = (bytes.length() as f64) / (content_len as f64) * 100.0;
+                total_progress += req_progress;
+                progress.call1(&JsValue::NULL, &total_progress.into());
 
-                let responses = futures::future::join_all(futures).await;
-                for (result, (name, _)) in responses.into_iter().zip(chunk) {
-                    let bytes = result?;
-                    let req_progress = (bytes.length() as f64) / (content_len as f64) * 100.0;
-                    total_progress += req_progress;
-                    progress.call1(&JsValue::NULL, &total_progress.into());
-
-                    let record = TensorRecord::new(name.to_string(), model_key.clone(), bytes);
-                    db.put_tensor(record).await.map_err(|e| {
-                        let e: JsError = e.into();
-                        Into::<JsValue>::into(e)
-                    })?;
-                }
+                let record = TensorRecord::new(name.to_string(), model_key.clone(), bytes);
+                db.put_tensor(record).await.map_err(|e| {
+                    let e: JsError = e.into();
+                    Into::<JsValue>::into(e)
+                })?;
             }
 
             let model_record = ModelRecord::new(model_key.clone(), model.clone(), header);
@@ -229,14 +219,14 @@ mod tests {
 
         let mut model = Model::load(
             AvailableModels::Whisper(WhisperVariants::Tiny),
-            Quantization::F32,
+            Quantization::Q8_0,
             js_cb,
         )
         .await
         .unwrap();
 
         let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-        let audio_bytes = data_repo.get("jfk.wav").await?;
+        let audio_bytes = data_repo.get("gb0.wav").await?;
         let sample = load_sample(&audio_bytes.to_vec());
 
         let decode_options = DecodingOptionsBuilder::default().build();
