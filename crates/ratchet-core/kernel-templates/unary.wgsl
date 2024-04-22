@@ -48,6 +48,10 @@ fn silu(val: {{ elem }}) -> {{ elem }} {
     return val / (1.0f + exp(-val));
 }
 
+fn sigmoid(val: {{ elem }}) -> {{ elem }} {
+    return 1.0f / (1.0f + exp(-val));
+}
+
 fn gelu(val: {{ elem }}) -> {{ elem }} {
     let cdf = NORM_CONST + NORM_CONST * safe_tanh(val * (SCALED_SQRT_2_OVER_PI * (val * val) + SQRT_2_OVER_PI));
     return val * cdf;

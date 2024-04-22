@@ -20,6 +20,7 @@ pub enum UnaryOp {
     Ceil,
     Neg,
     Silu,
+    Sigmoid,
 }
 
 impl std::fmt::Display for UnaryOp {
@@ -38,6 +39,7 @@ impl std::fmt::Display for UnaryOp {
             UnaryOp::Ceil => "ceil",
             UnaryOp::Neg => "neg",
             UnaryOp::Silu => "silu",
+            UnaryOp::Sigmoid => "sigmoid",
         };
         write!(f, "{}", s)
     }

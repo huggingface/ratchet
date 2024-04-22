@@ -289,6 +289,7 @@ impl Tensor {
     impl_unary_op!(floor, UnaryOp::Floor);
     impl_unary_op!(ceil, UnaryOp::Ceil);
     impl_unary_op!(neg, UnaryOp::Neg);
+    impl_unary_op!(sigmoid, UnaryOp::Sigmoid);
     impl_unary_op!(silu, UnaryOp::Silu);
 
     pub fn layer_norm(

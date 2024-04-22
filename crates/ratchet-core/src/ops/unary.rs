@@ -26,6 +26,7 @@ pub enum UnaryOp {
     Ceil,
     Neg,
     Silu,
+    Sigmoid,
 }
 
 impl UnaryOp {
@@ -44,6 +45,7 @@ impl UnaryOp {
             UnaryOp::Ceil => "ceil",
             UnaryOp::Neg => "neg",
             UnaryOp::Silu => "silu",
+            UnaryOp::Sigmoid => "sigmoid",
         }
     }
 }
@@ -193,7 +195,7 @@ def {}(a):
         );
 
         let prg = match op {
-            UnaryOp::Gelu | UnaryOp::Silu => func_prg,
+            UnaryOp::Gelu | UnaryOp::Silu | UnaryOp::Sigmoid => func_prg,
             _ => imp_prg,
         };
 
@@ -231,6 +233,7 @@ def {}(a):
             UnaryOp::Ceil => a_gpu.ceil()?,
             UnaryOp::Neg => a_gpu.neg()?,
             UnaryOp::Silu => a_gpu.silu()?,
+            UnaryOp::Sigmoid => a_gpu.sigmoid()?,
         }
         .resolve()?;
 
