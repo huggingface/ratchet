@@ -132,7 +132,7 @@ impl Model {
             let header: gguf::Header = serde_wasm_bindgen::from_value(
                 model_repo.fetch_gguf_header(&model_key.model_id()).await?,
             )?;
-            //Self::fetch_tensors(&db, &model_repo, &header, model_key.clone(), progress).await?;
+            Self::fetch_tensors(&db, &model_repo, &header, model_key.clone(), progress).await?;
             let model_record = ModelRecord::new(model_key.clone(), model.clone(), header);
             db.put_model(&model_key, model_record).await.map_err(|e| {
                 let e: JsError = e.into();
