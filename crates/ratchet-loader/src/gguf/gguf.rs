@@ -55,7 +55,7 @@ impl VersionedMagic {
 }
 
 #[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TensorInfo {
     pub ggml_dtype: GgmlDType,
     pub shape: Shape,

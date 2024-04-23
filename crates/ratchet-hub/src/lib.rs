@@ -187,46 +187,7 @@ impl Api {
 
         let file_url = format!("{}/{}", self.endpoint, file_name);
         log::debug!("Fetching file: {}", file_url);
-
-        let response = Request::get(&file_url)
-            .mode(RequestMode::Cors)
-            .send()
-            .await
-            .unwrap();
-
-        if !response.ok() {
-            return Err(
-                js_error(format!("Failed to fetch file: {}", response.status()).as_str()).into(),
-            );
-        }
-
-        let reader = response
-            .body()
-            .ok_or(js_error("No body"))?
-            .get_reader()
-            .dyn_into::<web_sys::ReadableStreamDefaultReader>()?;
-
-        let mut recv_len = 0;
-
-        let buf = Uint8Array::new_with_length(MAX_HEADER_SIZE);
-        while let Ok(result) = JsFuture::from(reader.read()).await?.dyn_into::<Object>() {
-            let done = Reflect::get(&result, &"done".into())?
-                .as_bool()
-                .unwrap_or(true);
-            if done {
-                break;
-            }
-
-            if let Ok(chunk) = Reflect::get(&result, &"value".into()) {
-                let chunk_array: Uint8Array = chunk.dyn_into()?;
-                if recv_len + chunk_array.length() >= MAX_HEADER_SIZE {
-                    break;
-                }
-                buf.set(&chunk_array, recv_len);
-                recv_len += chunk_array.length();
-            }
-        }
-
+        let buf = Self::fetch_range(&self, file_name, 0, MAX_HEADER_SIZE as u64).await?;
         let header = gguf::Header::read(&mut std::io::BufReader::new(std::io::Cursor::new(
             buf.to_vec(),
         )))
