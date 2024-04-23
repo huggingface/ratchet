@@ -9,6 +9,7 @@ export default function Home() {
     const [model, setModel] = useState<Model | null>(null);
     const [generating, setGenerating] = useState<boolean>(false);
     const [progress, setProgress] = useState<number>(0);
+    const [fetching, setFetching] = useState<boolean>(false);
     const [generatedText, setGeneratedText] = useState<string>("");
     const [prompt, setPrompt] = useState<string>("");
 
@@ -19,9 +20,14 @@ export default function Home() {
     }, []);
 
     async function loadModel() {
+        if (fetching) {
+            return;
+        }
+        setFetching(true);
         setModel(await Model.load(selectedModel, Quantization.Q8_0, (p: number) => setProgress(p)));
         setLoadedModel(selectedModel);
         setProgress(0);
+        setFetching(false);
     }
 
     async function runModel() {
@@ -52,7 +58,7 @@ export default function Home() {
                 <button
                     className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded mr-2"
                     onClick={loadModel}
-                    disabled={generating}
+                    disabled={generating || loadedModel !== null}
                 >
                     Load Model
                 </button>
@@ -65,7 +71,7 @@ export default function Home() {
                 </button>
             </div>
             <div className="mb-4">
-                {progress > 0 && <p>Progress: {progress.toFixed(2)}%</p>}
+                {fetching && <p>Progress: {progress.toFixed(2)}%</p>}
             </div>
             <div className="mb-4">
                 <label htmlFor="prompt" className="block mb-2 font-bold">

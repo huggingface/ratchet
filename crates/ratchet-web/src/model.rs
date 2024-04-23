@@ -188,8 +188,7 @@ impl Model {
                 }
             });
 
-            let results: Vec<Result<(String, Uint8Array), JsValue>> =
-                futures::future::join_all(futures).await;
+            let results: Vec<Result<_, JsValue>> = futures::future::join_all(futures).await;
 
             for result in results {
                 let (name, bytes) = result?;
