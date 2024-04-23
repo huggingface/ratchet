@@ -49,5 +49,6 @@ pub async fn generate(
     let elapsed = start.elapsed();
     log::warn!("Elapsed: {:?}", elapsed);
     log::warn!("Tok/s {}", all_tokens.len() as f64 / elapsed.as_secs_f64());
+    model.reset();
     Ok(())
 }
