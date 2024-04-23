@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use wgpu::PipelineCompilationOptions;
+
 use crate::{gpu::WgpuDevice, kernels};
 
 use super::{
@@ -62,6 +64,7 @@ impl ComputePipelinePool {
                 layout: Some(pipeline_layout),
                 module: &module,
                 entry_point: "main",
+                compilation_options: PipelineCompilationOptions::default(),
             })
         })
     }
