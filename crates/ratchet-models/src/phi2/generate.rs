@@ -10,6 +10,7 @@ pub async fn generate(
     model: &mut Phi2,
     tokenizer: Tokenizer,
     prompt: String,
+    callback: impl Fn(String),
 ) -> anyhow::Result<()> {
     use web_time::Instant;
     log::warn!("Prompt: {}", prompt);
@@ -41,12 +42,13 @@ pub async fn generate(
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
         let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
-        log::warn!("{}", tokenizer.decode(&u32_toks, true).unwrap());
+        callback(tokenizer.decode(&u32_toks, true).unwrap());
         all_tokens.extend(tokens.clone());
         loop_cnt += 1;
     }
     let elapsed = start.elapsed();
     log::warn!("Elapsed: {:?}", elapsed);
     log::warn!("Tok/s {}", all_tokens.len() as f64 / elapsed.as_secs_f64());
+    model.reset();
     Ok(())
 }
