@@ -46,11 +46,18 @@ impl WebModel {
                 serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
             }
             WebModel::Phi2(model) => {
-                let input: String = serde_wasm_bindgen::from_value(input)?;
+                let input: PhiInputs = serde_wasm_bindgen::from_value(input)?;
+                let rs_callback = |output: String| {
+                    input.callback.call1(&JsValue::NULL, &output.into());
+                };
+                let prompt = input.prompt;
+
                 let model_repo = ApiBuilder::from_hf("microsoft/phi-2", RepoType::Model).build();
                 let model_bytes = model_repo.get("tokenizer.json").await?;
                 let tokenizer = Tokenizer::from_bytes(model_bytes.to_vec()).unwrap();
-                generate(model, tokenizer, input).await.unwrap();
+                generate(model, tokenizer, prompt, rs_callback)
+                    .await
+                    .unwrap();
                 Ok(JsValue::NULL)
             }
         }
@@ -80,6 +87,13 @@ pub struct WhisperInputs {
     pub audio: Vec<f32>,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub decode_options: JsValue,
+    #[serde(with = "serde_wasm_bindgen::preserve")]
+    pub callback: js_sys::Function,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PhiInputs {
+    pub prompt: String,
     #[serde(with = "serde_wasm_bindgen::preserve")]
     pub callback: js_sys::Function,
 }
