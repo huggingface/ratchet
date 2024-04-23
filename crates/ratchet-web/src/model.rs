@@ -283,7 +283,7 @@ mod tests {
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
         let mut model = Model::load(
-            AvailableModels::Whisper(WhisperVariants::Tiny),
+            AvailableModels::Whisper(WhisperVariants::Base),
             Quantization::Q8_0,
             js_cb,
         )
@@ -291,7 +291,7 @@ mod tests {
         .unwrap();
 
         let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-        let audio_bytes = data_repo.get("gb0.wav").await?;
+        let audio_bytes = data_repo.get("mm0.wav").await?;
         let sample = load_sample(&audio_bytes.to_vec());
 
         let decode_options = DecodingOptionsBuilder::default().build();
