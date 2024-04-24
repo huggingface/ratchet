@@ -18,8 +18,9 @@ use {
 
 #[derive(Debug)]
 pub struct DecoderLayer {
-    ln: LayerNorm,
+    input_ln: LayerNorm,
     self_attn: PhiSelfAttention,
+    ffn_norm: LayerNorm,
     mlp: MLP,
 }
 
@@ -36,13 +37,18 @@ impl DecoderLayer {
             disk_model.tensor(reader, &key, device)
         };
 
+        //TODO: RMSNorm
         let ln = LayerNorm::new(lt("attn_norm.weight")?, None, 1e-5);
 
         let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?)),
+            Linear::new(lt("ffn_up.weight")?, None),
+            Linear::new(lt("ffn_down.weight")?, None),
         );
-        Ok(Self { ln, self_attn, mlp })
+        Ok(Self {
+            input_ln: ln,
+            self_attn,
+            mlp,
+        })
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -61,7 +67,7 @@ impl DecoderLayer {
             ratchet_from_gguf_web(tensor, device)
         };
 
-        let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
+        let ln = LayerNorm::new(lt("attn_norm.weight")?, None, 1e-5);
 
         let mlp = MLP::new(
             Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
@@ -83,14 +89,18 @@ impl Module for DecoderLayer {
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let DecoderLayerInput { x, mask, cache } = input;
         let residual = x.clone();
-        let xs = self.ln.schedule(x)?;
+        let xs = self.input_ln.schedule(x)?;
         let attn_output = self.self_attn.schedule(PhiAttnInput {
             input: xs.clone(),
             mask,
             cache,
         })?;
-        let ff_hs = self.mlp.schedule(xs)?;
-        attn_output.add(ff_hs)?.add(residual)
+        let xs = residual.add(attn_output)?;
+        let residual = xs.clone();
+        let xs = self.ffn_norm.schedule(xs)?;
+        let xs = self.mlp.schedule(xs)?;
+        let xs = residual.add(xs)?;
+        Ok(xs)
     }
 }
 

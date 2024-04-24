@@ -54,27 +54,21 @@ impl PhiSelfAttention {
     where
         F: FnMut(&str) -> anyhow::Result<Tensor>,
     {
-        let q = Linear::new(lt("attn_q.weight")?, Some(lt("attn_q.bias")?));
-        let k = Linear::new(lt("attn_k.weight")?, Some(lt("attn_k.bias")?));
-        let v = Linear::new(lt("attn_v.weight")?, Some(lt("attn_v.bias")?));
+        let q = Linear::new(lt("attn_q.weight")?, None);
+        let k = Linear::new(lt("attn_k.weight")?, None);
+        let v = Linear::new(lt("attn_v.weight")?, None);
         let o = Linear::new(lt("attn_output.weight")?, Some(lt("attn_output.bias")?));
 
-        let n_heads = header
-            .metadata
-            .get("phi2.attention.head_count")
-            .unwrap()
-            .to_u32()?;
-        let n_kv_heads = header
-            .metadata
-            .get("phi2.attention.head_count_kv")
-            .unwrap()
-            .to_u32()?;
-        //1 / head_dim
-        let softmax_scale = Tensor::from_data([1.0 / 80_f32.sqrt()], shape![1], device.clone());
-        //TODO: hardcoded for Phi2, should read from meta
-        let base = 10000.0;
-        let dim = (0.4 * (2560f64 / 32f64)) as usize;
-        let rope = RotaryEmbedding::new(dim, false, base, 1.0);
+        let metadata = &header.metadata;
+        let n_heads = metadata.get("llama.attention.head_count")?.to_u32()?;
+        let n_kv_heads = metadata.get("llama.attention.head_count_kv")?.to_u32()?;
+        let d_model = metadata.get("llama.embedding_length")?.to_u32()?;
+        let rope_base = metadata.get("llama.rope.freq_base")?.to_f32()?;
+        let rope_dim = metadata.get("llama.rope.dimension_count")?.to_u32()?;
+
+        let hdim = d_model as f32 / n_heads as f32;
+        let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());
+        let rope = RotaryEmbedding::new(rope_dim as _, false, rope_base, 1.0);
         Ok(Self {
             q,
             k,

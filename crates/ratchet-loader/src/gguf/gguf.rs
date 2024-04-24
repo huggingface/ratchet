@@ -137,9 +137,21 @@ pub fn ratchet_from_gguf(
 
 #[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug)]
+pub struct Metadata(HashMap<String, Value>);
+
+impl Metadata {
+    pub fn get(&self, key: &str) -> anyhow::Result<&Value> {
+        self.0
+            .get(key)
+            .ok_or_else(|| anyhow::anyhow!("missing key {key}"))
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug)]
 pub struct Header {
     pub magic: VersionedMagic,
-    pub metadata: HashMap<String, Value>,
+    pub metadata: Metadata,
     pub tensor_infos: HashMap<String, TensorInfo>,
     pub tensor_data_offset: u64,
 }
@@ -453,10 +465,9 @@ impl Header {
             _ => DEFAULT_ALIGNMENT,
         };
         let tensor_data_offset = (position + alignment - 1) / alignment * alignment;
-        log::info!("TENSOR DATA OFFSET: {tensor_data_offset}");
         Ok(Self {
             magic,
-            metadata,
+            metadata: Metadata(metadata),
             tensor_infos,
             tensor_data_offset,
         })
