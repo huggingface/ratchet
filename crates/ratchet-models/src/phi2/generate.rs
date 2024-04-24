@@ -14,13 +14,14 @@ pub async fn generate(
 ) -> anyhow::Result<()> {
     use web_time::Instant;
     log::warn!("Prompt: {}", prompt);
-    let encoding = tokenizer.encode(prompt, true).unwrap();
+
+    let mut tos = TokenOutputStream::new(tokenizer);
+    let encoding = tos.tokenizer().encode(prompt, true).unwrap();
     let mut tokens = encoding
         .get_ids()
         .iter()
         .map(|&x| x as i32)
         .collect::<Vec<_>>();
-    let mut all_logits = vec![];
     let mut all_tokens = tokens.clone();
     let mut loop_cnt = 0;
     let start = Instant::now();
@@ -32,7 +33,6 @@ pub async fn generate(
         );
         let result = model.schedule(input)?.resolve()?;
         let logits = result.to(&Device::CPU).await?;
-        all_logits.push(logits.clone());
         model.cache_mut().update(tokens.len());
 
         tokens = logits
@@ -41,8 +41,10 @@ pub async fn generate(
             .iter()
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
-        let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
-        callback(tokenizer.decode(&u32_toks, true).unwrap());
+
+        if let Some(t) = tos.next_token(tokens[0] as u32)? {
+            callback(t);
+        }
         all_tokens.extend(tokens.clone());
         loop_cnt += 1;
     }

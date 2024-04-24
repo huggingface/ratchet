@@ -7,7 +7,7 @@ import WebGPUModal from "./components/WebGPUModal";
 import WarningModal from "./components/warningModal";
 
 export default function Home() {
-    const [selectedModel, setSelectedModel] = useState<AvailableModels>({ Phi: "phi3" });
+    const [selectedModel, setSelectedModel] = useState<AvailableModels>({ Phi: "phi2" });
     const [loadedModel, setLoadedModel] = useState<AvailableModels | null>(null);
     const [model, setModel] = useState<Model | null>(null);
     const [generating, setGenerating] = useState<boolean>(false);
