@@ -298,13 +298,13 @@ mod tests {
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
         let prompt = "What is the SILU activation function?";
-        println!("{}", prompt);
         let encoding = tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding
             .get_ids()
             .iter()
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
+        println!("PROMPT TOKENS: {:?}", tokens);
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
         let start = std::time::Instant::now();
