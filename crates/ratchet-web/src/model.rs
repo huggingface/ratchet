@@ -34,10 +34,8 @@ impl WebModel {
 
                 let callback = if !input.callback.is_null() {
                     let rs_callback = |decoded: StreamedSegment| {
-                        input.callback.call1(
-                            &JsValue::NULL,
-                            &serde_wasm_bindgen::to_value(&decoded).unwrap(),
-                        );
+                        let js_decoded = serde_wasm_bindgen::to_value(&decoded).unwrap();
+                        let _ = input.callback.call1(&JsValue::NULL, &js_decoded);
                     };
                     Some(rs_callback)
                 } else {
@@ -52,7 +50,7 @@ impl WebModel {
             WebModel::Phi2(model) => {
                 let input: PhiInputs = serde_wasm_bindgen::from_value(input)?;
                 let rs_callback = |output: String| {
-                    input.callback.call1(&JsValue::NULL, &output.into());
+                    let _ = input.callback.call1(&JsValue::NULL, &output.into());
                 };
                 let prompt = input.prompt;
 
@@ -67,7 +65,7 @@ impl WebModel {
             WebModel::Phi3(model) => {
                 let input: PhiInputs = serde_wasm_bindgen::from_value(input)?;
                 let rs_callback = |output: String| {
-                    input.callback.call1(&JsValue::NULL, &output.into());
+                    let _ = input.callback.call1(&JsValue::NULL, &output.into());
                 };
                 let prompt = input.prompt;
 
@@ -220,7 +218,7 @@ impl Model {
                 let (name, bytes) = result?;
                 let req_progress = (bytes.length() as f64) / (content_len as f64) * 100.0;
                 total_progress += req_progress;
-                progress.call1(&JsValue::NULL, &total_progress.into());
+                let _ = progress.call1(&JsValue::NULL, &total_progress.into());
 
                 let record = TensorRecord::new(name.to_string(), model_key.clone(), bytes);
                 db.put_tensor(record).await.map_err(|e| {

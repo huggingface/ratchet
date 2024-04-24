@@ -1,5 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 use crate::phi2::Phi2;
+use crate::TokenOutputStream;
 use ndarray::Axis;
 use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, Tensor};

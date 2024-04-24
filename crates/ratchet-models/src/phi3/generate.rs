@@ -35,7 +35,7 @@ You are a helpful AI assistant.<|end|>
         .collect::<Vec<_>>();
     let mut all_tokens = tokens.clone();
     let start = Instant::now();
-    while tokens[tokens.len() - 1] != 32000 && all_tokens.len() < 2048 {
+    while tokens[tokens.len() - 1] != 32000 && all_tokens.len() < 248 {
         let input = Tensor::from_data(
             tokens.clone(),
             shape![1, tokens.len()],
