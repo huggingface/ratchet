@@ -16,10 +16,10 @@ pub enum LazyOp {
     Unary(Unary),
     Reindex(Reindex),
     Concat(Concat),
+    Norm(NormOp),
     // ---- Everything below this line shouldn't exist ----
     RoPE(RoPE),
     Softmax(Softmax),
-    Norm(Norm),
     View(View),             //Should be general class, metadata modification
     Conv(Conv),             //Really it's a matmul
     Select(IndexSelect),    //Can probably be Reindex
@@ -104,7 +104,8 @@ impl LazyOp {
             },
             LazyOp::Concat(c) => c.check_invariants(),
             LazyOp::Norm(n) => match n {
-                Norm::LayerNorm(ln) => ln.check_invariants(),
+                NormOp::LayerNorm(l) => l.check_invariants(),
+                NormOp::RMSNorm(r) => r.check_invariants(),
             },
             LazyOp::Conv(c) => c.check_invariants(),
             LazyOp::Select(s) => s.check_invariants(),

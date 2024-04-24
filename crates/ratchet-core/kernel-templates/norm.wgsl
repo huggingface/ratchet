@@ -4,11 +4,16 @@ var<storage, read> X: array<{{ elem }}>;
 @group(0) @binding(1)
 var<storage, read> S: array<{{ elem }}>;
 
-@group(0) @binding(2)
-var<storage, read> B: array<{{ elem }}>;
+{% if RMS_NORM %}
+    @group(0) @binding(2)
+    var<storage, read_write> Y: array<{{ elem }}>;
+{% else %}
+    @group(0) @binding(2)
+    var<storage, read> B: array<{{ elem }}>;
 
-@group(0) @binding(3)
-var<storage, read_write> Y: array<{{ elem }}>;
+    @group(0) @binding(3)
+    var<storage, read_write> Y: array<{{ elem }}>;
+{% endif %}
 
 struct Meta {
     M: u32,
@@ -90,13 +95,21 @@ fn main(
         @builtin(global_invocation_id) global_id: vec3<u32>
 ) {
     let anchor = (group_id.y * metadata.M * {{ reduction_len }}) + group_id.x * {{ reduction_len }}; 
-    let mu = mu(local_id, anchor);
+    {% if RMS_NORM %}
+        let mu = 0.0;
+    {% else %}
+        let mu = mu(local_id, anchor);
+    {% endif %}
     let sigma = sigma(local_id, anchor, mu);
 
     let denom = inverseSqrt(sigma + {{ elem }}(metadata.eps));
 
     for(var i: u32 = local_id.x; i < {{ reduction_len }}; i += BLOCK_SIZE) {
         let val = (X[anchor + i] - mu) * denom;
-        Y[anchor + i] = fma(val, S[i], B[i]); 
+        {% if RMS_NORM %}
+            Y[anchor + i] = val * S[i];
+        {% else %}
+            Y[anchor + i] = fma(val, S[i], B[i]); 
+        {% endif %}
     }
 }
