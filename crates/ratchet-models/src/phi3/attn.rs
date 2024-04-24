@@ -59,7 +59,7 @@ impl PhiSelfAttention {
         let n_heads = metadata.get("phi3.attention.head_count")?.to_u32()?;
         let n_kv_heads = metadata.get("phi3.attention.head_count_kv")?.to_u32()?;
         let d_model = metadata.get("phi3.embedding_length")?.to_u32()?;
-        let rope_base = metadata.get("phi3.rope.freq_base")?.to_f32()?;
+        let rope_base = 10000.0f32;
         let rope_dim = metadata.get("phi3.rope.dimension_count")?.to_u32()?;
 
         let hdim = d_model as f32 / n_heads as f32;

@@ -297,7 +297,7 @@ mod tests {
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
-        let prompt = "def print_prime(n):";
+        let prompt = "What is the meaning of life?";
         print!("{}", prompt);
         let encoding = tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding
