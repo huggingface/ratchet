@@ -9,14 +9,14 @@ use crate::{
 };
 
 #[derive(new, Debug, Clone)]
-pub struct LayerNorm {
+pub struct Norm {
     input: Tensor,
     scale: Tensor,
     bias: Option<Tensor>,
     eps: f32,
 }
 
-impl OpGuards for LayerNorm {
+impl OpGuards for Norm {
     fn check_shapes(&self) {
         assert!(self.input.rank() >= 2);
     }
@@ -24,19 +24,22 @@ impl OpGuards for LayerNorm {
     fn check_dtypes(&self) {
         assert!(self.input.dt() == DType::F32);
         assert!(self.scale.dt() == DType::F32);
-        assert!(self.bias.as_ref().map(|t| t.dt()) == Some(DType::F32));
+        if self.bias.is_some() {
+            assert!(self.bias.as_ref().unwrap().dt() == DType::F32);
+        }
     }
 }
 
-impl Operation for LayerNorm {
+impl Operation for Norm {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         Ok(self.input.storage_view().clone())
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Norm {
-    LayerNorm(LayerNorm),
+pub enum NormOp {
+    LayerNorm(Norm),
+    RMSNorm(Norm),
 }
 
 #[derive(Debug, derive_new::new, ShaderType)]
@@ -50,27 +53,30 @@ pub struct NormMeta {
 
 impl OpMetadata for NormMeta {}
 
-impl MetaOperation for Norm {
+impl MetaOperation for NormOp {
     fn kernel_name(&self) -> String {
         match self {
-            Norm::LayerNorm(_) => "layernorm".to_string(),
+            NormOp::LayerNorm(_) => "layernorm".to_string(),
+            NormOp::RMSNorm(_) => "rmsnorm".to_string(),
         }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
         match self {
-            Norm::LayerNorm(LayerNorm {
+            NormOp::LayerNorm(Norm {
                 input, scale, bias, ..
             }) => match bias {
                 Some(bias) => rvec![input, scale, bias],
                 None => rvec![input, scale],
             },
+            NormOp::RMSNorm(Norm { input, scale, .. }) => rvec![input, scale],
         }
     }
 
     fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
         let op_key = match self {
-            Norm::LayerNorm(_) => "layernorm",
+            NormOp::LayerNorm(_) => "layernorm",
+            NormOp::RMSNorm(_) => "rmsnorm",
         };
         format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
@@ -101,7 +107,13 @@ impl MetaOperation for Norm {
         &self,
         _inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        Ok(BindGroupLayoutDescriptor::ternary())
+        match self {
+            NormOp::LayerNorm(l) => match l.bias {
+                Some(_) => Ok(BindGroupLayoutDescriptor::ternary()),
+                None => Ok(BindGroupLayoutDescriptor::binary()),
+            },
+            NormOp::RMSNorm(_) => Ok(BindGroupLayoutDescriptor::binary()),
+        }
     }
 
     fn write_metadata(
@@ -117,7 +129,8 @@ impl MetaOperation for Norm {
         let ND2 = N / 2;
         let ND4 = N / 4;
         let eps = match self {
-            Norm::LayerNorm(LayerNorm { eps, .. }) => *eps,
+            NormOp::LayerNorm(Norm { eps, .. }) => *eps,
+            NormOp::RMSNorm(Norm { eps, .. }) => *eps,
         };
         let meta = NormMeta::new(M, N, ND2, ND4, eps);
         Ok(uniform.write(&meta)?)
@@ -129,42 +142,82 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
-    use crate::{shape, Device, DeviceRequest, Tensor};
+    use crate::{rvec, shape, Device, DeviceRequest, Tensor};
 
-    fn ground_truth(input: &Tensor, scale: &Tensor, bias: &Tensor) -> anyhow::Result<Tensor> {
-        let prg = r#"
+    fn ground_truth(
+        var: NormVariant,
+        input: &Tensor,
+        scale: &Tensor,
+        bias: Option<&Tensor>,
+    ) -> anyhow::Result<Tensor> {
+        let ln_prg = r#"
 import torch
 import torch.nn.functional as F
 
-def layernorm(input, scale, bias):
+def layer_norm(input, scale, bias):
     (input, scale, bias) = (torch.from_numpy(input), torch.from_numpy(scale), torch.from_numpy(bias))
     return F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
 "#;
-        run_py_prg(prg.to_string(), &[input, scale, bias], &[])
+
+        let rms_prg = r#"
+def manual_rms_norm(input, scale):
+    (input, scale) = (torch.from_numpy(input), torch.from_numpy(scale))
+    variance = input.to(torch.float32).pow(2).mean(dim=-1, keepdim=True)
+    input = input * torch.rsqrt(variance + 1e-5)
+    return (scale * input).numpy()
+"#;
+
+        let prg = match var {
+            NormVariant::LayerNorm => ln_prg,
+            NormVariant::RMSNorm => rms_prg,
+        };
+
+        let inputs = match bias {
+            Some(bias) => rvec![input, scale, bias],
+            None => rvec![input, scale],
+        };
+
+        run_py_prg(prg.to_string(), &inputs, &[])
     }
 
     fn run_norm_trial(device: &Device, problem: NormProblem) -> anyhow::Result<()> {
-        let NormProblem { B, M, N } = problem;
+        let NormProblem { var, B, M, N } = problem;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let scale = Tensor::randn::<f32>(shape![N], Device::CPU);
-        let bias = Tensor::randn::<f32>(shape![N], Device::CPU);
-        let ground = ground_truth(&input, &scale, &bias)?;
+
+        let bias = match var {
+            NormVariant::LayerNorm => Some(Tensor::randn::<f32>(shape![N], Device::CPU)),
+            NormVariant::RMSNorm => None,
+        };
+
+        let ground = match var {
+            NormVariant::LayerNorm => ground_truth(var, &input, &scale, bias.as_ref())?,
+            NormVariant::RMSNorm => ground_truth(var, &input, &scale, None)?,
+        };
 
         let input_gpu = input.to(device)?;
         let scale_gpu = scale.to(device)?;
-        let bias_gpu = bias.to(device)?;
+        let bias_gpu = bias.map(|b| b.to(device)).transpose()?;
 
-        let result = input_gpu
-            .layer_norm(scale_gpu, Some(bias_gpu), 1e-5)?
-            .resolve()?;
+        let result = match var {
+            NormVariant::LayerNorm => input_gpu.layer_norm(scale_gpu, bias_gpu, 1e-5)?.resolve()?,
+            NormVariant::RMSNorm => input_gpu.rms_norm(scale_gpu, 1e-5)?.resolve()?,
+        };
 
         let ours = result.to(&Device::CPU)?;
         ground.all_close(&ours, 1e-4, 1e-4)?;
         Ok(())
     }
 
+    #[derive(Arbitrary, Debug, Copy, Clone)]
+    pub enum NormVariant {
+        LayerNorm,
+        RMSNorm,
+    }
+
     #[derive(Arbitrary, Debug)]
     struct NormProblem {
+        var: NormVariant,
         #[strategy(1..=3usize)]
         B: usize,
         #[strategy(1..=256usize)]
@@ -173,11 +226,10 @@ def layernorm(input, scale, bias):
         N: usize,
     }
 
-    #[proptest(cases = 16)]
+    #[proptest(cases = 64)]
     fn test_norm(prob: NormProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let NormProblem { B, M, N } = prob;
-        println!("B = {}, M = {}, N = {}", B, M, N);
+        println!("prob = {:#?}", prob);
         run_norm_trial(&device, prob).unwrap();
     }
 }
