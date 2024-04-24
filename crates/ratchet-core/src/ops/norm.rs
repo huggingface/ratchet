@@ -160,6 +160,7 @@ def layer_norm(input, scale, bias):
 "#;
 
         let rms_prg = r#"
+import torch
 def manual_rms_norm(input, scale):
     (input, scale) = (torch.from_numpy(input), torch.from_numpy(scale))
     variance = input.to(torch.float32).pow(2).mean(dim=-1, keepdim=True)
