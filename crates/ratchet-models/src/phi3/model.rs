@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
-use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
+use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module, RMSNorm};
 
 use super::{
     attn::{PhiAttnInput, PhiSelfAttention},
@@ -18,35 +18,41 @@ use {
 
 #[derive(Debug)]
 pub struct DecoderLayer {
-    input_ln: LayerNorm,
+    input_norm: RMSNorm,
     self_attn: PhiSelfAttention,
-    ffn_norm: LayerNorm,
+    ffn_norm: RMSNorm,
     mlp: MLP,
 }
 
 impl DecoderLayer {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &Header,
+        header: &Header,
         reader: &mut R,
         layer_index: usize,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let self_attn = PhiSelfAttention::load(disk_model, reader, layer_index, device)?;
+        let self_attn = PhiSelfAttention::load(header, reader, layer_index, device)?;
         let mut lt = |name: &str| {
             let key = format!("blk.{}.{}", layer_index, name);
-            disk_model.tensor(reader, &key, device)
+            header.tensor(reader, &key, device)
         };
 
-        //TODO: RMSNorm
-        let ln = LayerNorm::new(lt("attn_norm.weight")?, None, 1e-5);
+        let norm_eps = header
+            .metadata
+            .get("llama.attention.layer_norm_rms_epsilon")?
+            .to_f32()?;
+
+        let input_norm = RMSNorm::new(lt("attn_norm.weight")?, norm_eps);
+        let ffn_norm = RMSNorm::new(lt("ffn_norm.weight")?, norm_eps);
 
         let mlp = MLP::new(
             Linear::new(lt("ffn_up.weight")?, None),
             Linear::new(lt("ffn_down.weight")?, None),
         );
         Ok(Self {
-            input_ln: ln,
+            input_norm,
             self_attn,
+            ffn_norm,
             mlp,
         })
     }
@@ -89,7 +95,7 @@ impl Module for DecoderLayer {
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let DecoderLayerInput { x, mask, cache } = input;
         let residual = x.clone();
-        let xs = self.input_ln.schedule(x)?;
+        let xs = self.input_norm.schedule(x)?;
         let attn_output = self.self_attn.schedule(PhiAttnInput {
             input: xs.clone(),
             mask,
@@ -108,7 +114,7 @@ impl Module for DecoderLayer {
 pub struct Phi3 {
     pub embedding: Embedding,
     pub layers: Vec<DecoderLayer>,
-    pub ln_post: LayerNorm,
+    pub ln_post: RMSNorm,
     pub lm_head: Linear,
     pub kv_cache: KVCache,
     pub device: Device,
@@ -152,7 +158,7 @@ impl Phi3 {
     ) -> anyhow::Result<Self> {
         let embedding = Embedding::new(header.tensor(reader, "token_embd.weight", device)?);
 
-        let n_layers = header.metadata.get("llama.block_count").unwrap().to_u32()? as i32;
+        let n_layers = header.metadata.get("llama.block_count")?.to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -167,15 +173,24 @@ impl Phi3 {
             header.tensor(reader, &key, device)
         };
 
-        let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
-        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
+        let metadata = &header.metadata;
 
+        let norm_eps = metadata.get("llama.layer_norm_rms_epsilon")?.to_f32()?;
+        let ln_post = RMSNorm::new(lt("_norm.weight")?, norm_eps);
+        let lm_head = Linear::new(lt(".weight")?, None);
+
+        let n_layers = metadata.get("llama.block_count")?.to_u32()?;
+        let d_model = metadata.get("llama.embedding_length")?.to_u32()?;
+        let n_heads = metadata.get("llama.attention.head_count")?.to_u32()?;
+        let hdim = d_model as f32 / n_heads as f32;
+
+        let cache_shape = shape![1, n_layers as _, Self::MAX_CACHE, hdim as _];
         Ok(Self {
             embedding,
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], device),
+            kv_cache: KVCache::new(n_layers as _, cache_shape, device),
             device: device.clone(),
         })
     }
