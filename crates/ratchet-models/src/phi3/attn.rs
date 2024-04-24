@@ -57,14 +57,14 @@ impl PhiSelfAttention {
         let q = Linear::new(lt("attn_q.weight")?, None);
         let k = Linear::new(lt("attn_k.weight")?, None);
         let v = Linear::new(lt("attn_v.weight")?, None);
-        let o = Linear::new(lt("attn_output.weight")?, Some(lt("attn_output.bias")?));
+        let o = Linear::new(lt("attn_output.weight")?, None);
 
         let metadata = &header.metadata;
-        let n_heads = metadata.get("llama.attention.head_count")?.to_u32()?;
-        let n_kv_heads = metadata.get("llama.attention.head_count_kv")?.to_u32()?;
-        let d_model = metadata.get("llama.embedding_length")?.to_u32()?;
-        let rope_base = metadata.get("llama.rope.freq_base")?.to_f32()?;
-        let rope_dim = metadata.get("llama.rope.dimension_count")?.to_u32()?;
+        let n_heads = metadata.get("phi3.attention.head_count")?.to_u32()?;
+        let n_kv_heads = metadata.get("phi3.attention.head_count_kv")?.to_u32()?;
+        let d_model = metadata.get("phi3.embedding_length")?.to_u32()?;
+        let rope_base = metadata.get("phi3.rope.freq_base")?.to_f32()?;
+        let rope_dim = metadata.get("phi3.rope.dimension_count")?.to_u32()?;
 
         let hdim = d_model as f32 / n_heads as f32;
         let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());

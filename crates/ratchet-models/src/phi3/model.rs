@@ -39,7 +39,7 @@ impl DecoderLayer {
 
         let norm_eps = header
             .metadata
-            .get("llama.attention.layer_norm_rms_epsilon")?
+            .get("phi3.attention.layer_norm_rms_epsilon")?
             .to_f32()?;
 
         let input_norm = RMSNorm::new(lt("attn_norm.weight")?, norm_eps);
@@ -76,8 +76,8 @@ impl DecoderLayer {
         let ln = LayerNorm::new(lt("attn_norm.weight")?, None, 1e-5);
 
         let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?)),
+            Linear::new(lt("ffn_up.weight")?, None),
+            Linear::new(lt("ffn_down.weight")?, None),
         );
         Ok(Self { ln, self_attn, mlp })
     }
@@ -158,7 +158,7 @@ impl Phi3 {
     ) -> anyhow::Result<Self> {
         let embedding = Embedding::new(header.tensor(reader, "token_embd.weight", device)?);
 
-        let n_layers = header.metadata.get("llama.block_count")?.to_u32()? as i32;
+        let n_layers = header.metadata.get("phi3.block_count")?.to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -175,13 +175,15 @@ impl Phi3 {
 
         let metadata = &header.metadata;
 
-        let norm_eps = metadata.get("llama.layer_norm_rms_epsilon")?.to_f32()?;
+        let norm_eps = metadata
+            .get("phi3.attention.layer_norm_rms_epsilon")?
+            .to_f32()?;
         let ln_post = RMSNorm::new(lt("_norm.weight")?, norm_eps);
         let lm_head = Linear::new(lt(".weight")?, None);
 
-        let n_layers = metadata.get("llama.block_count")?.to_u32()?;
-        let d_model = metadata.get("llama.embedding_length")?.to_u32()?;
-        let n_heads = metadata.get("llama.attention.head_count")?.to_u32()?;
+        let n_layers = metadata.get("phi3.block_count")?.to_u32()?;
+        let d_model = metadata.get("phi3.embedding_length")?.to_u32()?;
+        let n_heads = metadata.get("phi3.attention.head_count")?.to_u32()?;
         let hdim = d_model as f32 / n_heads as f32;
 
         let cache_shape = shape![1, n_layers as _, Self::MAX_CACHE, hdim as _];
