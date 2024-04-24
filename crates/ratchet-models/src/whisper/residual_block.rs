@@ -86,7 +86,7 @@ impl ResidualAttentionBlock {
         Self::load_inner(lt, prefix, n_heads)
     }
 
-    pub fn load_inner<F>(mut lt: F, prefix: &str, n_heads: usize) -> anyhow::Result<Self>
+    fn load_inner<F>(mut lt: F, prefix: &str, n_heads: usize) -> anyhow::Result<Self>
     where
         F: FnMut(&str) -> anyhow::Result<Tensor>,
     {

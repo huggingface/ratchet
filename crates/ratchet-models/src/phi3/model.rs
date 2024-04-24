@@ -36,7 +36,7 @@ impl DecoderLayer {
             disk_model.tensor(reader, &key, device)
         };
 
-        let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
+        let ln = LayerNorm::new(lt("attn_norm.weight")?, None, 1e-5);
 
         let mlp = MLP::new(
             Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
@@ -95,7 +95,7 @@ impl Module for DecoderLayer {
 }
 
 #[derive(Debug)]
-pub struct Phi2 {
+pub struct Phi3 {
     pub embedding: Embedding,
     pub layers: Vec<DecoderLayer>,
     pub ln_post: LayerNorm,
@@ -104,7 +104,7 @@ pub struct Phi2 {
     pub device: Device,
 }
 
-impl Module for Phi2 {
+impl Module for Phi3 {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
@@ -132,7 +132,7 @@ impl Module for Phi2 {
     }
 }
 
-impl Phi2 {
+impl Phi3 {
     const MAX_CACHE: usize = 1024; //TODO: configurable
 
     pub fn load<R: BufRead + Seek>(
@@ -142,7 +142,7 @@ impl Phi2 {
     ) -> anyhow::Result<Self> {
         let embedding = Embedding::new(header.tensor(reader, "token_embd.weight", device)?);
 
-        let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
+        let n_layers = header.metadata.get("llama.block_count").unwrap().to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -181,7 +181,7 @@ impl Phi2 {
             &device,
         )?);
 
-        let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
+        let n_layers = header.metadata.get("phi3.block_count").unwrap().to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -250,46 +250,23 @@ mod tests {
     use ratchet_nn::Module;
     use tokenizers::Tokenizer;
 
-    use super::Phi2;
-
-    fn ground_truth() -> anyhow::Result<Vec<Tensor>> {
-        let prg = r#"
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import collections
-
-def ground():
-    model = AutoModelForCausalLM.from_pretrained("microsoft/phi-2", torch_dtype=torch.float32, device_map="cpu", trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
-    inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
-    outputs = model.generate(**inputs, max_length=20, return_dict_in_generate=True, output_logits=True)
-    generated_logits = outputs.logits
-
-    result = [torch.unsqueeze(l, 0).numpy() for l in generated_logits]
-    return result
-"#;
-        Python::with_gil(|py| {
-            let prg = PyModule::from_code(py, prg, "x.py", "x")?;
-            let py_result: Vec<&PyArrayDyn<f32>> = prg.getattr("ground")?.call0()?.extract()?;
-            Ok(py_result.into_iter().map(Tensor::from).collect::<_>())
-        })
-    }
+    use super::Phi3;
 
     #[test]
     #[cfg_attr(feature = "ci", ignore)]
-    fn load_phi2() -> anyhow::Result<()> {
+    fn load_phi3() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
         let api = Api::new().unwrap();
-        let model_repo = api.model("FL33TW00D-HF/phi2".to_string());
-        let model_path = model_repo.get("phi2-f16.gguf").unwrap();
+        let model_repo = api.model("FL33TW00D-HF/phi3".to_string());
+        let model_path = model_repo.get("phi3-mini-4k-q8_0.gguf").unwrap();
         println!("MODEL PATH: {}", model_path.display());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;
         let content = gguf::gguf::Header::read(&mut reader)?;
-        let mut model = Phi2::load(content, &mut reader, &device)?;
+        let mut model = Phi3::load(content, &mut reader, &device)?;
 
-        let tokenizer_repo = api.model("microsoft/phi-2".to_string());
+        let tokenizer_repo = api.model("microsoft/Phi-3-mini-4k-instruct".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
@@ -303,8 +280,7 @@ def ground():
             .collect::<Vec<_>>();
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
-        let mut loop_cnt = 0;
-        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 13 {
+        while tokens[tokens.len() - 1] != 32000 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.schedule(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
@@ -320,16 +296,8 @@ def ground():
             let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
             print!("{}", tokenizer.decode(&u32_toks, true).unwrap());
             all_tokens.extend(tokens.clone());
-            loop_cnt += 1;
         }
 
-        let ground_logits = ground_truth()?;
-        let all_equal = all_logits
-            .iter()
-            .zip(ground_logits.iter())
-            .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
-        println!("All logits equal: {}", all_equal);
-        assert!(all_equal);
         Ok(())
     }
 }

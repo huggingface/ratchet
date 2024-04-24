@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 #[derive(Debug)]
 pub enum WebModel {
     Whisper(Whisper),
-    Phi2(Phi2),
+    Phi(Phi2),
 }
 
 impl WebModel {
@@ -46,7 +46,7 @@ impl WebModel {
                     .unwrap();
                 serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
             }
-            WebModel::Phi2(model) => {
+            WebModel::Phi(model) => {
                 let input: PhiInputs = serde_wasm_bindgen::from_value(input)?;
                 let rs_callback = |output: String| {
                     input.callback.call1(&JsValue::NULL, &output.into());
@@ -76,7 +76,7 @@ impl WebModel {
             }
             AvailableModels::Phi(_) => {
                 let model = Phi2::from_web(header, tensor_map).await?;
-                Ok(WebModel::Phi2(model))
+                Ok(WebModel::Phi(model))
             }
             _ => Err(anyhow::anyhow!("Unknown model type")),
         }
