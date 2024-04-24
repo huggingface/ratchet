@@ -9,9 +9,7 @@ use crate::{ratchet_from_gguf_web, TensorMap};
 
 #[derive(Debug)]
 pub struct PhiSelfAttention {
-    q: Linear,
-    k: Linear,
-    v: Linear,
+    qkv: Linear,
     o: Linear,
     rope: RotaryEmbedding,
     n_heads: u32,
@@ -54,9 +52,7 @@ impl PhiSelfAttention {
     where
         F: FnMut(&str) -> anyhow::Result<Tensor>,
     {
-        let q = Linear::new(lt("attn_q.weight")?, None);
-        let k = Linear::new(lt("attn_k.weight")?, None);
-        let v = Linear::new(lt("attn_v.weight")?, None);
+        let qkv = Linear::new(lt("attn_qkv.weight")?, None);
         let o = Linear::new(lt("attn_output.weight")?, None);
 
         let metadata = &header.metadata;
@@ -70,9 +66,7 @@ impl PhiSelfAttention {
         let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());
         let rope = RotaryEmbedding::new(rope_dim as _, false, rope_base, 1.0);
         Ok(Self {
-            q,
-            k,
-            v,
+            qkv,
             o,
             rope,
             n_heads,
@@ -93,21 +87,32 @@ impl Module for PhiSelfAttention {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let PhiAttnInput { input, mask, cache } = input;
-        let [batch_size, seq_len, n_state]: [usize; 3] = input.shape().try_into()?;
-        let q = self.q.schedule(input.clone())?;
-        let k = self.k.schedule(input.clone())?;
-        let v = self.v.schedule(input)?;
+        let [batch_size, q_len, n_state]: [usize; 3] = input.shape().try_into()?;
 
-        let h_dim = n_state / self.n_heads as usize;
+        let hdim = n_state / self.n_heads as usize;
+        let kv_x_hdim = self.n_kv_heads as usize * hdim;
 
-        //TODO:
-        //if self.qk_layer_norm { ... }
+        let qkv = self.qkv.schedule(input)?;
+        let query_pos = self.n_heads as usize * hdim;
+        let key_pos = query_pos + kv_x_hdim;
+        let value_pos = key_pos + kv_x_hdim;
 
-        let q_shape = shape![batch_size as _, seq_len, self.n_heads as _, h_dim];
-        let kv_shape = shape![batch_size as _, seq_len, self.n_kv_heads as _, h_dim];
-        let query_states = q.view(q_shape)?.permute(&[0, 2, 1, 3])?;
-        let key_states = k.view(kv_shape.clone())?.permute(&[0, 2, 1, 3])?;
-        let value_states = v.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
+        let query_states = qkv
+            .clone()
+            .slice(&[0..batch_size, 0..q_len, 0..query_pos])?;
+        let key_states = qkv
+            .clone()
+            .slice(&[0..batch_size, 0..q_len, query_pos..key_pos])?;
+        let value_states = qkv
+            .clone()
+            .slice(&[0..batch_size, 0..q_len, key_pos..value_pos])?;
+
+        let q_shape = shape![batch_size as _, q_len, self.n_heads as _, hdim];
+        let kv_shape = shape![batch_size as _, q_len, self.n_kv_heads as _, hdim];
+
+        let query_states = query_states.view(q_shape)?.permute(&[0, 2, 1, 3])?;
+        let key_states = key_states.view(kv_shape.clone())?.permute(&[0, 2, 1, 3])?;
+        let value_states = value_states.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
 
         let offset = cache.as_ref().map(|kv| kv.entries).unwrap_or(0);
         let query_states = self.rope.schedule(RotaryInput {
@@ -127,9 +132,8 @@ impl Module for PhiSelfAttention {
             (key_states, value_states)
         };
 
-        //TODO: can we just use the built in transposed matmul?
         let mut attn_weights = query_states
-            .matmul(key_states.permute(&[0, 1, 3, 2])?, false, false)?
+            .matmul(key_states, false, true)?
             .mul(self.softmax_scale.clone())?;
 
         if let Some(m) = mask {
@@ -140,7 +144,7 @@ impl Module for PhiSelfAttention {
         let wv = w
             .matmul(value_states, false, false)?
             .permute(&[0, 2, 1, 3])?;
-        let wv = wv.view(shape![batch_size as _, seq_len, n_state])?;
+        let wv = wv.view(shape![batch_size as _, q_len, n_state])?;
         self.o.schedule(wv)
     }
 }
