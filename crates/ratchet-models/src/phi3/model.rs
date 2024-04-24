@@ -297,8 +297,8 @@ mod tests {
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
-        let prompt = "What is the meaning of life?";
-        print!("{}", prompt);
+        let prompt = "What is the SILU activation function?";
+        println!("{}", prompt);
         let encoding = tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding
             .get_ids()
@@ -307,6 +307,7 @@ mod tests {
             .collect::<Vec<_>>();
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
+        let start = std::time::Instant::now();
         while tokens[tokens.len() - 1] != 32000 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.schedule(input)?.resolve()?;
@@ -321,9 +322,16 @@ mod tests {
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
             let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
-            print!("{}", tokenizer.decode(&u32_toks, true).unwrap());
             all_tokens.extend(tokens.clone());
         }
+        let elapsed = start.elapsed();
+        let u32_toks = all_tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
+        println!("{}", tokenizer.decode(&u32_toks, true).unwrap());
+
+        println!(
+            "Tok/sec: {}",
+            all_tokens.len() as f64 / elapsed.as_secs_f64()
+        );
 
         Ok(())
     }
