@@ -1,6 +1,6 @@
 use std::io::{BufRead, Seek};
 
-use ratchet::{shape, Device, Tensor};
+use ratchet::{shape, Device, DeviceRequest, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module, RMSNorm};
 
@@ -73,13 +73,24 @@ impl DecoderLayer {
             ratchet_from_gguf_web(tensor, device)
         };
 
-        let ln = LayerNorm::new(lt("attn_norm.weight")?, None, 1e-5);
+        let norm_eps = header
+            .metadata
+            .get("phi3.attention.layer_norm_rms_epsilon")?
+            .to_f32()?;
+
+        let input_norm = RMSNorm::new(lt("attn_norm.weight")?, norm_eps);
+        let ffn_norm = RMSNorm::new(lt("ffn_norm.weight")?, norm_eps);
 
         let mlp = MLP::new(
             Linear::new(lt("ffn_up.weight")?, None),
             Linear::new(lt("ffn_down.weight")?, None),
         );
-        Ok(Self { ln, self_attn, mlp })
+        Ok(Self {
+            input_norm,
+            self_attn,
+            ffn_norm,
+            mlp,
+        })
     }
 }
 
@@ -149,7 +160,7 @@ impl Module for Phi3 {
 }
 
 impl Phi3 {
-    const MAX_CACHE: usize = 1024; //TODO: configurable
+    const MAX_CACHE: usize = 4096; //TODO: configurable
 
     pub fn load<R: BufRead + Seek>(
         header: Header,
@@ -200,7 +211,7 @@ impl Phi3 {
     //TODO: dedup
     #[cfg(target_arch = "wasm32")]
     pub async fn from_web(header: Header, mut tensors: TensorMap) -> anyhow::Result<Self> {
-        let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
+        let device = Device::request_device(DeviceRequest::GPU).await?;
         let embedding = Embedding::new(ratchet_from_gguf_web(
             tensors
                 .remove("token_embd.weight")
@@ -208,7 +219,7 @@ impl Phi3 {
             &device,
         )?);
 
-        let n_layers = header.metadata.get("phi3.block_count").unwrap().to_u32()? as i32;
+        let n_layers = header.metadata.get("phi3.block_count")?.to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -231,16 +242,27 @@ impl Phi3 {
             ratchet_from_gguf_web(tensor, &device)
         };
 
-        let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
-        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
+        let metadata = &header.metadata;
 
+        let norm_eps = metadata
+            .get("phi3.attention.layer_norm_rms_epsilon")?
+            .to_f32()?;
+        let ln_post = RMSNorm::new(lt("_norm.weight")?, norm_eps);
+        let lm_head = Linear::new(lt(".weight")?, None);
+
+        let n_layers = metadata.get("phi3.block_count")?.to_u32()?;
+        let d_model = metadata.get("phi3.embedding_length")?.to_u32()?;
+        let n_heads = metadata.get("phi3.attention.head_count")?.to_u32()?;
+        let hdim = d_model as f32 / n_heads as f32;
+
+        let cache_shape = shape![1, n_layers as _, Self::MAX_CACHE, hdim as _];
         Ok(Self {
             embedding,
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], &device),
-            device,
+            kv_cache: KVCache::new(n_layers as _, cache_shape, &device),
+            device: device.clone(),
         })
     }
 
@@ -285,7 +307,7 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
         let api = Api::new().unwrap();
         let model_repo = api.model("FL33TW00D-HF/phi3".to_string());
-        let model_path = model_repo.get("phi3-mini-4k-q8_0.gguf").unwrap();
+        let model_path = model_repo.get("phi3-mini-4k-f16.gguf").unwrap();
         println!("MODEL PATH: {}", model_path.display());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
@@ -297,7 +319,11 @@ mod tests {
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
-        let prompt = "What is the SILU activation function?";
+        let prompt = "<|system|>
+You are a helpful AI assistant.<|end|>
+<|user|>
+How to explain Internet for a medieval knight?<|end|>
+<|assistant|>";
         let encoding = tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding
             .get_ids()
@@ -307,8 +333,9 @@ mod tests {
         println!("PROMPT TOKENS: {:?}", tokens);
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
+        let mut loop_cnt = 0;
         let start = std::time::Instant::now();
-        while tokens[tokens.len() - 1] != 32000 {
+        while tokens[tokens.len() - 1] != 32000 && loop_cnt < 512 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.schedule(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
@@ -323,6 +350,7 @@ mod tests {
                 .collect::<Vec<_>>();
             let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
             all_tokens.extend(tokens.clone());
+            loop_cnt += 1;
         }
         let elapsed = start.elapsed();
         let u32_toks = all_tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();

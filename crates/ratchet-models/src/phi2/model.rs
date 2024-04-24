@@ -10,11 +10,7 @@ use super::{
 };
 
 #[cfg(target_arch = "wasm32")]
-use {
-    crate::ratchet_from_gguf_web, crate::TensorMap, js_sys::Uint8Array,
-    ratchet_loader::gguf::gguf::ratchet_from_gguf, std::collections::HashMap,
-    wasm_bindgen::prelude::*,
-};
+use {crate::ratchet_from_gguf_web, crate::TensorMap};
 
 #[derive(Debug)]
 pub struct DecoderLayer {

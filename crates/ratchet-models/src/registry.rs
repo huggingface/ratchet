@@ -48,6 +48,7 @@ impl WhisperVariants {
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum PhiVariants {
     Phi2,
+    Phi3,
 }
 
 /// # Available Models
@@ -72,6 +73,7 @@ impl AvailableModels {
             AvailableModels::Whisper(w) => w.repo_id(),
             AvailableModels::Phi(p) => match p {
                 PhiVariants::Phi2 => "FL33TW00D-HF/phi2",
+                PhiVariants::Phi3 => "FL33TW00D-HF/phi3",
             },
 
             _ => unimplemented!(),
@@ -92,6 +94,7 @@ impl AvailableModels {
             },
             AvailableModels::Phi(p) => match p {
                 PhiVariants::Phi2 => "phi2",
+                PhiVariants::Phi3 => "phi3-mini-4k",
             },
             _ => unimplemented!(),
         };

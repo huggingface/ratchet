@@ -5,9 +5,11 @@ use ratchet_loader::{
     gguf::gguf::{self, Header, TensorInfo},
     GgmlDType,
 };
-use ratchet_models::phi2::generate;
+use ratchet_models::phi2;
 use ratchet_models::phi2::Phi2;
+use ratchet_models::phi3::{self, Phi3};
 use ratchet_models::registry::AvailableModels;
+use ratchet_models::registry::PhiVariants;
 use ratchet_models::registry::Quantization;
 use ratchet_models::whisper::transcribe::transcribe;
 use ratchet_models::whisper::transcript::StreamedSegment;
@@ -19,7 +21,8 @@ use wasm_bindgen::prelude::*;
 #[derive(Debug)]
 pub enum WebModel {
     Whisper(Whisper),
-    Phi(Phi2),
+    Phi2(Phi2),
+    Phi3(Phi3),
 }
 
 impl WebModel {
@@ -46,7 +49,7 @@ impl WebModel {
                     .unwrap();
                 serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
             }
-            WebModel::Phi(model) => {
+            WebModel::Phi2(model) => {
                 let input: PhiInputs = serde_wasm_bindgen::from_value(input)?;
                 let rs_callback = |output: String| {
                     input.callback.call1(&JsValue::NULL, &output.into());
@@ -56,7 +59,24 @@ impl WebModel {
                 let model_repo = ApiBuilder::from_hf("microsoft/phi-2", RepoType::Model).build();
                 let model_bytes = model_repo.get("tokenizer.json").await?;
                 let tokenizer = Tokenizer::from_bytes(model_bytes.to_vec()).unwrap();
-                generate(model, tokenizer, prompt, rs_callback)
+                phi2::generate(model, tokenizer, prompt, rs_callback)
+                    .await
+                    .unwrap();
+                Ok(JsValue::NULL)
+            }
+            WebModel::Phi3(model) => {
+                let input: PhiInputs = serde_wasm_bindgen::from_value(input)?;
+                let rs_callback = |output: String| {
+                    input.callback.call1(&JsValue::NULL, &output.into());
+                };
+                let prompt = input.prompt;
+
+                let model_repo =
+                    ApiBuilder::from_hf("microsoft/Phi-3-mini-4k-instruct", RepoType::Model)
+                        .build();
+                let model_bytes = model_repo.get("tokenizer.json").await?;
+                let tokenizer = Tokenizer::from_bytes(model_bytes.to_vec()).unwrap();
+                phi3::generate(model, tokenizer, prompt, rs_callback)
                     .await
                     .unwrap();
                 Ok(JsValue::NULL)
@@ -74,10 +94,16 @@ impl WebModel {
                 let model = Whisper::from_web(header, tensor_map, variant).await?;
                 Ok(WebModel::Whisper(model))
             }
-            AvailableModels::Phi(_) => {
-                let model = Phi2::from_web(header, tensor_map).await?;
-                Ok(WebModel::Phi(model))
-            }
+            AvailableModels::Phi(variant) => match variant {
+                PhiVariants::Phi2 => {
+                    let model = Phi2::from_web(header, tensor_map).await?;
+                    Ok(WebModel::Phi2(model))
+                }
+                PhiVariants::Phi3 => {
+                    let model = Phi3::from_web(header, tensor_map).await?;
+                    Ok(WebModel::Phi3(model))
+                }
+            },
             _ => Err(anyhow::anyhow!("Unknown model type")),
         }
     }
@@ -311,27 +337,4 @@ mod tests {
         log::warn!("Result: {:?}", result);
         Ok(())
     }
-
-    /*
-    #[wasm_bindgen_test]
-    async fn phi_browser() -> Result<(), JsValue> {
-        log_init();
-        let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
-            log::info!("Provided closure got progress: {}", p);
-        });
-        let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
-        let mut model = Model::load(
-            AvailableModels::Phi(RegistryPhi::Phi2),
-            Quantization::Q8_0,
-            js_cb,
-        )
-        .await
-        .unwrap();
-
-        let input = "A skier slides down a frictionless slope of height 40m and length 80m. What's the skier speed at the bottom?".to_string();
-        let input = serde_wasm_bindgen::to_value(&input).unwrap();
-        let result = model.run(input).await.unwrap();
-        Ok(())
-    }
-    */
 }

@@ -35,9 +35,9 @@ thiserror = "1.0.56"
 byteorder = "1.5.0"
 npyz = { version = "0.8.3"}
 hf-hub = "0.3.2"
-tokenizers = "0.15.2"
 serde = "1.0.197"
 anyhow = "1.0.79"
+tokenizers = "0.19.1" 
 
 js-sys = "0.3.64"
 wasm-bindgen = "0.2.91"
