@@ -322,7 +322,7 @@ mod tests {
         let prompt = "<|system|>
 You are a helpful AI assistant.<|end|>
 <|user|>
-How to explain Internet for a medieval knight?<|end|>
+Plan me a 2 day trip to SF<|end|>
 <|assistant|>";
         let encoding = tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding

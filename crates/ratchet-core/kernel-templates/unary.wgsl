@@ -45,11 +45,11 @@ fn safe_tanh(x: {{ elem }}) -> {{ elem }} {
 }
 
 fn silu(val: {{ elem }}) -> {{ elem }} {
-    return val / (1.0f + exp(-val));
+    return val * sigmoid(val);
 }
 
 fn sigmoid(val: {{ elem }}) -> {{ elem }} {
-    return 1.0f / (1.0f + exp(-val));
+    return select(1.0f / (1.0f + exp(-val)), exp(val) / (1.0f + exp(val)), val >= {{elem}}(0.));
 }
 
 fn gelu(val: {{ elem }}) -> {{ elem }} {
