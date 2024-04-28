@@ -1,6 +1,10 @@
 //TODO: move to custom Op
+
+mod groupnorm;
+
 use derive_new::new;
 use encase::ShaderType;
+pub use groupnorm::*;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
@@ -40,6 +44,7 @@ impl Operation for Norm {
 pub enum NormOp {
     LayerNorm(Norm),
     RMSNorm(Norm),
+    GroupNorm(GroupNorm),
 }
 
 #[derive(Debug, derive_new::new, ShaderType)]
@@ -58,6 +63,7 @@ impl MetaOperation for NormOp {
         match self {
             NormOp::LayerNorm(_) => "layernorm".to_string(),
             NormOp::RMSNorm(_) => "rmsnorm".to_string(),
+            NormOp::GroupNorm(_) => "groupnorm".to_string(),
         }
     }
 
@@ -70,6 +76,12 @@ impl MetaOperation for NormOp {
                 None => rvec![input, scale],
             },
             NormOp::RMSNorm(Norm { input, scale, .. }) => rvec![input, scale],
+            NormOp::GroupNorm(GroupNorm {
+                input, scale, bias, ..
+            }) => match bias {
+                Some(bias) => rvec![input, scale, bias],
+                None => rvec![input, scale],
+            },
         }
     }
 
@@ -77,6 +89,7 @@ impl MetaOperation for NormOp {
         let op_key = match self {
             NormOp::LayerNorm(_) => "layernorm",
             NormOp::RMSNorm(_) => "rmsnorm",
+            NormOp::GroupNorm(_) => "groupnorm",
         };
         format!("{}_{}", op_key, self.kernel_element(dst).as_str())
     }
@@ -95,12 +108,17 @@ impl MetaOperation for NormOp {
     }
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        let input = self.srcs()[0];
-        let rank = input.rank();
+        match self {
+            NormOp::LayerNorm(_) | NormOp::RMSNorm(()) => {
+                let input = self.srcs()[0];
+                let rank = input.rank();
 
-        let M = input.shape()[rank - 2] as u32;
-        let stacks = input.shape().slice(0..rank - 2).numel();
-        Ok(wgc![M as _, stacks as _, 1])
+                let M = input.shape()[rank - 2] as u32;
+                let stacks = input.shape().slice(0..rank - 2).numel();
+                Ok(wgc![M as _, stacks as _, 1])
+            }
+            NormOp::GroupNorm(_) => todo!(),
+        }
     }
 
     fn storage_bind_group_layout(
@@ -113,6 +131,10 @@ impl MetaOperation for NormOp {
                 None => Ok(BindGroupLayoutDescriptor::binary()),
             },
             NormOp::RMSNorm(_) => Ok(BindGroupLayoutDescriptor::binary()),
+            NormOp::GroupNorm(l) => match l.bias {
+                Some(_) => Ok(BindGroupLayoutDescriptor::ternary()),
+                None => Ok(BindGroupLayoutDescriptor::binary()),
+            },
         }
     }
 
@@ -122,18 +144,24 @@ impl MetaOperation for NormOp {
         _: &Tensor,
         _: &KernelElement,
     ) -> Result<u64, OperationError> {
-        let input = self.srcs()[0];
-        let rank = input.rank();
-        let M = input.shape()[rank - 2] as u32;
-        let N = input.shape()[rank - 1] as u32;
-        let ND2 = N / 2;
-        let ND4 = N / 4;
-        let eps = match self {
-            NormOp::LayerNorm(Norm { eps, .. }) => *eps,
-            NormOp::RMSNorm(Norm { eps, .. }) => *eps,
-        };
-        let meta = NormMeta::new(M, N, ND2, ND4, eps);
-        Ok(uniform.write(&meta)?)
+        match self {
+            NormOp::LayerNorm(Norm { eps, .. }) | NormOp::RMSNorm(Norm { eps, .. }) => {
+                let input = self.srcs()[0];
+                let rank = input.rank();
+                let M = input.shape()[rank - 2] as u32;
+                let N = input.shape()[rank - 1] as u32;
+                let ND2 = N / 2;
+                let ND4 = N / 4;
+                let eps = match self {
+                    NormOp::LayerNorm(Norm { eps, .. }) => *eps,
+                    NormOp::RMSNorm(Norm { eps, .. }) => *eps,
+                    NormOp::GroupNorm(GroupNorm { eps, .. }) => *eps,
+                };
+                let meta = NormMeta::new(M, N, ND2, ND4, eps);
+                Ok(uniform.write(&meta)?)
+            }
+            NormOp::GroupNorm(_) => todo!("What metadata to write ? "),
+        }
     }
 }
 

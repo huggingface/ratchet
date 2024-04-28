@@ -292,6 +292,19 @@ impl Tensor {
     impl_unary_op!(sigmoid, UnaryOp::Sigmoid);
     impl_unary_op!(silu, UnaryOp::Silu);
 
+    pub fn group_norm(
+        self,
+        weight: Tensor,
+        bias: Option<Tensor>,
+        eps: f32,
+    ) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let group_norm = GroupNorm::new(self, weight, bias, eps);
+        let new_view = group_norm.compute_view()?;
+        let op = LazyOp::Norm(NormOp::GroupNorm(group_norm));
+        Ok(Tensor::lazy(op, new_view, device))
+    }
+
     pub fn layer_norm(
         self,
         weight: Tensor,
