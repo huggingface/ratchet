@@ -301,21 +301,31 @@ mod tests {
 
     use super::Phi3;
 
-    fn ground_truth() -> anyhow::Result<Vec<Tensor>> {
-        let prg = r#"
+    fn ground_truth(prompt: &str, max_tokens: usize) -> anyhow::Result<Vec<Tensor>> {
+        let prg = format!(
+            r#"
 import torch
 from transformers import Phi3ForCausalLM, AutoTokenizer
 
 def ground():
     model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct", torch_dtype=torch.float32, device_map="cpu", trust_remote_code=True)
     model.eval()
+
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-mini-4k-instruct", trust_remote_code=True)
-    inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
-    logits = model(**inputs).logits
-    return logits
-"#;
+    inputs = tokenizer("""{}""", return_tensors="pt", return_attention_mask=False)
+    outputs = model.generate(**inputs, max_length={}, return_dict_in_generate=True, output_logits=True)
+    generated_logits = outputs.logits
+    print("Generated: ", tokenizer.decode(outputs[0][0], skip_special_tokens=True))
+
+    result = [torch.unsqueeze(l, 0).numpy() for l in generated_logits]
+    return result
+"#,
+            prompt, max_tokens
+        );
+
+        println!("GROUND TRUTH PROGRAM: {}", prg);
         Python::with_gil(|py| {
-            let prg = PyModule::from_code(py, prg, "x.py", "x")?;
+            let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
             let py_result: Vec<&PyArrayDyn<f32>> = prg.getattr("ground")?.call0()?.extract()?;
             Ok(py_result.into_iter().map(Tensor::from).collect::<_>())
         })
@@ -339,23 +349,23 @@ def ground():
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
-        let prompt = "<|system|>
-You are a helpful AI assistant.<|end|>
-<|user|>
-Plan me a 2 day trip to SF<|end|>
-<|assistant|>";
+        let MAX_TOKENS = 20;
+        let prompt = r#"<|user|>
+How to explain Internet for a medieval knight?<|end|>
+<|assistant|>"#;
         let encoding = tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding
             .get_ids()
             .iter()
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
-        println!("PROMPT TOKENS: {:?}", tokens);
+        tokens.insert(0, 1); //TODO: what is going on here with tokenizers?
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
-        let mut loop_cnt = 0;
+        let mut generated_cnt = tokens.len();
         let start = std::time::Instant::now();
-        while tokens[tokens.len() - 1] != 32000 && loop_cnt < 1 {
+
+        while tokens[tokens.len() - 1] != 32007 && generated_cnt < MAX_TOKENS {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.schedule(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
@@ -369,22 +379,23 @@ Plan me a 2 day trip to SF<|end|>
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
             all_tokens.extend(tokens.clone());
-            loop_cnt += 1;
+            generated_cnt += 1;
         }
         let elapsed = start.elapsed();
         let u32_toks = all_tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
-        println!("{}", tokenizer.decode(&u32_toks, true).unwrap());
 
-        println!(
-            "Tok/sec: {}",
-            all_tokens.len() as f64 / elapsed.as_secs_f64()
-        );
+        let ground_logits = ground_truth(prompt, MAX_TOKENS)?;
+        assert_eq!(all_logits.len(), ground_logits.len());
+        let all_equal =
+            ground_logits
+                .iter()
+                .zip(all_logits.iter())
+                .enumerate()
+                .all(|(i, (their, our))| {
+                    print!("Checking: {}", i);
+                    our.all_close(their, 5e-4, 5e-4).is_ok()
+                });
 
-        let ground_logits = ground_truth()?;
-        let all_equal = all_logits
-            .iter()
-            .zip(ground_logits.iter())
-            .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
         println!("All logits equal: {}", all_equal);
         assert!(all_equal);
         Ok(())

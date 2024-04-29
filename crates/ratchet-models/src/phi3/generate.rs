@@ -1,4 +1,3 @@
-#![cfg(target_arch = "wasm32")]
 use crate::phi3::Phi3;
 use crate::TokenOutputStream;
 use ndarray::Axis;
@@ -17,9 +16,7 @@ pub async fn generate(
     log::warn!("Prompt: {}", prompt);
 
     let prompt = format!(
-        r#"<|system|>
-You are a helpful AI assistant.<|end|>
-<|user|>
+        r#"<|user|>
 {}<|end|>
 <|assistant|>"#,
         prompt
@@ -33,9 +30,10 @@ You are a helpful AI assistant.<|end|>
         .iter()
         .map(|&x| x as i32)
         .collect::<Vec<_>>();
+    tokens.insert(0, 1);
     let mut all_tokens = tokens.clone();
     let start = Instant::now();
-    while tokens[tokens.len() - 1] != 32000 && all_tokens.len() < 1024 {
+    while tokens[tokens.len() - 1] != 32007 && all_tokens.len() < 2048 {
         let input = Tensor::from_data(
             tokens.clone(),
             shape![1, tokens.len()],
