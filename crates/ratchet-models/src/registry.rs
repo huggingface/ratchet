@@ -75,8 +75,6 @@ impl AvailableModels {
                 PhiVariants::Phi2 => "FL33TW00D-HF/phi2",
                 PhiVariants::Phi3 => "FL33TW00D-HF/phi3",
             },
-
-            _ => unimplemented!(),
         };
         id.to_string()
     }
@@ -96,7 +94,6 @@ impl AvailableModels {
                 PhiVariants::Phi2 => "phi2",
                 PhiVariants::Phi3 => "phi3-mini-4k",
             },
-            _ => unimplemented!(),
         };
         match quantization {
             Quantization::Q8_0 => format!("{}_q8_0.gguf", model_stem),

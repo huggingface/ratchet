@@ -76,7 +76,7 @@ impl ResidualAttentionBlock {
         prefix: &str,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let mut lt = |name: &str| {
+        let lt = |name: &str| {
             let key = format!("model.{}.layers.{}.{}", prefix, layer_index, name);
             let tensor = tensor_map
                 .remove(&key)

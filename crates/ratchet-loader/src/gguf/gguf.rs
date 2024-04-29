@@ -10,9 +10,6 @@ use ratchet::{gguf::Q8_0, Device, Shape, Tensor};
 use std::collections::HashMap;
 use std::ops::Range;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
-
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

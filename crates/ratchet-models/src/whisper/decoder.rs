@@ -33,7 +33,7 @@ impl DecoderStem {
         tensor_map: &mut TensorMap,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let mut lt = |name: &str| {
+        let lt = |name: &str| {
             let key = format!("model.decoder.{}", name);
             let wt = tensor_map.remove(&key).unwrap();
             ratchet_from_gguf_web(wt, device)

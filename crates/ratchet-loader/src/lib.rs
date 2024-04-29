@@ -1,5 +1,4 @@
 mod error;
-pub mod ggml;
 pub mod gguf;
 mod k_quants;
 

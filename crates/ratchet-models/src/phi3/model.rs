@@ -1,8 +1,8 @@
 use std::io::{BufRead, Seek};
 
-use ratchet::{shape, Device, DeviceRequest, Tensor};
+use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
-use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module, RMSNorm};
+use ratchet_nn::{Embedding, KVCache, KVEntry, Linear, Module, RMSNorm};
 
 use super::{
     attn::{PhiAttnInput, PhiSelfAttention},
@@ -10,11 +10,7 @@ use super::{
 };
 
 #[cfg(target_arch = "wasm32")]
-use {
-    crate::ratchet_from_gguf_web, crate::TensorMap, js_sys::Uint8Array,
-    ratchet_loader::gguf::gguf::ratchet_from_gguf, std::collections::HashMap,
-    wasm_bindgen::prelude::*,
-};
+use {crate::ratchet_from_gguf_web, crate::TensorMap};
 
 #[derive(Debug)]
 pub struct DecoderLayer {
@@ -211,7 +207,7 @@ impl Phi3 {
     //TODO: dedup
     #[cfg(target_arch = "wasm32")]
     pub async fn from_web(header: Header, mut tensors: TensorMap) -> anyhow::Result<Self> {
-        let device = Device::request_device(DeviceRequest::GPU).await?;
+        let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
         let embedding = Embedding::new(ratchet_from_gguf_web(
             tensors
                 .remove("token_embd.weight")

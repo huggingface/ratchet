@@ -1,10 +1,6 @@
 use crate::db::*;
-use js_sys::Uint8Array;
 use ratchet_hub::{Api, ApiBuilder, RepoType};
-use ratchet_loader::{
-    gguf::gguf::{self, Header, TensorInfo},
-    GgmlDType,
-};
+use ratchet_loader::gguf::gguf::{self, Header, TensorInfo};
 use ratchet_models::phi2;
 use ratchet_models::phi2::Phi2;
 use ratchet_models::phi3::{self, Phi3};
@@ -236,16 +232,13 @@ impl Model {
     ) -> Vec<Vec<(String, TensorInfo)>> {
         let mut chunks = Vec::new();
         let mut current_chunk = Vec::new();
-        let mut current_chunk_size = 0;
 
         for (name, ti) in tensor_infos {
             if current_chunk.len() == chunk_size {
                 chunks.push(current_chunk);
                 current_chunk = Vec::new();
-                current_chunk_size = 0;
             }
             current_chunk.push((name.clone(), ti.clone()));
-            current_chunk_size += ti.size_in_bytes();
         }
 
         if !current_chunk.is_empty() {
