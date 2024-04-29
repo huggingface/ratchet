@@ -1,20 +1,19 @@
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::Module;
-use std::io::{BufRead, Seek};
 
 use ndarray::{s, Dimension};
 use ndarray_stats::QuantileExt;
 use ratchet::NDArrayExt;
 
 #[cfg(not(target_arch = "wasm32"))]
-use hf_hub::api::sync::Api;
+use {
+    hf_hub::api::sync::Api,
+    std::io::{BufRead, Seek},
+};
 
 #[cfg(target_arch = "wasm32")]
-use {
-    crate::ratchet_from_gguf_web, crate::TensorMap, js_sys::Uint8Array, ratchet_hub::ApiBuilder,
-    ratchet_hub::RepoType, wasm_bindgen::prelude::*,
-};
+use {crate::TensorMap, ratchet_hub::ApiBuilder, ratchet_hub::RepoType, wasm_bindgen::prelude::*};
 
 use crate::registry::WhisperVariants;
 use crate::whisper::{options::Language, task::DecodingTask, tokenizer::WhisperTokenizer};
@@ -104,7 +103,7 @@ impl Whisper {
         let resp = model_repo.get(resource).await;
         match resp {
             Ok(data) => Ok(data.to_vec()),
-            Err(e) => Err(JsError::new(format!("Failed to fetch resource").as_str()).into()),
+            Err(_) => Err(JsError::new(format!("Failed to fetch resource").as_str()).into()),
         }
     }
 

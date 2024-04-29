@@ -1,13 +1,11 @@
 use crate::db::*;
-use js_sys::Uint8Array;
 use ratchet_hub::{Api, ApiBuilder, RepoType};
-use ratchet_loader::{
-    gguf::gguf::{self, Header, TensorInfo},
-    GgmlDType,
-};
-use ratchet_models::phi2::generate;
+use ratchet_loader::gguf::gguf::{self, Header, TensorInfo};
+use ratchet_models::phi2;
 use ratchet_models::phi2::Phi2;
+use ratchet_models::phi3::{self, Phi3};
 use ratchet_models::registry::AvailableModels;
+use ratchet_models::registry::PhiVariants;
 use ratchet_models::registry::Quantization;
 use ratchet_models::whisper::transcribe::transcribe;
 use ratchet_models::whisper::transcript::StreamedSegment;
@@ -20,6 +18,7 @@ use wasm_bindgen::prelude::*;
 pub enum WebModel {
     Whisper(Whisper),
     Phi2(Phi2),
+    Phi3(Phi3),
 }
 
 impl WebModel {
@@ -31,10 +30,8 @@ impl WebModel {
 
                 let callback = if !input.callback.is_null() {
                     let rs_callback = |decoded: StreamedSegment| {
-                        input.callback.call1(
-                            &JsValue::NULL,
-                            &serde_wasm_bindgen::to_value(&decoded).unwrap(),
-                        );
+                        let js_decoded = serde_wasm_bindgen::to_value(&decoded).unwrap();
+                        let _ = input.callback.call1(&JsValue::NULL, &js_decoded);
                     };
                     Some(rs_callback)
                 } else {
@@ -49,14 +46,31 @@ impl WebModel {
             WebModel::Phi2(model) => {
                 let input: PhiInputs = serde_wasm_bindgen::from_value(input)?;
                 let rs_callback = |output: String| {
-                    input.callback.call1(&JsValue::NULL, &output.into());
+                    let _ = input.callback.call1(&JsValue::NULL, &output.into());
                 };
                 let prompt = input.prompt;
 
                 let model_repo = ApiBuilder::from_hf("microsoft/phi-2", RepoType::Model).build();
                 let model_bytes = model_repo.get("tokenizer.json").await?;
                 let tokenizer = Tokenizer::from_bytes(model_bytes.to_vec()).unwrap();
-                generate(model, tokenizer, prompt, rs_callback)
+                phi2::generate(model, tokenizer, prompt, rs_callback)
+                    .await
+                    .unwrap();
+                Ok(JsValue::NULL)
+            }
+            WebModel::Phi3(model) => {
+                let input: PhiInputs = serde_wasm_bindgen::from_value(input)?;
+                let rs_callback = |output: String| {
+                    let _ = input.callback.call1(&JsValue::NULL, &output.into());
+                };
+                let prompt = input.prompt;
+
+                let model_repo =
+                    ApiBuilder::from_hf("microsoft/Phi-3-mini-4k-instruct", RepoType::Model)
+                        .build();
+                let model_bytes = model_repo.get("tokenizer.json").await?;
+                let tokenizer = Tokenizer::from_bytes(model_bytes.to_vec()).unwrap();
+                phi3::generate(model, tokenizer, prompt, rs_callback)
                     .await
                     .unwrap();
                 Ok(JsValue::NULL)
@@ -74,10 +88,16 @@ impl WebModel {
                 let model = Whisper::from_web(header, tensor_map, variant).await?;
                 Ok(WebModel::Whisper(model))
             }
-            AvailableModels::Phi(_) => {
-                let model = Phi2::from_web(header, tensor_map).await?;
-                Ok(WebModel::Phi2(model))
-            }
+            AvailableModels::Phi(variant) => match variant {
+                PhiVariants::Phi2 => {
+                    let model = Phi2::from_web(header, tensor_map).await?;
+                    Ok(WebModel::Phi2(model))
+                }
+                PhiVariants::Phi3 => {
+                    let model = Phi3::from_web(header, tensor_map).await?;
+                    Ok(WebModel::Phi3(model))
+                }
+            },
             _ => Err(anyhow::anyhow!("Unknown model type")),
         }
     }
@@ -194,7 +214,7 @@ impl Model {
                 let (name, bytes) = result?;
                 let req_progress = (bytes.length() as f64) / (content_len as f64) * 100.0;
                 total_progress += req_progress;
-                progress.call1(&JsValue::NULL, &total_progress.into());
+                let _ = progress.call1(&JsValue::NULL, &total_progress.into());
 
                 let record = TensorRecord::new(name.to_string(), model_key.clone(), bytes);
                 db.put_tensor(record).await.map_err(|e| {
@@ -212,16 +232,13 @@ impl Model {
     ) -> Vec<Vec<(String, TensorInfo)>> {
         let mut chunks = Vec::new();
         let mut current_chunk = Vec::new();
-        let mut current_chunk_size = 0;
 
         for (name, ti) in tensor_infos {
             if current_chunk.len() == chunk_size {
                 chunks.push(current_chunk);
                 current_chunk = Vec::new();
-                current_chunk_size = 0;
             }
             current_chunk.push((name.clone(), ti.clone()));
-            current_chunk_size += ti.size_in_bytes();
         }
 
         if !current_chunk.is_empty() {
@@ -311,27 +328,4 @@ mod tests {
         log::warn!("Result: {:?}", result);
         Ok(())
     }
-
-    /*
-    #[wasm_bindgen_test]
-    async fn phi_browser() -> Result<(), JsValue> {
-        log_init();
-        let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
-            log::info!("Provided closure got progress: {}", p);
-        });
-        let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
-        let mut model = Model::load(
-            AvailableModels::Phi(RegistryPhi::Phi2),
-            Quantization::Q8_0,
-            js_cb,
-        )
-        .await
-        .unwrap();
-
-        let input = "A skier slides down a frictionless slope of height 40m and length 80m. What's the skier speed at the bottom?".to_string();
-        let input = serde_wasm_bindgen::to_value(&input).unwrap();
-        let result = model.run(input).await.unwrap();
-        Ok(())
-    }
-    */
 }

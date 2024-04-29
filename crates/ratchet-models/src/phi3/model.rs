@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek};
 
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
-use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
+use ratchet_nn::{Embedding, KVCache, KVEntry, Linear, Module, RMSNorm};
 
 use super::{
     attn::{PhiAttnInput, PhiSelfAttention},
@@ -14,31 +14,43 @@ use {crate::ratchet_from_gguf_web, crate::TensorMap};
 
 #[derive(Debug)]
 pub struct DecoderLayer {
-    ln: LayerNorm,
+    input_norm: RMSNorm,
     self_attn: PhiSelfAttention,
+    ffn_norm: RMSNorm,
     mlp: MLP,
 }
 
 impl DecoderLayer {
     pub fn load<R: BufRead + Seek>(
-        disk_model: &Header,
+        header: &Header,
         reader: &mut R,
         layer_index: usize,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let self_attn = PhiSelfAttention::load(disk_model, reader, layer_index, device)?;
+        let self_attn = PhiSelfAttention::load(header, reader, layer_index, device)?;
         let mut lt = |name: &str| {
             let key = format!("blk.{}.{}", layer_index, name);
-            disk_model.tensor(reader, &key, device)
+            header.tensor(reader, &key, device)
         };
 
-        let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
+        let norm_eps = header
+            .metadata
+            .get("phi3.attention.layer_norm_rms_epsilon")?
+            .to_f32()?;
+
+        let input_norm = RMSNorm::new(lt("attn_norm.weight")?, norm_eps);
+        let ffn_norm = RMSNorm::new(lt("ffn_norm.weight")?, norm_eps);
 
         let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?)),
+            Linear::new(lt("ffn_up.weight")?, None),
+            Linear::new(lt("ffn_down.weight")?, None),
         );
-        Ok(Self { ln, self_attn, mlp })
+        Ok(Self {
+            input_norm,
+            self_attn,
+            ffn_norm,
+            mlp,
+        })
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -57,13 +69,24 @@ impl DecoderLayer {
             ratchet_from_gguf_web(tensor, device)
         };
 
-        let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
+        let norm_eps = header
+            .metadata
+            .get("phi3.attention.layer_norm_rms_epsilon")?
+            .to_f32()?;
+
+        let input_norm = RMSNorm::new(lt("attn_norm.weight")?, norm_eps);
+        let ffn_norm = RMSNorm::new(lt("ffn_norm.weight")?, norm_eps);
 
         let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?)),
+            Linear::new(lt("ffn_up.weight")?, None),
+            Linear::new(lt("ffn_down.weight")?, None),
         );
-        Ok(Self { ln, self_attn, mlp })
+        Ok(Self {
+            input_norm,
+            self_attn,
+            ffn_norm,
+            mlp,
+        })
     }
 }
 
@@ -79,28 +102,32 @@ impl Module for DecoderLayer {
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let DecoderLayerInput { x, mask, cache } = input;
         let residual = x.clone();
-        let xs = self.ln.schedule(x)?;
+        let xs = self.input_norm.schedule(x)?;
         let attn_output = self.self_attn.schedule(PhiAttnInput {
             input: xs.clone(),
             mask,
             cache,
         })?;
-        let ff_hs = self.mlp.schedule(xs)?;
-        attn_output.add(ff_hs)?.add(residual)
+        let xs = residual.add(attn_output)?;
+        let residual = xs.clone();
+        let xs = self.ffn_norm.schedule(xs)?;
+        let xs = self.mlp.schedule(xs)?;
+        let xs = residual.add(xs)?;
+        Ok(xs)
     }
 }
 
 #[derive(Debug)]
-pub struct Phi2 {
+pub struct Phi3 {
     pub embedding: Embedding,
     pub layers: Vec<DecoderLayer>,
-    pub ln_post: LayerNorm,
+    pub ln_post: RMSNorm,
     pub lm_head: Linear,
     pub kv_cache: KVCache,
     pub device: Device,
 }
 
-impl Module for Phi2 {
+impl Module for Phi3 {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
@@ -128,8 +155,8 @@ impl Module for Phi2 {
     }
 }
 
-impl Phi2 {
-    const MAX_CACHE: usize = 1024; //TODO: configurable
+impl Phi3 {
+    const MAX_CACHE: usize = 4096; //TODO: configurable
 
     pub fn load<R: BufRead + Seek>(
         header: Header,
@@ -138,7 +165,7 @@ impl Phi2 {
     ) -> anyhow::Result<Self> {
         let embedding = Embedding::new(header.tensor(reader, "token_embd.weight", device)?);
 
-        let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
+        let n_layers = header.metadata.get("phi3.block_count")?.to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -153,15 +180,26 @@ impl Phi2 {
             header.tensor(reader, &key, device)
         };
 
-        let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
-        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
+        let metadata = &header.metadata;
 
+        let norm_eps = metadata
+            .get("phi3.attention.layer_norm_rms_epsilon")?
+            .to_f32()?;
+        let ln_post = RMSNorm::new(lt("_norm.weight")?, norm_eps);
+        let lm_head = Linear::new(lt(".weight")?, None);
+
+        let n_layers = metadata.get("phi3.block_count")?.to_u32()?;
+        let d_model = metadata.get("phi3.embedding_length")?.to_u32()?;
+        let n_heads = metadata.get("phi3.attention.head_count")?.to_u32()?;
+        let hdim = d_model as f32 / n_heads as f32;
+
+        let cache_shape = shape![1, n_layers as _, Self::MAX_CACHE, hdim as _];
         Ok(Self {
             embedding,
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], device),
+            kv_cache: KVCache::new(n_layers as _, cache_shape, device),
             device: device.clone(),
         })
     }
@@ -177,7 +215,7 @@ impl Phi2 {
             &device,
         )?);
 
-        let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
+        let n_layers = header.metadata.get("phi3.block_count")?.to_u32()? as i32;
 
         let layers = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -200,16 +238,27 @@ impl Phi2 {
             ratchet_from_gguf_web(tensor, &device)
         };
 
-        let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
-        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
+        let metadata = &header.metadata;
 
+        let norm_eps = metadata
+            .get("phi3.attention.layer_norm_rms_epsilon")?
+            .to_f32()?;
+        let ln_post = RMSNorm::new(lt("_norm.weight")?, norm_eps);
+        let lm_head = Linear::new(lt(".weight")?, None);
+
+        let n_layers = metadata.get("phi3.block_count")?.to_u32()?;
+        let d_model = metadata.get("phi3.embedding_length")?.to_u32()?;
+        let n_heads = metadata.get("phi3.attention.head_count")?.to_u32()?;
+        let hdim = d_model as f32 / n_heads as f32;
+
+        let cache_shape = shape![1, n_layers as _, Self::MAX_CACHE, hdim as _];
         Ok(Self {
             embedding,
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], &device),
-            device,
+            kv_cache: KVCache::new(n_layers as _, cache_shape, &device),
+            device: device.clone(),
         })
     }
 
@@ -246,26 +295,33 @@ mod tests {
     use ratchet_nn::Module;
     use tokenizers::Tokenizer;
 
-    use super::Phi2;
+    use super::Phi3;
 
-    fn ground_truth() -> anyhow::Result<Vec<Tensor>> {
-        let prg = r#"
+    fn ground_truth(prompt: &str, max_tokens: usize) -> anyhow::Result<Vec<Tensor>> {
+        let prg = format!(
+            r#"
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import collections
+from transformers import Phi3ForCausalLM, AutoTokenizer
 
 def ground():
-    model = AutoModelForCausalLM.from_pretrained("microsoft/phi-2", torch_dtype=torch.float32, device_map="cpu", trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
-    inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
-    outputs = model.generate(**inputs, max_length=20, return_dict_in_generate=True, output_logits=True)
+    model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct", torch_dtype=torch.float32, device_map="cpu", trust_remote_code=True)
+    model.eval()
+
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-mini-4k-instruct", trust_remote_code=True)
+    inputs = tokenizer("""{}""", return_tensors="pt", return_attention_mask=False)
+    outputs = model.generate(**inputs, max_length={}, return_dict_in_generate=True, output_logits=True)
     generated_logits = outputs.logits
+    print("Generated: ", tokenizer.decode(outputs[0][0], skip_special_tokens=True))
 
     result = [torch.unsqueeze(l, 0).numpy() for l in generated_logits]
     return result
-"#;
+"#,
+            prompt, max_tokens
+        );
+
+        println!("GROUND TRUTH PROGRAM: {}", prg);
         Python::with_gil(|py| {
-            let prg = PyModule::from_code(py, prg, "x.py", "x")?;
+            let prg = PyModule::from_code(py, &prg, "x.py", "x")?;
             let py_result: Vec<&PyArrayDyn<f32>> = prg.getattr("ground")?.call0()?.extract()?;
             Ok(py_result.into_iter().map(Tensor::from).collect::<_>())
         })
@@ -273,34 +329,39 @@ def ground():
 
     #[test]
     #[cfg_attr(feature = "ci", ignore)]
-    fn load_phi2() -> anyhow::Result<()> {
+    fn load_phi3() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
         let api = Api::new().unwrap();
-        let model_repo = api.model("FL33TW00D-HF/phi2".to_string());
-        let model_path = model_repo.get("phi2-f16.gguf").unwrap();
+        let model_repo = api.model("FL33TW00D-HF/phi3".to_string());
+        let model_path = model_repo.get("phi3-mini-4k-f16.gguf").unwrap();
         println!("MODEL PATH: {}", model_path.display());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;
         let content = gguf::gguf::Header::read(&mut reader)?;
-        let mut model = Phi2::load(content, &mut reader, &device)?;
+        let mut model = Phi3::load(content, &mut reader, &device)?;
 
-        let tokenizer_repo = api.model("microsoft/phi-2".to_string());
+        let tokenizer_repo = api.model("microsoft/Phi-3-mini-4k-instruct".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
-        let prompt = "def print_prime(n):";
-        print!("{}", prompt);
+        let MAX_TOKENS = 20;
+        let prompt = r#"<|user|>
+How to explain Internet for a medieval knight?<|end|>
+<|assistant|>"#;
         let encoding = tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding
             .get_ids()
             .iter()
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
+        tokens.insert(0, 1); //TODO: what is going on here with tokenizers?
         let mut all_logits = vec![];
         let mut all_tokens = tokens.clone();
-        let mut loop_cnt = 0;
-        while tokens[tokens.len() - 1] != 50256 && loop_cnt < 13 {
+        let mut generated_cnt = tokens.len();
+        let start = std::time::Instant::now();
+
+        while tokens[tokens.len() - 1] != 32007 && generated_cnt < MAX_TOKENS {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.schedule(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
@@ -313,17 +374,24 @@ def ground():
                 .iter()
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
-            let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
-            print!("{}", tokenizer.decode(&u32_toks, true).unwrap());
             all_tokens.extend(tokens.clone());
-            loop_cnt += 1;
+            generated_cnt += 1;
         }
+        let elapsed = start.elapsed();
+        let u32_toks = all_tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
 
-        let ground_logits = ground_truth()?;
-        let all_equal = all_logits
-            .iter()
-            .zip(ground_logits.iter())
-            .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
+        let ground_logits = ground_truth(prompt, MAX_TOKENS)?;
+        assert_eq!(all_logits.len(), ground_logits.len());
+        let all_equal =
+            ground_logits
+                .iter()
+                .zip(all_logits.iter())
+                .enumerate()
+                .all(|(i, (their, our))| {
+                    print!("Checking: {}", i);
+                    our.all_close(their, 5e-4, 5e-4).is_ok()
+                });
+
         println!("All logits equal: {}", all_equal);
         assert!(all_equal);
         Ok(())

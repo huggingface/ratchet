@@ -7,7 +7,7 @@ import WebGPUModal from "./components/WebGPUModal";
 import WarningModal from "./components/warningModal";
 
 export default function Home() {
-    const [selectedModel, setSelectedModel] = useState<AvailableModels>({ Phi: "phi2" });
+    const [selectedModel, setSelectedModel] = useState<AvailableModels>({ Phi: "phi3" });
     const [loadedModel, setLoadedModel] = useState<AvailableModels | null>(null);
     const [model, setModel] = useState<Model | null>(null);
     const [generating, setGenerating] = useState<boolean>(false);
@@ -60,7 +60,7 @@ export default function Home() {
     return (
         <div className="flex flex-col min-h-screen">
             <div className="w-full mx-auto p-8 flex-grow">
-                <h1 className="text-4xl font-bold mb-8 text-blue-600">Ratchet + Phi</h1>
+                <h1 className="text-4xl font-bold mb-8 text-blue-600">Ratchet + Phi3</h1>
                 {generatedText ?
                     <div className="border border-gray-300 bg-white p-6 rounded-lg shadow-md">
                         <p

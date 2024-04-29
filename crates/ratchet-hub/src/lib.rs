@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 use gloo_net::http::Request;
 use js_sys::{Object, Reflect, Uint8Array};
-use ratchet_loader::gguf::gguf::{self, TensorInfo};
+use ratchet_loader::gguf::gguf::{self};
 use util::{js_error, js_to_js_error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
