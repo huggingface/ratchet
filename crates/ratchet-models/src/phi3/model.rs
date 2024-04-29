@@ -301,6 +301,26 @@ mod tests {
 
     use super::Phi3;
 
+    fn ground_truth() -> anyhow::Result<Vec<Tensor>> {
+        let prg = r#"
+import torch
+from transformers import Phi3ForCausalLM, AutoTokenizer
+
+def ground():
+    model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct", torch_dtype=torch.float32, device_map="cpu", trust_remote_code=True)
+    model.eval()
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-mini-4k-instruct", trust_remote_code=True)
+    inputs = tokenizer("def print_prime(n):", return_tensors="pt", return_attention_mask=False)
+    logits = model(**inputs).logits
+    return logits
+"#;
+        Python::with_gil(|py| {
+            let prg = PyModule::from_code(py, prg, "x.py", "x")?;
+            let py_result: Vec<&PyArrayDyn<f32>> = prg.getattr("ground")?.call0()?.extract()?;
+            Ok(py_result.into_iter().map(Tensor::from).collect::<_>())
+        })
+    }
+
     #[test]
     #[cfg_attr(feature = "ci", ignore)]
     fn load_phi3() -> anyhow::Result<()> {
@@ -335,7 +355,7 @@ Plan me a 2 day trip to SF<|end|>
         let mut all_tokens = tokens.clone();
         let mut loop_cnt = 0;
         let start = std::time::Instant::now();
-        while tokens[tokens.len() - 1] != 32000 && loop_cnt < 512 {
+        while tokens[tokens.len() - 1] != 32000 && loop_cnt < 1 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = model.schedule(input)?.resolve()?;
             let logits = result.to(&Device::CPU)?;
@@ -348,7 +368,6 @@ Plan me a 2 day trip to SF<|end|>
                 .iter()
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
-            let u32_toks = tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
             all_tokens.extend(tokens.clone());
             loop_cnt += 1;
         }
@@ -361,6 +380,13 @@ Plan me a 2 day trip to SF<|end|>
             all_tokens.len() as f64 / elapsed.as_secs_f64()
         );
 
+        let ground_logits = ground_truth()?;
+        let all_equal = all_logits
+            .iter()
+            .zip(ground_logits.iter())
+            .all(|(our, their)| their.all_close(our, 1e-3, 1e-3).is_ok());
+        println!("All logits equal: {}", all_equal);
+        assert!(all_equal);
         Ok(())
     }
 }
