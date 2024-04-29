@@ -62,6 +62,10 @@ impl ComputePipelinePool {
                 layout: Some(pipeline_layout),
                 module: &module,
                 entry_point: "main",
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    zero_initialize_workgroup_memory: false,
+                    ..Default::default()
+                },
             })
         })
     }
