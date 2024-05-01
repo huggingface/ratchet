@@ -34,7 +34,7 @@ realfft = { workspace = true }
 ndarray = { workspace = true }
 cfg-if = { workspace = true }
 serde = { workspace = true }
-tokenizers = { version = "0.13.4", default-features = false, features=["unstable_wasm"] }
+tokenizers = { version = "0.19.1", default-features = false, features=["unstable_wasm"] }
 lazy_static = { workspace = true }
 web-time = { workspace = true }
 clap = { workspace = true }

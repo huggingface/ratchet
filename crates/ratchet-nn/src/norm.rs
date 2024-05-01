@@ -15,24 +15,14 @@ impl Default for LayerNormConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, derive_new::new)]
 pub struct LayerNorm {
     weight: Tensor,
     bias: Option<Tensor>,
-    remove_mean: bool,
     eps: f32,
 }
 
 impl LayerNorm {
-    pub fn new(weight: Tensor, bias: Option<Tensor>, eps: f32) -> Self {
-        Self {
-            weight,
-            bias,
-            remove_mean: true,
-            eps,
-        }
-    }
-
     pub fn weight(&self) -> &Tensor {
         &self.weight
     }
@@ -46,5 +36,27 @@ impl crate::Module for LayerNorm {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         input.layer_norm(self.weight.clone(), self.bias.clone(), self.eps)
+    }
+}
+
+/// RMSNorm
+///
+/// https://github.com/NVIDIA/apex/pull/1274/files
+#[derive(Clone, Debug, derive_new::new)]
+pub struct RMSNorm {
+    weight: Tensor,
+    eps: f32,
+}
+
+impl RMSNorm {
+    pub fn weight(&self) -> &Tensor {
+        &self.weight
+    }
+}
+
+impl crate::Module for RMSNorm {
+    type Input = Tensor;
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        input.rms_norm(self.weight.clone(), self.eps)
     }
 }

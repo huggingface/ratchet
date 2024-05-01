@@ -41,7 +41,7 @@ hound = { workspace = true }
 fern = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
-tokenizers = { version = "0.13.4", default-features = false, features=["unstable_wasm"] }
+tokenizers = { version = "0.19.1", default-features = false, features=["unstable_wasm"] }
 futures = "0.3.30"
 [dependencies.web-sys]
 features = [

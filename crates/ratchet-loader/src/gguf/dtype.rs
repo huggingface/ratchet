@@ -74,7 +74,7 @@ impl GGUFInterop for Q4K {
             &ds_bytes,
             DType::GGUF(GGUFDType::Q4K(Q4K)),
             shape,
-            Device::CPU,
+            device.clone(),
         )
     }
 }
@@ -115,7 +115,7 @@ impl GGUFInterop for Q6K {
             &ql_bytes,
             DType::GGUF(GGUFDType::Q6K(Q6K)),
             shape,
-            Device::CPU,
+            device.clone(),
         )
     }
 }
@@ -165,7 +165,7 @@ impl GGUFInterop for f32 {
 
     fn transcode(
         data: &[Self::GGUF_TYPE],
-        n_blocks: usize,
+        _n_blocks: usize,
         shape: Shape,
         device: &Device,
     ) -> anyhow::Result<Tensor> {
@@ -182,7 +182,7 @@ impl GGUFInterop for f16 {
 
     fn transcode(
         data: &[Self::GGUF_TYPE],
-        n_blocks: usize,
+        _n_blocks: usize,
         shape: Shape,
         device: &Device,
     ) -> anyhow::Result<Tensor> {

@@ -18,14 +18,14 @@ debug-assertions = true
 [profile.release]
 panic = 'abort'
 lto = "fat"
-codegen-units = 1
+codegen-units = 1 
 
 [profile.profiling]
 inherits = "release"
 debug = 2
 
 [workspace.dependencies]
-wgpu = { version = "0.18", features = ["expose-ids", "fragile-send-sync-non-atomic-wasm"] }
+wgpu = { version = "0.20", features = ["fragile-send-sync-non-atomic-wasm"] }
 bytemuck = { version = "1.14.0", features=["wasm_simd", "aarch64_simd", "extern_crate_alloc"] }
 num-traits = "0.2.17"
 half = { version = "2.3.1", features = ["num-traits", "bytemuck"] }
@@ -35,9 +35,9 @@ thiserror = "1.0.56"
 byteorder = "1.5.0"
 npyz = { version = "0.8.3"}
 hf-hub = "0.3.2"
-tokenizers = "0.15.2"
 serde = "1.0.197"
 anyhow = "1.0.79"
+tokenizers = "0.19.1" 
 
 js-sys = "0.3.64"
 wasm-bindgen = "0.2.91"
