@@ -518,6 +518,7 @@ pub fn kernels() -> &'static HashMap<&'static str, &'static str> {
         ("cache_scalar", include_str!(r"../kernel-handwritten/cache_scalar.wgsl")),
         ("conv_scalar", include_str!(r"../kernel-handwritten/conv_scalar.wgsl")),
         ("f32_index_select_scalar", include_str!(r"../kernel-handwritten/f32_index_select_scalar.wgsl")),
+        ("groupnorm_scalar", include_str!(r"../kernel-handwritten/groupnorm_scalar.wgsl")),
         ("index_write_scalar", include_str!(r"../kernel-handwritten/index_write_scalar.wgsl")),
         ("rope_scalar", include_str!(r"../kernel-handwritten/rope_scalar.wgsl")),
         ("softmax_scalar", include_str!(r"../kernel-handwritten/softmax_scalar.wgsl")),

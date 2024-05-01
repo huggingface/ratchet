@@ -2,23 +2,14 @@
 
 mod groupnorm;
 
-use derive_new::new;
 use encase::ShaderType;
-pub use groupnorm::*;
+pub use groupnorm::{GroupNorm, Norm};
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Tensor,
 };
-
-#[derive(new, Debug, Clone)]
-pub struct Norm {
-    input: Tensor,
-    scale: Tensor,
-    bias: Option<Tensor>,
-    eps: f32,
-}
 
 impl OpGuards for Norm {
     fn check_shapes(&self) {
@@ -77,7 +68,10 @@ impl MetaOperation for NormOp {
             },
             NormOp::RMSNorm(Norm { input, scale, .. }) => rvec![input, scale],
             NormOp::GroupNorm(GroupNorm {
-                input, scale, bias, ..
+                norm: Norm {
+                    input, scale, bias, ..
+                },
+                ..
             }) => match bias {
                 Some(bias) => rvec![input, scale, bias],
                 None => rvec![input, scale],
@@ -117,7 +111,13 @@ impl MetaOperation for NormOp {
                 let stacks = input.shape().slice(0..rank - 2).numel();
                 Ok(wgc![M as _, stacks as _, 1])
             }
-            NormOp::GroupNorm(_) => todo!(),
+            NormOp::GroupNorm(GroupNorm { num_groups, .. }) => {
+                let input = self.srcs()[0];
+                let rank = input.rank();
+                let M = num_groups;
+                let stacks = input.shape().slice(0..rank - 2).numel();
+                Ok(wgc![M as _, stacks as _, 1])
+            }
         }
     }
 
@@ -144,24 +144,22 @@ impl MetaOperation for NormOp {
         _: &Tensor,
         _: &KernelElement,
     ) -> Result<u64, OperationError> {
-        match self {
-            NormOp::LayerNorm(Norm { eps, .. }) | NormOp::RMSNorm(Norm { eps, .. }) => {
-                let input = self.srcs()[0];
-                let rank = input.rank();
-                let M = input.shape()[rank - 2] as u32;
-                let N = input.shape()[rank - 1] as u32;
-                let ND2 = N / 2;
-                let ND4 = N / 4;
-                let eps = match self {
-                    NormOp::LayerNorm(Norm { eps, .. }) => *eps,
-                    NormOp::RMSNorm(Norm { eps, .. }) => *eps,
-                    NormOp::GroupNorm(GroupNorm { eps, .. }) => *eps,
-                };
-                let meta = NormMeta::new(M, N, ND2, ND4, eps);
-                Ok(uniform.write(&meta)?)
-            }
-            NormOp::GroupNorm(_) => todo!("What metadata to write ? "),
-        }
+        let input = self.srcs()[0];
+        let rank = input.rank();
+        let M = input.shape()[rank - 2] as u32;
+        let N = input.shape()[rank - 1] as u32;
+        let ND2 = N / 2;
+        let ND4 = N / 4;
+        let eps = match self {
+            NormOp::LayerNorm(Norm { eps, .. }) => *eps,
+            NormOp::RMSNorm(Norm { eps, .. }) => *eps,
+            NormOp::GroupNorm(GroupNorm {
+                norm: Norm { eps, .. },
+                ..
+            }) => *eps,
+        };
+        let meta = NormMeta::new(M, N, ND2, ND4, eps);
+        Ok(uniform.write(&meta)?)
     }
 }
 
@@ -177,6 +175,7 @@ mod tests {
         input: &Tensor,
         scale: &Tensor,
         bias: Option<&Tensor>,
+        num_groups: Option<usize>,
     ) -> anyhow::Result<Tensor> {
         let ln_prg = r#"
 import torch
@@ -196,9 +195,16 @@ def manual_rms_norm(input, scale):
     return (scale * input).numpy()
 "#;
 
+        let groupnorm_prg = r#"
+import torch
+def manual_group_norm(input, scale,n_groups):
+    (input, scale, bias) = (torch.from_numpy(input), torch.from_numpy(scale), torch.from_numpy(bias))
+    return F.group_norm(input, num_groups, weight=scale, bias=bias).numpy()
+"#;
         let prg = match var {
             NormVariant::LayerNorm => ln_prg,
             NormVariant::RMSNorm => rms_prg,
+            NormVariant::GroupNorm => groupnorm_prg,
         };
 
         let inputs = match bias {
@@ -210,18 +216,26 @@ def manual_rms_norm(input, scale):
     }
 
     fn run_norm_trial(device: &Device, problem: NormProblem) -> anyhow::Result<()> {
-        let NormProblem { var, B, M, N } = problem;
+        let NormProblem {
+            var,
+            num_groups,
+            B,
+            M,
+            N,
+        } = problem;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let scale = Tensor::randn::<f32>(shape![N], Device::CPU);
 
         let bias = match var {
             NormVariant::LayerNorm => Some(Tensor::randn::<f32>(shape![N], Device::CPU)),
+            NormVariant::GroupNorm => Some(Tensor::randn::<f32>(shape![N], Device::CPU)),
             NormVariant::RMSNorm => None,
         };
 
         let ground = match var {
-            NormVariant::LayerNorm => ground_truth(var, &input, &scale, bias.as_ref())?,
-            NormVariant::RMSNorm => ground_truth(var, &input, &scale, None)?,
+            NormVariant::LayerNorm => ground_truth(var, &input, &scale, bias.as_ref(), None)?,
+            NormVariant::GroupNorm => ground_truth(var, &input, &scale, bias.as_ref(), None)?,
+            NormVariant::RMSNorm => ground_truth(var, &input, &scale, None, Some(num_groups))?,
         };
 
         let input_gpu = input.to(device)?;
@@ -231,6 +245,9 @@ def manual_rms_norm(input, scale):
         let result = match var {
             NormVariant::LayerNorm => input_gpu.layer_norm(scale_gpu, bias_gpu, 1e-5)?.resolve()?,
             NormVariant::RMSNorm => input_gpu.rms_norm(scale_gpu, 1e-5)?.resolve()?,
+            NormVariant::GroupNorm => input_gpu
+                .group_norm(num_groups, scale_gpu, bias_gpu, 1e-5)?
+                .resolve()?,
         };
 
         let ours = result.to(&Device::CPU)?;
@@ -242,11 +259,14 @@ def manual_rms_norm(input, scale):
     pub enum NormVariant {
         LayerNorm,
         RMSNorm,
+        GroupNorm,
     }
 
     #[derive(Arbitrary, Debug)]
     struct NormProblem {
         var: NormVariant,
+        #[strategy(1)]
+        num_groups: usize,
         #[strategy(1..=3usize)]
         B: usize,
         #[strategy(1..=256usize)]

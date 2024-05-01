@@ -294,6 +294,7 @@ impl Tensor {
 
     pub fn group_norm(
         self,
+        num_groups: usize,
         weight: Tensor,
         bias: Option<Tensor>,
         eps: f32,
