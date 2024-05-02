@@ -94,7 +94,7 @@ impl WgpuDevice {
         })
     }
 
-    pub(crate) fn queue(&self) -> &wgpu::Queue {
+    pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }
 
