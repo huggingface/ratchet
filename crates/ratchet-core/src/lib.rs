@@ -22,6 +22,7 @@ pub use device::*;
 pub use dtype::*;
 pub use enforcer::*;
 pub use executable::*;
+pub use gpu::*;
 pub use kernels::*;
 pub use ndarray_ext::*;
 pub use op::*;
