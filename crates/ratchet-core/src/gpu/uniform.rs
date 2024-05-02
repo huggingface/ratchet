@@ -35,7 +35,7 @@ impl CpuUniform {
     }
 
     /// Consumes the CPU repr of the uniform buffer and writes to the GPU.
-    pub(crate) fn into_gpu(self, device: &WgpuDevice) -> Result<GpuUniform, OperationError> {
+    pub fn into_gpu(self, device: &WgpuDevice) -> Result<GpuUniform, OperationError> {
         let buf = device.create_uniform_init(self);
         let layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
