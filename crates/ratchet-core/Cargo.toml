@@ -10,7 +10,7 @@ gpu-profiling = ["dep:tabled", "dep:itertools"]
 rand = ["dep:rand", "dep:rand_distr"]
 plotting = ["dep:dot3", "dep:tempfile"]
 testing = ["dep:npyz", "dep:ndarray"]
-pyo3 = ["dep:pyo3", "dep:numpy"]
+pyo3 = ["dep:pyo3", "dep:numpy", "dep:regex"]
 
 [build-dependencies]
 tera = { workspace = true }
@@ -44,7 +44,6 @@ num = { workspace = true }
 rand_distr = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 glam = { workspace = true }
-regex = { workspace = true }
 npyz = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 
@@ -57,14 +56,15 @@ tabled = { workspace = true, optional = true }
 itertools = { workspace = true, optional = true }
 
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true } 
+regex = { workspace = true, optional = true }
 numpy = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true 
+futures-intrusive.workspace = true
 
-futures-intrusive = "0.5.0"
 async-trait = "0.1.77"
-smallvec = { version = "1.11.2", features = ["serde"] }
+smallvec = { workspace = true , features = ["serde"] }
 
 [dev-dependencies]
 env_logger = { workspace = true }
