@@ -580,7 +580,7 @@ impl Tensor {
     /// Generates the bind group entries required to bind the tensor to a kernel.
     /// Quantized tensors may use multiple bind groups.
     /// Unquantized tensors should only use a single bind group.
-    pub(crate) fn bindings(&self) -> RVec<BindGroupEntry> {
+    pub fn bindings(&self) -> RVec<BindGroupEntry> {
         assert!(self.device().is_gpu());
         let storage_guard = self.storage();
         let storage = storage_guard
