@@ -300,7 +300,7 @@ impl Tensor {
         eps: f32,
     ) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let group_norm = GroupNorm::new(self, weight, bias, eps);
+        let group_norm = GroupNorm::new(Norm::new(self, weight, bias, eps), num_groups);
         let new_view = group_norm.compute_view()?;
         let op = LazyOp::Norm(NormOp::GroupNorm(group_norm));
         Ok(Tensor::lazy(op, new_view, device))

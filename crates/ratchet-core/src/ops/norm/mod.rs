@@ -103,7 +103,7 @@ impl MetaOperation for NormOp {
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         match self {
-            NormOp::LayerNorm(_) | NormOp::RMSNorm(()) => {
+            NormOp::LayerNorm(_) | NormOp::RMSNorm(_) => {
                 let input = self.srcs()[0];
                 let rank = input.rank();
 
@@ -114,7 +114,7 @@ impl MetaOperation for NormOp {
             NormOp::GroupNorm(GroupNorm { num_groups, .. }) => {
                 let input = self.srcs()[0];
                 let rank = input.rank();
-                let M = num_groups;
+                let M = *num_groups;
                 let stacks = input.shape().slice(0..rank - 2).numel();
                 Ok(wgc![M as _, stacks as _, 1])
             }
@@ -131,7 +131,7 @@ impl MetaOperation for NormOp {
                 None => Ok(BindGroupLayoutDescriptor::binary()),
             },
             NormOp::RMSNorm(_) => Ok(BindGroupLayoutDescriptor::binary()),
-            NormOp::GroupNorm(l) => match l.bias {
+            NormOp::GroupNorm(l) => match l.norm.bias {
                 Some(_) => Ok(BindGroupLayoutDescriptor::ternary()),
                 None => Ok(BindGroupLayoutDescriptor::binary()),
             },
@@ -265,7 +265,7 @@ def manual_group_norm(input, scale,n_groups):
     #[derive(Arbitrary, Debug)]
     struct NormProblem {
         var: NormVariant,
-        #[strategy(1)]
+        #[strategy(0..=1)]
         num_groups: usize,
         #[strategy(1..=3usize)]
         B: usize,

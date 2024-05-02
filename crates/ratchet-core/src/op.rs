@@ -106,6 +106,7 @@ impl LazyOp {
             LazyOp::Norm(n) => match n {
                 NormOp::LayerNorm(l) => l.check_invariants(),
                 NormOp::RMSNorm(r) => r.check_invariants(),
+                NormOp::GroupNorm(g) => g.check_invariants(),
             },
             LazyOp::Conv(c) => c.check_invariants(),
             LazyOp::Select(s) => s.check_invariants(),

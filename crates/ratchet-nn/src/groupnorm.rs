@@ -45,6 +45,11 @@ impl GroupNorm {
 impl crate::Module for GroupNorm {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        input.group_norm(self.weight.clone(), self.bias.clone(), self.eps)
+        input.group_norm(
+            self.num_groups,
+            self.weight.clone(),
+            self.bias.clone(),
+            self.eps,
+        )
     }
 }
