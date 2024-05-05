@@ -236,7 +236,7 @@ def manual_rms_norm(input, scale):
 
         let ground = match var {
             NormVariant::LayerNorm => ground_truth(var, &input, &scale, bias.as_ref())?,
-            NormVariant::RMSNorm => ground_truth(var, &input, &scale, bias.as_ref())?,
+            NormVariant::RMSNorm => ground_truth(var, &input, &scale, None)?,
         };
 
         let input_gpu = input.to(device)?;

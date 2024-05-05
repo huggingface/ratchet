@@ -82,21 +82,6 @@ def manual_group_norm(input, scale, bias, num_groups):
             .resolve()?;
 
         let ours = result.to(&Device::CPU)?;
-        println!(
-            "{:?}",
-            &input.storage().as_ref().map(|s| s.dump(ours.dt(), false))
-        );
-        println!(
-            "{:?}",
-            &ours.storage().as_ref().map(|s| s.dump(ours.dt(), false))
-        );
-        println!(
-            "{:?}",
-            &ground
-                .storage()
-                .as_ref()
-                .map(|s| s.dump(ground.dt(), false))
-        );
 
         ground.all_close(&ours, 1e-4, 1e-4)?;
         Ok(())
