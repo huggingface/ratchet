@@ -3,14 +3,22 @@
 mod groupnorm;
 
 use encase::ShaderType;
-pub use groupnorm::{GroupNorm, Norm};
+pub use groupnorm::GroupNorm;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Tensor,
 };
+use derive_new::new;
 
+#[derive(new, Debug, Clone)]
+pub struct Norm {
+    pub(crate) input: Tensor,
+    pub(crate) scale: Tensor,
+    pub(crate) bias: Option<Tensor>,
+    pub(crate) eps: f32,
+}
 impl OpGuards for Norm {
     fn check_shapes(&self) {
         assert!(self.input.rank() >= 2);
@@ -146,20 +154,29 @@ impl MetaOperation for NormOp {
     ) -> Result<u64, OperationError> {
         let input = self.srcs()[0];
         let rank = input.rank();
-        let M = input.shape()[rank - 2] as u32;
-        let N = input.shape()[rank - 1] as u32;
-        let ND2 = N / 2;
-        let ND4 = N / 4;
-        let eps = match self {
-            NormOp::LayerNorm(Norm { eps, .. }) => *eps,
-            NormOp::RMSNorm(Norm { eps, .. }) => *eps,
+        match self {
+            NormOp::RMSNorm(n) | NormOp::LayerNorm(n) => {
+                let M = input.shape()[rank - 2] as u32;
+                let N = input.shape()[rank - 1] as u32;
+                let ND2 = N / 2;
+                let ND4 = N / 4;
+                let meta = NormMeta::new(M, N, ND2, ND4, n.eps);
+                Ok(uniform.write(&meta)?)
+            }
             NormOp::GroupNorm(GroupNorm {
                 norm: Norm { eps, .. },
-                ..
-            }) => *eps,
-        };
-        let meta = NormMeta::new(M, N, ND2, ND4, eps);
-        Ok(uniform.write(&meta)?)
+                num_groups,
+            }) => {
+                let img_size = input.shape()[rank - 1] as u32;
+                let channels = input.shape()[1] as u32;
+                let M = *num_groups as u32;
+                let N = (channels / *num_groups as u32) * img_size;
+                let ND2 = N / 2;
+                let ND4 = N / 4;
+                let meta = NormMeta::new(M, N, ND2, ND4, *eps);
+                Ok(uniform.write(&meta)?)
+            }
+        }
     }
 }
 
@@ -175,7 +192,6 @@ mod tests {
         input: &Tensor,
         scale: &Tensor,
         bias: Option<&Tensor>,
-        num_groups: Option<usize>,
     ) -> anyhow::Result<Tensor> {
         let ln_prg = r#"
 import torch
@@ -195,16 +211,9 @@ def manual_rms_norm(input, scale):
     return (scale * input).numpy()
 "#;
 
-        let groupnorm_prg = r#"
-import torch
-def manual_group_norm(input, scale,n_groups):
-    (input, scale, bias) = (torch.from_numpy(input), torch.from_numpy(scale), torch.from_numpy(bias))
-    return F.group_norm(input, num_groups, weight=scale, bias=bias).numpy()
-"#;
         let prg = match var {
             NormVariant::LayerNorm => ln_prg,
             NormVariant::RMSNorm => rms_prg,
-            NormVariant::GroupNorm => groupnorm_prg,
         };
 
         let inputs = match bias {
@@ -216,26 +225,18 @@ def manual_group_norm(input, scale,n_groups):
     }
 
     fn run_norm_trial(device: &Device, problem: NormProblem) -> anyhow::Result<()> {
-        let NormProblem {
-            var,
-            num_groups,
-            B,
-            M,
-            N,
-        } = problem;
+        let NormProblem { var, B, M, N } = problem;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let scale = Tensor::randn::<f32>(shape![N], Device::CPU);
 
         let bias = match var {
             NormVariant::LayerNorm => Some(Tensor::randn::<f32>(shape![N], Device::CPU)),
-            NormVariant::GroupNorm => Some(Tensor::randn::<f32>(shape![N], Device::CPU)),
             NormVariant::RMSNorm => None,
         };
 
         let ground = match var {
-            NormVariant::LayerNorm => ground_truth(var, &input, &scale, bias.as_ref(), None)?,
-            NormVariant::GroupNorm => ground_truth(var, &input, &scale, bias.as_ref(), None)?,
-            NormVariant::RMSNorm => ground_truth(var, &input, &scale, None, Some(num_groups))?,
+            NormVariant::LayerNorm => ground_truth(var, &input, &scale, bias.as_ref())?,
+            NormVariant::RMSNorm => ground_truth(var, &input, &scale, bias.as_ref())?,
         };
 
         let input_gpu = input.to(device)?;
@@ -245,9 +246,6 @@ def manual_group_norm(input, scale,n_groups):
         let result = match var {
             NormVariant::LayerNorm => input_gpu.layer_norm(scale_gpu, bias_gpu, 1e-5)?.resolve()?,
             NormVariant::RMSNorm => input_gpu.rms_norm(scale_gpu, 1e-5)?.resolve()?,
-            NormVariant::GroupNorm => input_gpu
-                .group_norm(num_groups, scale_gpu, bias_gpu, 1e-5)?
-                .resolve()?,
         };
 
         let ours = result.to(&Device::CPU)?;
@@ -259,14 +257,11 @@ def manual_group_norm(input, scale,n_groups):
     pub enum NormVariant {
         LayerNorm,
         RMSNorm,
-        GroupNorm,
     }
 
     #[derive(Arbitrary, Debug)]
     struct NormProblem {
         var: NormVariant,
-        #[strategy(0..=1)]
-        num_groups: usize,
         #[strategy(1..=3usize)]
         B: usize,
         #[strategy(1..=256usize)]
