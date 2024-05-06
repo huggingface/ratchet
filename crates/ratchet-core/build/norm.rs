@@ -9,6 +9,7 @@ use crate::{Generate, KernelElement, KernelRenderer, WgslDType};
 pub enum NormOp {
     LayerNorm,
     RMSNorm,
+    GroupNorm,
 }
 
 impl std::fmt::Display for NormOp {
@@ -16,6 +17,7 @@ impl std::fmt::Display for NormOp {
         let s = match self {
             NormOp::LayerNorm => "layernorm",
             NormOp::RMSNorm => "rmsnorm",
+            NormOp::GroupNorm => "groupnorm",
         };
         write!(f, "{}", s)
     }
