@@ -37,7 +37,7 @@ serde = { workspace = true }
 tokenizers = { version = "0.19.1", default-features = false, features=["unstable_wasm"] }
 lazy_static = { workspace = true }
 web-time = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features=["derive"] }
 serde_json.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
