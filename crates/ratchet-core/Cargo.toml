@@ -9,7 +9,7 @@ default = ["rand", "testing"]
 gpu-profiling = ["dep:tabled", "dep:itertools"]
 rand = ["dep:rand", "dep:rand_distr"]
 plotting = ["dep:dot3", "dep:tempfile"]
-testing = ["dep:npyz", "dep:ndarray"]
+testing = ["dep:npyz", "dep:ndarray","dep:tch"]
 pyo3 = ["dep:pyo3", "dep:numpy", "dep:regex"]
 
 [build-dependencies]
@@ -31,7 +31,7 @@ num-traits = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-anyhow.workspace = true 
+anyhow.workspace = true
 
 rustc-hash = { workspace = true }
 slotmap = { workspace = true }
@@ -55,12 +55,13 @@ tempfile = { workspace = true, optional = true }
 tabled = { workspace = true, optional = true }
 itertools = { workspace = true, optional = true }
 
-pyo3 = { workspace = true, features = ["auto-initialize"], optional = true } 
+pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
 regex = { workspace = true, optional = true }
 numpy = { workspace = true, optional = true }
+tch = {workspace =true, optional=true}
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen.workspace = true 
+wasm-bindgen.workspace = true
 futures-intrusive.workspace = true
 
 async-trait = "0.1.77"

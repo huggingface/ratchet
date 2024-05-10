@@ -5,6 +5,7 @@ use crate::{
     Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
+use ndarray::OwnedRepr;
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
@@ -15,6 +16,7 @@ use std::sync::Arc;
 #[cfg(feature = "rand")]
 use {rand::prelude::*, rand_distr::StandardNormal};
 
+use ndarray::ArrayBase;
 #[cfg(feature = "testing")]
 use ndarray::{ArrayD, ArrayViewD, Dimension};
 
@@ -838,6 +840,17 @@ impl Tensor {
         ))
     }
 
+    #[cfg(feature = "testing")]
+    pub fn to_tch<T: TensorDType + tch::kind::Element>(&self) -> anyhow::Result<tch::Tensor> {
+        assert!(
+            self.device().is_cpu(),
+            "Cannot convert non-CPU tensor to numpy array"
+        );
+        Ok(tch::Tensor::try_from(
+            &self.deep_clone().into_ndarray::<T>(),
+        )?)
+    }
+
     #[cfg(feature = "pyo3")]
     pub fn to_py<'s, 'p: 's, T: TensorDType + numpy::Element>(
         &'s self,
@@ -849,6 +862,15 @@ impl Tensor {
             "Cannot convert non-CPU tensor to numpy array"
         );
         PyArray::from_owned_array(*py, self.deep_clone().into_ndarray::<T>())
+    }
+}
+
+#[cfg(feature = "testing")]
+impl TryFrom<&tch::Tensor> for Tensor {
+    type Error = anyhow::Error;
+    fn try_from(array: &tch::Tensor) -> anyhow::Result<Self> {
+        let base: ArrayBase<OwnedRepr<f32>, _> = array.try_into()?;
+        Ok(Self::from(base))
     }
 }
 

@@ -104,25 +104,19 @@ impl MetaOperation for Softmax {
     }
 }
 
-#[cfg(all(test, feature = "pyo3"))]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
-    use test_strategy::{proptest, Arbitrary};
-
-    use crate::test_util::run_py_prg;
     use crate::{shape, Device, DeviceRequest, Tensor};
+    use tch;
+    use test_strategy::{proptest, Arbitrary};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
     }
 
     fn ground_truth(a: &Tensor) -> anyhow::Result<Tensor> {
-        let prg = r#"
-import torch
-import torch.nn.functional as F
-def softmax(a):
-    return F.softmax(torch.from_numpy(a), dim=-1).numpy()
-"#;
-        run_py_prg(prg.to_string(), &[a], &[])
+        let t = a.to_tch::<f32>()?;
+        Tensor::try_from(&t.softmax(-1, Some(tch::kind::Kind::Float)))
     }
 
     fn run_softmax_trial(problem: SoftmaxProblem) {
