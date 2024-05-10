@@ -4,6 +4,7 @@ use crate::{
     InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape,
     Storage, Strides, TensorDType, TensorId,
 };
+use anyhow::bail;
 use derive_new::new;
 use ndarray::OwnedRepr;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -869,8 +870,18 @@ impl Tensor {
 impl TryFrom<&tch::Tensor> for Tensor {
     type Error = anyhow::Error;
     fn try_from(array: &tch::Tensor) -> anyhow::Result<Self> {
-        let base: ArrayBase<OwnedRepr<f32>, _> = array.try_into()?;
-        Ok(Self::from(base))
+        let kind = array.kind();
+        match kind {
+            tch::Kind::Float => {
+                let base: ArrayD<f32> = array.try_into()?;
+                Ok(Self::from(base))
+            }
+            tch::Kind::QInt8 => todo!(),
+            tch::Kind::Half => todo!(),
+            tch::Kind::BFloat16 => todo!(),
+            tch::Kind::Int => todo!(),
+            _ => bail!("unsupported tch dtype"),
+        }
     }
 }
 
