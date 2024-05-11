@@ -180,11 +180,10 @@ impl MetaOperation for NormOp {
     }
 }
 
-#[cfg(all(test, feature = "pyo3"))]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 
-    use crate::test_util::run_py_prg;
     use crate::{rvec, shape, Device, DeviceRequest, Tensor};
 
     fn ground_truth(
@@ -193,35 +192,33 @@ mod tests {
         scale: &Tensor,
         bias: Option<&Tensor>,
     ) -> anyhow::Result<Tensor> {
-        let ln_prg = r#"
-import torch
-import torch.nn.functional as F
-
-def layer_norm(input, scale, bias):
-    (input, scale, bias) = (torch.from_numpy(input), torch.from_numpy(scale), torch.from_numpy(bias))
-    return F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
-"#;
-
-        let rms_prg = r#"
-import torch
-def manual_rms_norm(input, scale):
-    (input, scale) = (torch.from_numpy(input), torch.from_numpy(scale))
-    variance = input.to(torch.float32).pow(2).mean(dim=-1, keepdim=True)
-    input = input * torch.rsqrt(variance + 1e-5)
-    return (scale * input).numpy()
-"#;
-
-        let prg = match var {
-            NormVariant::LayerNorm => ln_prg,
-            NormVariant::RMSNorm => rms_prg,
+        let input = input.to_tch::<f32>()?;
+        let scale = scale.to_tch::<f32>()?;
+        let bias = match bias {
+            Some(b) => Some(b.to_tch::<f32>()?),
+            None => None,
         };
-
-        let inputs = match bias {
-            Some(bias) => rvec![input, scale, bias],
-            None => rvec![input, scale],
+        let result = match var {
+            NormVariant::LayerNorm => input.f_layer_norm(
+                [*input.size().last().unwrap()],
+                Some(&scale),
+                bias.as_ref(),
+                1e-5,
+                false,
+            )?,
+            NormVariant::RMSNorm => {
+                // (input, scale) = (torch.from_numpy(input), torch.from_numpy(scale))
+                // variance = input.to(torch.float32).pow(2).mean(dim=-1, keepdim=True)
+                // input = input * torch.rsqrt(variance + 1e-5)
+                // return (scale * input).numpy()
+                let variance = input
+                    .f_pow_tensor_scalar(2)?
+                    .mean_dim(-1, true, input.kind());
+                let input = input.multiply(&variance.f_add_scalar(1e-5)?.rsqrt());
+                scale.multiply(&input)
+            }
         };
-
-        run_py_prg(prg.to_string(), &inputs, &[])
+        Tensor::try_from(&result)
     }
 
     fn run_norm_trial(device: &Device, problem: NormProblem) -> anyhow::Result<()> {

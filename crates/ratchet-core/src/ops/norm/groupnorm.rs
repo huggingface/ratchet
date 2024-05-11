@@ -30,11 +30,10 @@ impl Operation for GroupNorm {
         Ok(self.norm.input.storage_view().clone())
     }
 }
-#[cfg(all(test, feature = "pyo3"))]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 
-    use crate::test_util::run_py_prg;
     use crate::{rvec, shape, Device, DeviceRequest, Tensor};
 
     fn ground_truth(
@@ -43,20 +42,15 @@ mod tests {
         bias: Option<&Tensor>,
         num_groups: usize,
     ) -> anyhow::Result<Tensor> {
-        let prg = r#"
-import torch
-import torch.nn.functional as F
-
-def manual_group_norm(input, scale, bias, num_groups):
-    (input, scale, bias) = (torch.from_numpy(input), torch.from_numpy(scale), torch.from_numpy(bias))
-    return F.group_norm(input, num_groups, weight=scale, bias=bias).numpy()
-"#;
-
-        let inputs = match bias {
-            Some(bias) => rvec![input, scale, bias],
-            None => rvec![input, scale],
+        let input = input.to_tch::<f32>()?;
+        let scale = scale.to_tch::<f32>()?;
+        let bias = match bias {
+            Some(b) => Some(b.to_tch::<f32>()?),
+            None => None,
         };
-        run_py_prg(prg.to_string(), &inputs, &[&num_groups])
+        let result =
+            input.f_group_norm(num_groups as i64, Some(&scale), bias.as_ref(), 1e-5, false)?;
+        Tensor::try_from(&result)
     }
 
     fn run_norm_trial(device: &Device, problem: GroupNormProblem) -> anyhow::Result<()> {
