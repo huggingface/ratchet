@@ -594,11 +594,9 @@ impl MetaOperation for GEMM {
     }
 }
 
-#[cfg(all(test, feature = "pyo3"))]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
-
-    use crate::test_util::run_py_prg;
 
     use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
 
@@ -612,53 +610,22 @@ mod tests {
         trans_rhs: bool,
         trans_out: bool,
     ) -> anyhow::Result<Tensor> {
-        let a_op = if trans_lhs {
-            "torch.permute(torch.from_numpy(a), [0, 2, 1])"
-        } else {
-            "torch.from_numpy(a)"
+        let a = a.to_tch::<f32>()?;
+        let b = b.to_tch::<f32>()?;
+        let a = if trans_lhs { a.permute([0, 2, 1]) } else { a };
+        let b = if trans_rhs { b.permute([0, 2, 1]) } else { b };
+
+        let result = match bias {
+            Some(bias) => {
+                let bias = bias.to_tch::<f32>()?;
+                a.matmul(&b).f_add(&bias)?
+            }
+            None => a.matmul(&b),
         };
-
-        let b_op = if trans_rhs {
-            "torch.permute(torch.from_numpy(b), [0, 2, 1])"
-        } else {
-            "torch.from_numpy(b)"
-        };
-
-        let inner = if bias.is_some() {
-            format!(
-                "torch.add(torch.matmul({}, {}), torch.from_numpy(bias))",
-                a_op, b_op
-            )
-        } else {
-            format!("torch.matmul({}, {})", a_op, b_op)
-        };
-
-        let result_op = if trans_out {
-            format!(
-                "np.ascontiguousarray(torch.permute({}, [0, 2, 1]).numpy())",
-                inner
-            )
-        } else {
-            format!("{}.numpy()", inner)
-        };
-
-        let prg = format!(
-            r#"
-import torch
-import numpy as np
-def matmul(a, b{}):
-    return {}"#,
-            if bias.is_some() { ", bias" } else { "" },
-            result_op
-        );
-
-        let args = if let Some(bias) = bias {
-            vec![a, b, bias]
-        } else {
-            vec![a, b]
-        };
-
-        run_py_prg(prg.to_string(), &args, &[])
+        if trans_out {
+            return Tensor::try_from(&result.permute([0, 2, 1]).contiguous());
+        }
+        Tensor::try_from(&result)
     }
 
     #[derive(Arbitrary, Clone, Debug)]
