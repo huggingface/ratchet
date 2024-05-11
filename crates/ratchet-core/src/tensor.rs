@@ -6,7 +6,6 @@ use crate::{
 };
 use anyhow::bail;
 use derive_new::new;
-use ndarray::OwnedRepr;
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
@@ -17,7 +16,6 @@ use std::sync::Arc;
 #[cfg(feature = "rand")]
 use {rand::prelude::*, rand_distr::StandardNormal};
 
-use ndarray::ArrayBase;
 #[cfg(feature = "testing")]
 use ndarray::{ArrayD, ArrayViewD, Dimension};
 
