@@ -151,9 +151,9 @@ impl MetaOperation for Binary {
     }
 }
 
-#[cfg(all(test, feature = "pyo3"))]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
-    use crate::{test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Shape, Tensor};
+    use crate::{BinaryOp, Device, DeviceRequest, Shape, Tensor};
     use test_strategy::{proptest, Arbitrary};
 
     thread_local! {
@@ -168,16 +168,15 @@ mod tests {
     }
 
     fn ground_truth(a: &Tensor, b: &Tensor, op: &BinaryOp) -> anyhow::Result<Tensor> {
-        let kn = op.kernel_name();
-        let prg = format!(
-            r#"
-import torch
-def {}(a, b):
-    return torch.{}(torch.from_numpy(a), torch.from_numpy(b)).numpy()
-"#,
-            kn, kn
-        );
-        run_py_prg(prg.to_string(), &[a, b], &[])
+        let a = a.to_tch::<f32>()?;
+        let b = b.to_tch::<f32>()?;
+        let result = match op {
+            BinaryOp::Add => a.f_add(&b)?,
+            BinaryOp::Sub => a.f_sub(&b)?,
+            BinaryOp::Mul => a.f_mul(&b)?,
+            BinaryOp::Div => a.f_div(&b)?,
+        };
+        Tensor::try_from(&result)
     }
 
     fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
