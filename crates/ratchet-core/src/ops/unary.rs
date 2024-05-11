@@ -156,11 +156,10 @@ impl MetaOperation for Unary {
     }
 }
 
-#[cfg(all(test, feature = "pyo3"))]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
+    use crate::{shape, Device, DeviceRequest, Tensor, UnaryOp};
     use test_strategy::{proptest, Arbitrary};
-
-    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor, UnaryOp};
 
     #[derive(Arbitrary, Debug)]
     struct UnaryProblem {
@@ -173,33 +172,28 @@ mod tests {
         N: usize,
     }
 
-    fn ground_truth(a: &Tensor, op: &UnaryOp, args: &str) -> anyhow::Result<Tensor> {
-        let kn = op.kernel_name();
-        let func_prg = format!(
-            r#"
-import torch
-import torch.nn.functional as F
-def {}(a):
-    return F.{}(torch.from_numpy(a), {}).numpy()
-"#,
-            kn, kn, args,
-        );
-
-        let imp_prg = format!(
-            r#"
-import torch
-def {}(a):
-    return torch.{}(torch.from_numpy(a), {}).numpy()
-"#,
-            kn, kn, args,
-        );
-
-        let prg = match op {
-            UnaryOp::Gelu | UnaryOp::Silu | UnaryOp::Sigmoid => func_prg,
-            _ => imp_prg,
+    fn ground_truth(a: &Tensor, op: &UnaryOp) -> anyhow::Result<Tensor> {
+        let a = a.to_tch::<f32>()?;
+        let result = match op {
+            UnaryOp::Gelu => {
+                // UnaryOp::Gelu => "approximate=\"tanh\"",
+                a.f_gelu("tanh")?
+            }
+            UnaryOp::Tanh => a.tanh(),
+            UnaryOp::Exp => a.exp(),
+            UnaryOp::Log => a.log(),
+            UnaryOp::Sin => a.sin(),
+            UnaryOp::Cos => a.cos(),
+            UnaryOp::Abs => a.abs(),
+            UnaryOp::Sqrt => a.sqrt(),
+            UnaryOp::Relu => a.relu(),
+            UnaryOp::Floor => a.floor(),
+            UnaryOp::Ceil => a.ceil(),
+            UnaryOp::Neg => a.neg(),
+            UnaryOp::Silu => a.silu(),
+            UnaryOp::Sigmoid => a.sigmoid(),
         };
-
-        run_py_prg(prg.to_string(), &[a], &[])
+        Tensor::try_from(&result)
     }
 
     thread_local! {
@@ -212,11 +206,7 @@ def {}(a):
         println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
         let a = Tensor::randn::<f32>(shape![B, M], Device::CPU);
 
-        let args = match op {
-            UnaryOp::Gelu => "approximate=\"tanh\"",
-            _ => "",
-        };
-        let ground = ground_truth(&a, &op, args)?;
+        let ground = ground_truth(&a, &op)?;
 
         let a_gpu = a.to(&device)?;
         let c_gpu = match op {
