@@ -21,6 +21,12 @@ pub struct ComputePipelinePool {
         StaticResourcePool<ComputePipelineHandle, ComputePipelineDescriptor, wgpu::ComputePipeline>,
 }
 
+impl Default for ComputePipelinePool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ComputePipelinePool {
     pub fn new() -> Self {
         Self {

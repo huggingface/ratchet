@@ -51,7 +51,7 @@ mod tests {
     use std::ops::Range;
 
     use crate::{Device, DeviceRequest, Tensor};
-    use crate::{RVec, Shape, Slice};
+    use crate::{Shape, Slice};
     use proptest::prelude::*;
     use tch::IndexOp;
     use test_strategy::proptest;

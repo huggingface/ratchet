@@ -86,7 +86,7 @@ mod tests {
     fn ground_truth(a: &Tensor, dims: &[usize]) -> anyhow::Result<Tensor> {
         let tch_dims = dims.iter().map(|&x| x as i64).collect::<Vec<i64>>();
         let a_tch = a.to_tch::<f32>()?;
-        let permuted = a_tch.permute(&tch_dims).contiguous();
+        let permuted = a_tch.permute(tch_dims).contiguous();
         Tensor::try_from(permuted)
     }
 
