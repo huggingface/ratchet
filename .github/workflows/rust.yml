@@ -132,6 +132,25 @@ jobs:
           fi
         shell: bash
 
+      - name: Download and install libtorch
+        run: |
+          import requests
+          import zipfile
+          import os
+      
+          with open('requirements.txt') as f:
+              for line in f:
+                  if 'torch' in line:
+                      version = line.split('==')[1].strip()
+                      break
+          response = requests.get(f'https://download.pytorch.org/libtorch/cpu/libtorch-macos-arm64-{version}.zip')
+          with open('libtorch.zip', 'wb') as f:
+              f.write(response.content)
+          with zipfile.ZipFile('libtorch.zip', 'r') as zip_ref:
+              zip_ref.extractall()
+          os.environ['LIBTORCH'] = os.path.join(os.getcwd(), f'libtorch')
+        shell: python
+
       - uses: FedericoCarboni/setup-ffmpeg@v3
         if: matrix.os != 'macos-14'
 
