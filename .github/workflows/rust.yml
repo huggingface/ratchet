@@ -138,9 +138,10 @@ jobs:
           import zipfile
           import os
       
+          version = '2.3.0' # default version
           with open('requirements.txt') as f:
               for line in f:
-                  if 'torch' in line:
+                  if 'torch==' in line:
                       version = line.split('==')[1].strip()
                       break
           response = requests.get(f'https://download.pytorch.org/libtorch/cpu/libtorch-macos-arm64-{version}.zip')
