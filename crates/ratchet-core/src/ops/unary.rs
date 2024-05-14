@@ -175,10 +175,7 @@ mod tests {
     fn ground_truth(a: &Tensor, op: &UnaryOp) -> anyhow::Result<Tensor> {
         let a = a.to_tch::<f32>()?;
         let result = match op {
-            UnaryOp::Gelu => {
-                // UnaryOp::Gelu => "approximate=\"tanh\"",
-                a.f_gelu("tanh")?
-            }
+            UnaryOp::Gelu => a.f_gelu("tanh")?,
             UnaryOp::Tanh => a.tanh(),
             UnaryOp::Exp => a.exp(),
             UnaryOp::Log => a.log(),

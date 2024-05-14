@@ -121,7 +121,6 @@ mod tests {
     use proptest::strategy::{BoxedStrategy, Just, Strategy};
     use test_strategy::proptest;
 
-    use crate::test_util::run_py_prg;
     use crate::{rvec, shape, Device, DeviceRequest, Quantization, Quantizer, Shape, Tensor};
     use tch::Tensor as TchTensor;
 
