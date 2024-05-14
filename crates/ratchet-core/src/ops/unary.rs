@@ -193,7 +193,7 @@ mod tests {
             UnaryOp::Silu => a.silu(),
             UnaryOp::Sigmoid => a.sigmoid(),
         };
-        Tensor::try_from(&result)
+        Tensor::try_from(result)
     }
 
     thread_local! {

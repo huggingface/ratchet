@@ -623,9 +623,9 @@ mod tests {
             None => a.matmul(&b),
         };
         if trans_out {
-            return Tensor::try_from(&result.permute([0, 2, 1]).contiguous());
+            return Tensor::try_from(result.permute([0, 2, 1]).contiguous());
         }
-        Tensor::try_from(&result)
+        Tensor::try_from(result)
     }
 
     #[derive(Arbitrary, Clone, Debug)]

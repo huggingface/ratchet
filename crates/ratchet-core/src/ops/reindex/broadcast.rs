@@ -84,18 +84,11 @@ mod tests {
         op: Broadcast,
     }
 
-    fn ground_truth(a: &Tensor, args: &str) -> anyhow::Result<Tensor> {
-        let prg = format!(
-            r#"
-import torch
-import numpy as np
-def slice(a):
-    torch_a = torch.from_numpy(a)
-    return np.ascontiguousarray(torch_a.broadcast_to({}).numpy())
-"#,
-            args
-        );
-        run_py_prg(prg.to_string(), &[a], &[])
+    fn ground_truth(a: &Tensor, shape: &Shape) -> anyhow::Result<Tensor> {
+        let a_tch = a.to_tch::<f32>()?;
+        let dims = shape.iter().map(|&x| x as i64).collect::<Vec<_>>();
+        let broadcasted = a_tch.broadcast_to(dims).contiguous();
+        Tensor::try_from(broadcasted)
     }
 
     fn run_reindex_trial(prob: BroadcastProblem) -> anyhow::Result<()> {
@@ -105,7 +98,7 @@ def slice(a):
         let device = GPU_DEVICE.with(|d| d.clone());
 
         let a_gpu = a.to(&device)?;
-        let ground = ground_truth(&a, &op.to.as_torch())?;
+        let ground = ground_truth(&a, &op.to)?;
         let ours = a_gpu.broadcast_to(op.to.clone())?.resolve()?;
         let d_gpu = ours.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-5, 1e-5)?;

@@ -176,7 +176,7 @@ mod tests {
             BinaryOp::Mul => a.f_mul(&b)?,
             BinaryOp::Div => a.f_div(&b)?,
         };
-        Tensor::try_from(&result)
+        Tensor::try_from(result)
     }
 
     fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
