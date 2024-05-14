@@ -55,7 +55,7 @@ impl OpGuards for Permute {
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
-    use crate::{test_util::run_py_prg, Device, DeviceRequest, Permute, Shape, Tensor};
+    use crate::{Device, DeviceRequest, Permute, Shape, Tensor};
     use proptest::prelude::*;
     use test_strategy::{proptest, Arbitrary};
 

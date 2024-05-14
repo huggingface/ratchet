@@ -19,6 +19,7 @@ pub enum DType {
     I32,
     U32,
     GGUF(gguf::GGUFDType),
+    I64,
 }
 
 impl DType {
@@ -52,6 +53,7 @@ impl DType {
             DType::I32 => 4,
             DType::U32 => 4,
             DType::GGUF(g) => g.size_of(),
+            DType::I64 => 8,
         }
     }
 
@@ -111,7 +113,7 @@ pub trait TensorDType:
     fn one() -> Self;
 }
 
-macro_rules! map_type {
+macro_rules! tensor_dt {
     ($t:ty, $v:ident) => {
         impl TensorDType for $t {
             fn dt() -> DType {
@@ -125,7 +127,7 @@ macro_rules! map_type {
     };
 }
 
-macro_rules! map_half_type {
+macro_rules! tensor_half_dt {
     ($t:ty, $v:ident) => {
         impl TensorDType for $t {
             fn dt() -> DType {
@@ -139,11 +141,12 @@ macro_rules! map_half_type {
     };
 }
 
-map_type!(f32, F32);
-map_type!(i32, I32);
-map_type!(u32, U32);
-map_half_type!(f16, F16);
-map_half_type!(bf16, BF16);
+tensor_dt!(f32, F32);
+tensor_dt!(i32, I32);
+tensor_dt!(u32, U32);
+tensor_dt!(i64, I64);
+tensor_half_dt!(f16, F16);
+tensor_half_dt!(bf16, BF16);
 
 //Handy trait for WebGPU buffer alignment
 pub trait Align {
