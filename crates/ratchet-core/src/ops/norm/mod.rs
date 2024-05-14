@@ -207,10 +207,6 @@ mod tests {
                 false,
             )?,
             NormVariant::RMSNorm => {
-                // (input, scale) = (torch.from_numpy(input), torch.from_numpy(scale))
-                // variance = input.to(torch.float32).pow(2).mean(dim=-1, keepdim=True)
-                // input = input * torch.rsqrt(variance + 1e-5)
-                // return (scale * input).numpy()
                 let variance = input
                     .f_pow_tensor_scalar(2)?
                     .mean_dim(-1, true, input.kind());
@@ -218,7 +214,7 @@ mod tests {
                 scale.multiply(&input)
             }
         };
-        Tensor::try_from(&result)
+        Tensor::try_from(result)
     }
 
     fn run_norm_trial(device: &Device, problem: NormProblem) -> anyhow::Result<()> {

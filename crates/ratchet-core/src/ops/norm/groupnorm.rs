@@ -1,7 +1,5 @@
+use crate::{DType, Norm, OpGuards, Operation, OperationError, StorageView};
 use derive_new::new;
-
-use super::*;
-use crate::{DType, OpGuards, Operation, OperationError, StorageView, Tensor};
 
 #[derive(new, Debug, Clone)]
 pub struct GroupNorm {
@@ -19,9 +17,10 @@ impl OpGuards for GroupNorm {
     fn check_dtypes(&self) {
         assert!(self.norm.input.dt() == DType::F32);
         assert!(self.norm.scale.dt() == DType::F32);
-        if self.norm.bias.is_some() {
-            assert!(self.norm.bias.as_ref().unwrap().dt() == DType::F32);
-        }
+        self.norm
+            .bias
+            .as_ref()
+            .map(|b| assert!(b.dt() == DType::F32));
     }
 }
 
@@ -32,9 +31,8 @@ impl Operation for GroupNorm {
 }
 #[cfg(all(test, feature = "testing"))]
 mod tests {
-    use test_strategy::{proptest, Arbitrary};
-
     use crate::{rvec, shape, Device, DeviceRequest, Tensor};
+    use test_strategy::{proptest, Arbitrary};
 
     fn ground_truth(
         input: &Tensor,
@@ -50,7 +48,7 @@ mod tests {
         };
         let result =
             input.f_group_norm(num_groups as i64, Some(&scale), bias.as_ref(), 1e-5, false)?;
-        Tensor::try_from(&result)
+        Tensor::try_from(result)
     }
 
     fn run_norm_trial(device: &Device, problem: GroupNormProblem) -> anyhow::Result<()> {
@@ -83,7 +81,7 @@ mod tests {
 
     #[derive(Arbitrary, Debug)]
     struct GroupNormProblem {
-        #[map(|num_groups: u32| #C/2 )]
+        #[map(|_num_groups: u32| #C/2 )]
         num_groups: usize,
         #[strategy(1..=1usize)]
         B: usize,

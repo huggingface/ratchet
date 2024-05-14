@@ -141,7 +141,8 @@ impl MetaOperation for Concat {
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
-    use crate::{rvec, shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use crate::{rvec, shape, Device, DeviceRequest, Tensor};
+    use tch::Tensor as TchTensor;
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -157,22 +158,13 @@ mod tests {
         dim: usize,
     }
 
-    fn ground_truth(to_cat: &[&Tensor], args: &str) -> anyhow::Result<Tensor> {
-        let prg = format!(
-            r#"
-import torch
-import numpy as np
-def permute(t0, t1, t2, t3, t4):
-    t0 = torch.from_numpy(t0)
-    t1 = torch.from_numpy(t1)
-    t2 = torch.from_numpy(t2)
-    t3 = torch.from_numpy(t3)
-    t4 = torch.from_numpy(t4)
-    return np.ascontiguousarray(torch.cat((t0, t1, t2, t3, t4), dim={}).numpy())
-"#,
-            args
-        );
-        run_py_prg(prg.to_string(), to_cat, &[])
+    fn ground_truth(to_cat: &[&Tensor], dim: i64) -> anyhow::Result<Tensor> {
+        let tch_tensors = to_cat
+            .iter()
+            .map(|x| x.to_tch::<f32>())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Tensor::try_from(TchTensor::cat(&tch_tensors, dim))
     }
 
     fn run_concat_trial(prob: ConcatProblem) -> anyhow::Result<()> {
@@ -185,9 +177,7 @@ def permute(t0, t1, t2, t3, t4):
             dim,
         } = prob;
         let device = GPU_DEVICE.with(|d| d.clone());
-
-        let arg_str = format!("{}", dim);
-        let ground = ground_truth(&[&t0, &t1, &t2, &t3, &t4], arg_str.as_str())?;
+        let ground = ground_truth(&[&t0, &t1, &t2, &t3, &t4], dim as _)?;
 
         t0 = t0.to(&device)?;
         t1 = t1.to(&device)?;

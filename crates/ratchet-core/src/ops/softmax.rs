@@ -107,7 +107,6 @@ impl MetaOperation for Softmax {
 #[cfg(all(test, feature = "testing"))]
 mod tests {
     use crate::{shape, Device, DeviceRequest, Tensor};
-    use tch;
     use test_strategy::{proptest, Arbitrary};
 
     thread_local! {
@@ -116,7 +115,7 @@ mod tests {
 
     fn ground_truth(a: &Tensor) -> anyhow::Result<Tensor> {
         let t = a.to_tch::<f32>()?;
-        Tensor::try_from(&t.softmax(-1, Some(tch::kind::Kind::Float)))
+        Tensor::try_from(t.softmax(-1, Some(tch::kind::Kind::Float)))
     }
 
     fn run_softmax_trial(problem: SoftmaxProblem) {

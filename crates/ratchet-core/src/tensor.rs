@@ -865,13 +865,13 @@ impl Tensor {
 }
 
 #[cfg(feature = "testing")]
-impl TryFrom<&tch::Tensor> for Tensor {
+impl TryFrom<tch::Tensor> for Tensor {
     type Error = anyhow::Error;
-    fn try_from(array: &tch::Tensor) -> anyhow::Result<Self> {
-        let kind = array.kind();
+    fn try_from(t: tch::Tensor) -> anyhow::Result<Self> {
+        let kind = t.kind();
         match kind {
             tch::Kind::Float => {
-                let base: ArrayD<f32> = array.try_into()?;
+                let base: ArrayD<f32> = (&t).try_into()?;
                 Ok(Self::from(base))
             }
             tch::Kind::QInt8 => todo!(),
