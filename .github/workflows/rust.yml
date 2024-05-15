@@ -167,7 +167,9 @@ jobs:
       - name: run tests
         shell: bash
         env: 
-           LIBTORCH_USE_PYTORCH: 1
+          LIBTORCH_USE_PYTORCH: 1
+          SITE_PACKAGES: $(python -c "import site; print(site.getsitepackages()[0])")
+          DYLD_LIBRARY_PATH: $SITE_PACKAGES/torch/lib:$DYLD_LIBRARY_PATH
         run: |
           set -e
           cargo nextest run -j 1 --no-fail-fast --features=ci,pyo3,testing
