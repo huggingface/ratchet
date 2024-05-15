@@ -6,6 +6,7 @@ use super::dtype::GGUFInterop;
 use crate::{error::Result, GgmlDType};
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use ratchet::gguf::Q4K;
 use ratchet::{gguf::Q8_0, Device, Shape, Tensor};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -128,6 +129,7 @@ pub fn ratchet_from_gguf(
         GgmlDType::F32 => from_raw_data::<f32>(raw_data, size_in_bytes, shape, device),
         GgmlDType::F16 => from_raw_data::<half::f16>(raw_data, size_in_bytes, shape, device),
         GgmlDType::Q8_0 => from_raw_data::<Q8_0>(raw_data, size_in_bytes, shape, device),
+        GgmlDType::Q4K => from_raw_data::<Q4K>(raw_data, size_in_bytes, shape, device),
         _ => anyhow::bail!("unsupported ggml dtype {ggml_dtype:?}"),
     }
 }

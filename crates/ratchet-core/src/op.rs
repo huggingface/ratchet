@@ -2,7 +2,7 @@ use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
     PoolError, WgpuDevice, WorkgroupCount,
 };
-use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
+use crate::{ops::*, rvec, CompiledOp, Device, InvariantError, RVec, StorageView, Tensor};
 use encase::internal::WriteInto;
 use encase::ShaderType;
 use std::fmt::Debug;

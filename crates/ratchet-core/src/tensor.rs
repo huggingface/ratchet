@@ -699,6 +699,12 @@ impl Tensor {
 
         let execution_order = self.execution_order();
 
+        #[cfg(feature = "plotting")]
+        {
+            let last = execution_order.last().unwrap();
+            crate::plot::render_to_file(last, "before-allocations.svg").unwrap();
+        }
+
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
 

@@ -24,8 +24,11 @@ pub enum GGUFDType {
 }
 
 impl GGUFDType {
+    //This is the WebGPU size of the data type.
+    //E.g  Q8_0 is 36 bytes, as 32 vals at 1 byte, 1 scale at 4 bytes fp32
     pub fn size_of(self) -> usize {
         match self {
+            GGUFDType::Q4K(_) => 148,
             GGUFDType::Q8_0(_) => 36, //32 + 4
             _ => unimplemented!(),
         }

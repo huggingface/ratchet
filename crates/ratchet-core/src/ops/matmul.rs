@@ -114,7 +114,6 @@ impl GEMMSpec {
             (arows, acols) if acols > arows * 2 => GEMVHeuristic::Fat,
             _ => GEMVHeuristic::Square,
         };
-        //println!("SELECTED HEURISTIC: {:?} for {:?}", heuristic, a_shape);
 
         Self {
             a_dt,
