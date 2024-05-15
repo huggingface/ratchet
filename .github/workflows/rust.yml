@@ -150,6 +150,7 @@ jobs:
           with zipfile.ZipFile('libtorch.zip', 'r') as zip_ref:
               zip_ref.extractall()
           os.environ['LIBTORCH'] = os.path.join(os.getcwd(), f'libtorch')
+          os.environ['DYLD_LIBRARY_PATH'] = os.path.join(os.getcwd(), f'libtorch')
         shell: python
 
       - uses: FedericoCarboni/setup-ffmpeg@v3
