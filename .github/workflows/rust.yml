@@ -166,9 +166,11 @@ jobs:
 
       - name: run tests
         shell: bash
+        env: 
+           LIBTORCH_USE_PYTORCH: 1
         run: |
           set -e
-          cargo nextest run -j 1 --no-fail-fast --features=ci,pyo3
+          cargo nextest run -j 1 --no-fail-fast --features=ci,pyo3,testing
 
       - name: Set up WebDriver for Ubuntu
         if: matrix.os == 'ubuntu-22.04'
