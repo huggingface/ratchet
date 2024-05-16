@@ -13,6 +13,27 @@ pub struct Softmax {
     dim: usize,
 }
 
+//type templated to generate all the variants.
+//functions are generated for each variant
+//the generated functions are then used to generate the kernel
+//pub<TypeLevelGynmastics> define() -> Kernel(String)
+//Have a nice crate that generates the kernel with Comptime & Runtime
+// CLI and Runtime can be different.
+//enum Assert<const b: bool> {}
+//trait IsTrue {}
+//trait IsFalse {}
+//
+//impl IsTrue for Assert<true> {}
+//impl IsFalse for Assert<false> {}
+//
+//type Scalar = 0;
+//type Vec2 = 2;
+//type Vec4 = 4;
+//
+//const generic instead with access size? access granularity?
+//
+//Conditional magic for subgroups too
+
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct SoftmaxMeta {
     M: u32,
@@ -33,6 +54,22 @@ impl OpGuards for Softmax {
     fn check_dtypes(&self) {
         let input = &self.input;
         assert!(input.dt() == crate::DType::F32);
+    }
+}
+
+/// A trait for generating a WebGPU kernel in WGSL.
+///
+/// This trait is implemented for all operations that can be compiled to a WebGPU kernel.
+pub trait Renderable {
+    fn render_wgsl<const V: usize>(&self, dst: &Tensor) -> RenderedWgsl;
+}
+
+pub type RenderedWgsl = String;
+impl Renderable for Softmax {
+    fn render_wgsl<const V: usize>(&self, dst: &Tensor) -> RenderedWgsl {
+        //write_bindings
+        //write_uniform
+        //write_globals
     }
 }
 
