@@ -1,4 +1,4 @@
-use crate::{gpu::WgpuDevice, rvec, RVec};
+use crate::{gpu::WgpuDevice, rvec, RVec, RenderFragment, Tensor, WgslFragment};
 
 use super::{static_resource_pool::StaticResourcePool, StaticResourcePoolReadLockAccessor};
 
@@ -35,6 +35,28 @@ impl BindGroupLayoutEntryExt for wgpu::BindGroupLayoutEntry {
     }
 }
 
+impl RenderFragment for wgpu::BindGroupLayoutEntry {
+    fn render(&self) -> WgslFragment {
+        let ty = match &self.ty {
+            wgpu::BindingType::Buffer { ty, .. } => ty,
+            _ => panic!("Unsupported binding type"),
+        };
+        let binding = match ty {
+            wgpu::BufferBindingType::Storage { read_only: ro } => {
+                if *ro {
+                    "var<storage, read>"
+                } else {
+                    "var<storage, read_write>"
+                }
+            }
+            wgpu::BufferBindingType::Uniform => "var<uniform>",
+        };
+        let mut fragment = WgslFragment::new(binding.len());
+        fragment.write(binding);
+        fragment
+    }
+}
+
 slotmap::new_key_type! { pub struct BindGroupLayoutHandle; }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Default)]
@@ -43,6 +65,26 @@ pub struct BindGroupLayoutDescriptor {
 }
 
 impl BindGroupLayoutDescriptor {
+    pub fn render(&self, tensors: &[Tensor], inplace: bool) -> WgslFragment {
+        let mut fragment = WgslFragment::new(1024);
+        for (binding, t) in self.entries.iter().zip(tensors.iter()) {
+            let group_index = match binding.ty {
+                wgpu::BindingType::Buffer { ty, .. } => match ty {
+                    wgpu::BufferBindingType::Storage { .. } => 0,
+                    wgpu::BufferBindingType::Uniform => 1,
+                    _ => panic!("Unsupported binding type"),
+                },
+                _ => panic!("Unsupported binding type"),
+            };
+            fragment
+                .write(format!("@group({}) @binding({})\n", group_index, binding.binding).as_str());
+            fragment.write_fragment(binding.render());
+            fragment.write(" ");
+            fragment.write(format!("X{}: ", binding.binding).as_str());
+        }
+        todo!()
+    }
+
     //Used for unary, binary, ternary (NOT INPLACE)
     fn entries(ro_length: usize) -> RVec<wgpu::BindGroupLayoutEntry> {
         let mut read_only: RVec<wgpu::BindGroupLayoutEntry> = (0..ro_length)
@@ -135,5 +177,18 @@ impl BindGroupLayoutPool {
         &self,
     ) -> StaticResourcePoolReadLockAccessor<'_, BindGroupLayoutHandle, wgpu::BindGroupLayout> {
         self.inner.resources()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{shape, BindGroupLayoutEntryExt, Device, Tensor};
+
+    #[test]
+    pub fn render_bind_group_layout_entry() {
+        let entry = wgpu::BindGroupLayoutEntry::compute_storage_buffer(0, true);
+        let tensor = Tensor::randn::<f32>(shape![1, 1], Device::CPU);
+        let fragment = entry.render::<4>(&tensor);
+        println!("{:?}", fragment);
     }
 }

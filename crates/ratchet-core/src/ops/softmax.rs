@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
-    StorageView, Tensor,
+    rvec, wgc, AccessGranularity, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
+    OperationError, RVec, StorageView, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
@@ -61,7 +61,13 @@ impl OpGuards for Softmax {
 ///
 /// This trait is implemented for all operations that can be compiled to a WebGPU kernel.
 pub trait Renderable {
-    fn render_wgsl<const V: usize>(&self, dst: &Tensor) -> RenderedWgsl;
+    fn render_wgsl<AG: AccessGranularity>(&self, dst: &Tensor) -> RenderedWgsl;
+}
+
+impl Softmax {
+    fn write_bindings<AG: AccessGranularity>(&self, inplace: bool, dst: &Tensor) -> RenderedWgsl {
+        let bindings = self.storage_bind_group_layout(inplace).unwrap();
+    }
 }
 
 pub type RenderedWgsl = String;
@@ -70,6 +76,7 @@ impl Renderable for Softmax {
         //write_bindings
         //write_uniform
         //write_globals
+        todo!()
     }
 }
 
