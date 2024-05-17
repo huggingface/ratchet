@@ -67,12 +67,13 @@ pub trait Renderable {
 impl Softmax {
     fn write_bindings<AG: AccessGranularity>(&self, inplace: bool, dst: &Tensor) -> RenderedWgsl {
         let bindings = self.storage_bind_group_layout(inplace).unwrap();
+        todo!()
     }
 }
 
 pub type RenderedWgsl = String;
 impl Renderable for Softmax {
-    fn render_wgsl<const V: usize>(&self, dst: &Tensor) -> RenderedWgsl {
+    fn render_wgsl<AG: AccessGranularity>(&self, dst: &Tensor) -> RenderedWgsl {
         //write_bindings
         //write_uniform
         //write_globals

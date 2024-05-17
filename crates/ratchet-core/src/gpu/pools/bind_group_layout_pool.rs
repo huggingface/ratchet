@@ -65,24 +65,25 @@ pub struct BindGroupLayoutDescriptor {
 }
 
 impl BindGroupLayoutDescriptor {
-    pub fn render(&self, tensors: &[Tensor], inplace: bool) -> WgslFragment {
+    pub fn render(&self, tensors: &[&Tensor], inplace: bool) -> WgslFragment {
         let mut fragment = WgslFragment::new(1024);
-        for (binding, t) in self.entries.iter().zip(tensors.iter()) {
-            let group_index = match binding.ty {
-                wgpu::BindingType::Buffer { ty, .. } => match ty {
-                    wgpu::BufferBindingType::Storage { .. } => 0,
-                    wgpu::BufferBindingType::Uniform => 1,
-                    _ => panic!("Unsupported binding type"),
-                },
+        let segments = tensors
+            .iter()
+            .flat_map(|t| t.segments())
+            .collect::<Vec<_>>();
+        for (binding, s) in self.entries.iter().zip(segments.iter()) {
+            let buffer_binding_type = match binding.ty {
+                wgpu::BindingType::Buffer { ty, .. } => ty,
                 _ => panic!("Unsupported binding type"),
             };
-            fragment
-                .write(format!("@group({}) @binding({})\n", group_index, binding.binding).as_str());
+            matches!(buffer_binding_type, wgpu::BufferBindingType::Storage { .. });
+            fragment.write(format!("@group(0) @binding({})\n", binding.binding).as_str());
             fragment.write_fragment(binding.render());
             fragment.write(" ");
             fragment.write(format!("X{}: ", binding.binding).as_str());
+            fragment.write_fragment(s.render());
         }
-        todo!()
+        fragment
     }
 
     //Used for unary, binary, ternary (NOT INPLACE)
@@ -182,13 +183,13 @@ impl BindGroupLayoutPool {
 
 #[cfg(test)]
 mod tests {
-    use crate::{shape, BindGroupLayoutEntryExt, Device, Tensor};
+    use crate::{shape, BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, Device, Tensor};
 
     #[test]
     pub fn render_bind_group_layout_entry() {
-        let entry = wgpu::BindGroupLayoutEntry::compute_storage_buffer(0, true);
-        let tensor = Tensor::randn::<f32>(shape![1, 1], Device::CPU);
-        let fragment = entry.render::<4>(&tensor);
-        println!("{:?}", fragment);
+        let t = Tensor::randn::<f32>(shape![1, 1], Device::CPU);
+        let bgld = BindGroupLayoutDescriptor::ternary();
+        let fragment = bgld.render(&[&t, &t, &t], false);
+        println!("{}", fragment);
     }
 }

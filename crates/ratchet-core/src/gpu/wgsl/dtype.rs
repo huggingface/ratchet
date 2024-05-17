@@ -30,3 +30,15 @@ impl WgslDType {
         }
     }
 }
+
+impl From<crate::DType> for WgslDType {
+    fn from(dtype: crate::DType) -> Self {
+        match dtype {
+            crate::DType::F32 => WgslDType::F32,
+            crate::DType::F16 => WgslDType::F16,
+            crate::DType::I32 => WgslDType::I32,
+            crate::DType::U32 => WgslDType::U32,
+            _ => panic!("Attempted to convert unsupported DType to WGSL DType"),
+        }
+    }
+}

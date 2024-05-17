@@ -3,6 +3,12 @@
 #[derive(Debug)]
 pub struct WgslFragment(String);
 
+impl std::fmt::Display for WgslFragment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl WgslFragment {
     pub fn new(capacity: usize) -> Self {
         Self(String::with_capacity(capacity))

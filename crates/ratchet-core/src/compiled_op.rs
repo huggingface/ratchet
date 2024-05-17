@@ -33,11 +33,11 @@ impl CompiledOp {
         let mut bind_group_entries = drvec![];
 
         for tensor in srcs.iter() {
-            bind_group_entries.append(&mut tensor.bindings());
+            bind_group_entries.append(&mut tensor.bind_group_entries());
         }
 
         if !inplace {
-            bind_group_entries.append(&mut dst.bindings());
+            bind_group_entries.append(&mut dst.bind_group_entries());
         }
 
         let mut storage_groups = rvec![];

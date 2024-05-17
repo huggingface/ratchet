@@ -1,11 +1,14 @@
+use crate::gpu::dtype::WgslDType;
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape,
-    Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
+    RawCPUBuffer, RenderFragment, Shape, Storage, Strides, TensorDType, TensorId, WgslFragment,
+    MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
+use std::cmp::max;
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
@@ -594,7 +597,7 @@ impl Tensor {
     /// Generates the bind group entries required to bind the tensor to a kernel.
     /// Quantized tensors may use multiple bind groups.
     /// Unquantized tensors should only use a single bind group.
-    pub(crate) fn bindings(&self) -> RVec<BindGroupEntry> {
+    pub(crate) fn bind_group_entries(&self) -> RVec<BindGroupEntry> {
         assert!(self.device().is_gpu());
         let storage_guard = self.storage();
         let storage = storage_guard
@@ -602,16 +605,29 @@ impl Tensor {
             .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
-        let segments = self.dt().segments(self.shape().numel());
-        segments.iter().fold(rvec![], |mut entries, segment| {
-            let (offset, size) = (segment.offset, segment.size);
-            entries.push(BindGroupEntry {
-                handle,
-                offset,
-                size: Some(size),
-            });
-            entries
-        })
+        self.segments()
+            .iter()
+            .fold(rvec![], |mut entries, segment| {
+                let (offset, size) = (segment.offset, segment.size);
+                entries.push(BindGroupEntry {
+                    handle,
+                    offset,
+                    size: Some(size),
+                });
+                entries
+            })
+    }
+
+    pub(crate) fn segments(&self) -> RVec<BufferSegment> {
+        let numel = self.shape().numel();
+        match self.dt() {
+            DType::GGUF(g) => g.segments(numel),
+            d => {
+                let mut total_bytes = numel * self.dt().size_of();
+                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
+                rvec![BufferSegment::new(0, total_bytes as u64, d)]
+            }
+        }
     }
 
     /// Converts the tensor into a 1D vector.

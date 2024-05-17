@@ -2,7 +2,10 @@ use half::{bf16, f16};
 use std::{cmp::max, num::NonZeroU64};
 use wgpu::{BufferAddress, BufferSize};
 
-use crate::{gpu::MIN_STORAGE_BUFFER_SIZE, rvec, RVec};
+use crate::{
+    gpu::{dtype::WgslDType, MIN_STORAGE_BUFFER_SIZE},
+    rvec, RVec, RenderFragment, WgslFragment,
+};
 
 pub mod gguf;
 mod segments;
@@ -22,17 +25,6 @@ pub enum DType {
 }
 
 impl DType {
-    pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
-        match self {
-            DType::GGUF(g) => g.segments(numel),
-            _ => {
-                let mut total_bytes = numel * self.size_of();
-                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
-                rvec![BufferSegment::new(0, total_bytes as u64)]
-            }
-        }
-    }
-
     pub fn to_u32(self) -> u32 {
         match self {
             DType::F32 => 0,
@@ -92,14 +84,25 @@ impl From<npyz::DType> for DType {
 pub struct BufferSegment {
     pub offset: BufferAddress,
     pub size: BufferSize,
+    pub dtype: DType,
 }
 
 impl BufferSegment {
-    pub fn new(offset: BufferAddress, size: u64) -> Self {
+    pub fn new(offset: BufferAddress, size: u64, dtype: DType) -> Self {
         Self {
             offset,
             size: NonZeroU64::new(size).expect("Invalid u64"),
+            dtype,
         }
+    }
+}
+
+impl RenderFragment for BufferSegment {
+    fn render(&self) -> crate::WgslFragment {
+        let mut fragment = WgslFragment::new(16);
+        let wgsl_dt: WgslDType = self.dtype.into();
+        fragment.write(&format!("array<{}>;\n", wgsl_dt));
+        fragment
     }
 }
 
