@@ -189,7 +189,7 @@ mod tests {
     pub fn render_bind_group_layout_entry() {
         let t = Tensor::randn::<f32>(shape![1, 1], Device::CPU);
         let bgld = BindGroupLayoutDescriptor::ternary();
-        let fragment = bgld.render(&[&t, &t, &t], false);
+        let fragment = bgld.render(&[&t, &t, &t, &t], false);
         println!("{}", fragment);
     }
 }
