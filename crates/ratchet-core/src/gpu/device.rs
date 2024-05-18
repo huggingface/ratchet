@@ -252,13 +252,15 @@ impl From<wgpu::Limits> for DeviceLimits {
 
 #[derive(Clone)]
 pub struct DeviceFeatures {
-    pub SHADER_F16: u32,
+    pub SHADER_F16: u64,
+    pub SUBGROUP_COMPUTE: u64
 }
 
 impl From<wgpu::Features> for DeviceFeatures {
     fn from(features: wgpu::Features) -> Self {
         DeviceFeatures {
-            SHADER_F16: features.contains(wgpu::Features::SHADER_F16) as u32,
+            SHADER_F16: features.contains(wgpu::Features::SHADER_F16) as u64,
+            SUBGROUP_COMPUTE: features.contains(wgpu::Features::SUBGROUP) as u64
         }
     }
 }
