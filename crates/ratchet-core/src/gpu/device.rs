@@ -24,6 +24,7 @@ pub struct WgpuDevice {
     bind_group_layout_pool: Arc<BindGroupLayoutPool>,
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
     compute_pipeline_pool: Arc<ComputePipelinePool>,
+    device_limits: DeviceLimits,
 }
 
 impl std::ops::Deref for WgpuDevice {
@@ -82,6 +83,8 @@ impl WgpuDevice {
         }?;
         log::info!("Device: {:?}", device.limits());
 
+        let limits = DeviceLimits::from(device.limits());
+
         Ok(Self {
             queue: Arc::new(queue),
             ordinal: 0,
@@ -91,6 +94,7 @@ impl WgpuDevice {
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
             compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
             device: Arc::new(device),
+            device_limits: limits
         })
     }
 
@@ -223,5 +227,22 @@ impl WgpuDevice {
 
     pub fn begin_pass(&self) {
         self.buffer_allocator.begin_pass(0);
+    }
+}
+
+#[derive(Clone)]
+pub struct DeviceLimits {
+    pub max_bind_groups: u32,
+    pub max_storage_buffer_binding_size: u32,
+    pub max_compute_invocations_per_workgroup: u32,
+}
+
+impl From<wgpu::Limits> for DeviceLimits {
+    fn from(limits: wgpu::Limits) -> Self {
+        DeviceLimits {
+            max_bind_groups: limits.max_bind_groups,
+            max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
+            max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
+        }
     }
 }
