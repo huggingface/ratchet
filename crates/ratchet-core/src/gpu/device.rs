@@ -25,6 +25,7 @@ pub struct WgpuDevice {
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
     compute_pipeline_pool: Arc<ComputePipelinePool>,
     device_limits: DeviceLimits,
+    device_features: DeviceFeatures,
 }
 
 impl std::ops::Deref for WgpuDevice {
@@ -84,6 +85,7 @@ impl WgpuDevice {
         log::info!("Device: {:?}", device.limits());
 
         let limits = DeviceLimits::from(device.limits());
+        let features = DeviceFeatures::from(device.features());
 
         Ok(Self {
             queue: Arc::new(queue),
@@ -94,7 +96,8 @@ impl WgpuDevice {
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
             compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
             device: Arc::new(device),
-            device_limits: limits
+            device_limits: limits,
+            device_features: features,
         })
     }
 
@@ -243,6 +246,19 @@ impl From<wgpu::Limits> for DeviceLimits {
             max_bind_groups: limits.max_bind_groups,
             max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
             max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct DeviceFeatures {
+    pub SHADER_F16: u32,
+}
+
+impl From<wgpu::Features> for DeviceFeatures {
+    fn from(features: wgpu::Features) -> Self {
+        DeviceFeatures {
+            SHADER_F16: features.contains(wgpu::Features::SHADER_F16) as u32,
         }
     }
 }
