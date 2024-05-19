@@ -1,4 +1,4 @@
-use crate::{WgslKernel, WgslKernelBuilder};
+use crate::{wgs, BuiltIn, WgslKernel, WgslKernelBuilder};
 
 use super::dtype::WgslDType;
 
@@ -61,25 +61,24 @@ pub fn render_softmax<A: Accessor<T, N>, T: WgslDType, const N: usize>() -> Wgsl
         _ => panic!("Invalid dimension"),
     };
 
-    //TODO: write main function generator that takes a list of builtins to render and workgroup
-    //size
-
-    let main_func = format!(
-        r#"@compute @workgroup_size(128, 1, 1)
-fn main( 
-        @builtin(local_invocation_id) local_id: vec3<u32>,
-        @builtin(workgroup_id) group_id: vec3<u32>,
-) {{"#
+    kernel_builder.write_main(
+        wgs![128, 1, 1],
+        &[
+            BuiltIn::GlobalInvocationId,
+            BuiltIn::LocalInvocationId,
+            BuiltIn::WorkgroupId,
+        ],
     );
-    kernel_builder.write_fragment(main_func.into());
 
     let indexing = format!(
         r#"
-    let batch_stride = group_id.y * metadata.M * {reduce_len}; 
-    let row_start = batch_stride + group_id.x * {reduce_len}; 
-    let index = local_id.x;
+    let batch_stride = workgroup_id.y * metadata.M * {reduce_len}; 
+    let row_start = batch_stride + workgroup_id.x * {reduce_len}; 
+    let index = local_invocation_id.x;
     "#
     );
+
+    kernel_builder.write_fragment(indexing.into());
 
     let mut reduce_max = format!(
         r#"
@@ -91,30 +90,40 @@ workgroupBarrier();
 "#
     );
 
-    for i in (64..=1).step_by(2) {
+    for i in (0..=6).rev().map(|x| 2u32.pow(x)) {
         reduce_max.push_str(&format!(
             r#"
-    block_max(index, {i}u);
-"#,
+block_max(index, {i}u);"#,
         ));
     }
 
     reduce_max.push_str(
         r#"
 if index == 0u {{
-    maximum = max(smem[0].x, max(smem[0].y, max(smem[0].z, smem[0].w)));
+    "#,
+    );
+
+    match N {
+        1 => reduce_max.push_str("maximum = smem[0];"),
+        2 => reduce_max.push_str("maximum = max(smem[0].x, smem[0].y);"),
+        4 => reduce_max
+            .push_str("maximum = max(smem[0].x, max(smem[0].y, max(smem[0].z, smem[0].w)));"),
+        _ => panic!("Invalid dimension"),
+    }
+
+    reduce_max.push_str(
+        r#"
 }}
 workgroupBarrier();
 "#,
     );
 
-    kernel_builder.write_fragment(indexing.into());
     kernel_builder.write_fragment(reduce_max.into());
 
     let mut reduce_sum = format!(
         r#"
 smem[index] = {accessor}(0.0);
-for (var i: u32 = index; i < metadata.ND4; i += BLOCK_SIZE) {{
+for (var i: u32 = index; i < {reduce_len}; i += BLOCK_SIZE) {{
     smem[index] += exp(X[row_start + i] - maximum);
 }}
 workgroupBarrier();
@@ -129,14 +138,14 @@ block_sum(index, {i}u);"#,
         ));
     }
 
-    reduce_sum.push_str(
+    reduce_sum.push_str(&format!(
         r#"
     if index == 0u {{
         sum = dot(smem[0], {accessor}(1.0)); 
     }}
     workgroupBarrier();
 "#,
-    );
+    ));
 
     kernel_builder.indent();
     kernel_builder.write_fragment(reduce_sum.into());
@@ -158,11 +167,15 @@ block_sum(index, {i}u);"#,
 
 #[cfg(test)]
 mod tests {
-    use crate::Vec4;
+    use half::f16;
+
+    use crate::{Vec2, Vec4};
 
     #[test]
     fn test_render_softmax() {
-        let kernel = super::render_softmax::<Vec4<f32>, f32, 4>();
-        println!("{}", kernel);
+        let v4 = super::render_softmax::<Vec4<f32>, _, 4>();
+        println!("{}", v4);
+        let v2 = super::render_softmax::<Vec2<f16>, _, 2>();
+        println!("{}", v2);
     }
 }

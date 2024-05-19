@@ -94,9 +94,19 @@ impl WgslKernelBuilder {
         WgslKernel(self.kernel)
     }
 
-    pub fn render_main(&mut self, builtins: &[BuiltIn], workgroup_size: WorkgroupSize) {
-        for builtin in builtins {}
-        todo!();
+    pub fn write_main(&mut self, workgroup_size: WorkgroupSize, builtins: &[BuiltIn]) {
+        let mut fragment = WgslFragment::new(512);
+        fragment.write(&format!("{}\n", workgroup_size));
+        fragment.write("fn main(\n");
+        for (b, builtin) in builtins.iter().enumerate() {
+            let mut builtin = builtin.render();
+            if b < builtins.len() - 1 {
+                builtin.write(",\n");
+            }
+            fragment.write_fragment(builtin);
+        }
+        fragment.write(") {\n");
+        self.write_fragment(fragment);
     }
 }
 
