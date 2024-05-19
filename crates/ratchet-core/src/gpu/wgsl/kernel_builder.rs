@@ -73,7 +73,7 @@ impl WgslKernelBuilder {
         let mut fragment = WgslFragment::new(1024);
         let segments = tensors
             .iter()
-            .flat_map(|t| t.segments())
+            .flat_map(|t| t.bindings())
             .collect::<Vec<_>>();
         for (binding, s) in bgld.entries.iter().zip(segments.iter()) {
             let buffer_binding_type = match binding.ty {

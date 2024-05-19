@@ -3,7 +3,7 @@ use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
     InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer,
-    RenderFragment, Shape, Storage, Strides, TensorDType, TensorId, TensorSegment, WgslFragment,
+    RenderFragment, Shape, Storage, Strides, TensorBinding, TensorDType, TensorId, WgslFragment,
     MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
@@ -605,7 +605,7 @@ impl Tensor {
             .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
-        self.segments()
+        self.bindings()
             .iter()
             .fold(rvec![], |mut entries, segment| {
                 let (offset, size) = (segment.offset, segment.size);
@@ -618,14 +618,15 @@ impl Tensor {
             })
     }
 
-    pub(crate) fn segments(&self) -> RVec<TensorSegment> {
+    /// # Bindings
+    pub(crate) fn bindings(&self) -> RVec<TensorBinding> {
         let numel = self.shape().numel();
         match self.dt() {
-            DType::GGUF(g) => g.segments(numel),
+            DType::GGUF(g) => g.bindings(numel),
             d => {
                 let mut total_bytes = numel * self.dt().size_of();
                 total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
-                rvec![TensorSegment::new(0, total_bytes as u64, d)]
+                rvec![TensorBinding::new(0, total_bytes as u64, d)]
             }
         }
     }

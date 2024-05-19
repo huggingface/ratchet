@@ -1,11 +1,8 @@
 use half::{bf16, f16};
-use std::{cmp::max, num::NonZeroU64};
+use std::num::NonZeroU64;
 use wgpu::{BufferAddress, BufferSize};
 
-use crate::{
-    gpu::{dtype::WgslDType, MIN_STORAGE_BUFFER_SIZE},
-    rvec, Accessor, RVec, RenderFragment, WgslFragment,
-};
+use crate::{RenderFragment, WgslFragment};
 
 pub mod gguf;
 mod segments;
@@ -81,13 +78,13 @@ impl From<npyz::DType> for DType {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct TensorSegment {
+pub struct TensorBinding {
     pub offset: BufferAddress,
     pub size: BufferSize,
     pub dt: DType,
 }
 
-impl TensorSegment {
+impl TensorBinding {
     pub fn new(offset: BufferAddress, size: u64, dt: DType) -> Self {
         Self {
             offset,
@@ -97,7 +94,7 @@ impl TensorSegment {
     }
 }
 
-impl RenderFragment for TensorSegment {
+impl RenderFragment for TensorBinding {
     fn render(&self) -> crate::WgslFragment {
         let mut fragment = WgslFragment::new(16);
         fragment.write(&format!("array<{:?}>;\n", self.dt));
