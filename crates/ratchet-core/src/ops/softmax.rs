@@ -126,7 +126,7 @@ impl Softmax {
             r#"
 smem[index] = {accessor}(minFloat);
 for (var i: u32 = index; i < {reduce_len}; i += BLOCK_SIZE) {{
-    smem[index] = max(smem[index], X0[row_start + i]); 
+    smem[index] = max(smem[index], X[row_start + i]); 
 }}
 workgroupBarrier();
 "#
@@ -299,6 +299,7 @@ mod tests {
 
     use crate::test_util::run_py_prg;
     use crate::{shape, wgs, Device, DeviceRequest, Softmax, Tensor};
+    use wgpu::naga::front::wgsl::parse_str;
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -354,5 +355,6 @@ def softmax(a):
         let wgs = wgs![128, 1, 1];
         let kernel = op.render(true, &dst, wgs);
         println!("{}", kernel);
+        parse_str(&kernel.to_string()).unwrap();
     }
 }
