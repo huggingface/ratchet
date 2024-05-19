@@ -242,25 +242,32 @@ pub struct DeviceLimits {
 
 impl From<wgpu::Limits> for DeviceLimits {
     fn from(limits: wgpu::Limits) -> Self {
+        let wgpu::Limits {
+            max_bind_groups,
+            max_storage_buffer_binding_size,
+            max_compute_invocations_per_workgroup,
+            ..
+        } = limits;
         DeviceLimits {
-            max_bind_groups: limits.max_bind_groups,
-            max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
-            max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
+            max_bind_groups,
+            max_storage_buffer_binding_size,
+            max_compute_invocations_per_workgroup,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct DeviceFeatures {
-    pub SHADER_F16: u64,
-    pub SUBGROUP_COMPUTE: u64
+    pub SHADER_F16: bool,
+    pub SUBGROUP: bool,
 }
 
 impl From<wgpu::Features> for DeviceFeatures {
     fn from(features: wgpu::Features) -> Self {
         DeviceFeatures {
-            SHADER_F16: features.contains(wgpu::Features::SHADER_F16) as u64,
-            SUBGROUP_COMPUTE: features.contains(wgpu::Features::SUBGROUP) as u64
+            SHADER_F16: features.contains(wgpu::Features::SHADER_F16),
+            SUBGROUP: features.contains(wgpu::Features::SUBGROUP),
         }
     }
 }
+
