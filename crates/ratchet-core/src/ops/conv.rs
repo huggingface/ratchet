@@ -127,10 +127,8 @@ impl MetaOperation for Conv {
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
-    use test_strategy::{proptest, Arbitrary};
-
-    use crate::test_util::run_py_prg;
     use crate::{shape, Device, DeviceRequest, Tensor};
+    use test_strategy::{proptest, Arbitrary};
 
     fn ground_truth(
         input: &Tensor,
@@ -139,20 +137,11 @@ mod tests {
         stride: usize,
         padding: usize,
     ) -> anyhow::Result<Tensor> {
-        let prg = r#"
-import torch
-import torch.nn.functional as F
-def conv(input, filters, bias, stride, padding):
-    input = torch.from_numpy(input)
-    filters = torch.from_numpy(filters)
-    bias = torch.from_numpy(bias)
-    return F.conv1d(input, filters, bias, stride=stride, padding=padding).numpy()
-"#;
-        run_py_prg(
-            prg.to_string(),
-            &[input, filters, bias],
-            &[&stride, &padding],
-        )
+        let i_tch = input.to_tch::<f32>()?;
+        let f_tch = filters.to_tch::<f32>()?;
+        let b_tch = bias.to_tch::<f32>()?;
+
+        Tensor::try_from(i_tch.conv1d(&f_tch, Some(b_tch), stride as i64, padding as i64, 0, 1))
     }
 
     fn run_conv_trial(device: &Device, problem: ConvProblem) {

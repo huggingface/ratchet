@@ -106,6 +106,12 @@ pub struct BindGroupLayoutPool {
         StaticResourcePool<BindGroupLayoutHandle, BindGroupLayoutDescriptor, wgpu::BindGroupLayout>,
 }
 
+impl Default for BindGroupLayoutPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BindGroupLayoutPool {
     pub fn new() -> Self {
         Self {

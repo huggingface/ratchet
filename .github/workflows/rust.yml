@@ -132,6 +132,27 @@ jobs:
           fi
         shell: bash
 
+      - name: Download and install libtorch
+        run: |
+          import requests
+          import zipfile
+          import os
+      
+          version = '2.3.0' # default version
+          with open('requirements.txt') as f:
+              for line in f:
+                  if 'torch==' in line:
+                      version = line.split('==')[1].strip()
+                      break
+          response = requests.get(f'https://download.pytorch.org/libtorch/cpu/libtorch-macos-arm64-{version}.zip')
+          with open('libtorch.zip', 'wb') as f:
+              f.write(response.content)
+          with zipfile.ZipFile('libtorch.zip', 'r') as zip_ref:
+              zip_ref.extractall()
+          os.environ['LIBTORCH'] = os.path.join(os.getcwd(), f'libtorch')
+          os.environ['DYLD_LIBRARY_PATH'] = os.path.join(os.getcwd(), f'libtorch')
+        shell: python
+
       - uses: FedericoCarboni/setup-ffmpeg@v3
         if: matrix.os != 'macos-14'
 
@@ -145,9 +166,13 @@ jobs:
 
       - name: run tests
         shell: bash
+        env: 
+          LIBTORCH_USE_PYTORCH: 1
+          SITE_PACKAGES: $(python -c "import site; print(site.getsitepackages()[0])")
+          DYLD_LIBRARY_PATH: ${{ env.SITE_PACKAGES }}/torch/lib:$DYLD_LIBRARY_PATH
         run: |
           set -e
-          cargo nextest run -j 1 --no-fail-fast --features=ci,pyo3
+          cargo nextest run -j 1 --no-fail-fast --features=ci,pyo3,testing
 
       - name: Set up WebDriver for Ubuntu
         if: matrix.os == 'ubuntu-22.04'

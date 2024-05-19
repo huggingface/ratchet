@@ -50,27 +50,14 @@ impl Operation for Slice {
 mod tests {
     use std::ops::Range;
 
-    use crate::{test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use crate::{Device, DeviceRequest, Tensor};
     use crate::{Shape, Slice};
     use proptest::prelude::*;
+    use tch::IndexOp;
     use test_strategy::proptest;
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
-    impl Slice {
-        fn as_torch(&self) -> String {
-            let mut s = String::from("[");
-            for (idx, range) in self.indices.iter().enumerate() {
-                if idx > 0 {
-                    s.push_str(", ");
-                }
-                s.push_str(&format!("{}:{}", range.start, range.end));
-            }
-            s.push(']');
-            s
-        }
     }
 
     #[derive(Debug, Clone)]
@@ -126,28 +113,24 @@ mod tests {
         }
     }
 
-    fn ground_truth(a: &Tensor, args: &str) -> anyhow::Result<Tensor> {
-        let prg = format!(
-            r#"
-import torch
-import numpy as np
-def slice(a):
-    torch_a = torch.from_numpy(a)
-    return np.ascontiguousarray(torch_a{})
-"#,
-            args
-        );
-        run_py_prg(prg.to_string(), &[a], &[])
+    fn ground_truth(a: &Tensor, indices: &[Range<usize>]) -> anyhow::Result<Tensor> {
+        let a_tch = a.to_tch::<f32>()?;
+        let mut ci = indices
+            .iter()
+            .map(|range| (range.start as i64)..(range.end as i64))
+            .collect::<Vec<_>>();
+        let tch_indices = (ci.remove(0), ci.remove(0), ci.remove(0), ci.remove(0));
+        let sliced = a_tch.i(tch_indices).contiguous();
+        Tensor::try_from(sliced)
     }
 
     fn run_reindex_trial(prob: SliceProblem) -> anyhow::Result<()> {
         let SliceProblem { op } = prob;
-        println!("SLICE PROBLEM: {:?}", op);
         let device = GPU_DEVICE.with(|d| d.clone());
         let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
-        let ground = ground_truth(&a, &op.as_torch())?;
+        let ground = ground_truth(&a, &op.indices)?;
         let ours = a_gpu.slice(&op.indices)?.resolve()?;
         let d_gpu = ours.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-5, 1e-5)?;

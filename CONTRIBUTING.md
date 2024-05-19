@@ -131,6 +131,8 @@ If that looks like this, you are good to go 🎉
 
 ### Step 3: Run Tests
 
+#### PYO3 tests
+
 Finally, run the tests for the package using Cargo:
 
 ```sh
@@ -141,6 +143,26 @@ To run the `PyO3` tests, add the `pyo3` flag:
 
 ```sh
 cargo test --features pyo3
+```
+
+#### `tch` tests
+
+`tch` based tests are ran behind the `testing` feature. You need to first have the PyTorch library (libtorch) in v2.3.0 to be available on your system. Follow the [official `tch` for more details](https://github.com/LaurentMazare/tch-rs/tree/main?tab=readme-ov-file). We'll use the libtorch library installed in the python envionment:
+
+```sh
+export LIBTORCH_USE_PYTORCH=1
+```
+
+You can now run tests:
+
+```sh
+cargo test --features testing
+```
+
+**NOTE**: If you're having compilation issue with MacOS. You can add the `libtorch` lib to your environment :
+
+```sh
+export DYLD_LIBRARY_PATH=$PWD/venv/lib/python3.10/site-packages/torch/lib:$DYLD_LIBRARY_PATH
 ```
 
 ### Step 5: Run WASM Tests

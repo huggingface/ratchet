@@ -60,6 +60,12 @@ pub struct BufferPool {
     inner: DynamicResourcePool<GpuBufferHandle, BufferDescriptor, RawGPUBuffer>,
 }
 
+impl Default for BufferPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BufferPool {
     pub fn new() -> Self {
         Self {

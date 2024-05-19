@@ -5,8 +5,8 @@ members = [
     "crates/ratchet-web",
     "crates/ratchet-loader",
     "crates/ratchet-models",
-    "crates/ratchet-nn", 
-    "crates/ratchet-hub", 
+    "crates/ratchet-nn",
+    "crates/ratchet-hub",
     "crates/ratchet-cli",
 ]
 resolver = "2"
@@ -18,7 +18,7 @@ debug-assertions = true
 [profile.release]
 panic = 'abort'
 lto = "fat"
-codegen-units = 1 
+codegen-units = 1
 
 [profile.profiling]
 inherits = "release"
@@ -26,18 +26,22 @@ debug = 2
 
 [workspace.dependencies]
 wgpu = { version = "0.20", features = ["fragile-send-sync-non-atomic-wasm"] }
-bytemuck = { version = "1.14.0", features=["wasm_simd", "aarch64_simd", "extern_crate_alloc"] }
+bytemuck = { version = "1.14.0", features = [
+    "wasm_simd",
+    "aarch64_simd",
+    "extern_crate_alloc",
+] }
 num-traits = "0.2.17"
 half = { version = "2.3.1", features = ["num-traits", "bytemuck"] }
 derive-new = "0.6.0"
 log = "0.4.20"
 thiserror = "1.0.56"
 byteorder = "1.5.0"
-npyz = { version = "0.8.3"}
+npyz = { version = "0.8.3" }
 hf-hub = "0.3.2"
 serde = "1.0"
 anyhow = "1.0.79"
-tokenizers = "0.19.1" 
+tokenizers = "0.19.1"
 
 js-sys = "0.3.64"
 wasm-bindgen = "0.2.91"
@@ -90,3 +94,4 @@ wasm-bindgen-futures = "0.4.41"
 web-sys = "0.3.64"
 web-time = "1.0.0"
 futures-intrusive = "0.5.0"
+tch = "0.16.0"

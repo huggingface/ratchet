@@ -121,8 +121,8 @@ mod tests {
     use proptest::strategy::{BoxedStrategy, Just, Strategy};
     use test_strategy::proptest;
 
-    use crate::test_util::run_py_prg;
     use crate::{rvec, shape, Device, DeviceRequest, Quantization, Quantizer, Shape, Tensor};
+    use tch::Tensor as TchTensor;
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -148,15 +148,9 @@ mod tests {
     }
 
     fn ground_truth(input: &Tensor, indices: &Tensor, dim: usize) -> anyhow::Result<Tensor> {
-        let prg = format!(
-            r#"
-import torch
-def index_select(input, indices):
-    return torch.index_select(torch.from_numpy(input),{},torch.from_numpy(indices)).numpy()
-"#,
-            dim
-        );
-        run_py_prg(prg.to_string(), &[input, indices], &[])
+        let tch_input = input.to_tch::<f32>()?;
+        let tch_indices = indices.to_tch::<i64>()?;
+        Tensor::try_from(TchTensor::index_select(&tch_input, dim as i64, &tch_indices).contiguous())
     }
 
     fn run_index_select_trial(problem: IndexSelectProblem, quantize: bool) {

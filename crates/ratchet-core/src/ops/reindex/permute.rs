@@ -55,7 +55,7 @@ impl OpGuards for Permute {
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
-    use crate::{test_util::run_py_prg, Device, DeviceRequest, Permute, Shape, Tensor};
+    use crate::{Device, DeviceRequest, Permute, Shape, Tensor};
     use proptest::prelude::*;
     use test_strategy::{proptest, Arbitrary};
 
@@ -83,17 +83,11 @@ mod tests {
         op: Permute,
     }
 
-    fn ground_truth(a: &Tensor, args: &str) -> anyhow::Result<Tensor> {
-        let prg = format!(
-            r#"
-import torch
-import numpy as np
-def permute(a):
-    return np.ascontiguousarray(torch.permute(torch.from_numpy(a), {}).numpy())
-"#,
-            args
-        );
-        run_py_prg(prg.to_string(), &[a], &[])
+    fn ground_truth(a: &Tensor, dims: &[usize]) -> anyhow::Result<Tensor> {
+        let tch_dims = dims.iter().map(|&x| x as i64).collect::<Vec<i64>>();
+        let a_tch = a.to_tch::<f32>()?;
+        let permuted = a_tch.permute(tch_dims).contiguous();
+        Tensor::try_from(permuted)
     }
 
     fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {
@@ -102,7 +96,7 @@ def permute(a):
         let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
-        let ground = ground_truth(&a, format!("{:?}", op.dims).as_str())?;
+        let ground = ground_truth(&a, &op.dims)?;
         let ours = a_gpu.permute(&op.dims)?.resolve()?;
         let d_gpu = ours.to(&Device::CPU)?;
         ground.all_close(&d_gpu, 1e-5, 1e-5)?;
