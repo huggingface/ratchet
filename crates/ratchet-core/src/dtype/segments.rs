@@ -1,4 +1,4 @@
-use crate::{BufferSegment, RVec};
+use crate::{RVec, TensorSegment};
 
 /// # Segments
 ///
@@ -25,5 +25,5 @@ use crate::{BufferSegment, RVec};
 ///
 /// This is what the buffer may look like in memory. The segments give us the address of |.
 pub trait Segments {
-    fn segments(numel: usize) -> RVec<BufferSegment>;
+    fn segments(numel: usize) -> RVec<TensorSegment>;
 }

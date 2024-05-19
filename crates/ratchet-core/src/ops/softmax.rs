@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, AccessGranularity, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, StorageView, Tensor,
+    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
+    StorageView, Tensor, WgslKernel, WgslKernelBuilder,
 };
 
 #[derive(new, Debug, Clone)]
@@ -12,27 +12,6 @@ pub struct Softmax {
     input: Tensor,
     dim: usize,
 }
-
-//type templated to generate all the variants.
-//functions are generated for each variant
-//the generated functions are then used to generate the kernel
-//pub<TypeLevelGynmastics> define() -> Kernel(String)
-//Have a nice crate that generates the kernel with Comptime & Runtime
-// CLI and Runtime can be different.
-//enum Assert<const b: bool> {}
-//trait IsTrue {}
-//trait IsFalse {}
-//
-//impl IsTrue for Assert<true> {}
-//impl IsFalse for Assert<false> {}
-//
-//type Scalar = 0;
-//type Vec2 = 2;
-//type Vec4 = 4;
-//
-//const generic instead with access size? access granularity?
-//
-//Conditional magic for subgroups too
 
 #[derive(Debug, derive_new::new, ShaderType)]
 pub struct SoftmaxMeta {
@@ -57,27 +36,14 @@ impl OpGuards for Softmax {
     }
 }
 
-/// A trait for generating a WebGPU kernel in WGSL.
-///
-/// This trait is implemented for all operations that can be compiled to a WebGPU kernel.
-pub trait Renderable {
-    fn render_wgsl<AG: AccessGranularity>(&self, dst: &Tensor) -> RenderedWgsl;
-}
-
 impl Softmax {
-    fn write_bindings<AG: AccessGranularity>(&self, inplace: bool, dst: &Tensor) -> RenderedWgsl {
+    fn write_bindings(&self, inplace: bool, dst: &Tensor) -> WgslKernel {
+        let mut builder = WgslKernelBuilder::new();
         let bindings = self.storage_bind_group_layout(inplace).unwrap();
-        todo!()
-    }
-}
-
-pub type RenderedWgsl = String;
-impl Renderable for Softmax {
-    fn render_wgsl<AG: AccessGranularity>(&self, dst: &Tensor) -> RenderedWgsl {
-        //write_bindings
-        //write_uniform
-        //write_globals
-        todo!()
+        builder.bind_tensors(&[&self.input, dst], &bindings);
+        let result = builder.render();
+        println!("{}", result);
+        result
     }
 }
 
@@ -154,7 +120,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
-    use crate::{shape, Device, DeviceRequest, Tensor};
+    use crate::{shape, Device, DeviceRequest, Softmax, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -200,5 +166,12 @@ def softmax(a):
         let SoftmaxProblem { B, M, N } = prob;
         println!("B = {}, M = {}, N = {}", B, M, N);
         run_softmax_trial(prob);
+    }
+
+    #[test]
+    fn test_render() {
+        let a = Tensor::randn::<f32>(shape![1, 2, 3], Device::CPU);
+        let op = Softmax::new(a, 2);
+        let _ = op.write_bindings(true, &op.input);
     }
 }

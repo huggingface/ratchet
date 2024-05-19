@@ -1,4 +1,4 @@
-use crate::{rvec, Align, BufferSegment, DType, RVec};
+use crate::{rvec, Align, DType, RVec, TensorSegment};
 use derive_new::new;
 
 use super::segments::Segments;
@@ -39,7 +39,7 @@ impl GGUFDType {
         }
     }
 
-    pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
+    pub fn segments(&self, numel: usize) -> RVec<TensorSegment> {
         match self {
             GGUFDType::Q4K(_) => Q4K::segments(numel),
             GGUFDType::Q6K(_) => Q6K::segments(numel),
@@ -52,22 +52,22 @@ impl GGUFDType {
 pub struct Q4K;
 
 impl Segments for Q4K {
-    fn segments(numel: usize) -> RVec<BufferSegment> {
+    fn segments(numel: usize) -> RVec<TensorSegment> {
         let mut offset = 0;
         let ds_nbytes: u64 = (numel * 4).align() as u64;
-        let ds_segment = BufferSegment::new(offset, ds_nbytes, DType::F16);
+        let ds_segment = TensorSegment::new(offset, ds_nbytes, DType::F16);
 
         let dmins_nbytes: u64 = (numel * 4).align() as u64;
         offset += ds_nbytes;
-        let dmins_segment = BufferSegment::new(offset, dmins_nbytes, DType::F16);
+        let dmins_segment = TensorSegment::new(offset, dmins_nbytes, DType::F16);
 
         let scales_nbytes: u64 = (numel * K_SCALE_SIZE).align() as u64;
         offset += dmins_nbytes;
-        let scales_segment = BufferSegment::new(offset, scales_nbytes, DType::U32);
+        let scales_segment = TensorSegment::new(offset, scales_nbytes, DType::U32);
 
         let qs_nbytes: u64 = (numel * QK_K / 2).align() as u64;
         offset += scales_nbytes;
-        let qs_segment = BufferSegment::new(offset, qs_nbytes, DType::U32);
+        let qs_segment = TensorSegment::new(offset, qs_nbytes, DType::U32);
 
         rvec![ds_segment, dmins_segment, scales_segment, qs_segment]
     }
@@ -77,23 +77,23 @@ impl Segments for Q4K {
 pub struct Q6K;
 
 impl Segments for Q6K {
-    fn segments(numel: usize) -> RVec<BufferSegment> {
+    fn segments(numel: usize) -> RVec<TensorSegment> {
         let mut offset = 0;
         let ql_nbytes: u64 = (numel * QK_K / 2).align() as u64;
-        let ql_segment = BufferSegment::new(offset, ql_nbytes, DType::U32);
+        let ql_segment = TensorSegment::new(offset, ql_nbytes, DType::U32);
 
         let qh_nbytes: u64 = (numel * QK_K / 4).align() as u64;
         offset += ql_nbytes;
-        let qh_segment = BufferSegment::new(offset, qh_nbytes, DType::U32);
+        let qh_segment = TensorSegment::new(offset, qh_nbytes, DType::U32);
 
         let scales_nbytes: u64 = (numel * QK_K / 16).align() as u64;
         offset += qh_nbytes;
-        let scales_segment = BufferSegment::new(offset, scales_nbytes, DType::I32);
+        let scales_segment = TensorSegment::new(offset, scales_nbytes, DType::I32);
 
         let q_nbytes: u64 = (numel * 4).align() as u64;
         offset += scales_nbytes;
         //TODO: this should take in `compute_precision` beceause this can vary F32 or F16 now
-        let q_segment = BufferSegment::new(offset, q_nbytes, DType::F32);
+        let q_segment = TensorSegment::new(offset, q_nbytes, DType::F32);
 
         rvec![ql_segment, qh_segment, scales_segment, q_segment]
     }
@@ -103,14 +103,14 @@ impl Segments for Q6K {
 pub struct Q8_0;
 
 impl Segments for Q8_0 {
-    fn segments(numel: usize) -> RVec<BufferSegment> {
+    fn segments(numel: usize) -> RVec<TensorSegment> {
         let mut offset = 0;
         let qs_nbytes: u64 = numel.align() as u64;
-        let qs_segment = BufferSegment::new(offset, qs_nbytes, DType::U32);
+        let qs_segment = TensorSegment::new(offset, qs_nbytes, DType::U32);
 
         let d_nbytes: u64 = ((numel / QK8_0) * 4).align() as u64;
         offset += qs_nbytes;
-        let d_segment = BufferSegment::new(offset, d_nbytes, DType::F32);
+        let d_segment = TensorSegment::new(offset, d_nbytes, DType::F32);
 
         rvec![qs_segment, d_segment,]
     }

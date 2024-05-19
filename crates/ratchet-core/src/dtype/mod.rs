@@ -4,7 +4,7 @@ use wgpu::{BufferAddress, BufferSize};
 
 use crate::{
     gpu::{dtype::WgslDType, MIN_STORAGE_BUFFER_SIZE},
-    rvec, RVec, RenderFragment, WgslFragment,
+    rvec, Accessor, RVec, RenderFragment, WgslFragment,
 };
 
 pub mod gguf;
@@ -81,27 +81,26 @@ impl From<npyz::DType> for DType {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct BufferSegment {
+pub struct TensorSegment {
     pub offset: BufferAddress,
     pub size: BufferSize,
-    pub dtype: DType,
+    pub dt: DType,
 }
 
-impl BufferSegment {
-    pub fn new(offset: BufferAddress, size: u64, dtype: DType) -> Self {
+impl TensorSegment {
+    pub fn new(offset: BufferAddress, size: u64, dt: DType) -> Self {
         Self {
             offset,
-            size: NonZeroU64::new(size).expect("Invalid u64"),
-            dtype,
+            size: NonZeroU64::new(size).unwrap(),
+            dt,
         }
     }
 }
 
-impl RenderFragment for BufferSegment {
+impl RenderFragment for TensorSegment {
     fn render(&self) -> crate::WgslFragment {
         let mut fragment = WgslFragment::new(16);
-        let wgsl_dt: WgslDType = self.dtype.into();
-        fragment.write(&format!("array<{}>;\n", wgsl_dt));
+        fragment.write(&format!("array<{:?}>;\n", self.dt));
         fragment
     }
 }

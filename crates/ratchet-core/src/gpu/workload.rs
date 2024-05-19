@@ -1,5 +1,29 @@
 use derive_new::new;
 
+#[derive(Debug, Clone, new, PartialEq, Eq, Hash)]
+pub struct WorkgroupSize {
+    pub x: u32,
+    pub y: u32,
+    pub z: u32,
+}
+
+#[macro_export]
+macro_rules! wgs {
+    ($x:expr, $y:expr, $z:expr) => {
+        $crate::gpu::WorkgroupSize::new($x, $y, $z)
+    };
+}
+
+impl std::fmt::Display for WorkgroupSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "@compute @workgroup_size({}, {}, {})",
+            self.x, self.y, self.z
+        )
+    }
+}
+
 #[macro_export]
 macro_rules! wgc {
     ($x:expr, $y:expr, $z:expr) => {

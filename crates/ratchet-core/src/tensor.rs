@@ -1,9 +1,9 @@
 use crate::gpu::dtype::WgslDType;
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
-    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
-    RawCPUBuffer, RenderFragment, Shape, Storage, Strides, TensorDType, TensorId, WgslFragment,
+    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
+    InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer,
+    RenderFragment, Shape, Storage, Strides, TensorDType, TensorId, TensorSegment, WgslFragment,
     MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
@@ -618,14 +618,14 @@ impl Tensor {
             })
     }
 
-    pub(crate) fn segments(&self) -> RVec<BufferSegment> {
+    pub(crate) fn segments(&self) -> RVec<TensorSegment> {
         let numel = self.shape().numel();
         match self.dt() {
             DType::GGUF(g) => g.segments(numel),
             d => {
                 let mut total_bytes = numel * self.dt().size_of();
                 total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
-                rvec![BufferSegment::new(0, total_bytes as u64, d)]
+                rvec![TensorSegment::new(0, total_bytes as u64, d)]
             }
         }
     }
