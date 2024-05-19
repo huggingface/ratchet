@@ -1,7 +1,7 @@
 use derive_new::new;
 
 use super::*;
-use crate::{DType, OpGuards, Operation, OperationError, StorageView, Tensor};
+use crate::{DType, OpGuards, Operation, OperationError, StorageView};
 
 #[derive(new, Debug, Clone)]
 pub struct GroupNorm {

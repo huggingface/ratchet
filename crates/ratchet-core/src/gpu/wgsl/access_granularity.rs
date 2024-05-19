@@ -45,6 +45,6 @@ impl<T: WgslDType> Accessor<T, 2> for Vec2<T> {
 
 impl<T: WgslDType> Accessor<T, 1> for Scalar<T> {
     fn render() -> String {
-        format!("{}", T::DT)
+        T::DT.to_string()
     }
 }

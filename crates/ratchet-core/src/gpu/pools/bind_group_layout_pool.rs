@@ -1,4 +1,4 @@
-use crate::{gpu::WgpuDevice, rvec, RVec, RenderFragment, Tensor, WgslFragment};
+use crate::{gpu::WgpuDevice, rvec, RVec, RenderFragment, WgslFragment};
 
 use super::{static_resource_pool::StaticResourcePool, StaticResourcePoolReadLockAccessor};
 
@@ -126,6 +126,12 @@ impl BindGroupLayoutDescriptor {
 pub struct BindGroupLayoutPool {
     inner:
         StaticResourcePool<BindGroupLayoutHandle, BindGroupLayoutDescriptor, wgpu::BindGroupLayout>,
+}
+
+impl Default for BindGroupLayoutPool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BindGroupLayoutPool {

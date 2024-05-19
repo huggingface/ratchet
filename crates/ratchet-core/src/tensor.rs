@@ -1,9 +1,8 @@
-use crate::gpu::dtype::WgslDType;
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
     GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
-    RawCPUBuffer, RenderFragment, Shape, Storage, Strides, TensorDType, TensorId, WgslFragment,
+    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
     MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;

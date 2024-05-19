@@ -1,4 +1,4 @@
-use crate::{Accessor, BindGroupLayoutDescriptor, Scalar, Tensor, Vec3, WorkgroupSize};
+use crate::{Accessor, Scalar, Vec3, WorkgroupSize};
 
 /// A builder for generating a kernel in WGSL.
 
@@ -46,6 +46,12 @@ impl std::fmt::Display for WgslKernel {
 pub struct WgslKernelBuilder {
     pub indent: usize,
     pub kernel: String,
+}
+
+impl Default for WgslKernelBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WgslKernelBuilder {

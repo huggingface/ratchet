@@ -21,6 +21,12 @@ pub struct BufferAllocator {
     pool: RwLock<BufferPool>,
 }
 
+impl Default for BufferAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BufferAllocator {
     pub fn new() -> Self {
         Self {

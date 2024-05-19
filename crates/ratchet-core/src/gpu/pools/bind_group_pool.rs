@@ -85,6 +85,12 @@ pub struct BindGroupPool {
     inner: DynamicResourcePool<GpuBindGroupHandle, BindGroupDescriptor, wgpu::BindGroup>,
 }
 
+impl Default for BindGroupPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BindGroupPool {
     pub fn new() -> Self {
         Self {
