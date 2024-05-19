@@ -50,6 +50,13 @@ impl DType {
             _ => false,
         }
     }
+
+    pub fn is_float(self) -> bool {
+        match self {
+            DType::F32 | DType::F16 | DType::BF16 => true,
+            _ => false,
+        }
+    }
 }
 
 #[cfg(feature = "testing")]
@@ -78,27 +85,17 @@ impl From<npyz::DType> for DType {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct TensorBinding {
+pub struct BufferSegment {
     pub offset: BufferAddress,
     pub size: BufferSize,
-    pub dt: DType,
 }
 
-impl TensorBinding {
-    pub fn new(offset: BufferAddress, size: u64, dt: DType) -> Self {
+impl BufferSegment {
+    pub fn new(offset: BufferAddress, size: u64) -> Self {
         Self {
             offset,
             size: NonZeroU64::new(size).unwrap(),
-            dt,
         }
-    }
-}
-
-impl RenderFragment for TensorBinding {
-    fn render(&self) -> crate::WgslFragment {
-        let mut fragment = WgslFragment::new(16);
-        fragment.write(&format!("array<{:?}>;\n", self.dt));
-        fragment
     }
 }
 

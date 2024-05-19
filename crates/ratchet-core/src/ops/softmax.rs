@@ -1,10 +1,12 @@
 use derive_new::new;
 use encase::ShaderType;
+use half::f16;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Accessor, BuiltIn, KernelElement, MetaOperation, OpGuards, OpMetadata,
-    Operation, OperationError, RVec, StorageView, Tensor, WgslKernel, WgslKernelBuilder,
+    rvec, wgc, Accessor, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, OpMetadata,
+    Operation, OperationError, RVec, RenderFragment, Scalar, StorageView, Tensor, Vec2, Vec4,
+    WgslFragment, WgslKernel, WgslKernelBuilder, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
@@ -32,22 +34,67 @@ impl OpGuards for Softmax {
 
     fn check_dtypes(&self) {
         let input = &self.input;
-        assert!(input.dt() == crate::DType::F32);
+        assert!(input.dt().is_float());
     }
 }
 
 impl Softmax {
-    fn write_bindings(&self, inplace: bool, dst: &Tensor) -> WgslKernel {
-        let mut builder = WgslKernelBuilder::new();
+    fn write_bindings<A: Accessor<T, N>, T: WgslDType, const N: usize>(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+    ) -> WgslFragment {
+        let mut fragment = WgslFragment::new(1024);
         let bindings = self.storage_bind_group_layout(inplace).unwrap();
-        builder.bind_tensors(&[&self.input, dst], &bindings);
-        let result = builder.render();
-        println!("{}", result);
-        result
+
+        let bind_vars = self.bindvars::<A, T, N>(inplace, dst);
+        for (binding, bind_var) in bindings.entries.iter().zip(bind_vars) {
+            let buffer_binding_type = match binding.ty {
+                wgpu::BindingType::Buffer { ty, .. } => ty,
+                _ => panic!("Unsupported binding type"),
+            };
+            matches!(buffer_binding_type, wgpu::BufferBindingType::Storage { .. });
+            fragment.write(format!("@group(0) @binding({})\n", binding.binding).as_str());
+            fragment.write_fragment(binding.render());
+            fragment.write_fragment(bind_var);
+        }
+        fragment
     }
 
-    pub fn render_softmax<A: Accessor<T, N>, T: WgslDType, const N: usize>() -> WgslKernel {
+    pub fn render(&self, inplace: bool, dst: &Tensor, workgroup_size: WorkgroupSize) -> WgslKernel {
+        let kernel_element = self.kernel_element(dst);
+        match (self.input.dt(), kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.render_softmax::<Scalar<f32>, _, 1>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.render_softmax::<Vec2<f32>, _, 2>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.render_softmax::<Vec4<f32>, _, 4>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.render_softmax::<Scalar<f16>, _, 1>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.render_softmax::<Vec2<f16>, _, 2>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.render_softmax::<Vec4<f16>, _, 4>(inplace, dst, workgroup_size)
+            }
+            _ => panic!("Unsupported dtype"),
+        }
+    }
+
+    fn render_softmax<A: Accessor<T, N>, T: WgslDType, const N: usize>(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: WorkgroupSize,
+    ) -> WgslKernel {
         let mut kernel_builder = WgslKernelBuilder::new();
+        kernel_builder.write_fragment(self.write_bindings::<A, T, N>(inplace, dst));
+
         let accessor = A::render();
         let reduce_len = match N {
             1 => "metadata.N",
@@ -57,7 +104,7 @@ impl Softmax {
         };
 
         kernel_builder.write_main(
-            wgs![128, 1, 1],
+            workgroup_size,
             &[
                 BuiltIn::GlobalInvocationId,
                 BuiltIn::LocalInvocationId,
@@ -125,7 +172,6 @@ workgroupBarrier();
 "#
         );
 
-        //Need to iterate from 64, 32, 16,
         for i in (0..=6).rev().map(|x| 2u32.pow(x)) {
             reduce_sum.push_str(&format!(
                 r#"
@@ -184,6 +230,24 @@ impl MetaOperation for Softmax {
         format!("softmax_{}", self.kernel_element(dst).as_str())
     }
 
+    fn bindvars<A: Accessor<T, N>, T: WgslDType, const N: usize>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+    ) -> RVec<WgslFragment> {
+        if !inplace {
+            panic!("Only inplace softmax is supported");
+        }
+
+        let mut fragment = WgslFragment::new(96);
+        fragment.write(&format!(
+            r#"X: array<{}>;
+                "#,
+            A::render()
+        ));
+        rvec![fragment]
+    }
+
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let input = &self.input;
         let N = input.shape()[self.dim] as u32;
@@ -234,7 +298,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
-    use crate::{shape, Device, DeviceRequest, Softmax, Tensor};
+    use crate::{shape, wgs, Device, DeviceRequest, Softmax, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -283,9 +347,12 @@ def softmax(a):
     }
 
     #[test]
-    fn test_render() {
-        let a = Tensor::randn::<f32>(shape![1, 2, 3], Device::CPU);
+    fn test_render_softmax() {
+        let a = Tensor::randn::<f32>(shape![1, 2, 128], Device::CPU);
+        let dst = Tensor::zeros::<f32>(&shape![1, 2, 128], &Device::CPU);
         let op = Softmax::new(a, 2);
-        let _ = op.write_bindings(true, &op.input);
+        let wgs = wgs![128, 1, 1];
+        let kernel = op.render(true, &dst, wgs);
+        println!("{}", kernel);
     }
 }

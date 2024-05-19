@@ -1,8 +1,11 @@
+use crate::gpu::dtype::WgslDType;
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
     PoolError, WgpuDevice, WorkgroupCount,
 };
-use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
+use crate::{
+    ops::*, rvec, Accessor, CompiledOp, InvariantError, RVec, StorageView, Tensor, WgslFragment,
+};
 use encase::internal::WriteInto;
 use encase::ShaderType;
 use std::fmt::Debug;
@@ -157,6 +160,14 @@ pub trait MetaOperation: Debug + 'static {
 
     fn supports_inplace(&self) -> bool {
         false
+    }
+
+    fn bindvars<A: Accessor<T, N>, T: WgslDType, const N: usize>(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+    ) -> RVec<WgslFragment> {
+        rvec![]
     }
 
     /// # Kernel Element

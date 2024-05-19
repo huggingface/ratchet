@@ -1,9 +1,9 @@
 use crate::gpu::dtype::WgslDType;
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer,
-    RenderFragment, Shape, Storage, Strides, TensorBinding, TensorDType, TensorId, WgslFragment,
+    ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
+    RawCPUBuffer, RenderFragment, Shape, Storage, Strides, TensorDType, TensorId, WgslFragment,
     MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
@@ -605,7 +605,7 @@ impl Tensor {
             .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
-        self.bindings()
+        self.segments()
             .iter()
             .fold(rvec![], |mut entries, segment| {
                 let (offset, size) = (segment.offset, segment.size);
@@ -618,15 +618,19 @@ impl Tensor {
             })
     }
 
-    /// # Bindings
-    pub(crate) fn bindings(&self) -> RVec<TensorBinding> {
+    /// # Segments  
+    ///
+    /// In Ratchet, a tensor may be split into multiple segments.
+    /// This is due to our quantization scheme allowing multiple quantized components to be packed
+    /// and stored in a single tensor.
+    pub(crate) fn segments(&self) -> RVec<BufferSegment> {
         let numel = self.shape().numel();
         match self.dt() {
             DType::GGUF(g) => g.bindings(numel),
-            d => {
+            _ => {
                 let mut total_bytes = numel * self.dt().size_of();
                 total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
-                rvec![TensorBinding::new(0, total_bytes as u64, d)]
+                rvec![BufferSegment::new(0, total_bytes as u64)]
             }
         }
     }

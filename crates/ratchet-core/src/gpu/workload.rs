@@ -18,7 +18,7 @@ impl std::fmt::Display for WorkgroupSize {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "@compute @workgroup_size({}, {}, {})",
+            r#"@compute @workgroup_size({}, {}, {})"#,
             self.x, self.y, self.z
         )
     }

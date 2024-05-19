@@ -1,4 +1,4 @@
-use crate::{rvec, Align, DType, RVec, TensorBinding};
+use crate::{rvec, Align, BufferSegment, RVec};
 use derive_new::new;
 
 use super::segments::Bindings;
@@ -39,7 +39,7 @@ impl GGUFDType {
         }
     }
 
-    pub fn bindings(&self, numel: usize) -> RVec<TensorBinding> {
+    pub fn bindings(&self, numel: usize) -> RVec<BufferSegment> {
         match self {
             GGUFDType::Q4K(_) => Q4K::bindings(numel),
             GGUFDType::Q6K(_) => Q6K::bindings(numel),
@@ -52,22 +52,22 @@ impl GGUFDType {
 pub struct Q4K;
 
 impl Bindings for Q4K {
-    fn bindings(numel: usize) -> RVec<TensorBinding> {
+    fn bindings(numel: usize) -> RVec<BufferSegment> {
         let mut offset = 0;
         let ds_nbytes: u64 = (numel * 4).align() as u64;
-        let ds_segment = TensorBinding::new(offset, ds_nbytes, DType::F16);
+        let ds_segment = BufferSegment::new(offset, ds_nbytes);
 
         let dmins_nbytes: u64 = (numel * 4).align() as u64;
         offset += ds_nbytes;
-        let dmins_segment = TensorBinding::new(offset, dmins_nbytes, DType::F16);
+        let dmins_segment = BufferSegment::new(offset, dmins_nbytes);
 
         let scales_nbytes: u64 = (numel * K_SCALE_SIZE).align() as u64;
         offset += dmins_nbytes;
-        let scales_segment = TensorBinding::new(offset, scales_nbytes, DType::U32);
+        let scales_segment = BufferSegment::new(offset, scales_nbytes);
 
         let qs_nbytes: u64 = (numel * QK_K / 2).align() as u64;
         offset += scales_nbytes;
-        let qs_segment = TensorBinding::new(offset, qs_nbytes, DType::U32);
+        let qs_segment = BufferSegment::new(offset, qs_nbytes);
 
         rvec![ds_segment, dmins_segment, scales_segment, qs_segment]
     }
@@ -77,23 +77,22 @@ impl Bindings for Q4K {
 pub struct Q6K;
 
 impl Bindings for Q6K {
-    fn bindings(numel: usize) -> RVec<TensorBinding> {
+    fn bindings(numel: usize) -> RVec<BufferSegment> {
         let mut offset = 0;
         let ql_nbytes: u64 = (numel * QK_K / 2).align() as u64;
-        let ql_segment = TensorBinding::new(offset, ql_nbytes, DType::U32);
+        let ql_segment = BufferSegment::new(offset, ql_nbytes);
 
         let qh_nbytes: u64 = (numel * QK_K / 4).align() as u64;
         offset += ql_nbytes;
-        let qh_segment = TensorBinding::new(offset, qh_nbytes, DType::U32);
+        let qh_segment = BufferSegment::new(offset, qh_nbytes);
 
         let scales_nbytes: u64 = (numel * QK_K / 16).align() as u64;
         offset += qh_nbytes;
-        let scales_segment = TensorBinding::new(offset, scales_nbytes, DType::I32);
+        let scales_segment = BufferSegment::new(offset, scales_nbytes);
 
         let q_nbytes: u64 = (numel * 4).align() as u64;
         offset += scales_nbytes;
-        //TODO: this should take in `compute_precision` beceause this can vary F32 or F16 now
-        let q_segment = TensorBinding::new(offset, q_nbytes, DType::F32);
+        let q_segment = BufferSegment::new(offset, q_nbytes);
 
         rvec![ql_segment, qh_segment, scales_segment, q_segment]
     }
@@ -103,14 +102,14 @@ impl Bindings for Q6K {
 pub struct Q8_0;
 
 impl Bindings for Q8_0 {
-    fn bindings(numel: usize) -> RVec<TensorBinding> {
+    fn bindings(numel: usize) -> RVec<BufferSegment> {
         let mut offset = 0;
         let qs_nbytes: u64 = numel.align() as u64;
-        let qs_segment = TensorBinding::new(offset, qs_nbytes, DType::U32);
+        let qs_segment = BufferSegment::new(offset, qs_nbytes);
 
         let d_nbytes: u64 = ((numel / QK8_0) * 4).align() as u64;
         offset += qs_nbytes;
-        let d_segment = TensorBinding::new(offset, d_nbytes, DType::F32);
+        let d_segment = BufferSegment::new(offset, d_nbytes);
 
         rvec![qs_segment, d_segment,]
     }

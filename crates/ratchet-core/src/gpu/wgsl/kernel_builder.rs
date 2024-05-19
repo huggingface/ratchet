@@ -69,27 +69,6 @@ impl WgslKernelBuilder {
         self.kernel.push_str(&fragment.0);
     }
 
-    pub fn bind_tensors(&mut self, tensors: &[&Tensor], bgld: &BindGroupLayoutDescriptor) {
-        let mut fragment = WgslFragment::new(1024);
-        let segments = tensors
-            .iter()
-            .flat_map(|t| t.bindings())
-            .collect::<Vec<_>>();
-        for (binding, s) in bgld.entries.iter().zip(segments.iter()) {
-            let buffer_binding_type = match binding.ty {
-                wgpu::BindingType::Buffer { ty, .. } => ty,
-                _ => panic!("Unsupported binding type"),
-            };
-            matches!(buffer_binding_type, wgpu::BufferBindingType::Storage { .. });
-            fragment.write(format!("@group(0) @binding({})\n", binding.binding).as_str());
-            fragment.write_fragment(binding.render());
-            fragment.write(" ");
-            fragment.write(format!("X{}: ", binding.binding).as_str());
-            fragment.write_fragment(s.render());
-        }
-        self.write_fragment(fragment);
-    }
-
     pub fn render(self) -> WgslKernel {
         WgslKernel(self.kernel)
     }

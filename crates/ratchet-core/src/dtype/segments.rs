@@ -1,4 +1,4 @@
-use crate::{RVec, TensorBinding};
+use crate::{BufferSegment, RVec};
 
 /// # Bindings
 ///
@@ -25,5 +25,5 @@ use crate::{RVec, TensorBinding};
 ///
 /// This is what the buffer may look like in memory. The segments give us the address of |.
 pub trait Bindings {
-    fn bindings(numel: usize) -> RVec<TensorBinding>;
+    fn bindings(numel: usize) -> RVec<BufferSegment>;
 }

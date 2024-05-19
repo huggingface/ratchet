@@ -1,5 +1,3 @@
-use crate::{wgs, BuiltIn, WgslKernel, WgslKernelBuilder};
-
 use super::dtype::WgslDType;
 
 /// WGSL types which are used to access buffers.
@@ -29,39 +27,24 @@ pub struct Scalar<T> {
 
 impl<T: WgslDType> Accessor<T, 4> for Vec4<T> {
     fn render() -> String {
-        format!("vec4<{}>", T::render_dt())
+        format!("vec4<{}>", T::DT)
     }
 }
 
 impl<T: WgslDType> Accessor<T, 3> for Vec3<T> {
     fn render() -> String {
-        format!("vec3<{}>", T::render_dt())
+        format!("vec3<{}>", T::DT)
     }
 }
 
 impl<T: WgslDType> Accessor<T, 2> for Vec2<T> {
     fn render() -> String {
-        format!("vec2<{}>", T::render_dt())
+        format!("vec2<{}>", T::DT)
     }
 }
 
 impl<T: WgslDType> Accessor<T, 1> for Scalar<T> {
     fn render() -> String {
-        format!("{}", T::render_dt())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use half::f16;
-
-    use crate::{Vec2, Vec4};
-
-    #[test]
-    fn test_render_softmax() {
-        let v4 = super::render_softmax::<Vec4<f32>, _, 4>();
-        println!("{}", v4);
-        let v2 = super::render_softmax::<Vec2<f16>, _, 2>();
-        println!("{}", v2);
+        format!("{}", T::DT)
     }
 }
