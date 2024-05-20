@@ -1,12 +1,13 @@
 use derive_new::new;
 use encase::ShaderType;
 use half::f16;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Accessor, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, OpMetadata,
+    rvec, wgc, Array, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, OpMetadata,
     Operation, OperationError, RVec, RenderFragment, Scalar, StorageView, Tensor, Vec2, Vec4,
-    WgslFragment, WgslKernel, WgslKernelBuilder, WorkgroupSize,
+    WgslFragment, WgslKernel, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
@@ -15,7 +16,7 @@ pub struct Softmax {
     dim: usize,
 }
 
-#[derive(Debug, derive_new::new, ShaderType)]
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct SoftmaxMeta {
     M: u32,
     N: u32,
@@ -39,7 +40,7 @@ impl OpGuards for Softmax {
 }
 
 impl Softmax {
-    fn write_bindings<A: Accessor<T, N>, T: WgslDType, const N: usize>(
+    fn write_bindings<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &self,
         inplace: bool,
         dst: &Tensor,
@@ -86,7 +87,7 @@ impl Softmax {
         }
     }
 
-    fn render_softmax<A: Accessor<T, N>, T: WgslDType, const N: usize>(
+    fn render_softmax<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &self,
         inplace: bool,
         dst: &Tensor,
@@ -94,6 +95,32 @@ impl Softmax {
     ) -> WgslKernel {
         let mut kernel_builder = WgslKernelBuilder::new();
         kernel_builder.write_fragment(self.write_bindings::<A, T, N>(inplace, dst));
+        kernel_builder.write_fragment(SoftmaxMeta::render());
+        kernel_builder.shared_memory::<Array<T, N, A, 128>>("smem");
+        kernel_builder.workgroup_var::<Scalar<f32>, _, 1>("maximum");
+        kernel_builder.workgroup_var::<Scalar<f32>, _, 1>("sum");
+        kernel_builder.constant::<Scalar<u32>, _, 1>("BLOCK_SIZE", "128u");
+        kernel_builder.constant::<Scalar<f32>, _, 1>("minFloat", "-3.402823e+38f");
+
+        let reduce_funcs = format!(
+            r#"
+fn block_sum(index: u32, stride: u32) {{
+    if index < stride {{
+        smem[index] += smem[index + stride];
+    }}
+    workgroupBarrier();
+}}
+
+fn block_max(index: u32, stride: u32) {{
+    if index < stride {{
+        smem[index] = max(smem[index], smem[index + stride]);
+    }}
+    workgroupBarrier();
+}}
+    "#
+        );
+
+        kernel_builder.write_fragment(reduce_funcs.into());
 
         let accessor = A::render();
         let reduce_len = match N {
@@ -230,7 +257,7 @@ impl MetaOperation for Softmax {
         format!("softmax_{}", self.kernel_element(dst).as_str())
     }
 
-    fn bindvars<A: Accessor<T, N>, T: WgslDType, const N: usize>(
+    fn bindvars<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &self,
         inplace: bool,
         _: &Tensor,

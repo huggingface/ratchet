@@ -3,7 +3,6 @@ use half::f16;
 /// Supported data types in WGSL.
 ///
 /// This can be mapped to and from the Ratchet DType.
-
 pub trait WgslDType {
     const DT: &'static str;
 }

@@ -7,9 +7,11 @@ members = [
     "crates/ratchet-models",
     "crates/ratchet-nn", 
     "crates/ratchet-hub", 
-    "crates/ratchet-cli",
+    "crates/ratchet-cli", 
+    "crates/ratchet-macros",
 ]
 resolver = "2"
+edition = "2021"
 
 [profile.test]
 debug = 2

@@ -4,7 +4,8 @@ use crate::gpu::{
     PoolError, WgpuDevice, WorkgroupCount,
 };
 use crate::{
-    ops::*, rvec, Accessor, CompiledOp, InvariantError, RVec, StorageView, Tensor, WgslFragment,
+    ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor, WgslFragment,
+    WgslPrimitive,
 };
 use encase::internal::WriteInto;
 use encase::ShaderType;
@@ -162,7 +163,7 @@ pub trait MetaOperation: Debug + 'static {
         false
     }
 
-    fn bindvars<A: Accessor<T, N>, T: WgslDType, const N: usize>(
+    fn bindvars<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &self,
         inplace: bool,
         dst: &Tensor,

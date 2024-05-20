@@ -2,8 +2,7 @@ use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
     GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
-    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
-    MIN_STORAGE_BUFFER_SIZE,
+    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId, MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};

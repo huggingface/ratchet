@@ -23,6 +23,7 @@ serde = { workspace = true, features = ["derive"] }
 pathdiff = { workspace = true }
 
 [dependencies]
+ratchet-macros = { path = "../ratchet-macros"}
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
 half = { workspace = true }

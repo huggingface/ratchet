@@ -1,4 +1,6 @@
-use crate::{Accessor, Scalar, Vec3, WorkgroupSize};
+use crate::{Scalar, Vec3, WgslArray, WgslPrimitive, WorkgroupSize};
+
+use super::dtype::WgslDType;
 
 /// A builder for generating a kernel in WGSL.
 
@@ -91,6 +93,32 @@ impl WgslKernelBuilder {
             fragment.write_fragment(builtin);
         }
         fragment.write(") {\n");
+        self.write_fragment(fragment);
+    }
+
+    pub fn shared_memory<A: WgslArray>(&mut self, name: &str) {
+        let mut fragment = WgslFragment::new(64);
+        fragment.write(&format!("var<workgroup> {}: {};\n", name, A::render()));
+        self.write_fragment(fragment);
+    }
+
+    pub fn workgroup_var<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+        &mut self,
+        name: &str,
+    ) {
+        let mut fragment = WgslFragment::new(64);
+        fragment.write(&format!("var<workgroup> {}: {};\n", name, P::render()));
+        self.write_fragment(fragment);
+    }
+
+    //TODO: value shouldn't be &str
+    pub fn constant<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+        &mut self,
+        name: &str,
+        value: &str,
+    ) {
+        let mut fragment = WgslFragment::new(64);
+        fragment.write(&format!("const {}: {} = {};\n", name, P::render(), value));
         self.write_fragment(fragment);
     }
 }

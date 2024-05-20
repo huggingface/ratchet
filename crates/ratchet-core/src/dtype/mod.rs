@@ -2,7 +2,6 @@ use half::{bf16, f16};
 use std::num::NonZeroU64;
 use wgpu::{BufferAddress, BufferSize};
 
-
 pub mod gguf;
 mod segments;
 
