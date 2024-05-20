@@ -246,12 +246,8 @@ impl MetaOperation for Softmax {
             panic!("Only inplace softmax is supported");
         }
 
-        let mut fragment = WgslFragment::new(96);
-        fragment.write(&format!(
-            r#"X: array<{}>;
-                "#,
-            A::render()
-        ));
+        let mut fragment = WgslFragment::new(32);
+        fragment.write(&format!("X: array<{}>;\n", A::render()));
         rvec![fragment]
     }
 
