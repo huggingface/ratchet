@@ -59,6 +59,7 @@ impl WgpuDevice {
 
         #[allow(unused_mut)]
         let mut required_features = wgpu::Features::default();
+        required_features |= wgpu::Features::SHADER_F16;
         #[cfg(feature = "gpu-profiling")]
         {
             required_features |= wgpu::Features::TIMESTAMP_QUERY;
@@ -230,6 +231,14 @@ impl WgpuDevice {
 
     pub fn begin_pass(&self) {
         self.buffer_allocator.begin_pass(0);
+    }
+
+    pub fn compute_features(&self) -> &DeviceFeatures {
+        &self.device_features
+    }
+
+    pub fn compute_limits(&self) -> &DeviceLimits {
+        &self.device_limits
     }
 }
 

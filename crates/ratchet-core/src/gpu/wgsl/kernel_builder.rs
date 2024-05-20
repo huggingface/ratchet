@@ -1,5 +1,6 @@
 use crate::{
-    BindGroupLayoutDescriptor, RVec, Scalar, Vec3, WgslArray, WgslPrimitive, WorkgroupSize,
+    BindGroupLayoutDescriptor, DeviceFeatures, RVec, Scalar, Vec3, WgslArray, WgslPrimitive,
+    WorkgroupSize,
 };
 
 use super::dtype::WgslDType;
@@ -50,19 +51,21 @@ impl std::fmt::Display for WgslKernel {
 pub struct WgslKernelBuilder {
     pub indent: usize,
     pub kernel: String,
-}
-
-impl Default for WgslKernelBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub features: DeviceFeatures,
 }
 
 impl WgslKernelBuilder {
-    pub fn new() -> Self {
+    pub fn new(features: DeviceFeatures) -> Self {
+        let kernel = if features.SHADER_F16 {
+            String::from("enable f16;\n")
+        } else {
+            String::new()
+        };
+
         Self {
             indent: 0,
-            kernel: String::new(),
+            kernel,
+            features,
         }
     }
 
@@ -98,9 +101,18 @@ impl WgslKernelBuilder {
         self.write_fragment(fragment);
     }
 
-    pub fn shared_memory<A: WgslArray>(&mut self, name: &str) {
+    pub fn shared_memory<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+        &mut self,
+        name: &str,
+        size: usize,
+    ) {
         let mut fragment = WgslFragment::new(64);
-        fragment.write(&format!("var<workgroup> {}: {};\n", name, A::render()));
+        fragment.write(&format!(
+            "var<workgroup> {}: array<{}, {}>;\n",
+            name,
+            P::render_type(),
+            size
+        ));
         self.write_fragment(fragment);
     }
 
@@ -109,7 +121,7 @@ impl WgslKernelBuilder {
         name: &str,
     ) {
         let mut fragment = WgslFragment::new(64);
-        fragment.write(&format!("var<workgroup> {}: {};\n", name, P::render()));
+        fragment.write(&format!("var<workgroup> {}: {};\n", name, P::render_type()));
         self.write_fragment(fragment);
     }
 
@@ -117,10 +129,15 @@ impl WgslKernelBuilder {
     pub fn constant<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &mut self,
         name: &str,
-        value: &str,
+        value: P,
     ) {
         let mut fragment = WgslFragment::new(64);
-        fragment.write(&format!("const {}: {} = {};\n", name, P::render(), value));
+        fragment.write(&format!(
+            "const {}: {} = {};\n",
+            name,
+            P::render_type(),
+            value
+        ));
         self.write_fragment(fragment);
     }
 
@@ -166,11 +183,11 @@ impl BuiltIn {
             | BuiltIn::WorkgroupId
             | BuiltIn::NumWorkgroups => {
                 let var = self.render_var();
-                format!("{var}) {var}: {}", Vec3::<u32>::render())
+                format!("{var}) {var}: {}", Vec3::<u32>::render_type())
             }
             BuiltIn::LocalInvocationIndex | BuiltIn::SubgroupId | BuiltIn::SubgroupSize => {
                 let var = self.render_var();
-                format!("{var}) {var}: {}", Scalar::<u32>::render())
+                format!("{var}) {var}: {}", Scalar::<u32>::render_type())
             }
         };
         fragment.write(builtin.as_str());

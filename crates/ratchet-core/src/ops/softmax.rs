@@ -5,9 +5,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Array, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, OpMetadata,
-    Operation, OperationError, RVec, RenderFragment, Scalar, StorageView, Tensor, Vec2, Vec4,
-    WgslFragment, WgslKernel, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    rvec, wgc, Array, BuiltIn, DType, DeviceFeatures, KernelElement, MetaOperation, OpGuards,
+    OpMetadata, Operation, OperationError, RVec, RenderFragment, Scalar, StorageView, Tensor, Vec2,
+    Vec4, WgslFragment, WgslKernel, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
@@ -65,23 +65,27 @@ impl Softmax {
         }
     }
 
-    fn render_softmax<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+    fn render_softmax<P: WgslPrimitive<T, N>, T: WgslDType + num_traits::Float, const N: usize>(
         &self,
         inplace: bool,
         dst: &Tensor,
         workgroup_size: WorkgroupSize,
     ) -> WgslKernel {
-        let mut kernel_builder = WgslKernelBuilder::new();
+        let device = self.input.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(device.compute_features().clone());
         let bindings = self.storage_bind_group_layout(inplace).unwrap();
-        let bind_vars = self.bindvars::<A, T, N>(inplace, dst);
+        let bind_vars = self.bindvars::<P, T, N>(inplace, dst);
 
         kernel_builder.write_bindings(&bindings, bind_vars);
         kernel_builder.write_fragment(SoftmaxMeta::render());
-        kernel_builder.shared_memory::<Array<T, N, A, 128>>("smem");
-        kernel_builder.workgroup_var::<Scalar<f32>, _, 1>("maximum");
-        kernel_builder.workgroup_var::<Scalar<f32>, _, 1>("sum");
-        kernel_builder.constant::<Scalar<u32>, _, 1>("BLOCK_SIZE", "128u");
-        kernel_builder.constant::<Scalar<f32>, _, 1>("minFloat", "-3.402823e+38f");
+        kernel_builder.shared_memory::<P, T, N>("smem", workgroup_size.x as usize);
+        kernel_builder.workgroup_var::<Scalar<T>, _, 1>("maximum");
+        kernel_builder.workgroup_var::<Scalar<T>, _, 1>("sum");
+        kernel_builder.constant("BLOCK_SIZE", Scalar::<u32>::new(workgroup_size.x));
+        kernel_builder.constant("minFloat", Scalar::<T>::new(T::from(-65500).unwrap()));
+
+        //kernel_builder.push_op(Reduce { input: self.input, dim: self.dim, kind: MAX });
+        //kernel_builder.push_op(Reduce { input: self.input, dim: self.dim, kind: SUM });
 
         let reduce_funcs = r#"
 fn block_sum(index: u32, stride: u32) {
@@ -102,7 +106,7 @@ fn block_max(index: u32, stride: u32) {
 
         kernel_builder.write_fragment(reduce_funcs.into());
 
-        let accessor = A::render();
+        let accessor = P::render_type();
         let reduce_len = match N {
             1 => "metadata.N",
             2 => "metadata.ND2",
@@ -171,7 +175,7 @@ workgroupBarrier();
 
         let mut reduce_sum = format!(
             r#"
-smem[index] = {accessor}(0.0);
+smem[index] = {accessor}(0.0h);
 for (var i: u32 = index; i < {reduce_len}; i += BLOCK_SIZE) {{
     smem[index] += exp(X[row_start + i] - maximum);
 }}
@@ -247,7 +251,7 @@ impl MetaOperation for Softmax {
         }
 
         let mut fragment = WgslFragment::new(32);
-        fragment.write(&format!("X: array<{}>;\n", A::render()));
+        fragment.write(&format!("X: array<{}>;\n", A::render_type()));
         rvec![fragment]
     }
 
@@ -302,6 +306,7 @@ mod tests {
 
     use crate::test_util::run_py_prg;
     use crate::{shape, wgs, Device, DeviceRequest, Softmax, Tensor};
+    use half::f16;
     use wgpu::naga::front::wgsl::parse_str;
 
     thread_local! {
@@ -352,8 +357,9 @@ def softmax(a):
 
     #[test]
     fn test_render_softmax() {
-        let a = Tensor::randn::<f32>(shape![1, 2, 128], Device::CPU);
-        let dst = Tensor::zeros::<f32>(&shape![1, 2, 128], &Device::CPU);
+        let device = GPU_DEVICE.with(|d| d.clone());
+        let a = Tensor::randn::<f16>(shape![1, 2, 128], device.clone());
+        let dst = Tensor::zeros::<f16>(&shape![1, 2, 128], &device);
         let op = Softmax::new(a, 2);
         let wgs = wgs![128, 1, 1];
         let kernel = op.render(true, &dst, wgs);

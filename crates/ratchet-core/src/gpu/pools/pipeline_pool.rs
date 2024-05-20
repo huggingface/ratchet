@@ -72,6 +72,7 @@ impl ComputePipelinePool {
                     zero_initialize_workgroup_memory: false,
                     ..Default::default()
                 },
+                cache: None,
             })
         })
     }

@@ -43,17 +43,11 @@ impl DType {
     }
 
     pub fn is_quantized(self) -> bool {
-        match self {
-            DType::GGUF(_) => true,
-            _ => false,
-        }
+        matches!(self, DType::GGUF(_) | DType::Q8)
     }
 
     pub fn is_float(self) -> bool {
-        match self {
-            DType::F32 | DType::F16 | DType::BF16 => true,
-            _ => false,
-        }
+        matches!(self, DType::F16 | DType::BF16 | DType::F32)
     }
 }
 
