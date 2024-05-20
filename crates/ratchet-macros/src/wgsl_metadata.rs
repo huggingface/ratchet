@@ -26,6 +26,15 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     "UVec4" => {
                         quote!(#ident: vec4<u32>)
                     }
+                    "IVec4" => {
+                        quote!(#ident: vec4<i32>)
+                    }
+                    "UVec3" => {
+                        quote!(#ident: vec3<u32>)
+                    }
+                    "IVec3" => {
+                        quote!(#ident: vec3<i32>)
+                    }
                     _ => quote!(#ident: #ty),
                 }
             }
@@ -51,5 +60,5 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     );
 
-    expanded.into()
+    expanded
 }

@@ -1,4 +1,6 @@
-use crate::{Scalar, Vec3, WgslArray, WgslPrimitive, WorkgroupSize};
+use crate::{
+    BindGroupLayoutDescriptor, RVec, Scalar, Vec3, WgslArray, WgslPrimitive, WorkgroupSize,
+};
 
 use super::dtype::WgslDType;
 
@@ -119,6 +121,25 @@ impl WgslKernelBuilder {
     ) {
         let mut fragment = WgslFragment::new(64);
         fragment.write(&format!("const {}: {} = {};\n", name, P::render(), value));
+        self.write_fragment(fragment);
+    }
+
+    pub fn write_bindings(
+        &mut self,
+        bindings: &BindGroupLayoutDescriptor,
+        bind_vars: RVec<WgslFragment>,
+    ) {
+        let mut fragment = WgslFragment::new(512);
+        for (binding, bind_var) in bindings.entries.iter().zip(bind_vars) {
+            let buffer_binding_type = match binding.ty {
+                wgpu::BindingType::Buffer { ty, .. } => ty,
+                _ => panic!("Unsupported binding type"),
+            };
+            matches!(buffer_binding_type, wgpu::BufferBindingType::Storage { .. });
+            fragment.write(format!("@group(0) @binding({})\n", binding.binding).as_str());
+            fragment.write_fragment(binding.render());
+            fragment.write_fragment(bind_var);
+        }
         self.write_fragment(fragment);
     }
 }

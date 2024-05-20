@@ -40,28 +40,6 @@ impl OpGuards for Softmax {
 }
 
 impl Softmax {
-    fn write_bindings<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
-        &self,
-        inplace: bool,
-        dst: &Tensor,
-    ) -> WgslFragment {
-        let mut fragment = WgslFragment::new(1024);
-        let bindings = self.storage_bind_group_layout(inplace).unwrap();
-
-        let bind_vars = self.bindvars::<A, T, N>(inplace, dst);
-        for (binding, bind_var) in bindings.entries.iter().zip(bind_vars) {
-            let buffer_binding_type = match binding.ty {
-                wgpu::BindingType::Buffer { ty, .. } => ty,
-                _ => panic!("Unsupported binding type"),
-            };
-            matches!(buffer_binding_type, wgpu::BufferBindingType::Storage { .. });
-            fragment.write(format!("@group(0) @binding({})\n", binding.binding).as_str());
-            fragment.write_fragment(binding.render());
-            fragment.write_fragment(bind_var);
-        }
-        fragment
-    }
-
     pub fn render(&self, inplace: bool, dst: &Tensor, workgroup_size: WorkgroupSize) -> WgslKernel {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), kernel_element) {
@@ -94,7 +72,10 @@ impl Softmax {
         workgroup_size: WorkgroupSize,
     ) -> WgslKernel {
         let mut kernel_builder = WgslKernelBuilder::new();
-        kernel_builder.write_fragment(self.write_bindings::<A, T, N>(inplace, dst));
+        let bindings = self.storage_bind_group_layout(inplace).unwrap();
+        let bind_vars = self.bindvars::<A, T, N>(inplace, dst);
+
+        kernel_builder.write_bindings(&bindings, bind_vars);
         kernel_builder.write_fragment(SoftmaxMeta::render());
         kernel_builder.shared_memory::<Array<T, N, A, 128>>("smem");
         kernel_builder.workgroup_var::<Scalar<f32>, _, 1>("maximum");
@@ -102,23 +83,22 @@ impl Softmax {
         kernel_builder.constant::<Scalar<u32>, _, 1>("BLOCK_SIZE", "128u");
         kernel_builder.constant::<Scalar<f32>, _, 1>("minFloat", "-3.402823e+38f");
 
-        let reduce_funcs = format!(
-            r#"
-fn block_sum(index: u32, stride: u32) {{
-    if index < stride {{
+        let reduce_funcs = r#"
+fn block_sum(index: u32, stride: u32) {
+    if index < stride {
         smem[index] += smem[index + stride];
-    }}
+    }
     workgroupBarrier();
-}}
+}
 
-fn block_max(index: u32, stride: u32) {{
-    if index < stride {{
+fn block_max(index: u32, stride: u32) {
+    if index < stride {
         smem[index] = max(smem[index], smem[index + stride]);
-    }}
+    }
     workgroupBarrier();
-}}
+}
     "#
-        );
+        .to_string();
 
         kernel_builder.write_fragment(reduce_funcs.into());
 
