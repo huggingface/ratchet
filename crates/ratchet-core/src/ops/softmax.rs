@@ -92,6 +92,22 @@ impl Softmax {
         kernel_builder.write_bindings(&bindings, bind_vars);
         kernel_builder.write_metadata::<SoftmaxMeta>();
 
+        let reduce_var = match N {
+            1 => "metadata.N",
+            2 => "metadata.ND2",
+            4 => "metadata.ND4",
+            _ => panic!("Invalid dimension"),
+        };
+
+        kernel_builder.main_var(
+            "batch_stride",
+            format!("workgroup_id.y * metadata.M * {reduce_var}").into(),
+        );
+        kernel_builder.main_var(
+            "row_start",
+            format!("batch_stride + workgroup_id.x * {reduce_var}",).into(),
+        );
+        kernel_builder.main_var("index", "local_invocation_id.x".into());
         kernel_builder.reduction::<P, T, N>(ReduceInstruction {
             input: &self.input,
             kind: ReduceKind::MAX,
@@ -103,13 +119,6 @@ impl Softmax {
             kind: ReduceKind::SUM,
             axis: self.dim,
         });
-
-        let reduce_var = match N {
-            1 => "metadata.N",
-            2 => "metadata.ND2",
-            4 => "metadata.ND4",
-            _ => panic!("Invalid dimension"),
-        };
 
         let softmax = format!(
             r#"

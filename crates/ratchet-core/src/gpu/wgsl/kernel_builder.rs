@@ -1,3 +1,5 @@
+use rustc_hash::{FxHashMap, FxHashSet};
+
 use crate::{
     BindGroupLayoutDescriptor, DeviceFeatures, OpMetadata, RVec, Scalar, Tensor, Vec3, WgslArray,
     WgslPrimitive, WorkgroupSize,
@@ -19,6 +21,12 @@ impl std::fmt::Display for WgslFragment {
 impl From<String> for WgslFragment {
     fn from(s: String) -> Self {
         Self(s)
+    }
+}
+
+impl From<&str> for WgslFragment {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
     }
 }
 
@@ -48,10 +56,21 @@ impl std::fmt::Display for WgslKernel {
     }
 }
 
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
+pub struct Ident(String);
+
+impl std::fmt::Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub struct WgslKernelBuilder {
     pub workgroup_size: WorkgroupSize,
     pub builtins: Vec<BuiltIn>,
     pub globals: WgslFragment,
+    pub global_idents: FxHashSet<Ident>,
+    pub main_idents: FxHashSet<Ident>,
     pub main: WgslFragment,
     pub features: DeviceFeatures,
 }
@@ -70,6 +89,8 @@ impl WgslKernelBuilder {
             workgroup_size: workgroup_size.clone(),
             builtins: builtins.clone(),
             globals,
+            global_idents: FxHashSet::default(),
+            main_idents: FxHashSet::default(),
             main: WgslFragment::new(2048),
             features,
         };
@@ -99,6 +120,28 @@ impl WgslKernelBuilder {
         self.main.write_fragment(fragment);
     }
 
+    fn global_ident_exists(&self, ident: &Ident) -> bool {
+        self.global_idents.contains(ident)
+    }
+
+    fn register_global_ident(&mut self, ident: Ident) {
+        if self.global_ident_exists(&ident) {
+            panic!("Ident already exists: {}", ident);
+        }
+        self.global_idents.insert(ident);
+    }
+
+    fn main_ident_exists(&self, ident: &Ident) -> bool {
+        self.main_idents.contains(ident)
+    }
+
+    fn register_main_ident(&mut self, ident: Ident) {
+        if self.main_ident_exists(&ident) {
+            panic!("Ident already exists: {}", ident);
+        }
+        self.main_idents.insert(ident);
+    }
+
     fn write_globals(&mut self, fragment: WgslFragment) {
         self.globals.write_fragment(fragment);
     }
@@ -112,10 +155,23 @@ impl WgslKernelBuilder {
         name: &str,
         size: usize,
     ) {
+        if size == 0 {
+            return;
+        }
+        if size * N >= 16384 {
+            panic!("Shared memory size exceeds 16384 bytes");
+        }
+
         let mut fragment = WgslFragment::new(64);
+        let ident = Ident(name.into());
+        if self.global_ident_exists(&ident) {
+            println!("Shared memory already allocated: {}", ident);
+            return;
+        }
+        self.register_global_ident(ident.clone());
         fragment.write(&format!(
             "var<workgroup> {}: array<{}, {}>;\n",
-            name,
+            ident,
             P::render_type(),
             size
         ));
@@ -127,7 +183,13 @@ impl WgslKernelBuilder {
         name: &str,
     ) {
         let mut fragment = WgslFragment::new(64);
-        fragment.write(&format!("var<workgroup> {}: {};\n", name, P::render_type()));
+        let ident = Ident(name.into());
+        self.register_global_ident(ident.clone());
+        fragment.write(&format!(
+            "var<workgroup> {}: {};\n",
+            ident,
+            P::render_type()
+        ));
         self.write_globals(fragment);
     }
 
@@ -138,13 +200,27 @@ impl WgslKernelBuilder {
         value: P,
     ) {
         let mut fragment = WgslFragment::new(64);
+        let ident = Ident(name.into());
+        if self.global_ident_exists(&ident) {
+            println!("Constant already allocated: {}", ident);
+            return;
+        }
+        self.register_global_ident(ident.clone());
         fragment.write(&format!(
             "const {}: {} = {};\n",
-            name,
+            ident,
             P::render_type(),
             value
         ));
         self.write_globals(fragment);
+    }
+
+    pub fn main_var(&mut self, name: &str, value: WgslFragment) {
+        let mut fragment = WgslFragment::new(64);
+        let ident = Ident(name.into());
+        self.register_main_ident(ident.clone());
+        fragment.write(&format!("let {} = {};\n", ident, value));
+        self.write_main(fragment);
     }
 
     pub fn write_bindings(
@@ -216,15 +292,6 @@ fn {reduce_func}(index: u32, stride: u32) {{
             4 => "metadata.ND4",
             _ => panic!("Invalid dimension"),
         };
-
-        let indexing = format!(
-            r#"
-    let batch_stride = workgroup_id.y * metadata.M * {reduce_var}; 
-    let row_start = batch_stride + workgroup_id.x * {reduce_var}; 
-    let index = local_invocation_id.x;
-    "#
-        );
-        self.write_main(indexing.into());
 
         let mut smem_reduce: WgslFragment = format!(
             r#"
