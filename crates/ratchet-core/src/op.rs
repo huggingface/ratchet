@@ -143,7 +143,11 @@ pub enum OperationError {
 /// Some kernels may not know their metadata at compile time, so this is not an associated type.
 /// If they do not know their metadata at compile time, they should use [DynamicUniformBuffer] from
 /// encase.
-pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
+pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
+    fn render_wgsl() -> WgslFragment {
+        todo!()
+    }
+}
 
 /// # MetaOperation
 ///

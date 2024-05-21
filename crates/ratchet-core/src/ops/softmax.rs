@@ -6,8 +6,9 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, Array, BuiltIn, DType, DeviceFeatures, KernelElement, MetaOperation, OpGuards,
-    OpMetadata, Operation, OperationError, RVec, RenderFragment, Scalar, StorageView, Tensor, Vec2,
-    Vec4, WgslFragment, WgslKernel, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    OpMetadata, Operation, OperationError, RVec, ReduceInstruction, ReduceKind, RenderFragment,
+    Scalar, StorageView, Tensor, Vec2, Vec4, WgslFragment, WgslKernel, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
@@ -24,7 +25,11 @@ pub struct SoftmaxMeta {
     ND4: u32,
 }
 
-impl OpMetadata for SoftmaxMeta {}
+impl OpMetadata for SoftmaxMeta {
+    fn render_wgsl() -> WgslFragment {
+        SoftmaxMeta::render()
+    }
+}
 
 impl OpGuards for Softmax {
     fn check_shapes(&self) {
@@ -72,148 +77,50 @@ impl Softmax {
         workgroup_size: WorkgroupSize,
     ) -> WgslKernel {
         let device = self.input.device().try_gpu().unwrap();
-        let mut kernel_builder = WgslKernelBuilder::new(device.compute_features().clone());
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size,
+            vec![
+                BuiltIn::GlobalInvocationId,
+                BuiltIn::LocalInvocationId,
+                BuiltIn::WorkgroupId,
+            ],
+            device.compute_features().clone(),
+        );
         let bindings = self.storage_bind_group_layout(inplace).unwrap();
         let bind_vars = self.bindvars::<P, T, N>(inplace, dst);
 
         kernel_builder.write_bindings(&bindings, bind_vars);
-        kernel_builder.write_fragment(SoftmaxMeta::render());
-        kernel_builder.shared_memory::<P, T, N>("smem", workgroup_size.x as usize);
-        kernel_builder.workgroup_var::<Scalar<T>, _, 1>("maximum");
-        kernel_builder.workgroup_var::<Scalar<T>, _, 1>("sum");
-        kernel_builder.constant("BLOCK_SIZE", Scalar::<u32>::new(workgroup_size.x));
-        kernel_builder.constant("minFloat", Scalar::<T>::new(T::from(-65500).unwrap()));
+        kernel_builder.write_metadata::<SoftmaxMeta>();
 
-        //kernel_builder.push_op(Reduce { input: self.input, dim: self.dim, kind: MAX });
-        //kernel_builder.push_op(Reduce { input: self.input, dim: self.dim, kind: SUM });
+        kernel_builder.reduction::<P, T, N>(ReduceInstruction {
+            input: &self.input,
+            kind: ReduceKind::MAX,
+            axis: self.dim,
+        });
 
-        let reduce_funcs = r#"
-fn block_sum(index: u32, stride: u32) {
-    if index < stride {
-        smem[index] += smem[index + stride];
-    }
-    workgroupBarrier();
-}
+        kernel_builder.reduction::<P, T, N>(ReduceInstruction {
+            input: &self.input,
+            kind: ReduceKind::SUM,
+            axis: self.dim,
+        });
 
-fn block_max(index: u32, stride: u32) {
-    if index < stride {
-        smem[index] = max(smem[index], smem[index + stride]);
-    }
-    workgroupBarrier();
-}
-    "#
-        .to_string();
-
-        kernel_builder.write_fragment(reduce_funcs.into());
-
-        let accessor = P::render_type();
-        let reduce_len = match N {
+        let reduce_var = match N {
             1 => "metadata.N",
             2 => "metadata.ND2",
             4 => "metadata.ND4",
             _ => panic!("Invalid dimension"),
         };
 
-        kernel_builder.write_main(
-            workgroup_size,
-            &[
-                BuiltIn::GlobalInvocationId,
-                BuiltIn::LocalInvocationId,
-                BuiltIn::WorkgroupId,
-            ],
-        );
-
-        let indexing = format!(
-            r#"
-    let batch_stride = workgroup_id.y * metadata.M * {reduce_len}; 
-    let row_start = batch_stride + workgroup_id.x * {reduce_len}; 
-    let index = local_invocation_id.x;
-    "#
-        );
-
-        kernel_builder.write_fragment(indexing.into());
-
-        let mut reduce_max = format!(
-            r#"
-smem[index] = {accessor}(minFloat);
-for (var i: u32 = index; i < {reduce_len}; i += BLOCK_SIZE) {{
-    smem[index] = max(smem[index], X[row_start + i]); 
-}}
-workgroupBarrier();
-"#
-        );
-
-        for i in (0..=6).rev().map(|x| 2u32.pow(x)) {
-            reduce_max.push_str(&format!(
-                r#"
-block_max(index, {i}u);"#,
-            ));
-        }
-
-        reduce_max.push_str(
-            r#"
-if index == 0u {{
-    "#,
-        );
-
-        match N {
-            1 => reduce_max.push_str("maximum = smem[0];"),
-            2 => reduce_max.push_str("maximum = max(smem[0].x, smem[0].y);"),
-            4 => reduce_max
-                .push_str("maximum = max(smem[0].x, max(smem[0].y, max(smem[0].z, smem[0].w)));"),
-            _ => panic!("Invalid dimension"),
-        }
-
-        reduce_max.push_str(
-            r#"
-}}
-workgroupBarrier();
-"#,
-        );
-
-        kernel_builder.write_fragment(reduce_max.into());
-
-        let mut reduce_sum = format!(
-            r#"
-smem[index] = {accessor}(0.0h);
-for (var i: u32 = index; i < {reduce_len}; i += BLOCK_SIZE) {{
-    smem[index] += exp(X[row_start + i] - maximum);
-}}
-workgroupBarrier();
-"#
-        );
-
-        for i in (0..=6).rev().map(|x| 2u32.pow(x)) {
-            reduce_sum.push_str(&format!(
-                r#"
-block_sum(index, {i}u);"#,
-            ));
-        }
-
-        reduce_sum.push_str(&format!(
-            r#"
-    if index == 0u {{
-        sum = dot(smem[0], {accessor}(1.0)); 
-    }}
-    workgroupBarrier();
-"#,
-        ));
-
-        kernel_builder.indent();
-        kernel_builder.write_fragment(reduce_sum.into());
-        kernel_builder.dedent();
-
         let softmax = format!(
             r#"
-    for(var i: u32 = index; i < {reduce_len}; i += BLOCK_SIZE) {{
+    for(var i: u32 = index; i < {reduce_var}; i += BLOCK_SIZE) {{
         var val = X[row_start + i];
         X[row_start + i] = exp(val - maximum) / sum;
     }}
-}}
 "#,
         );
 
-        kernel_builder.write_fragment(softmax.into());
+        kernel_builder.write_main(softmax.into());
         kernel_builder.render()
     }
 }

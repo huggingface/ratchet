@@ -1,6 +1,6 @@
 use crate::{
-    BindGroupLayoutDescriptor, DeviceFeatures, RVec, Scalar, Vec3, WgslArray, WgslPrimitive,
-    WorkgroupSize,
+    BindGroupLayoutDescriptor, DeviceFeatures, OpMetadata, RVec, Scalar, Tensor, Vec3, WgslArray,
+    WgslPrimitive, WorkgroupSize,
 };
 
 use super::dtype::WgslDType;
@@ -49,56 +49,62 @@ impl std::fmt::Display for WgslKernel {
 }
 
 pub struct WgslKernelBuilder {
-    pub indent: usize,
-    pub kernel: String,
+    pub workgroup_size: WorkgroupSize,
+    pub builtins: Vec<BuiltIn>,
+    pub globals: WgslFragment,
+    pub main: WgslFragment,
     pub features: DeviceFeatures,
 }
 
 impl WgslKernelBuilder {
-    pub fn new(features: DeviceFeatures) -> Self {
-        let kernel = if features.SHADER_F16 {
-            String::from("enable f16;\n")
-        } else {
-            String::new()
-        };
-
-        Self {
-            indent: 0,
-            kernel,
-            features,
+    pub fn new(
+        workgroup_size: WorkgroupSize,
+        builtins: Vec<BuiltIn>,
+        features: DeviceFeatures,
+    ) -> Self {
+        let mut globals = WgslFragment::new(2048);
+        if features.SHADER_F16 {
+            globals.write("enable f16;\n");
         }
+        let mut builder = Self {
+            workgroup_size: workgroup_size.clone(),
+            builtins: builtins.clone(),
+            globals,
+            main: WgslFragment::new(2048),
+            features,
+        };
+        builder.init_main(workgroup_size, &builtins);
+        builder
     }
 
-    pub fn indent(&mut self) {
-        self.indent += 1;
+    pub fn render(mut self) -> WgslKernel {
+        self.main.write("}\n");
+        WgslKernel(format!("{}\n{}", self.globals, self.main))
     }
 
-    pub fn dedent(&mut self) {
-        self.indent -= 1;
-    }
-
-    pub fn write_fragment(&mut self, fragment: WgslFragment) {
-        self.kernel.push_str("\t".repeat(self.indent).as_str());
-        self.kernel.push_str(&fragment.0);
-    }
-
-    pub fn render(self) -> WgslKernel {
-        WgslKernel(self.kernel)
-    }
-
-    pub fn write_main(&mut self, workgroup_size: WorkgroupSize, builtins: &[BuiltIn]) {
-        let mut fragment = WgslFragment::new(512);
-        fragment.write(&format!("{}\n", workgroup_size));
-        fragment.write("fn main(\n");
+    fn init_main(&mut self, workgroup_size: WorkgroupSize, builtins: &[BuiltIn]) {
+        self.main.write(&format!("{}\n", workgroup_size));
+        self.main.write("fn main(\n");
         for (b, builtin) in builtins.iter().enumerate() {
             let mut builtin = builtin.render();
             if b < builtins.len() - 1 {
                 builtin.write(",\n");
             }
-            fragment.write_fragment(builtin);
+            self.main.write_fragment(builtin);
         }
-        fragment.write(") {\n");
-        self.write_fragment(fragment);
+        self.main.write(") {\n");
+    }
+
+    pub fn write_main(&mut self, fragment: WgslFragment) {
+        self.main.write_fragment(fragment);
+    }
+
+    fn write_globals(&mut self, fragment: WgslFragment) {
+        self.globals.write_fragment(fragment);
+    }
+
+    pub fn write_metadata<M: OpMetadata>(&mut self) {
+        self.write_globals(M::render_wgsl());
     }
 
     pub fn shared_memory<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
@@ -113,7 +119,7 @@ impl WgslKernelBuilder {
             P::render_type(),
             size
         ));
-        self.write_fragment(fragment);
+        self.write_globals(fragment);
     }
 
     pub fn workgroup_var<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
@@ -122,7 +128,7 @@ impl WgslKernelBuilder {
     ) {
         let mut fragment = WgslFragment::new(64);
         fragment.write(&format!("var<workgroup> {}: {};\n", name, P::render_type()));
-        self.write_fragment(fragment);
+        self.write_globals(fragment);
     }
 
     //TODO: value shouldn't be &str
@@ -138,7 +144,7 @@ impl WgslKernelBuilder {
             P::render_type(),
             value
         ));
-        self.write_fragment(fragment);
+        self.write_globals(fragment);
     }
 
     pub fn write_bindings(
@@ -157,11 +163,126 @@ impl WgslKernelBuilder {
             fragment.write_fragment(binding.render());
             fragment.write_fragment(bind_var);
         }
-        self.write_fragment(fragment);
+        self.write_globals(fragment);
+    }
+
+    pub fn reduction<P: WgslPrimitive<T, N>, T: WgslDType + num_traits::Float, const N: usize>(
+        &mut self,
+        instruction: ReduceInstruction,
+    ) {
+        self.shared_memory::<P, T, N>("smem", self.workgroup_size.x as usize);
+        self.constant("BLOCK_SIZE", Scalar::<u32>::new(self.workgroup_size.x));
+
+        match instruction.kind {
+            ReduceKind::MAX => {
+                self.workgroup_var::<Scalar<T>, _, 1>("maximum");
+                self.constant("minFloat", Scalar::<T>::new(T::from(-65500).unwrap()))
+            }
+            ReduceKind::SUM => self.workgroup_var::<Scalar<T>, _, 1>("sum"),
+        }
+
+        let initVar = match instruction.kind {
+            ReduceKind::MAX => "minFloat",
+            ReduceKind::SUM => "0.",
+        };
+
+        let (reduce_func, reduce_body) = match instruction.kind {
+            ReduceKind::MAX => (
+                "block_max",
+                "smem[index] = max(smem[index], smem[index + stride]);",
+            ),
+            ReduceKind::SUM => ("block_sum", "smem[index] += smem[index + stride];"),
+        };
+
+        self.write_globals(
+            format!(
+                r#"
+fn {reduce_func}(index: u32, stride: u32) {{
+    if index < stride {{
+        {reduce_body}
+    }}
+    workgroupBarrier();
+}}
+"#
+            )
+            .into(),
+        );
+
+        let accessor = P::render_type();
+
+        let reduce_var = match N {
+            1 => "metadata.N",
+            2 => "metadata.ND2",
+            4 => "metadata.ND4",
+            _ => panic!("Invalid dimension"),
+        };
+
+        let indexing = format!(
+            r#"
+    let batch_stride = workgroup_id.y * metadata.M * {reduce_var}; 
+    let row_start = batch_stride + workgroup_id.x * {reduce_var}; 
+    let index = local_invocation_id.x;
+    "#
+        );
+        self.write_main(indexing.into());
+
+        let mut smem_reduce: WgslFragment = format!(
+            r#"
+smem[index] = {accessor}({initVar});
+for (var i: u32 = index; i < {reduce_var}; i += BLOCK_SIZE) {{
+    smem[index] = max(smem[index], X[row_start + i]); 
+}}
+workgroupBarrier();
+"#
+        )
+        .into();
+
+        let steps = (self.workgroup_size.x - 1).ilog2() as u32;
+        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
+            smem_reduce.write(&format!(
+                r#"
+{reduce_func}(index, {i}u);"#,
+            ));
+        }
+
+        let finalize = match (N, instruction.kind) {
+            (1, ReduceKind::MAX) => "maximum = smem[0];".into(),
+            (1, ReduceKind::SUM) => "sum = smem[0]".into(),
+            (2, ReduceKind::MAX) => "maximum = max(smem[0].x, smem[0].y);".into(),
+            (2, ReduceKind::SUM) => format!("sum = dot(smem[0], {accessor}(1.0, 1.0));"),
+            (4, ReduceKind::MAX) => {
+                "maximum = max(smem[0].x, max(smem[0].y, max(smem[0].z, smem[0].w)));".into()
+            }
+            (4, ReduceKind::SUM) => format!("sum = dot(smem[0], {accessor}(1.0, 1.0, 1.0, 1.0));"),
+            _ => panic!("Invalid reduction finalize"),
+        };
+
+        smem_reduce.write(&format!(
+            r#"
+if index == 0 {{
+    {finalize}
+}}
+workgroupBarrier();
+"#
+        ));
+
+        self.write_main(smem_reduce);
     }
 }
 
+pub enum ReduceKind {
+    MAX,
+    SUM,
+}
+
+pub struct ReduceInstruction<'a> {
+    pub input: &'a Tensor,
+    pub kind: ReduceKind,
+    pub axis: usize,
+}
+
 /// WGSL built-in variables.
+#[derive(Debug, Clone)]
 pub enum BuiltIn {
     LocalInvocationId,
     GlobalInvocationId,
