@@ -33,7 +33,8 @@ impl Module for Attention {
         // 3, b, nh, n, hd
         qkv = qkv
             .view(shape![3 * b, n, self.n_heads, h_dim])?
-            .permute(&[0, 1, 3, 2])?;
+            .permute(&[0, 2, 1, 3])?
+            .view(shape![3, b, self.n_heads, n, h_dim])?;
 
         let q = qkv
             .clone()
