@@ -5,10 +5,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Array, BuiltIn, DType, DeviceFeatures, KernelElement, MetaOperation, OpGuards,
-    OpMetadata, Operation, OperationError, RVec, ReduceInstruction, ReduceKind, RenderFragment,
-    Scalar, StorageView, Tensor, Vec2, Vec4, WgslFragment, WgslKernel, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize,
+    rvec, wgc, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
+    OperationError, RVec, ReduceInstruction, ReduceKind, Scalar, StorageView, Tensor, Vec2, Vec4,
+    WgslFragment, WgslKernel, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
@@ -112,12 +111,14 @@ impl Softmax {
             input: &self.input,
             kind: ReduceKind::MAX,
             axis: self.dim,
+            body: "smem[index] = max(smem[index], X[row_start + i]);".into(),
         });
 
         kernel_builder.reduction::<P, T, N>(ReduceInstruction {
             input: &self.input,
             kind: ReduceKind::SUM,
             axis: self.dim,
+            body: "smem[index] += exp(X[row_start + i] - maximum);".into(),
         });
 
         let softmax = format!(
@@ -126,7 +127,7 @@ impl Softmax {
         var val = X[row_start + i];
         X[row_start + i] = exp(val - maximum) / sum;
     }}
-"#,
+"#
         );
 
         kernel_builder.write_main(softmax.into());

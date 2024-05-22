@@ -262,7 +262,7 @@ impl WgslKernelBuilder {
             ReduceKind::SUM => "0.",
         };
 
-        let (reduce_func, reduce_body) = match instruction.kind {
+        let (reduce_func, reduce_fn_body) = match instruction.kind {
             ReduceKind::MAX => (
                 "block_max",
                 "smem[index] = max(smem[index], smem[index + stride]);",
@@ -275,7 +275,7 @@ impl WgslKernelBuilder {
                 r#"
 fn {reduce_func}(index: u32, stride: u32) {{
     if index < stride {{
-        {reduce_body}
+        {reduce_fn_body}
     }}
     workgroupBarrier();
 }}
@@ -293,11 +293,12 @@ fn {reduce_func}(index: u32, stride: u32) {{
             _ => panic!("Invalid dimension"),
         };
 
+        let body = instruction.body;
         let mut smem_reduce: WgslFragment = format!(
             r#"
 smem[index] = {accessor}({initVar});
 for (var i: u32 = index; i < {reduce_var}; i += BLOCK_SIZE) {{
-    smem[index] = max(smem[index], X[row_start + i]); 
+    {body}
 }}
 workgroupBarrier();
 "#
@@ -346,6 +347,7 @@ pub struct ReduceInstruction<'a> {
     pub input: &'a Tensor,
     pub kind: ReduceKind,
     pub axis: usize,
+    pub body: WgslFragment,
 }
 
 /// WGSL built-in variables.
