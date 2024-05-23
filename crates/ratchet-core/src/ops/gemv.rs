@@ -45,16 +45,47 @@ impl OpMetadata for GEMVMeta {
 
 impl GEMV {
     //TODO: this is stupid
-    fn bindvars<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+    fn bindvars<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &self,
-        inplace: bool,
+        _: bool,
         _: &Tensor,
     ) -> RVec<WgslFragment> {
-        let mut A = WgslFragment::new(32);
-        A.write(&format!("A: array<{}>;\n", T::DT));
-        let mut X = WgslFragment::new(32);
-        X.write(&format!("X: array<{}>;\n", A::render_type()));
-        rvec![A, X]
+        let dt = T::DT;
+        let mut bind_vars = rvec![];
+        match self.lhs.dt() {
+            DType::F32 | DType::F16 => {
+                let A = wgsl! { A: array<'dt>; }.into();
+                let X = wgsl! { X: array<'dt>; }.into();
+                bind_vars.push(A);
+                bind_vars.push(X);
+
+                if self.bias.is_some() {
+                    let bias = wgsl! { bias: array<vec4<'dt>>; }.into();
+                    bind_vars.push(bias);
+                }
+            }
+            DType::GGUF(g) => match g {
+                GGUFDType::Q8_0(_) => {
+                    let A = wgsl! { A: array<u32>; }.into();
+                    let scale = wgsl! { scale: array<'dt>; }.into();
+                    let X = wgsl! { X: array<vec4<'dt>>; }.into();
+                    bind_vars.push(A);
+                    bind_vars.push(scale);
+                    bind_vars.push(X);
+
+                    if self.bias.is_some() {
+                        let bias = wgsl! { bias: array<'dt>; }.into();
+                        bind_vars.push(bias);
+                    }
+                }
+                _ => unimplemented!(),
+            },
+            _ => panic!("Unsupported dtype"),
+        }
+
+        let result = wgsl! { result: array<'dt>; }.into();
+        bind_vars.push(result);
+        bind_vars
     }
 
     fn storage_bind_group_layout(
