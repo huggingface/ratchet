@@ -1,6 +1,7 @@
 use derive_new::new;
 use encase::ShaderType;
 use half::f16;
+use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
@@ -121,16 +122,13 @@ impl Softmax {
             body: "smem[index] += exp(X[row_start + i] - maximum);".into(),
         });
 
-        let softmax = format!(
-            r#"
-    for(var i: u32 = index; i < {reduce_var}; i += BLOCK_SIZE) {{
-        var val = X[row_start + i];
-        X[row_start + i] = exp(val - maximum) / sum;
-    }}
-"#
-        );
-
-        kernel_builder.write_main(softmax.into());
+        let softmax = wgsl! {
+            for(var i: u32 = index; i < 'reduce_var; i += BLOCK_SIZE) {
+                var val = X[row_start + i];
+                X[row_start + i] = exp(val - maximum) / sum;
+            }
+        };
+        kernel_builder.write_main(softmax);
         kernel_builder.render()
     }
 }

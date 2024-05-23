@@ -116,8 +116,8 @@ impl WgslKernelBuilder {
         self.main.write(") {\n");
     }
 
-    pub fn write_main(&mut self, fragment: WgslFragment) {
-        self.main.write_fragment(fragment);
+    pub fn write_main(&mut self, fragment: impl Into<WgslFragment>) {
+        self.main.write_fragment(fragment.into());
     }
 
     fn global_ident_exists(&self, ident: &Ident) -> bool {

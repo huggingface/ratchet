@@ -10,6 +10,7 @@ use crate::{
     WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
+use inline_wgsl::wgsl;
 
 #[derive(Debug, Clone)]
 pub struct GEMV {
@@ -43,14 +44,17 @@ impl OpMetadata for GEMVMeta {
 }
 
 impl GEMV {
+    //TODO: this is stupid
     fn bindvars<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &self,
         inplace: bool,
         _: &Tensor,
     ) -> RVec<WgslFragment> {
-        let mut fragment = WgslFragment::new(32);
-        fragment.write(&format!("X: array<{}>;\n", A::render_type()));
-        rvec![fragment]
+        let mut A = WgslFragment::new(32);
+        A.write(&format!("A: array<{}>;\n", T::DT));
+        let mut X = WgslFragment::new(32);
+        X.write(&format!("X: array<{}>;\n", A::render_type()));
+        rvec![A, X]
     }
 
     fn storage_bind_group_layout(
@@ -113,70 +117,70 @@ impl GEMV {
             ],
             device.compute_features().clone(),
         );
+        //TODO: we should unit bindings and bind vars
+        //The bind var WGSL variable should be queriable by later wgsl calls.
         let bindings = self.storage_bind_group_layout(inplace).unwrap();
         let bind_vars = self.bindvars::<P, T, N>(inplace, dst);
         let accessor = P::render_type();
 
+        println!("BINDINGS: {:?}", bindings);
         kernel_builder.write_bindings(&bindings, bind_vars);
         kernel_builder.write_metadata::<GEMVMeta>();
 
         let FIT = true;
 
-        let fit_check = if FIT {
-            r#"
-            if (row >= metadata.aShape.y) {
-                return;
-            }
-            "#
-        } else {
-            ""
-        };
-
+        let workgroup_size_y = workgroup_size.y;
         let main_loop = match self.lhs.dt() {
             DType::GGUF(g) => match g {
                 GGUFDType::Q8_0(_) => {
-                    format!(
-                        r#"
-        let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
-        for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+={}) {{
-            sum = fma(unpack4x8snorm_gguf(A[aIndex + k]) * scale[sIndex + (k/8)], X[k], sum);
-        }}
-"#,
-                        workgroup_size.y
-                    )
+                    wgsl! {
+                        let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
+                        for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+='workgroup_size_y) {
+                            sum = fma(unpack4x8snorm_gguf(A[aIndex + k]) * scale[sIndex + (k/8)], X[k], sum);
+                        }
+                    }
                 }
                 _ => unimplemented!(),
             },
             _ => {
-                format!(
-                    r#"
-        for (var k = i32(global_invocation_id.y); k < metadata.dimInner; k+={}) {{
-            sum = fma(A[aIndex + k], X[bOffset + k], sum);
-        }}"#,
-                    workgroup_size.y
-                )
+                wgsl! {
+                    for (var k = i32(global_invocation_id.y); k < metadata.dimInner; k+='workgroup_size_y) {
+                        sum = fma(A[aIndex + k], X[bOffset + k], sum);
+                    }
+                }
             }
         };
 
-        let indexing = format!(
-            r#"
-let row = i32(global_invocation_id.x);
-{fit_check}
-let batch = i32(global_invocation_id.z);
-let batchA = batch % metadata.aShape.x;
-let batchB = batch % metadata.bShape.x;
+        let row = wgsl! { let row = i32(global_invocation_id.x); };
+        kernel_builder.write_main(row);
+        if FIT {
+            kernel_builder.write_main(wgsl! {
+                if (row >= metadata.aShape.y) {
+                    return;
+                }
+            });
+        }
 
-let aOffset = metadata.aStrides.x * batchA / {N}
-let bOffset = metadata.bStrides.x * batchB / {N}
-let outOffset = metadata.outShapeStrides.x * batch / {N}
+        let batches = wgsl! {
+            let batch = i32(global_invocation_id.z);
+            let batchA = batch % metadata.aShape.x;
+            let batchB = batch % metadata.bShape.x;
+        };
+        kernel_builder.write_main(batches);
 
-var sum = {accessor}(0.0);
-let aIndex = aOffset + row * metadata.aStrides.y / {N};
-    "#
-        );
+        let offset = wgsl! {
+            let aOffset = metadata.aStrides.x * batchA / 'N;
+            let bOffset = metadata.bStrides.x * batchB / 'N;
+            let outOffset = metadata.outStrides.x * batch / 'N;
+        };
+        kernel_builder.write_main(offset);
 
-        kernel_builder.write_main(indexing.into());
-        kernel_builder.write_main(main_loop.into());
+        let sum = wgsl! { var sum = 'accessor(0.0); };
+        kernel_builder.write_main(sum);
+        let aIndex = wgsl! { let aIndex = aOffset + row * metadata.aStrides.y / 'N; };
+        kernel_builder.write_main(aIndex);
+
+        kernel_builder.write_main(main_loop);
 
         kernel_builder.render()
     }
