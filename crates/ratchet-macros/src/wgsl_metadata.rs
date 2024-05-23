@@ -43,9 +43,9 @@ pub fn derive(input: TokenStream) -> TokenStream {
     });
 
     let expanded = quote! (
-        impl #struct_name {
+        impl crate::OpMetadata for #struct_name {
             fn render() -> crate::WgslFragment {
-                let mut fragment = crate::WgslFragment::new(384);
+                let mut fragment = crate::WgslFragment::new(512);
                 fragment.write("struct Meta {\n");
                 #(
                     fragment.write("    ");

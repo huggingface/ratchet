@@ -144,7 +144,7 @@ pub enum OperationError {
 /// If they do not know their metadata at compile time, they should use [DynamicUniformBuffer] from
 /// encase.
 pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
-    fn render_wgsl() -> WgslFragment {
+    fn render() -> WgslFragment {
         todo!()
     }
 }

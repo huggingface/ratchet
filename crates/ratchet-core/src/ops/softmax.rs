@@ -6,9 +6,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, ReduceInstruction, ReduceKind, Scalar, StorageView, Tensor, Vec2, Vec4,
-    WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    rvec, wgc, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, Operation, OperationError,
+    RVec, ReduceInstruction, ReduceKind, Scalar, StorageView, Tensor, Vec2, Vec4, WgslFragment,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use wgpu::naga::Module;
 
@@ -24,12 +24,6 @@ pub struct SoftmaxMeta {
     N: u32,
     ND2: u32,
     ND4: u32,
-}
-
-impl OpMetadata for SoftmaxMeta {
-    fn render_wgsl() -> WgslFragment {
-        SoftmaxMeta::render()
-    }
 }
 
 impl OpGuards for Softmax {
