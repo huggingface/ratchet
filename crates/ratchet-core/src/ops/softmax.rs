@@ -8,8 +8,9 @@ use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, ReduceInstruction, ReduceKind, Scalar, StorageView, Tensor, Vec2, Vec4,
-    WgslFragment, WgslKernel, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
+use wgpu::naga::Module;
 
 #[derive(new, Debug, Clone)]
 pub struct Softmax {
@@ -45,7 +46,7 @@ impl OpGuards for Softmax {
 }
 
 impl Softmax {
-    pub fn render(&self, inplace: bool, dst: &Tensor, workgroup_size: WorkgroupSize) -> WgslKernel {
+    pub fn render(&self, inplace: bool, dst: &Tensor, workgroup_size: WorkgroupSize) -> Module {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
@@ -75,7 +76,7 @@ impl Softmax {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: WorkgroupSize,
-    ) -> WgslKernel {
+    ) -> Module {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size,
@@ -129,7 +130,7 @@ impl Softmax {
             }
         };
         kernel_builder.write_main(softmax);
-        kernel_builder.render()
+        kernel_builder.build().unwrap()
     }
 }
 
@@ -222,7 +223,6 @@ mod tests {
     use crate::test_util::run_py_prg;
     use crate::{shape, wgs, Device, DeviceRequest, Softmax, Tensor};
     use half::f16;
-    use wgpu::naga::front::wgsl::parse_str;
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -278,7 +278,5 @@ def softmax(a):
         let op = Softmax::new(a, 2);
         let wgs = wgs![128, 1, 1];
         let kernel = op.render(true, &dst, wgs);
-        println!("{}", kernel);
-        parse_str(&kernel.to_string()).unwrap();
     }
 }

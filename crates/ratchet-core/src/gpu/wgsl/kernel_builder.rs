@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
@@ -36,24 +38,16 @@ impl WgslFragment {
     }
 
     pub fn write(&mut self, s: &str) {
-        self.0.push_str(s);
+        self.0.write_str(s).unwrap();
     }
 
     pub fn write_fragment(&mut self, fragment: WgslFragment) {
-        self.0.push_str(&fragment.0);
+        self.write(&fragment.0);
     }
 }
 
 pub trait RenderFragment {
     fn render(&self) -> WgslFragment;
-}
-
-pub struct WgslKernel(String);
-
-impl std::fmt::Display for WgslKernel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
@@ -73,6 +67,12 @@ pub struct WgslKernelBuilder {
     pub main_idents: FxHashSet<Ident>,
     pub main: WgslFragment,
     pub features: DeviceFeatures,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum KernelBuildError {
+    #[error("Failed to build kernel: {0}")]
+    BuildError(#[from] wgpu::naga::front::wgsl::ParseError),
 }
 
 impl WgslKernelBuilder {
@@ -98,9 +98,11 @@ impl WgslKernelBuilder {
         builder
     }
 
-    pub fn render(mut self) -> WgslKernel {
+    pub fn build(mut self) -> Result<wgpu::naga::Module, KernelBuildError> {
         self.main.write("}\n");
-        WgslKernel(format!("{}\n{}", self.globals, self.main))
+        let source = format!("{}\n{}", self.globals, self.main);
+        println!("{}", source);
+        Ok(wgpu::naga::front::wgsl::parse_str(&source)?)
     }
 
     fn init_main(&mut self, workgroup_size: WorkgroupSize, builtins: &[BuiltIn]) {
@@ -193,7 +195,6 @@ impl WgslKernelBuilder {
         self.write_globals(fragment);
     }
 
-    //TODO: value shouldn't be &str
     pub fn constant<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &mut self,
         name: &str,

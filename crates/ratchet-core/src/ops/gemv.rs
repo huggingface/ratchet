@@ -6,11 +6,12 @@ use crate::{
     gguf::{GGUFDType, Q8_0, QK4_0},
     gpu::dtype::WgslDType,
     rvec, BindGroupLayoutDescriptor, BuiltIn, DType, InvariantError, KernelElement, OpMetadata,
-    OperationError, RVec, Scalar, Tensor, Vec2, Vec4, WgslFragment, WgslKernel, WgslKernelBuilder,
+    OperationError, RVec, Scalar, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder,
     WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
+use wgpu::naga::Module;
 
 #[derive(Debug, Clone)]
 pub struct GEMV {
@@ -103,7 +104,7 @@ impl GEMV {
         Ok(layout)
     }
 
-    pub fn render(&self, inplace: bool, dst: &Tensor, workgroup_size: WorkgroupSize) -> WgslKernel {
+    pub fn render(&self, inplace: bool, dst: &Tensor, workgroup_size: WorkgroupSize) -> Module {
         let kernel_element = KernelElement::Scalar;
         match (self.lhs.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
@@ -137,7 +138,7 @@ impl GEMV {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: WorkgroupSize,
-    ) -> WgslKernel {
+    ) -> Module {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
@@ -148,8 +149,20 @@ impl GEMV {
             ],
             device.compute_features().clone(),
         );
-        //TODO: we should unit bindings and bind vars
-        //The bind var WGSL variable should be queriable by later wgsl calls.
+
+        //TODO:
+        // We need a method that returns a data structure that represents all of our buffer
+        // bindings.
+        // We shouldn't repeat the match statement.
+        // The bind group layout also needs this information, we should amalgamate this.
+        //
+        // We should not need to call the kernel_builder.write_bindings method, this should be
+        // performed upon construction.
+        //
+        // The only dynamic writing is the kernel body
+        // The metadata structure can all be passed when constructing the kernel builder
+        // Those are non optional, so should be on constructor.
+
         let bindings = self.storage_bind_group_layout(inplace).unwrap();
         let bind_vars = self.bindvars::<P, T, N>(inplace, dst);
         let accessor = P::render_type();
@@ -213,7 +226,7 @@ impl GEMV {
 
         kernel_builder.write_main(main_loop);
 
-        kernel_builder.render()
+        kernel_builder.build().unwrap()
     }
 }
 
@@ -242,7 +255,5 @@ mod tests {
         };
         let dst = Tensor::zeros::<f32>(&shape![128, 1], &device);
         let kernel = op.render(false, &dst, wgs![16, 16, 1]);
-        println!("{}", kernel);
-        parse_str(&kernel.to_string()).unwrap();
     }
 }
