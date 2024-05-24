@@ -53,8 +53,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     fragment.write(",\n");
                 )*
                 fragment.write("}\n");
-                fragment.write("@group(1) @binding(0)\n");
-                fragment.write("var<uniform> metadata: Meta;\n");
                 fragment
             }
         }

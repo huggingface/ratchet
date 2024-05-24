@@ -8,6 +8,7 @@ pub trait WgslDType: std::fmt::Display {
 
     fn render(&self) -> String;
 }
+//RENDER IS CONFUSING HERE
 
 impl WgslDType for f32 {
     const DT: &'static str = "f32";

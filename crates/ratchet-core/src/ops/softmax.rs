@@ -6,9 +6,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, Operation, OperationError,
-    RVec, ReduceInstruction, ReduceKind, Scalar, StorageView, Tensor, Vec2, Vec4, WgslFragment,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    rvec, wgc, BindingMode, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, Operation,
+    OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize,
 };
 use wgpu::naga::Module;
 
@@ -40,6 +40,16 @@ impl OpGuards for Softmax {
 }
 
 impl Softmax {
+    fn register_bindings<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        _: bool,
+    ) -> Result<(), OperationError> {
+        builder.register_storage("X", BindingMode::ReadOnly, P::render_type());
+        builder.register_uniform("metadata", "Meta");
+        Ok(())
+    }
+
     pub fn render(&self, inplace: bool, dst: &Tensor, workgroup_size: WorkgroupSize) -> Module {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), kernel_element) {
@@ -73,7 +83,7 @@ impl Softmax {
     ) -> Module {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
-            workgroup_size,
+            workgroup_size.clone(),
             vec![
                 BuiltIn::GlobalInvocationId,
                 BuiltIn::LocalInvocationId,
@@ -81,7 +91,39 @@ impl Softmax {
             ],
             device.compute_features().clone(),
         );
+        self.register_bindings::<P, T, N>(&mut kernel_builder, inplace)
+            .unwrap();
         kernel_builder.write_metadata::<SoftmaxMeta>();
+
+        let dt = T::DT;
+        let accessor = P::render_type();
+
+        let BLOCK_SIZE = workgroup_size.x.render();
+        let minFloat = T::from(-65500).unwrap().render();
+
+        let workgroup_size_x = workgroup_size.x;
+
+        kernel_builder.write_global(wgsl! {
+            var<workgroup> smem: array<'accessor, 'workgroup_size_x>;
+            var<workgroup> maximum: 'dt;
+            var<workgroup> sum: 'dt;
+        });
+
+        kernel_builder.write_global(wgsl! {
+            fn block_sum(index: u32, stride: u32) {
+                if index < stride {
+                    smem[index] += smem[index + stride];
+                }
+                workgroupBarrier();
+            }
+
+            fn block_max(index: u32, stride: u32) {
+                if index < stride {
+                    smem[index] = max(smem[index], smem[index + stride]);
+                }
+                workgroupBarrier();
+            }
+        });
 
         let reduce_var = match N {
             1 => "metadata.N",
@@ -90,36 +132,75 @@ impl Softmax {
             _ => panic!("Invalid dimension"),
         };
 
-        kernel_builder.main_var(
-            "batch_stride",
-            format!("workgroup_id.y * metadata.M * {reduce_var}").into(),
-        );
-        kernel_builder.main_var(
-            "row_start",
-            format!("batch_stride + workgroup_id.x * {reduce_var}",).into(),
-        );
-        kernel_builder.main_var("index", "local_invocation_id.x".into());
-        kernel_builder.reduction::<P, T, N>(ReduceInstruction {
-            input: &self.input,
-            kind: ReduceKind::MAX,
-            axis: self.dim,
-            body: "smem[index] = max(smem[index], X[row_start + i]);".into(),
+        let offsets = wgsl! {
+            let batch_stride = workgroup_id.y * metadata.M * 'reduce_var;
+            let row_start = batch_stride + workgroup_id.x * 'reduce_var;
+            let index = local_invocation_id.x;
+        };
+        kernel_builder.write_main(offsets);
+
+        kernel_builder.write_main(wgsl! {
+            smem[index] = 'accessor('minFloat);
+            for (var i: u32 = index; i < 'reduce_var; i += 'BLOCK_SIZE) {
+                smem[index] = max(smem[index], X[row_start + i]);
+            }
+            workgroupBarrier();
         });
 
-        kernel_builder.reduction::<P, T, N>(ReduceInstruction {
-            input: &self.input,
-            kind: ReduceKind::SUM,
-            axis: self.dim,
-            body: "smem[index] += exp(X[row_start + i] - maximum);".into(),
+        let steps = (workgroup_size.x - 1).ilog2() as u32;
+        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
+            let mut iter = wgsl! { block_max(index, 'i); };
+            iter.push('\n');
+            kernel_builder.write_main(iter);
+        }
+
+        let finalize_max = match N {
+            1 => wgsl! { maximum = smem[0].x; },
+            2 => wgsl! { maximum = max(smem[0].x, smem[0].y); },
+            4 => wgsl! { maximum = max(smem[0].x, max(smem[0].y, max(smem[0].z, smem[0].w))); },
+            _ => panic!("Invalid dimension"),
+        };
+        kernel_builder.write_main(wgsl! {
+            if index == 0 {
+                'finalize_max
+            }
+            workgroupBarrier();
         });
 
-        let softmax = wgsl! {
-            for(var i: u32 = index; i < 'reduce_var; i += BLOCK_SIZE) {
+        kernel_builder.write_main(wgsl! {
+            smem[index] = 'accessor(0.);
+            for (var i: u32 = index; i < 'reduce_var; i += 'BLOCK_SIZE) {
+                smem[index] += exp(X[row_start + i] - maximum);
+            }
+            workgroupBarrier();
+        });
+
+        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
+            let mut iter = wgsl! { block_sum(index, 'i); };
+            iter.push('\n');
+            kernel_builder.write_main(iter);
+        }
+
+        let finalize_sum = match N {
+            1 => wgsl! { sum = smem[0].x; },
+            2 => wgsl! { sum = dot(smem[0], 'accessor(1.0, 1.0)); },
+            4 => wgsl! { sum = dot(smem[0], 'accessor(1.0, 1.0, 1.0, 1.0)); },
+            _ => panic!("Invalid dimension"),
+        };
+        kernel_builder.write_main(wgsl! {
+            if index == 0 {
+                'finalize_sum
+            }
+            workgroupBarrier();
+        });
+
+        let finalize = wgsl! {
+            for(var i: u32 = index; i < 'reduce_var; i += 'BLOCK_SIZE) {
                 var val = X[row_start + i];
                 X[row_start + i] = exp(val - maximum) / sum;
             }
         };
-        kernel_builder.write_main(softmax);
+        kernel_builder.write_main(finalize);
         kernel_builder.build().unwrap()
     }
 }

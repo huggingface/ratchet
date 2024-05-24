@@ -62,6 +62,7 @@ impl GEMV {
             builder.register_storage("bias", BindingMode::ReadOnly, accessor.clone());
         }
         builder.register_storage("result", BindingMode::ReadWrite, accessor);
+        builder.register_uniform("metadata", "Meta");
         Ok(())
     }
 

@@ -50,10 +50,6 @@ impl Into<wgpu::BindGroupLayoutEntry> for KernelBinding {
 
 impl RenderFragment for KernelBinding {
     fn render(&self) -> crate::WgslFragment {
-        let ty = match self.ty {
-            BindingType::Storage => "storage",
-            BindingType::Uniform => "uniform",
-        };
         let mode = match self.mode {
             BindingMode::ReadOnly => "read",
             BindingMode::ReadWrite => "read_write",
@@ -67,10 +63,15 @@ impl RenderFragment for KernelBinding {
             ..
         } = self;
 
-        wgsl! {
-            @group('group) @binding('binding) var<'ty, 'mode> 'name: 'accessor;
-        }
-        .into()
+        let result = match self.ty {
+            BindingType::Storage => wgsl! {
+                @group('group) @binding('binding) var<storage, 'mode> 'name: 'accessor;
+            },
+            BindingType::Uniform => wgsl! {
+                @group('group) @binding('binding) var<uniform> 'name: 'accessor;
+            },
+        };
+        result.into()
     }
 }
 
