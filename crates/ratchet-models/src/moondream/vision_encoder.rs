@@ -1,11 +1,7 @@
-use std::{
-    error::Error,
-    io::{BufRead, Seek},
-};
+use std::io::{BufRead, Seek};
 
-use hf_hub::api::sync::Api;
-use ratchet::{prelude::shape, Device, DeviceRequest, Tensor};
-use ratchet_loader::gguf::{self, gguf::Header};
+use ratchet::{prelude::shape, Device, Tensor};
+use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{LayerNorm, Linear, Module};
 
 #[derive(Debug, derive_new::new)]
@@ -205,14 +201,14 @@ impl VisionEncoder {
                 fc2: Linear::new(lt("mm.2.weight")?, Some(lt("mm.2.bias")?)),
             },
         };
-        let attn_ln_eps = header
-            .metadata
-            .get("clip.vision.attention.layer_norm_epsilon")
-            .unwrap()
-            .to_f32()
-            .unwrap();
+
+        // Torch default since not specified in codebase
+        // Specified incorrectly in metadata headers as 1e-6
+        let ln_eps = 1e-05;
         let transformer = VisionTransformer {
             patch_embed: LinearPatchEmbedding {
+                // Reshaped in the moondream gguf exporter... but why?
+                // https://github.com/vikhyat/moondream/blob/main/create_gguf.py#L98
                 linear: Linear::new(
                     lt("v.patch_embd.weight")?.view(shape![1152, 588])?,
                     Some(lt("v.patch_embd.bias")?),
@@ -275,21 +271,17 @@ impl VisionEncoder {
                         norm1: LayerNorm::new(
                             lt(&format!("v.blk.{}.ln1.weight", layer)).unwrap(),
                             Some(lt(&format!("v.blk.{}.ln1.bias", layer)).unwrap()),
-                            attn_ln_eps,
+                            ln_eps,
                         ),
                         norm2: LayerNorm::new(
                             lt(&format!("v.blk.{}.ln2.weight", layer)).unwrap(),
                             Some(lt(&format!("v.blk.{}.ln2.bias", layer)).unwrap()),
-                            attn_ln_eps,
+                            ln_eps,
                         ),
                     }
                 })
                 .collect::<Vec<_>>(),
-            norm: LayerNorm::new(
-                lt("v.post_ln.weight")?,
-                Some(lt("v.post_ln.bias")?),
-                attn_ln_eps,
-            ),
+            norm: LayerNorm::new(lt("v.post_ln.weight")?, Some(lt("v.post_ln.bias")?), ln_eps),
         };
         Ok(VisionEncoder {
             projection: projection,
@@ -298,16 +290,48 @@ impl VisionEncoder {
     }
 }
 
-#[test]
-fn load() {
-    let api = Api::new().unwrap();
-    let model = api.model("vikhyatk/moondream2".to_string());
-    let model_path = model.get("moondream2-mmproj-f16.gguf").unwrap();
-    let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
-    let device = Device::request_device(DeviceRequest::GPU).unwrap();
-    let content = gguf::gguf::Header::read(&mut reader).unwrap();
-    let model = VisionEncoder::load(&content, &mut reader, &device).unwrap();
-    let input = Tensor::randn::<f32>(shape![1, 3, 378, 378], device);
-    let out = model.schedule(input).unwrap();
-    println!("{:?}", out.resolve().unwrap().to(&Device::CPU).unwrap());
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use hf_hub::api::sync::Api;
+    use ratchet::{prelude::shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use ratchet_loader::gguf;
+    use ratchet_nn::Module;
+
+    use crate::moondream::vision_encoder::VisionEncoder;
+
+    fn ground_truth(tensor: Tensor) -> anyhow::Result<Tensor> {
+        let prg = r#"
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+def ground(*args):
+    tensor = torch.from_numpy(args[0])
+    model_id = "vikhyatk/moondream2"
+    revision = "2024-05-20"
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id, trust_remote_code=True, revision=revision
+    )
+    return model.encode_image(tensor).numpy()
+"#;
+
+        run_py_prg(prg.to_string(), &[&tensor], &[])
+    }
+
+    #[test]
+    fn load() {
+        let api = Api::new().unwrap();
+        let model = api.model("vikhyatk/moondream2".to_string());
+        let model_path = model.get("moondream2-mmproj-f16.gguf").unwrap();
+        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let content = gguf::gguf::Header::read(&mut reader).unwrap();
+        let model = VisionEncoder::load(&content, &mut reader, &device).unwrap();
+        let input = Tensor::randn::<f32>(shape![1, 3, 378, 378], device);
+        let out = model.schedule(input.clone()).unwrap();
+        println!("{:?}", out.resolve().unwrap().to(&Device::CPU).unwrap());
+        println!(
+            "{:?}",
+            ground_truth(input.to(&Device::CPU).unwrap()).unwrap()
+        );
+    }
 }
