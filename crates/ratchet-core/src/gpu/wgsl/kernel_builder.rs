@@ -87,13 +87,13 @@ impl WgslKernelBuilder {
         }
         let mut builder = Self {
             bindings: RVec::new(),
-            workgroup_size: workgroup_size.clone(),
-            builtins: builtins.clone(),
+            workgroup_size,
+            builtins,
             globals,
             main: WgslFragment::new(2048),
             features,
         };
-        builder.init_main(workgroup_size, &builtins);
+        builder.init_main();
         builder
     }
 
@@ -108,12 +108,12 @@ impl WgslKernelBuilder {
         Ok(wgpu::naga::front::wgsl::parse_str(source.0.as_str())?)
     }
 
-    fn init_main(&mut self, workgroup_size: WorkgroupSize, builtins: &[BuiltIn]) {
-        self.main.write(&format!("{}\n", workgroup_size));
+    fn init_main(&mut self) {
+        self.main.write(&format!("{}\n", self.workgroup_size));
         self.main.write("fn main(\n");
-        for (b, builtin) in builtins.iter().enumerate() {
+        for (b, builtin) in self.builtins.iter().enumerate() {
             let mut builtin = builtin.render();
-            if b < builtins.len() - 1 {
+            if b < self.builtins.len() - 1 {
                 builtin.write(",\n");
             }
             self.main.write_fragment(builtin);

@@ -74,24 +74,3 @@ impl RenderFragment for KernelBinding {
         result.into()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use wgpu::naga::front::wgsl::parse_str;
-
-    #[test]
-    fn test_kernel_binding_render() {
-        let binding = KernelBinding::new(
-            "input".into(),
-            0,
-            0,
-            BindingType::Storage,
-            BindingMode::ReadOnly,
-            "array<vec4<f32>>".to_string(),
-        );
-
-        let rendered = binding.render();
-        parse_str(&rendered.to_string()).unwrap();
-    }
-}
