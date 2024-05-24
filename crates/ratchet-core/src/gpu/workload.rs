@@ -1,4 +1,5 @@
 use derive_new::new;
+use inline_wgsl::wgsl;
 
 #[derive(Debug, Clone, new, PartialEq, Eq, Hash)]
 pub struct WorkgroupSize {
@@ -16,11 +17,8 @@ macro_rules! wgs {
 
 impl std::fmt::Display for WorkgroupSize {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            r#"@compute @workgroup_size({}, {}, {})"#,
-            self.x, self.y, self.z
-        )
+        let WorkgroupSize { x, y, z } = self;
+        write!(f, "{}", wgsl! { @compute @workgroup_size('x, 'y, 'z) })
     }
 }
 
