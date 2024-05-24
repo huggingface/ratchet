@@ -108,9 +108,13 @@ impl WgslKernelBuilder {
 
     pub fn build(mut self) -> Result<wgpu::naga::Module, KernelBuildError> {
         self.main.write("}\n");
-        let source = format!("{}\n{}", self.globals, self.main);
+        let mut source = self.globals;
+        for binding in self.bindings.iter() {
+            source.write(binding.render().0.as_str());
+        }
+        source.write(self.main.0.as_str());
         println!("{}", source);
-        Ok(wgpu::naga::front::wgsl::parse_str(&source)?)
+        Ok(wgpu::naga::front::wgsl::parse_str(source.0.as_str())?)
     }
 
     fn init_main(&mut self, workgroup_size: WorkgroupSize, builtins: &[BuiltIn]) {

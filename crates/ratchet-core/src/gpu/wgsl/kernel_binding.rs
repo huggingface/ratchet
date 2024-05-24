@@ -23,6 +23,31 @@ pub struct KernelBinding {
     accessor: String,
 }
 
+impl Into<wgpu::BindGroupLayoutEntry> for KernelBinding {
+    fn into(self) -> wgpu::BindGroupLayoutEntry {
+        let (binding_type, has_dynamic_offset) = match self.ty {
+            BindingType::Storage => (
+                wgpu::BufferBindingType::Storage {
+                    read_only: matches!(self.mode, BindingMode::ReadOnly),
+                },
+                false,
+            ),
+            BindingType::Uniform => (wgpu::BufferBindingType::Uniform, true),
+        };
+
+        wgpu::BindGroupLayoutEntry {
+            binding: self.binding as u32,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: binding_type,
+                min_binding_size: None,
+                has_dynamic_offset,
+            },
+            count: None,
+        }
+    }
+}
+
 impl RenderFragment for KernelBinding {
     fn render(&self) -> crate::WgslFragment {
         let ty = match self.ty {

@@ -1,4 +1,4 @@
-use crate::{gpu::WgpuDevice, rvec, RVec, RenderFragment, WgslFragment};
+use crate::{gpu::WgpuDevice, rvec, RVec};
 
 use super::{static_resource_pool::StaticResourcePool, StaticResourcePoolReadLockAccessor};
 
@@ -32,28 +32,6 @@ impl BindGroupLayoutEntryExt for wgpu::BindGroupLayoutEntry {
             },
             count: None,
         }
-    }
-}
-
-impl RenderFragment for wgpu::BindGroupLayoutEntry {
-    fn render(&self) -> WgslFragment {
-        let ty = match &self.ty {
-            wgpu::BindingType::Buffer { ty, .. } => ty,
-            _ => panic!("Unsupported binding type"),
-        };
-        let binding = match ty {
-            wgpu::BufferBindingType::Storage { read_only: ro } => {
-                if *ro {
-                    "var<storage, read>"
-                } else {
-                    "var<storage, read_write>"
-                }
-            }
-            wgpu::BufferBindingType::Uniform => "var<uniform>",
-        };
-        let mut fragment = WgslFragment::new(binding.len());
-        fragment.write(binding);
-        fragment
     }
 }
 
