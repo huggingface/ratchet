@@ -1,11 +1,10 @@
-use crate::gpu::dtype::WgslDType;
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
     PoolError, WgpuDevice, WorkgroupCount,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor, WgslFragment,
-    WgslPrimitive,
+    ops::*, rvec, CompiledOp, ComputeModule, InvariantError, KernelBuildError, RVec, StorageView,
+    Tensor, WgslFragment, WorkgroupSize,
 };
 use encase::internal::WriteInto;
 use encase::ShaderType;
@@ -131,6 +130,8 @@ pub enum OperationError {
     #[error(transparent)]
     InvariantError(#[from] InvariantError),
     #[error(transparent)]
+    KernelBuildError(#[from] KernelBuildError),
+    #[error(transparent)]
     UniformError(#[from] encase::internal::Error),
     #[error(transparent)]
     UnknownError(#[from] anyhow::Error),
@@ -197,6 +198,15 @@ pub trait MetaOperation: Debug + 'static {
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> Result<u64, OperationError>;
+
+    fn build_module(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: WorkgroupSize,
+    ) -> Result<ComputeModule, OperationError> {
+        todo!()
+    }
 
     fn compile(
         &self,

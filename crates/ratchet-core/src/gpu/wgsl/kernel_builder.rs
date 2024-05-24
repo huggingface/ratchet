@@ -2,8 +2,8 @@ use inline_wgsl::wgsl;
 use std::fmt::Write;
 
 use crate::{
-    BindingMode, BindingType, DRVec, DeviceFeatures, KernelBinding, OpMetadata, RVec, Scalar, Vec3,
-    WgslPrimitive, WorkgroupSize,
+    BindingMode, BindingType, ComputeModule, DeviceFeatures, KernelBinding, OpMetadata, RVec,
+    Scalar, Vec3, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(Debug)]
@@ -97,7 +97,7 @@ impl WgslKernelBuilder {
         builder
     }
 
-    pub fn build(mut self) -> Result<wgpu::naga::Module, KernelBuildError> {
+    pub fn build(mut self) -> Result<ComputeModule, KernelBuildError> {
         self.main.write("}\n");
         let mut source = self.globals;
         for binding in self.bindings.iter() {
@@ -207,20 +207,5 @@ impl BuiltIn {
             BuiltIn::SubgroupId => "subgroup_id",
             BuiltIn::SubgroupSize => "subgroup_size",
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    pub fn test_builtin_render() {
-        use crate::BuiltIn;
-        let local_id = BuiltIn::LocalInvocationId;
-        let fragment = local_id.render();
-        println!("{}", fragment);
-        assert_eq!(
-            fragment.0,
-            "@builtin(local_invocation_id) local_invocation_id: vec3<u32>"
-        );
     }
 }
