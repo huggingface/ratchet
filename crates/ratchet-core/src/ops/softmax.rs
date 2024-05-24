@@ -7,7 +7,7 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, BindingMode, BuiltIn, DType, KernelElement, MetaOperation, OpGuards, Operation,
-    OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder,
+    OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder,
     WgslPrimitive, WorkgroupSize,
 };
 use wgpu::naga::Module;

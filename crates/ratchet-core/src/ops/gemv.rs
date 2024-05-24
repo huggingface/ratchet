@@ -173,7 +173,6 @@ impl GEMV {
 #[cfg(test)]
 mod tests {
     use crate::{shape, wgs, Device, DeviceRequest, Tensor, GEMV};
-    use wgpu::naga::front::wgsl::parse_str;
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
