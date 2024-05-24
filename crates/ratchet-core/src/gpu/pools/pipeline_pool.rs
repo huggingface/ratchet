@@ -13,7 +13,6 @@ slotmap::new_key_type! { pub struct ComputePipelineHandle; }
 pub struct ComputePipelineDescriptor {
     pub pipeline_layout: PipelineLayoutHandle,
     pub kernel_key: String,
-    //aux_ctx: Option<RVec<(&'static str, u32)>>, Used for sizing SMEM
 }
 
 pub struct ComputePipelinePool {

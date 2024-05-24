@@ -84,7 +84,7 @@ impl Softmax {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
-            vec![
+            rvec![
                 BuiltIn::GlobalInvocationId,
                 BuiltIn::LocalInvocationId,
                 BuiltIn::WorkgroupId,

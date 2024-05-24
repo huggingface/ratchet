@@ -2,7 +2,7 @@ use inline_wgsl::wgsl;
 use std::fmt::Write;
 
 use crate::{
-    BindingMode, BindingType, DeviceFeatures, KernelBinding, OpMetadata, RVec, Scalar, Vec3,
+    BindingMode, BindingType, DRVec, DeviceFeatures, KernelBinding, OpMetadata, RVec, Scalar, Vec3,
     WgslPrimitive, WorkgroupSize,
 };
 
@@ -63,7 +63,7 @@ impl From<&str> for Ident {
 pub struct WgslKernelBuilder {
     pub bindings: RVec<KernelBinding>,
     pub workgroup_size: WorkgroupSize,
-    pub builtins: Vec<BuiltIn>,
+    pub builtins: RVec<BuiltIn>,
     pub globals: WgslFragment,
     pub main: WgslFragment,
     pub features: DeviceFeatures,
@@ -78,7 +78,7 @@ pub enum KernelBuildError {
 impl WgslKernelBuilder {
     pub fn new(
         workgroup_size: WorkgroupSize,
-        builtins: Vec<BuiltIn>,
+        builtins: RVec<BuiltIn>,
         features: DeviceFeatures,
     ) -> Self {
         let mut globals = WgslFragment::new(2048);

@@ -3,7 +3,7 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, gpu::dtype::WgslDType, BindingMode, BuiltIn, DType, InvariantError,
+    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, BindingMode, BuiltIn, DType, InvariantError,
     KernelElement, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
     WorkgroupSize,
 };
@@ -102,7 +102,7 @@ impl GEMV {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
-            vec![
+            rvec![
                 BuiltIn::GlobalInvocationId,
                 BuiltIn::LocalInvocationId,
                 BuiltIn::WorkgroupId,
