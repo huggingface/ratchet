@@ -3,11 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::{GGUFDType, Q8_0, QK4_0},
-    gpu::dtype::WgslDType,
-    rvec, BindGroupLayoutDescriptor, BindingMode, BindingType, BuiltIn, DType, InvariantError,
-    KernelBinding, KernelElement, OpMetadata, OperationError, RVec, Scalar, Tensor, Vec2, Vec4,
-    WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    gguf::GGUFDType, gpu::dtype::WgslDType, BindingMode, BuiltIn, DType, InvariantError,
+    KernelElement, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -112,19 +110,6 @@ impl GEMV {
             device.compute_features().clone(),
         );
 
-        //TODO:
-        // We need a method that returns a data structure that represents all of our buffer
-        // bindings.
-        // We shouldn't repeat the match statement.
-        // The bind group layout also needs this information, we should amalgamate this.
-        //
-        // We should not need to call the kernel_builder.write_bindings method, this should be
-        // performed upon construction.
-        //
-        // The only dynamic writing is the kernel body
-        // The metadata structure can all be passed when constructing the kernel builder
-        // Those are non optional, so should be on constructor.
-
         self.register_bindings::<P, T, N>(&mut kernel_builder, inplace)
             .unwrap();
         let accessor = P::render_type();
@@ -155,8 +140,7 @@ impl GEMV {
             }
         };
 
-        let row = wgsl! { let row = i32(global_invocation_id.x); };
-        kernel_builder.write_main(row);
+        kernel_builder.write_main(wgsl! { let row = i32(global_invocation_id.x); });
         if FIT {
             kernel_builder.write_main(wgsl! {
                 if (row >= metadata.aShape.y) {
@@ -165,24 +149,20 @@ impl GEMV {
             });
         }
 
-        let batches = wgsl! {
+        kernel_builder.write_main(wgsl! {
             let batch = i32(global_invocation_id.z);
             let batchA = batch % metadata.aShape.x;
             let batchB = batch % metadata.bShape.x;
-        };
-        kernel_builder.write_main(batches);
+        });
 
-        let offset = wgsl! {
+        kernel_builder.write_main(wgsl! {
             let aOffset = metadata.aStrides.x * batchA / 'N;
             let bOffset = metadata.bStrides.x * batchB / 'N;
             let outOffset = metadata.outStrides.x * batch / 'N;
-        };
-        kernel_builder.write_main(offset);
+        });
 
-        let sum = wgsl! { var sum = 'accessor(0.0); };
-        kernel_builder.write_main(sum);
-        let aIndex = wgsl! { let aIndex = aOffset + row * metadata.aStrides.y / 'N; };
-        kernel_builder.write_main(aIndex);
+        kernel_builder.write_main(wgsl! { var sum = 'accessor(0.0); });
+        kernel_builder.write_main(wgsl! { let aIndex = aOffset + row * metadata.aStrides.y / 'N; });
 
         kernel_builder.write_main(main_loop);
 

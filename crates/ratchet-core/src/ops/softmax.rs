@@ -149,9 +149,7 @@ impl Softmax {
 
         let steps = (workgroup_size.x - 1).ilog2() as u32;
         for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
-            let mut iter = wgsl! { block_max(index, 'i); };
-            iter.push('\n');
-            kernel_builder.write_main(iter);
+            kernel_builder.write_main(wgsl! { block_max(index, 'i); });
         }
 
         let finalize_max = match N {
@@ -176,9 +174,7 @@ impl Softmax {
         });
 
         for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
-            let mut iter = wgsl! { block_sum(index, 'i); };
-            iter.push('\n');
-            kernel_builder.write_main(iter);
+            kernel_builder.write_main(wgsl! { block_sum(index, 'i); });
         }
 
         let finalize_sum = match N {
