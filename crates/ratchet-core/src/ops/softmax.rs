@@ -228,20 +228,6 @@ impl MetaOperation for Softmax {
         format!("softmax_{}", self.kernel_element(dst).as_str())
     }
 
-    fn bindvars<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
-        &self,
-        inplace: bool,
-        _: &Tensor,
-    ) -> RVec<WgslFragment> {
-        if !inplace {
-            panic!("Only inplace softmax is supported");
-        }
-
-        let mut fragment = WgslFragment::new(32);
-        fragment.write(&format!("X: array<{}>;\n", A::render_type()));
-        rvec![fragment]
-    }
-
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let input = &self.input;
         let N = input.shape()[self.dim] as u32;
@@ -348,6 +334,6 @@ def softmax(a):
         let dst = Tensor::zeros::<f16>(&shape![1, 2, 128], &device);
         let op = Softmax::new(a, 2);
         let wgs = wgs![128, 1, 1];
-        let kernel = op.render(true, &dst, wgs);
+        let _ = op.render(true, &dst, wgs);
     }
 }

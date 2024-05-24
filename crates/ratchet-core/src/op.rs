@@ -167,14 +167,6 @@ pub trait MetaOperation: Debug + 'static {
         false
     }
 
-    fn bindvars<A: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
-        &self,
-        inplace: bool,
-        dst: &Tensor,
-    ) -> RVec<WgslFragment> {
-        rvec![]
-    }
-
     /// # Kernel Element
     ///
     /// Determine the largest possible unit data type that can be used (e.g f32, vec2<f32>, vec4<f32>)
