@@ -3,8 +3,8 @@ use std::fmt::Write;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    BindGroupLayoutDescriptor, DeviceFeatures, OpMetadata, RVec, Scalar, Tensor, Vec3, WgslArray,
-    WgslPrimitive, WorkgroupSize,
+    BindGroupLayoutDescriptor, BindingMode, BindingType, DeviceFeatures, KernelBinding, OpMetadata,
+    RVec, Scalar, Tensor, Vec3, WgslArray, WgslPrimitive, WorkgroupSize,
 };
 
 use super::dtype::WgslDType;
@@ -59,7 +59,14 @@ impl std::fmt::Display for Ident {
     }
 }
 
+impl From<&str> for Ident {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
 pub struct WgslKernelBuilder {
+    pub bindings: RVec<KernelBinding>,
     pub workgroup_size: WorkgroupSize,
     pub builtins: Vec<BuiltIn>,
     pub globals: WgslFragment,
@@ -86,6 +93,7 @@ impl WgslKernelBuilder {
             globals.write("enable f16;\n");
         }
         let mut builder = Self {
+            bindings: RVec::new(),
             workgroup_size: workgroup_size.clone(),
             builtins: builtins.clone(),
             globals,
@@ -149,7 +157,7 @@ impl WgslKernelBuilder {
     }
 
     pub fn write_metadata<M: OpMetadata>(&mut self) {
-        self.write_globals(M::render_wgsl());
+        self.write_globals(M::render());
     }
 
     pub fn shared_memory<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
@@ -224,23 +232,36 @@ impl WgslKernelBuilder {
         self.write_main(fragment);
     }
 
-    pub fn write_bindings(
+    pub(crate) fn register_binding(
         &mut self,
-        bindings: &BindGroupLayoutDescriptor,
-        bind_vars: RVec<WgslFragment>,
+        ty: BindingType,
+        mode: BindingMode,
+        name: impl Into<Ident>,
+        accessor: impl ToString,
     ) {
-        let mut fragment = WgslFragment::new(512);
-        for (binding, bind_var) in bindings.entries.iter().zip(bind_vars) {
-            let buffer_binding_type = match binding.ty {
-                wgpu::BindingType::Buffer { ty, .. } => ty,
-                _ => panic!("Unsupported binding type"),
-            };
-            matches!(buffer_binding_type, wgpu::BufferBindingType::Storage { .. });
-            fragment.write(format!("@group(0) @binding({})\n", binding.binding).as_str());
-            fragment.write_fragment(binding.render());
-            fragment.write_fragment(bind_var);
-        }
-        self.write_globals(fragment);
+        let group = !matches!(ty, BindingType::Storage) as usize;
+        let binding = KernelBinding::new(
+            name.into(),
+            group,
+            self.bindings.len(),
+            ty,
+            mode,
+            accessor.to_string(),
+        );
+        self.bindings.push(binding);
+    }
+
+    pub(crate) fn register_storage(
+        &mut self,
+        name: impl Into<Ident>,
+        mode: BindingMode,
+        accessor: impl ToString,
+    ) {
+        self.register_binding(BindingType::Storage, mode, name, accessor);
+    }
+
+    pub fn register_uniform_binding(&mut self, name: impl Into<Ident>, accessor: impl ToString) {
+        self.register_binding(BindingType::Uniform, BindingMode::ReadOnly, name, accessor);
     }
 
     pub fn reduction<P: WgslPrimitive<T, N>, T: WgslDType + num_traits::Float, const N: usize>(

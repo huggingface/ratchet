@@ -5,9 +5,9 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gguf::{GGUFDType, Q8_0, QK4_0},
     gpu::dtype::WgslDType,
-    rvec, BindGroupLayoutDescriptor, BuiltIn, DType, InvariantError, KernelElement, OpMetadata,
-    OperationError, RVec, Scalar, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize,
+    rvec, BindGroupLayoutDescriptor, BindingMode, BindingType, BuiltIn, DType, InvariantError,
+    KernelBinding, KernelElement, OpMetadata, OperationError, RVec, Scalar, Tensor, Vec2, Vec4,
+    WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -37,71 +37,32 @@ pub struct GEMVMeta {
     dimInner: i32,
 }
 
-impl OpMetadata for GEMVMeta {
-    fn render_wgsl() -> WgslFragment {
-        //TODO: fix this in proc macro
-        GEMVMeta::render()
-    }
-}
-
 impl GEMV {
-    //TODO: this is stupid
-    fn bindvars<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+    fn register_bindings<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
         &self,
+        builder: &mut WgslKernelBuilder,
         _: bool,
-        _: &Tensor,
-    ) -> RVec<WgslFragment> {
+    ) -> Result<(), OperationError> {
         let dt = T::DT;
-        let mut bind_vars = rvec![];
-        match self.lhs.dt() {
-            DType::F32 | DType::F16 => {
-                let A = wgsl! { A: array<'dt>; }.into();
-                let X = wgsl! { X: array<'dt>; }.into();
-                bind_vars.push(A);
-                bind_vars.push(X);
+        let (A, _, bias) = (&self.lhs, &self.rhs, &self.bias);
 
-                if self.bias.is_some() {
-                    let bias = wgsl! { bias: array<vec4<'dt>>; }.into();
-                    bind_vars.push(bias);
-                }
-            }
-            DType::GGUF(g) => match g {
-                GGUFDType::Q8_0(_) => {
-                    let A = wgsl! { A: array<u32>; }.into();
-                    let scale = wgsl! { scale: array<'dt>; }.into();
-                    let X = wgsl! { X: array<vec4<'dt>>; }.into();
-                    bind_vars.push(A);
-                    bind_vars.push(scale);
-                    bind_vars.push(X);
-
-                    if self.bias.is_some() {
-                        let bias = wgsl! { bias: array<'dt>; }.into();
-                        bind_vars.push(bias);
-                    }
-                }
-                _ => unimplemented!(),
-            },
-            _ => panic!("Unsupported dtype"),
+        let accessor = format!("array<{dt}>");
+        if A.dt().is_float() {
+            builder.register_storage("A", BindingMode::ReadOnly, accessor.clone());
+            builder.register_storage("X", BindingMode::ReadOnly, accessor.clone());
+        } else if A.dt().is_quantized() {
+            builder.register_storage("A", BindingMode::ReadOnly, format!("array<u32>"));
+            builder.register_storage("scale", BindingMode::ReadOnly, accessor.clone());
+            builder.register_storage("X", BindingMode::ReadOnly, format!("array<vec4<{dt}>>"));
+        } else {
+            return Err(InvariantError::UnsupportedDType(A.dt()).into());
         }
 
-        let result = wgsl! { result: array<'dt>; }.into();
-        bind_vars.push(result);
-        bind_vars
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        _inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        let (A, B, bias) = (&self.lhs, &self.rhs, &self.bias);
-        let layout = match (A.dt(), B.dt(), bias.is_some()) {
-            (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
-            (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
-            (DType::GGUF(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
-            (DType::GGUF(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
-            _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
-        };
-        Ok(layout)
+        if bias.is_some() {
+            builder.register_storage("bias", BindingMode::ReadOnly, accessor.clone());
+        }
+        builder.register_storage("result", BindingMode::ReadWrite, accessor);
+        Ok(())
     }
 
     pub fn render(&self, inplace: bool, dst: &Tensor, workgroup_size: WorkgroupSize) -> Module {
@@ -163,12 +124,10 @@ impl GEMV {
         // The metadata structure can all be passed when constructing the kernel builder
         // Those are non optional, so should be on constructor.
 
-        let bindings = self.storage_bind_group_layout(inplace).unwrap();
-        let bind_vars = self.bindvars::<P, T, N>(inplace, dst);
+        self.register_bindings::<P, T, N>(&mut kernel_builder, inplace)
+            .unwrap();
         let accessor = P::render_type();
 
-        println!("BINDINGS: {:?}", bindings);
-        kernel_builder.write_bindings(&bindings, bind_vars);
         kernel_builder.write_metadata::<GEMVMeta>();
 
         let FIT = true;

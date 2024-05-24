@@ -81,10 +81,6 @@ impl Softmax {
             ],
             device.compute_features().clone(),
         );
-        let bindings = self.storage_bind_group_layout(inplace).unwrap();
-        let bind_vars = self.bindvars::<P, T, N>(inplace, dst);
-
-        kernel_builder.write_bindings(&bindings, bind_vars);
         kernel_builder.write_metadata::<SoftmaxMeta>();
 
         let reduce_var = match N {
