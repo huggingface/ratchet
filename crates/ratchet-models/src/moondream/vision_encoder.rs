@@ -14,6 +14,7 @@ struct Attention {
     dim: usize,
     qkv: Linear,
     proj: Linear,
+    scale_factor: Tensor,
 }
 
 impl Module for Attention {
@@ -57,14 +58,9 @@ impl Module for Attention {
             .view(shape![b, self.n_heads, n, h_dim])?;
 
         // scaled dot-product attention
-        let scale_factor = Tensor::from_data(
-            [1.0 / (h_dim as f32).sqrt()],
-            shape![1],
-            input.clone().device().clone(),
-        );
         let mut attn_weights = q
             .matmul(k.permute(&[0, 1, 3, 2])?, false, false)?
-            .mul(scale_factor)?;
+            .mul(self.scale_factor.clone())?;
         attn_weights = attn_weights.softmax(3)?;
         let mut x = attn_weights.matmul(v, false, false)?;
         x = x.permute(&[0, 1, 3, 2])?.view(shape![b, n, c])?;
@@ -196,10 +192,10 @@ impl VisionEncoder {
         device: &Device,
     ) -> anyhow::Result<Self> {
         let lt = |name: &str| disk_model.tensor(reader, &name, device);
-        Self::load_inner(disk_model, lt)
+        Self::load_inner(disk_model, lt, device)
     }
 
-    fn load_inner<F>(header: &Header, mut lt: F) -> anyhow::Result<Self>
+    fn load_inner<F>(header: &Header, mut lt: F, device: &Device) -> anyhow::Result<Self>
     where
         F: FnMut(&str) -> anyhow::Result<Tensor>,
     {
@@ -234,6 +230,19 @@ impl VisionEncoder {
                     let qkvw = Tensor::cat(vec![qw, kw, vw].into(), 0).unwrap();
                     let qkvb = Tensor::cat(vec![qb, kb, vb].into(), 0).unwrap();
 
+                    let n_heads = header
+                        .metadata
+                        .get("clip.vision.attention.head_count")
+                        .unwrap()
+                        .to_u32()
+                        .unwrap()
+                        .try_into()
+                        .unwrap();
+                    let dim = 1152;
+                    let h_dim = dim / n_heads;
+                    let scale_factor =
+                        Tensor::from_data([1.0 / (h_dim as f32).sqrt()], shape![1], device.clone());
+
                     VitBlock {
                         embed_dim: header
                             .metadata
@@ -244,20 +253,14 @@ impl VisionEncoder {
                             .try_into()
                             .unwrap(),
                         attn: Attention {
-                            n_heads: header
-                                .metadata
-                                .get("clip.vision.attention.head_count")
-                                .unwrap()
-                                .to_u32()
-                                .unwrap()
-                                .try_into()
-                                .unwrap(),
+                            n_heads: n_heads,
                             dim: 1152,
                             qkv: Linear::new(qkvw, Some(qkvb)),
                             proj: Linear::new(
                                 lt(&format!("v.blk.{}.attn_out.weight", layer)).unwrap(),
                                 Some(lt(&format!("v.blk.{}.attn_out.bias", layer)).unwrap()),
                             ),
+                            scale_factor: scale_factor,
                         },
                         mlp: MLP {
                             fc1: Linear::new(
