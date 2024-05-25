@@ -125,7 +125,7 @@ impl Module for LinearPatchEmbedding {
             .permute(&[0, 2, 1, 3])?;
         // b, h, c, w, p1, p2
         x = x
-            .view(shape![b * h, c, p1, w * p2])?
+            .view(shape![b * h, c, w, p1 * p2])?
             .permute(&[0, 2, 1, 3])?;
         // b, h, w, c, p1, p2
         x = x.view(shape![b, h * w, c * p1 * p2])?;
@@ -307,7 +307,7 @@ import torch
 def ground(*args):
     tensor = torch.from_numpy(args[0])
     model_id = "vikhyatk/moondream2"
-    revision = "2024-05-20"
+    revision = "2024-05-08"
     model = AutoModelForCausalLM.from_pretrained(
         model_id, trust_remote_code=True, revision=revision
     )
