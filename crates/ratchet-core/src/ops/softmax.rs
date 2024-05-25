@@ -2,6 +2,7 @@ use derive_new::new;
 use encase::ShaderType;
 use half::f16;
 use inline_wgsl::wgsl;
+use num_traits::NumCast;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
@@ -39,7 +40,7 @@ impl OpGuards for Softmax {
 }
 
 impl Softmax {
-    fn register_bindings<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+    fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
         _: bool,
@@ -58,22 +59,22 @@ impl Softmax {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_softmax::<Scalar<f32>, _, 1>(inplace, dst, workgroup_size)
+                self.build_softmax::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_softmax::<Vec2<f32>, _, 2>(inplace, dst, workgroup_size)
+                self.build_softmax::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_softmax::<Vec4<f32>, _, 4>(inplace, dst, workgroup_size)
+                self.build_softmax::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_softmax::<Scalar<f16>, _, 1>(inplace, dst, workgroup_size)
+                self.build_softmax::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_softmax::<Vec2<f16>, _, 2>(inplace, dst, workgroup_size)
+                self.build_softmax::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_softmax::<Vec4<f16>, _, 4>(inplace, dst, workgroup_size)
+                self.build_softmax::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
@@ -83,12 +84,15 @@ impl Softmax {
         }
     }
 
-    fn build_softmax<P: WgslPrimitive<T, N>, T: WgslDType + num_traits::Float, const N: usize>(
+    fn build_softmax<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
         workgroup_size: WorkgroupSize,
-    ) -> Result<ComputeModule, OperationError> {
+    ) -> Result<ComputeModule, OperationError>
+    where
+        P::T: num_traits::Float,
+    {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
@@ -99,14 +103,16 @@ impl Softmax {
             ],
             device.compute_features().clone(),
         );
-        self.register_bindings::<P, T, N>(&mut kernel_builder, inplace)?;
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.write_metadata::<SoftmaxMeta>();
 
-        let dt = T::DT;
+        let dt = P::T::DT;
         let accessor = P::render_type();
 
         let BLOCK_SIZE = workgroup_size.x.render();
-        let minFloat = T::from(-65500).unwrap().render();
+        let minFloat = <<P as WgslPrimitive>::T as NumCast>::from(-65500)
+            .unwrap()
+            .render();
 
         let workgroup_size_x = workgroup_size.x;
 
@@ -132,7 +138,7 @@ impl Softmax {
             }
         });
 
-        let reduce_var = match N {
+        let reduce_var = match P::W {
             1 => "metadata.N",
             2 => "metadata.ND2",
             4 => "metadata.ND4",
@@ -163,7 +169,7 @@ impl Softmax {
             kernel_builder.write_main(wgsl! { block_max(index, 'i); });
         }
 
-        let finalize_max = match N {
+        let finalize_max = match P::W {
             1 => wgsl! { maximum = smem[0].x; },
             2 => wgsl! { maximum = max(smem[0].x, smem[0].y); },
             4 => wgsl! { maximum = max(smem[0].x, max(smem[0].y, max(smem[0].z, smem[0].w))); },
@@ -188,7 +194,7 @@ impl Softmax {
             kernel_builder.write_main(wgsl! { block_sum(index, 'i); });
         }
 
-        let finalize_sum = match N {
+        let finalize_sum = match P::W {
             1 => wgsl! { sum = smem[0].x; },
             2 => wgsl! { sum = dot(smem[0], 'accessor(1.0, 1.0)); },
             4 => wgsl! { sum = dot(smem[0], 'accessor(1.0, 1.0, 1.0, 1.0)); },
@@ -223,16 +229,16 @@ impl MetaOperation for Softmax {
         "softmax".to_string()
     }
 
-    fn supports_inplace(&self) -> bool {
-        true
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
+        format!("softmax_{}", self.kernel_element(dst).as_str())
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        format!("softmax_{}", self.kernel_element(dst).as_str())
+    fn supports_inplace(&self) -> bool {
+        true
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
