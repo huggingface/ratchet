@@ -298,7 +298,7 @@ def ground(*args):
     }
 
     #[test]
-    fn load() {
+    fn vision_encoder() {
         let api = Api::new().unwrap();
         let model = api.model("tgestson/ratchet-moondream2".to_string());
         let model_path = model.get("moondream2-mmproj-f16.gguf").unwrap();
