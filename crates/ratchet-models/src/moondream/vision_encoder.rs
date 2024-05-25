@@ -145,7 +145,6 @@ impl Module for VisionTransformer {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        println!("{:?}", input.shape());
         let mut x = self.patch_embed.schedule(input)?;
         x = x.clone().add(self.pos_embed.clone())?;
         x = self
