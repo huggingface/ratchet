@@ -307,12 +307,14 @@ def ground(*args):
         let content = gguf::gguf::Header::read(&mut reader).unwrap();
         let model = VisionEncoder::load(&content, &mut reader, &device).unwrap();
         let input = Tensor::randn::<f32>(shape![1, 3, 378, 378], device);
-        let out = model.schedule(input.clone()).unwrap();
-
-        println!("{:?}", out.resolve().unwrap().to(&Device::CPU).unwrap());
-        println!(
-            "{:?}",
-            ground_truth(input.to(&Device::CPU).unwrap()).unwrap()
-        );
+        let ours = model
+            .schedule(input.clone())
+            .unwrap()
+            .resolve()
+            .unwrap()
+            .to(&Device::CPU)
+            .unwrap();
+        let theirs = ground_truth(input.to(&Device::CPU).unwrap()).unwrap();
+        ours.all_close(&theirs, 1e-2, 1e-2).unwrap();
     }
 }
