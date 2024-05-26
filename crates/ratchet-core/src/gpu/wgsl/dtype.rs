@@ -3,7 +3,7 @@ use half::f16;
 /// Supported data types in WGSL.
 ///
 /// This can be mapped to and from the Ratchet DType.
-pub trait WgslDType: std::fmt::Display {
+pub trait WgslDType: std::fmt::Display + Default + Copy {
     const DT: &'static str;
 
     fn render(&self) -> String;

@@ -35,12 +35,12 @@ pub struct GEMVMeta {
 }
 
 impl GEMV {
-    fn register_bindings<P: WgslPrimitive<T, N>, T: WgslDType, const N: usize>(
+    fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
         _: bool,
     ) -> Result<(), OperationError> {
-        let dt = T::DT;
+        let dt = P::T::DT;
         let (A, _, bias) = (&self.lhs, &self.rhs, &self.bias);
 
         let accessor = format!("array<{dt}>");
@@ -72,22 +72,22 @@ impl GEMV {
         let kernel_element = KernelElement::Scalar;
         match (self.lhs.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.render_gemv::<Scalar<f32>, _, 1>(inplace, dst, workgroup_size)
+                self.render_gemv::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.render_gemv::<Vec2<f32>, _, 2>(inplace, dst, workgroup_size)
+                self.render_gemv::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.render_gemv::<Vec4<f32>, _, 4>(inplace, dst, workgroup_size)
+                self.render_gemv::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.render_gemv::<Scalar<f16>, _, 1>(inplace, dst, workgroup_size)
+                self.render_gemv::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.render_gemv::<Vec2<f16>, _, 2>(inplace, dst, workgroup_size)
+                self.render_gemv::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.render_gemv::<Vec4<f16>, _, 4>(inplace, dst, workgroup_size)
+                self.render_gemv::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             (DType::GGUF(g), _) => match g {
                 crate::gguf::GGUFDType::Q8_0(_) => todo!(),
@@ -97,7 +97,7 @@ impl GEMV {
         }
     }
 
-    fn render_gemv<P: WgslPrimitive<T, N>, T: WgslDType + num_traits::Float, const N: usize>(
+    fn render_gemv<P: WgslPrimitive>(
         &self,
         inplace: bool,
         dst: &Tensor,
@@ -114,7 +114,7 @@ impl GEMV {
             device.compute_features().clone(),
         );
 
-        self.register_bindings::<P, T, N>(&mut kernel_builder, inplace)
+        self.register_bindings::<P>(&mut kernel_builder, inplace)
             .unwrap();
         let accessor = P::render_type();
 
@@ -159,14 +159,15 @@ impl GEMV {
             let batchB = batch % metadata.bShape.x;
         });
 
+        let n = P::W;
         kernel_builder.write_main(wgsl! {
-            let aOffset = metadata.aStrides.x * batchA / 'N;
-            let bOffset = metadata.bStrides.x * batchB / 'N;
-            let outOffset = metadata.outStrides.x * batch / 'N;
+            let aOffset = metadata.aStrides.x * batchA / 'n;
+            let bOffset = metadata.bStrides.x * batchB / 'n;
+            let outOffset = metadata.outStrides.x * batch / 'n;
         });
 
         kernel_builder.write_main(wgsl! { var sum = 'accessor(0.0); });
-        kernel_builder.write_main(wgsl! { let aIndex = aOffset + row * metadata.aStrides.y / 'N; });
+        kernel_builder.write_main(wgsl! { let aIndex = aOffset + row * metadata.aStrides.y / 'n; });
 
         kernel_builder.write_main(main_loop);
 
