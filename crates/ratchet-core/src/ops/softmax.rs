@@ -7,9 +7,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, BindingMode, BuiltIn, ComputeModule, DType, KernelElement, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize,
+    rvec, wgc, Array, BindingMode, BuiltIn, ComputeModule, DType, KernelElement, MetaOperation,
+    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
@@ -45,8 +45,9 @@ impl Softmax {
         builder: &mut WgslKernelBuilder,
         _: bool,
     ) -> Result<(), OperationError> {
-        builder.register_storage("X", BindingMode::ReadOnly, P::render_type());
-        builder.register_uniform("metadata", "Meta");
+        let arr = Array::<P>::default();
+        builder.register_storage("X", BindingMode::ReadOnly, arr);
+        builder.register_uniform();
         Ok(())
     }
 
@@ -110,10 +111,7 @@ impl Softmax {
         let accessor = P::render_type();
 
         let BLOCK_SIZE = workgroup_size.x.render();
-        let minFloat = <<P as WgslPrimitive>::T as NumCast>::from(-65500)
-            .unwrap()
-            .render();
-
+        let minFloat = P::T::NEG_INF;
         let workgroup_size_x = workgroup_size.x;
 
         kernel_builder.write_global(wgsl! {

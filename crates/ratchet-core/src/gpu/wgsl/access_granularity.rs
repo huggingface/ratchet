@@ -1,13 +1,14 @@
 use super::dtype::WgslDType;
 
 /// WGSL types which are used to access buffers.
-pub trait WgslPrimitive: std::fmt::Display {
+pub trait WgslPrimitive: std::fmt::Display + Default + Clone {
     type T: WgslDType;
     const W: usize;
 
     fn render_type() -> String;
 }
 
+#[derive(Clone)]
 pub struct WgslVec<T: WgslDType, const N: usize> {
     inner: [T; N],
 }
@@ -68,17 +69,13 @@ impl<T: WgslDType> WgslPrimitive for Scalar<T> {
     }
 }
 
-#[derive(Default)]
-pub struct Array<const N: usize, P: WgslPrimitive, const AN: usize> {
+#[derive(Default, Clone)]
+pub struct Array<P: WgslPrimitive> {
     _p1: std::marker::PhantomData<P>,
 }
 
-pub trait WgslArray {
-    fn render() -> String;
-}
-
-impl<const N: usize, P: WgslPrimitive, const AN: usize> WgslArray for Array<N, P, AN> {
-    fn render() -> String {
-        format!("array<{}, {}>", P::render_type(), AN)
+impl<P: WgslPrimitive> std::fmt::Display for Array<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "array<{}>", P::render_type())
     }
 }

@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, BindingMode, BuiltIn, ComputeModule, DType,
-    InvariantError, KernelElement, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize,
+    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, ComputeModule,
+    DType, InvariantError, KernelElement, OperationError, Scalar, Tensor, Vec2, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -40,26 +40,28 @@ impl GEMV {
         builder: &mut WgslKernelBuilder,
         _: bool,
     ) -> Result<(), OperationError> {
-        let dt = P::T::DT;
         let (A, _, bias) = (&self.lhs, &self.rhs, &self.bias);
 
-        let accessor = format!("array<{dt}>");
+        let main_arr = Array::<P>::default();
+        let u32_arr = Array::<Scalar<u32>>::default();
+
         if A.dt().is_float() {
-            builder.register_storage("A", BindingMode::ReadOnly, accessor.clone());
-            builder.register_storage("X", BindingMode::ReadOnly, accessor.clone());
+            builder.register_storage("A", BindingMode::ReadOnly, main_arr.clone());
+            builder.register_storage("X", BindingMode::ReadOnly, main_arr.clone());
         } else if A.dt().is_quantized() {
-            builder.register_storage("A", BindingMode::ReadOnly, format!("array<u32>"));
-            builder.register_storage("scale", BindingMode::ReadOnly, accessor.clone());
-            builder.register_storage("X", BindingMode::ReadOnly, format!("array<vec4<{dt}>>"));
+            let main_vec4 = Array::<Vec4<P::T>>::default();
+            builder.register_storage("A", BindingMode::ReadOnly, u32_arr);
+            builder.register_storage("scale", BindingMode::ReadOnly, main_arr.clone());
+            builder.register_storage("X", BindingMode::ReadOnly, main_vec4);
         } else {
             return Err(InvariantError::UnsupportedDType(A.dt()).into());
         }
 
         if bias.is_some() {
-            builder.register_storage("bias", BindingMode::ReadOnly, accessor.clone());
+            builder.register_storage("bias", BindingMode::ReadOnly, main_arr.clone());
         }
-        builder.register_storage("result", BindingMode::ReadWrite, accessor);
-        builder.register_uniform("metadata", "Meta");
+        builder.register_storage("result", BindingMode::ReadWrite, main_arr);
+        builder.register_uniform();
         Ok(())
     }
 
@@ -192,7 +194,7 @@ mod tests {
         let op = GEMV {
             lhs,
             rhs,
-            bias: Some(bias),
+            bias: None,
             trans_lhs: false,
             trans_rhs: false,
             trans_out: false,

@@ -2,8 +2,8 @@ use inline_wgsl::wgsl;
 use std::fmt::Write;
 
 use crate::{
-    BindingMode, BindingType, ComputeModule, DeviceFeatures, KernelBinding, OpMetadata, RVec,
-    Scalar, Vec3, WgslPrimitive, WorkgroupSize,
+    Array, BindingMode, BindingType, ComputeModule, DeviceFeatures, KernelBinding, OpMetadata,
+    RVec, Scalar, Vec3, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(Debug)]
@@ -138,31 +138,34 @@ impl WgslKernelBuilder {
         ty: BindingType,
         mode: BindingMode,
         name: impl Into<Ident>,
-        accessor: impl ToString,
+        bind_type: String,
     ) {
         let group = !matches!(ty, BindingType::Storage) as usize;
-        let binding = KernelBinding::new(
-            name.into(),
-            group,
-            self.bindings.len(),
-            ty,
-            mode,
-            accessor.to_string(),
-        );
+        let binding_index = if ty == BindingType::Uniform {
+            0
+        } else {
+            self.bindings.len()
+        };
+        let binding = KernelBinding::new(name.into(), group, binding_index, ty, mode, bind_type);
         self.bindings.push(binding);
     }
 
-    pub(crate) fn register_storage(
+    pub(crate) fn register_storage<P: WgslPrimitive>(
         &mut self,
         name: impl Into<Ident>,
         mode: BindingMode,
-        accessor: impl ToString,
+        array: Array<P>,
     ) {
-        self.register_binding(BindingType::Storage, mode, name, accessor);
+        self.register_binding(BindingType::Storage, mode, name, format!("{}", array));
     }
 
-    pub(crate) fn register_uniform(&mut self, name: impl Into<Ident>, accessor: impl ToString) {
-        self.register_binding(BindingType::Uniform, BindingMode::ReadOnly, name, accessor);
+    pub(crate) fn register_uniform(&mut self) {
+        self.register_binding(
+            BindingType::Uniform,
+            BindingMode::ReadOnly,
+            "metadata",
+            "Meta".to_string(),
+        );
     }
 }
 
