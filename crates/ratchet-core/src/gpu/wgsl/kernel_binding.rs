@@ -23,12 +23,12 @@ pub struct KernelBinding {
     accessor: String,
 }
 
-impl Into<wgpu::BindGroupLayoutEntry> for KernelBinding {
-    fn into(self) -> wgpu::BindGroupLayoutEntry {
-        let (binding_type, has_dynamic_offset) = match self.ty {
+impl From<KernelBinding> for wgpu::BindGroupLayoutEntry {
+    fn from(val: KernelBinding) -> Self {
+        let (binding_type, has_dynamic_offset) = match val.ty {
             BindingType::Storage => (
                 wgpu::BufferBindingType::Storage {
-                    read_only: matches!(self.mode, BindingMode::ReadOnly),
+                    read_only: matches!(val.mode, BindingMode::ReadOnly),
                 },
                 false,
             ),
@@ -36,7 +36,7 @@ impl Into<wgpu::BindGroupLayoutEntry> for KernelBinding {
         };
 
         wgpu::BindGroupLayoutEntry {
-            binding: self.binding as u32,
+            binding: val.binding as u32,
             visibility: wgpu::ShaderStages::COMPUTE,
             ty: wgpu::BindingType::Buffer {
                 ty: binding_type,

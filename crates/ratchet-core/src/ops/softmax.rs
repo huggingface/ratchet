@@ -128,7 +128,7 @@ impl Softmax {
             workgroupBarrier();
         });
 
-        let steps = (workgroup_size.x - 1).ilog2() as u32;
+        let steps = (workgroup_size.x - 1).ilog2();
         for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
             kernel_builder.write_main(wgsl! { block_max(index, 'i); });
         }
