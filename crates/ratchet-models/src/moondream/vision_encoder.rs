@@ -229,7 +229,7 @@ impl VisionEncoder {
                             .unwrap(),
                         attn: Attention {
                             n_heads: n_heads,
-                            dim: 1152,
+                            dim: dim,
                             qkv: Linear::new(qkvw, Some(qkvb)),
                             proj: Linear::new(
                                 lt(&format!("v.blk.{}.attn_out.weight", layer)).unwrap(),
