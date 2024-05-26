@@ -5,8 +5,8 @@ use encase::ShaderType;
 use crate::{
     gguf::{GGUFDType, Q8_0},
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata,
-    Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    rvec, wgc, DType, InvariantError, KernelElement, KernelKey, MetaOperation, OpGuards,
+    OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -486,12 +486,13 @@ impl MetaOperation for GEMM {
         "GEMM".to_string()
     }
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        if self.rhs.shape().is_vector() && !self.trans_lhs {
+    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> KernelKey {
+        let key = if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {
             self.gemm_kernel_key(inplace, dst)
-        }
+        };
+        KernelKey::new(key)
     }
 
     fn srcs(&self) -> RVec<&Tensor> {

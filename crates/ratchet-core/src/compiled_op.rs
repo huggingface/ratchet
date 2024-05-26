@@ -2,7 +2,7 @@ use crate::gpu::{
     BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle, GpuBindGroup, WgpuDevice,
     WorkgroupCount,
 };
-use crate::{drvec, rvec, OperationError, RVec, Tensor};
+use crate::{drvec, rvec, KernelKey, OperationError, RVec, Tensor};
 use derive_new::new;
 use wgpu::DynamicOffset;
 
@@ -15,7 +15,7 @@ pub struct CompiledOp {
     workgroup_count: WorkgroupCount,
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
-    kernel_key: String,
+    kernel_key: KernelKey,
 }
 
 impl CompiledOp {
@@ -27,9 +27,7 @@ impl CompiledOp {
         bind_group_layouts: RVec<BindGroupLayoutHandle>,
         device: &WgpuDevice,
         inplace: bool,
-        kernel_name: &str,
     ) -> Result<RVec<GpuBindGroup>, OperationError> {
-        log::debug!("Creating storage bind groups for kernel: {}", kernel_name);
         let mut bind_group_entries = drvec![];
 
         for tensor in srcs.iter() {
@@ -75,9 +73,5 @@ impl CompiledOp {
 
     pub fn pipeline_handle(&self) -> ComputePipelineHandle {
         self.pipeline_handle
-    }
-
-    pub fn kernel_key(&self) -> &str {
-        &self.kernel_key
     }
 }

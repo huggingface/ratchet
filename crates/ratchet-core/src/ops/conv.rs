@@ -4,7 +4,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, shape, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
+    rvec, shape, wgc, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 
@@ -74,8 +74,8 @@ impl MetaOperation for Conv {
         rvec![&self.input, &self.weight, self.bias.as_ref().unwrap()]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        format!("conv_{}", self.kernel_element(dst).as_str())
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
+        KernelKey::new(format!("conv_{}", self.kernel_element(dst).as_str()))
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

@@ -2,12 +2,12 @@ use inline_wgsl::wgsl;
 use std::fmt::Write;
 
 use crate::{
-    Array, BindingMode, BindingType, ComputeModule, DeviceFeatures, KernelBinding, OpMetadata,
-    RVec, Scalar, Vec3, WgslPrimitive, WorkgroupSize,
+    Array, BindingMode, BindingType, DeviceFeatures, KernelBinding, KernelSource, OpMetadata, RVec,
+    Scalar, Vec3, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(Debug)]
-pub struct WgslFragment(String);
+pub struct WgslFragment(pub String);
 
 impl std::fmt::Display for WgslFragment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -97,15 +97,14 @@ impl WgslKernelBuilder {
         builder
     }
 
-    pub fn build(mut self) -> Result<ComputeModule, KernelBuildError> {
+    pub fn build(mut self) -> Result<KernelSource, KernelBuildError> {
         self.main.write("}\n");
         let mut source = self.globals;
         for binding in self.bindings.iter() {
             source.write(binding.render().0.as_str());
         }
         source.write(self.main.0.as_str());
-        println!("{}", source);
-        Ok(wgpu::naga::front::wgsl::parse_str(source.0.as_str())?)
+        Ok(source.into())
     }
 
     fn init_main(&mut self) {

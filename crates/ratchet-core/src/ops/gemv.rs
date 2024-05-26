@@ -4,8 +4,8 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gguf::GGUFDType, rvec, Array, BindingMode, BuiltIn, ComputeModule, DType, InvariantError,
-    KernelElement, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupSize,
+    KernelElement, KernelSource, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -68,7 +68,7 @@ impl GEMV {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: WorkgroupSize,
-    ) -> ComputeModule {
+    ) -> KernelSource {
         let kernel_element = KernelElement::Scalar;
         match (self.lhs.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
@@ -102,7 +102,7 @@ impl GEMV {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: WorkgroupSize,
-    ) -> ComputeModule {
+    ) -> KernelSource {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),

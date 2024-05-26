@@ -8,6 +8,7 @@ use crate::{
 };
 use encase::internal::WriteInto;
 use encase::ShaderType;
+use std::borrow::Cow;
 use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
@@ -152,11 +153,27 @@ pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
 
 /// Unique string representing a kernel.
 /// If the key is registered in the compute pipeline pool, the pipeline is reused.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, derive_new::new)]
 pub struct KernelKey(String);
 
-impl From<&str> for KernelKey {
-    fn from(s: &str) -> Self {
-        Self(s.to_string())
+impl KernelKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for KernelKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug)]
+pub struct KernelSource(pub Cow<'static, str>);
+
+impl From<WgslFragment> for KernelSource {
+    fn from(value: WgslFragment) -> Self {
+        Self(Cow::Owned(value.0))
     }
 }
 
@@ -169,7 +186,7 @@ pub trait MetaOperation: Debug + 'static {
     /// Kernel Name
     fn kernel_name(&self) -> String;
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String;
+    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> KernelKey;
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -208,12 +225,12 @@ pub trait MetaOperation: Debug + 'static {
         kernel_element: &KernelElement,
     ) -> Result<u64, OperationError>;
 
-    fn build_module(
+    fn build_kernel(
         &self,
         inplace: bool,
         dst: &Tensor,
-        workgroup_size: WorkgroupSize,
-    ) -> Result<ComputeModule, OperationError> {
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
         todo!()
     }
 
@@ -241,6 +258,7 @@ pub trait MetaOperation: Debug + 'static {
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
             kernel_key: kernel_key.clone(),
+            compute_module: None,
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
@@ -251,7 +269,6 @@ pub trait MetaOperation: Debug + 'static {
             rvec![storage_layout],
             device,
             can_inplace,
-            &kernel_key,
         )?;
 
         Ok(CompiledOp::new(

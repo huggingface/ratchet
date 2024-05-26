@@ -13,7 +13,7 @@ pub trait WgslDType: std::fmt::Display + Default + Copy {
 
 impl WgslDType for f32 {
     const DT: &'static str = "f32";
-    const NEG_INF: Self = -3.402_823e38;
+    const NEG_INF: Self = -3e10;
 
     fn render(&self) -> String {
         format!("{}f", self)

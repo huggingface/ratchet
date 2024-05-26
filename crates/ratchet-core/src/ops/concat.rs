@@ -3,7 +3,7 @@ use glam::UVec4;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount, UNIFORM_ALIGN},
-    wgc, KernelElement, MetaOperation, OpGuards, Operation, OperationError, RVec, Shape,
+    wgc, KernelElement, KernelKey, MetaOperation, OpGuards, Operation, OperationError, RVec, Shape,
     StorageView, Strides, Tensor,
 };
 
@@ -63,10 +63,10 @@ impl MetaOperation for Concat {
         self.inputs.iter().collect()
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
         let ke = self.kernel_element(dst).as_str();
         let num_inputs = self.inputs.len();
-        format!("concat{}_{}", num_inputs, ke)
+        KernelKey::new(format!("concat{}_{}", num_inputs, ke))
     }
 
     fn kernel_element(&self, _: &Tensor) -> KernelElement {

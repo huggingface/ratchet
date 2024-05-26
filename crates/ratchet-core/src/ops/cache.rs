@@ -5,8 +5,8 @@ use wgpu::BindGroupLayoutEntry;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
-    Shape, StorageView, Strides, Tensor,
+    rvec, wgc, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
+    OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 
 /// # Cache
@@ -75,8 +75,8 @@ impl MetaOperation for Cache {
         rvec![&self.cache, &self.source]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        format!("cache_{}", self.kernel_element(dst).as_str())
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
+        KernelKey::new(format!("cache_{}", self.kernel_element(dst).as_str()))
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

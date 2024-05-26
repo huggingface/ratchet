@@ -7,7 +7,7 @@ pub use groupnorm::GroupNorm;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
+    rvec, wgc, DType, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Tensor,
 };
 use derive_new::new;
@@ -87,13 +87,13 @@ impl MetaOperation for NormOp {
         }
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
         let op_key = match self {
             NormOp::LayerNorm(_) => "layernorm",
             NormOp::RMSNorm(_) => "rmsnorm",
             NormOp::GroupNorm(_) => "groupnorm",
         };
-        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
+        KernelKey::new(format!("{}_{}", op_key, self.kernel_element(dst).as_str()))
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

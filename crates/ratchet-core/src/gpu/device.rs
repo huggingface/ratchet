@@ -1,4 +1,4 @@
-use crate::{gpu::*, Tensor, TensorId};
+use crate::{gpu::*, KernelSource, MetaOperation, Tensor, TensorId};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use wgpu::{Adapter, Limits};
@@ -24,6 +24,7 @@ pub struct WgpuDevice {
     bind_group_layout_pool: Arc<BindGroupLayoutPool>,
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
     compute_pipeline_pool: Arc<ComputePipelinePool>,
+    compute_module_pool: Arc<KernelSourcePool>,
     device_limits: DeviceLimits,
     device_features: DeviceFeatures,
 }
@@ -95,6 +96,7 @@ impl WgpuDevice {
             bind_group_pool: Arc::new(BindGroupPool::new()),
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
+            compute_module_pool: Arc::new(KernelSourcePool::new()),
             compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
             device: Arc::new(device),
             device_limits: limits,
@@ -199,6 +201,24 @@ impl WgpuDevice {
         desc: &ComputePipelineDescriptor,
     ) -> Result<ComputePipelineHandle, PoolError> {
         Ok(self.compute_pipeline_pool.get_or_create(desc, self))
+    }
+
+    pub fn get_or_create_compute_module<O: MetaOperation>(
+        &self,
+        desc: &KernelSourceDesc,
+        op: &O,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> KernelSourceHandle {
+        self.compute_module_pool
+            .get_or_create(desc, op, inplace, dst, workgroup_size)
+    }
+
+    pub fn kernel_source_resources(
+        &self,
+    ) -> StaticResourcePoolReadLockAccessor<'_, KernelSourceHandle, KernelSource> {
+        self.compute_module_pool.resources()
     }
 
     pub fn bind_group_layout_resources(

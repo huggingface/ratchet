@@ -6,10 +6,10 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Array, BindingMode, BuiltIn, CompiledOp, ComputeModule, ComputePipelineDescriptor,
-    DType, KernelElement, MetaOperation, OpGuards, Operation, OperationError,
-    PipelineLayoutDescriptor, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgpuDevice,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, CompiledOp, ComputePipelineDescriptor, DType,
+    KernelElement, KernelKey, KernelSource, KernelSourceDesc, MetaOperation, OpGuards, Operation,
+    OperationError, PipelineLayoutDescriptor, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
+    WgpuDevice, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
@@ -43,10 +43,10 @@ impl Softmax {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        _: bool,
+        inplace: bool,
     ) -> Result<(), OperationError> {
         let arr = Array::<P>::default();
-        builder.register_storage("X", BindingMode::ReadOnly, arr);
+        builder.register_storage("X", BindingMode::ReadWrite, arr);
         builder.register_uniform();
         Ok(())
     }
@@ -55,8 +55,8 @@ impl Softmax {
         &self,
         inplace: bool,
         _: &Tensor,
-        workgroup_size: WorkgroupSize,
-    ) -> Result<ComputeModule, OperationError>
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError>
     where
         P::T: num_traits::Float,
     {
@@ -130,11 +130,12 @@ impl Softmax {
 
         let steps = (workgroup_size.x - 1).ilog2();
         for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
-            kernel_builder.write_main(wgsl! { block_max(index, 'i); });
+            let v = i.render();
+            kernel_builder.write_main(wgsl! { block_max(index, 'v); });
         }
 
         let finalize_max = match P::W {
-            1 => wgsl! { maximum = smem[0].x; },
+            1 => wgsl! { maximum = smem[0]; },
             2 => wgsl! { maximum = max(smem[0].x, smem[0].y); },
             4 => wgsl! { maximum = max(smem[0].x, max(smem[0].y, max(smem[0].z, smem[0].w))); },
             _ => unreachable!(),
@@ -155,11 +156,12 @@ impl Softmax {
         });
 
         for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
-            kernel_builder.write_main(wgsl! { block_sum(index, 'i); });
+            let v = i.render();
+            kernel_builder.write_main(wgsl! { block_sum(index, 'v); });
         }
 
         let finalize_sum = match P::W {
-            1 => wgsl! { sum = smem[0].x; },
+            1 => wgsl! { sum = smem[0]; },
             2 => wgsl! { sum = dot(smem[0], 'accessor(1.0, 1.0)); },
             4 => wgsl! { sum = dot(smem[0], 'accessor(1.0, 1.0, 1.0, 1.0)); },
             _ => unreachable!(),
@@ -193,8 +195,8 @@ impl MetaOperation for Softmax {
         "softmax".to_string()
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        format!("softmax_{}", self.kernel_element(dst).as_str())
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
+        KernelKey::new(format!("softmax_{}", self.kernel_element(dst).as_str()))
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -217,12 +219,12 @@ impl MetaOperation for Softmax {
         }
     }
 
-    fn build_module(
+    fn build_kernel(
         &self,
         inplace: bool,
         dst: &Tensor,
-        workgroup_size: WorkgroupSize,
-    ) -> Result<ComputeModule, OperationError> {
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
@@ -303,10 +305,24 @@ impl MetaOperation for Softmax {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let kernel_key = self.kernel_key(can_inplace, dst);
+        let kernel_key = self.kernel_key(can_inplace, dst); //TODO: needs DTYPES
+
+        let source_descriptor = KernelSourceDesc {
+            key: kernel_key.clone(),
+        };
+
+        let compute_module = device.get_or_create_compute_module(
+            &source_descriptor,
+            self,
+            can_inplace,
+            dst,
+            &wgs![128, 1, 1],
+        );
+
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
             kernel_key: kernel_key.clone(),
+            compute_module: Some(compute_module),
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
@@ -317,7 +333,6 @@ impl MetaOperation for Softmax {
             rvec![storage_layout],
             device,
             can_inplace,
-            &kernel_key,
         )?;
 
         Ok(CompiledOp::new(
@@ -385,12 +400,18 @@ def softmax(a):
     }
 
     #[test]
+    fn dbg_softmax() {
+        let problem = SoftmaxProblem { B: 1, M: 2, N: 128 };
+        run_softmax_trial(problem);
+    }
+
+    #[test]
     fn test_render_softmax() {
         let device = GPU_DEVICE.with(|d| d.clone());
         let a = Tensor::randn::<f16>(shape![1, 2, 128], device.clone());
         let dst = Tensor::zeros::<f16>(&shape![1, 2, 128], &device);
         let op = Softmax::new(a, 2);
         let wgs = wgs![128, 1, 1];
-        let _ = op.build_module(true, &dst, wgs);
+        let _ = op.build_kernel(true, &dst, &wgs);
     }
 }

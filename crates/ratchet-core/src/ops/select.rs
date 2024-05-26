@@ -3,7 +3,7 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
+    rvec, wgc, DType, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
     OperationError, RVec, StorageView, Strides, Tensor,
 };
 
@@ -58,13 +58,13 @@ impl MetaOperation for IndexSelect {
         rvec![&self.input, &self.indices]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
         let op_key = match self.input.dt() {
             DType::F32 => "f32_index_select",
             DType::GGUF(_) => "wq8_index_select",
             _ => unimplemented!(),
         };
-        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
+        KernelKey::new(format!("{}_{}", op_key, self.kernel_element(dst).as_str()))
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

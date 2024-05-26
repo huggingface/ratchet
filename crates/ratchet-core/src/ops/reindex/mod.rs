@@ -11,8 +11,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpMetadata, OperationError, RVec, Shape, Strides,
-    Tensor,
+    rvec, wgc, KernelElement, KernelKey, MetaOperation, OpMetadata, OperationError, RVec, Shape,
+    Strides, Tensor,
 };
 use glam::UVec4;
 
@@ -78,7 +78,7 @@ impl MetaOperation for Reindex {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
         let ke = self.kernel_element(dst);
         let op_key = match self {
             Reindex::Permute(_) => "permute",
@@ -86,7 +86,7 @@ impl MetaOperation for Reindex {
             Reindex::Broadcast(_) => "broadcast",
         };
 
-        format!("{}_{}", op_key, ke.as_str())
+        KernelKey::new(format!("{}_{}", op_key, ke.as_str()))
     }
 
     fn write_metadata(

@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
-    StorageView, Strides, Tensor,
+    rvec, wgc, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
+    OperationError, RVec, StorageView, Strides, Tensor,
 };
 
 #[derive(new, Debug, Clone)]
@@ -61,8 +61,8 @@ impl MetaOperation for RoPE {
         rvec![&self.input]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        format!("rope_{}", self.kernel_element(dst).as_str())
+    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
+        KernelKey::new(format!("rope_{}", self.kernel_element(dst).as_str()))
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

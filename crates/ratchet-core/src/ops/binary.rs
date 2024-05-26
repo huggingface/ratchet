@@ -3,8 +3,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    rvec, wgc, InvariantError, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata,
+    Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -90,14 +90,15 @@ impl MetaOperation for Binary {
         true
     }
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
+    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> KernelKey {
         let kn = self.kernel_name();
         let ke = self.kernel_element(dst).as_str();
-        if inplace {
+        let key = if inplace {
             format!("{}_inplace_{}", kn, ke)
         } else {
             format!("{}_{}", kn, ke)
-        }
+        };
+        KernelKey::new(key)
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
