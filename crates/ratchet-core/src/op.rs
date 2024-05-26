@@ -150,6 +150,16 @@ pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
     }
 }
 
+/// Unique string representing a kernel.
+/// If the key is registered in the compute pipeline pool, the pipeline is reused.
+pub struct KernelKey(String);
+
+impl From<&str> for KernelKey {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
 /// # MetaOperation
 ///
 /// Meta Operation is a family of operations that can be compiled into relatively similar shaders.
@@ -159,7 +169,6 @@ pub trait MetaOperation: Debug + 'static {
     /// Kernel Name
     fn kernel_name(&self) -> String;
 
-    /// Return the string key of the kernel source file.
     fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String;
 
     fn srcs(&self) -> RVec<&Tensor>;

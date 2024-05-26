@@ -2,13 +2,13 @@ use derive_new::new;
 use encase::ShaderType;
 use half::f16;
 use inline_wgsl::wgsl;
-use num_traits::NumCast;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Array, BindingMode, BuiltIn, ComputeModule, DType, KernelElement, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
+    rvec, wgc, Array, BindingMode, BuiltIn, CompiledOp, ComputeModule, ComputePipelineDescriptor,
+    DType, KernelElement, MetaOperation, OpGuards, Operation, OperationError,
+    PipelineLayoutDescriptor, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgpuDevice,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
@@ -49,40 +49,6 @@ impl Softmax {
         builder.register_storage("X", BindingMode::ReadOnly, arr);
         builder.register_uniform();
         Ok(())
-    }
-
-    pub fn build_module(
-        &self,
-        inplace: bool,
-        dst: &Tensor,
-        workgroup_size: WorkgroupSize,
-    ) -> Result<ComputeModule, OperationError> {
-        let kernel_element = self.kernel_element(dst);
-        match (self.input.dt(), &kernel_element) {
-            (DType::F32, KernelElement::Scalar) => {
-                self.build_softmax::<Scalar<f32>>(inplace, dst, workgroup_size)
-            }
-            (DType::F32, KernelElement::Vec2) => {
-                self.build_softmax::<Vec2<f32>>(inplace, dst, workgroup_size)
-            }
-            (DType::F32, KernelElement::Vec4) => {
-                self.build_softmax::<Vec4<f32>>(inplace, dst, workgroup_size)
-            }
-            (DType::F16, KernelElement::Scalar) => {
-                self.build_softmax::<Scalar<f16>>(inplace, dst, workgroup_size)
-            }
-            (DType::F16, KernelElement::Vec2) => {
-                self.build_softmax::<Vec2<f16>>(inplace, dst, workgroup_size)
-            }
-            (DType::F16, KernelElement::Vec4) => {
-                self.build_softmax::<Vec4<f16>>(inplace, dst, workgroup_size)
-            }
-            _ => Err(OperationError::CompileError(format!(
-                "Unsupported dtype {:?} or kernel element {:?}",
-                self.input.dt(),
-                kernel_element
-            ))),
-        }
     }
 
     fn build_softmax<P: WgslPrimitive>(
@@ -251,6 +217,40 @@ impl MetaOperation for Softmax {
         }
     }
 
+    fn build_module(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: WorkgroupSize,
+    ) -> Result<ComputeModule, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (self.input.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_softmax::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_softmax::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_softmax::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_softmax::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_softmax::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_softmax::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                self.input.dt(),
+                kernel_element
+            ))),
+        }
+    }
+
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
         let input = &self.input;
         let stacks = input.shape().slice(0..self.dim - 1).numel();
@@ -282,6 +282,52 @@ impl MetaOperation for Softmax {
         let meta = SoftmaxMeta { M, N, ND2, ND4 };
         Ok(uniform.write(&meta)?)
     }
+
+    fn compile(
+        &self,
+        dst: &Tensor,
+        uniform: &mut CpuUniform,
+        device: &WgpuDevice,
+        can_inplace: bool,
+    ) -> Result<CompiledOp, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
+
+        let workgroup_count = self.calculate_dispatch(dst)?;
+
+        let storage_layout = device
+            .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
+        let uniform_layout =
+            device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
+        let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
+            entries: rvec![storage_layout, uniform_layout],
+        })?;
+
+        let kernel_key = self.kernel_key(can_inplace, dst);
+        let pipeline_descriptor = ComputePipelineDescriptor {
+            pipeline_layout,
+            kernel_key: kernel_key.clone(),
+        };
+        let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
+
+        //TODO: Not sure i like this call here
+        let storage_bind_groups = CompiledOp::create_storage_bind_groups(
+            &self.srcs(),
+            dst,
+            rvec![storage_layout],
+            device,
+            can_inplace,
+            &kernel_key,
+        )?;
+
+        Ok(CompiledOp::new(
+            pipeline_handle,
+            workgroup_count,
+            storage_bind_groups,
+            offset as _,
+            kernel_key,
+        ))
+    }
 }
 
 #[cfg(all(test, feature = "pyo3"))]
@@ -289,7 +335,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
-    use crate::{shape, wgs, Device, DeviceRequest, Softmax, Tensor};
+    use crate::{shape, wgs, Device, DeviceRequest, MetaOperation, Softmax, Tensor};
     use half::f16;
 
     thread_local! {
