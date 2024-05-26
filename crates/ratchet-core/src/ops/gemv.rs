@@ -3,7 +3,7 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, rvec, Array, BindingMode, BuiltIn, ComputeModule, DType, InvariantError,
+    gguf::GGUFDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError,
     KernelElement, KernelSource, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder,
     WgslPrimitive, WorkgroupSize,
 };

@@ -3,7 +3,7 @@ use crate::gpu::{
     PoolError, WgpuDevice, WorkgroupCount,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, ComputeModule, InvariantError, KernelBuildError, RVec, StorageView,
+    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, RVec, StorageView,
     Tensor, WgslFragment, WorkgroupSize,
 };
 use encase::internal::WriteInto;

@@ -44,7 +44,7 @@ impl ComputePipelinePool {
             let kernel_resources = device.kernel_source_resources();
 
             let shader_source = if let Some(source) = desc.compute_module {
-                let kernel_source = kernel_resources.get(source).unwrap().clone();
+                let kernel_source = kernel_resources.get(source).unwrap();
                 wgpu::ShaderSource::Wgsl(kernel_source.0.clone())
             } else {
                 let shader = kernels()
