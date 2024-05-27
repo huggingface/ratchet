@@ -3,8 +3,8 @@ use crate::gpu::{
     PoolError, WgpuDevice, WorkgroupCount,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, RVec, StorageView,
-    Tensor, WgslFragment, WorkgroupSize,
+    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, RVec, StorageView, Tensor,
+    WgslFragment, WorkgroupSize,
 };
 use encase::internal::WriteInto;
 use encase::ShaderType;
@@ -177,6 +177,12 @@ impl From<WgslFragment> for KernelSource {
     }
 }
 
+impl std::fmt::Display for KernelSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// # MetaOperation
 ///
 /// Meta Operation is a family of operations that can be compiled into relatively similar shaders.
@@ -225,6 +231,7 @@ pub trait MetaOperation: Debug + 'static {
         kernel_element: &KernelElement,
     ) -> Result<u64, OperationError>;
 
+    //TODO: remove `workgroup_size` from this method
     fn build_kernel(
         &self,
         inplace: bool,

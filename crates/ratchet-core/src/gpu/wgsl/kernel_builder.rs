@@ -128,6 +128,9 @@ impl WgslKernelBuilder {
         self.globals.write_fragment(fragment.into());
     }
 
+    // This method cannot be put on the constructor of the struct
+    // This is because some operations don't create their metadata struct
+    // until runtime
     pub fn write_metadata<M: OpMetadata>(&mut self) {
         self.write_global(M::render());
     }
