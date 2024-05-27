@@ -61,7 +61,6 @@ pub struct Unary {
 }
 
 impl Unary {
-    const NORM_CONST: f32 = 0.5;
     const SQRT_2_OVER_PI: f32 = 0.7978845608028654;
     const SCALED_SQRT_2_OVER_PI: f32 = 0.035677408136300125;
 
@@ -86,14 +85,13 @@ impl Unary {
 
     fn render_gelu<P: WgslPrimitive>() -> String {
         let accessor = P::render_type();
-        let NORM_CONST = Self::NORM_CONST;
         let SQRT_2_OVER_PI = Self::SQRT_2_OVER_PI;
         let SCALED_SQRT_2_OVER_PI = Self::SCALED_SQRT_2_OVER_PI;
 
         wgsl! {
             fn gelu(val: 'accessor) -> 'accessor {
-                let cdf = 'accessor('NORM_CONST) + 'accessor('NORM_CONST) *
-                    safe_tanh(val * ('accessor('SCALED_SQRT_2_OVER_PI) * (val * val) + 'accessor('SQRT_2_OVER_PI)));
+                let cdf = 'accessor(0.5) + 'accessor(0.5) * safe_tanh(val * ('accessor('SCALED_SQRT_2_OVER_PI)
+                        * (val * val) + 'accessor('SQRT_2_OVER_PI)));
                 return val * cdf;
             }
         }
