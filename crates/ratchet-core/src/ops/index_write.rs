@@ -1,10 +1,13 @@
 use derive_new::new;
 use encase::ShaderType;
+use inline_wgsl::wgsl;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    rvec, wgc, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource, MetaOperation,
+    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
@@ -14,14 +17,59 @@ pub struct IndexWrite {
     write_start: RVec<usize>,
 }
 
-#[derive(Debug, derive_new::new, ShaderType)]
+impl IndexWrite {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        let arr = Array::<P>::default();
+        builder.register_storage("D", BindingMode::ReadWrite, arr);
+        builder.register_storage("S", BindingMode::ReadOnly, arr);
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn build_index_write<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.src.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::GlobalInvocationId,
+                BuiltIn::LocalInvocationId,
+                BuiltIn::WorkgroupId,
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<IndexWriteMeta>();
+        kernel_builder.write_index_to_offset();
+
+        kernel_builder.write_main(wgsl! {
+            let x_offset = group_id.x * 64u;
+            let thread_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
+            if (thread_offset >= metadata.src_numel) {
+                return;
+            }
+            let offset_index = ndIndexToOffset(metadata.write_start, metadata.dst_strides);
+            D[offset_index + thread_offset] = S[thread_offset];
+        });
+
+        Ok(kernel_builder.build()?)
+    }
+}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct IndexWriteMeta {
     dst_strides: glam::UVec4,
     src_numel: u32,
     write_start: glam::UVec4,
 }
-
-impl OpMetadata for IndexWriteMeta {}
 
 impl OpGuards for IndexWrite {
     fn check_shapes(&self) {}
