@@ -25,7 +25,6 @@ var<uniform> metadata: Meta;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(
-    @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(workgroup_id) group_id: vec3<u32>,
     @builtin(local_invocation_index) local_index: u32,
     @builtin(num_workgroups) num_groups: vec3<u32>

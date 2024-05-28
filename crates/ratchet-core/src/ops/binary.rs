@@ -1,10 +1,14 @@
 use derive_new::new;
 use encase::ShaderType;
+use half::f16;
+use inline_wgsl::wgsl;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, InvariantError, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata,
-    Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    rvec, wgc, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement, KernelKey,
+    KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
+    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -27,6 +31,15 @@ impl BinaryOp {
             BinaryOp::Div => "div",
         }
     }
+
+    pub fn kernel_operator(&self) -> &'static str {
+        match self {
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+        }
+    }
 }
 
 #[derive(new, Debug, Clone)]
@@ -40,14 +53,72 @@ impl Binary {
     pub fn op(&self) -> &BinaryOp {
         &self.op
     }
+
+    fn build_binary<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.lhs.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::WorkgroupId,
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::NumWorkgroups
+            ],
+            device.compute_features().clone(),
+        );
+
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<BinaryMeta>();
+
+        let N = (P::W as u32).render();
+
+        kernel_builder.write_main(wgsl! {
+            let x_offset = workgroup_id.x * 64u;
+            let index = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_id;
+            if (index >= metadata.numel / 'N) {
+                return;
+            }
+        });
+
+        let op = self.op.kernel_operator();
+        let apply = if inplace {
+            wgsl! {
+                let val = A[index];
+                A[index] = val 'op B[index];
+            }
+        } else {
+            wgsl! { Y[index] = A[index] 'op B[index]; }
+        };
+        kernel_builder.write_main(apply);
+        Ok(kernel_builder.build()?)
+    }
+
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        if inplace {
+            builder.register_storage("A", BindingMode::ReadWrite, Array::<P>::default());
+            builder.register_storage("B", BindingMode::ReadOnly, Array::<P>::default());
+        } else {
+            builder.register_storage("A", BindingMode::ReadOnly, Array::<P>::default());
+            builder.register_storage("B", BindingMode::ReadOnly, Array::<P>::default());
+            builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
+        }
+        builder.register_uniform();
+        Ok(())
+    }
 }
 
-#[derive(Debug, ShaderType)]
+#[derive(Debug, ShaderType, WgslMetadata)]
 pub struct BinaryMeta {
     numel: u32,
 }
-
-impl OpMetadata for BinaryMeta {}
 
 impl OpGuards for Binary {
     fn check_shapes(&self) {
@@ -149,6 +220,40 @@ impl MetaOperation for Binary {
         let numel = dst.shape().numel() as _;
         let meta = BinaryMeta { numel };
         Ok(uniform.write(&meta)?)
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (self.lhs.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_binary::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_binary::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_binary::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_binary::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_binary::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_binary::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                self.lhs.dt(),
+                kernel_element
+            ))),
+        }
     }
 }
 
