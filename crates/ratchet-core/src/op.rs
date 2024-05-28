@@ -15,7 +15,7 @@ use std::fmt::Debug;
 #[non_exhaustive]
 pub enum LazyOp {
     Const,
-    GEMM(GEMM),
+    Matmul(Matmul),
     Binary(Binary),
     Unary(Unary),
     Reindex(Reindex),
@@ -35,7 +35,7 @@ impl LazyOp {
     pub fn name(&self) -> String {
         match self {
             LazyOp::Binary(b) => b.kernel_name(),
-            LazyOp::GEMM(m) => m.kernel_name(),
+            LazyOp::Matmul(m) => m.kernel_name(),
             LazyOp::Softmax(s) => s.kernel_name(),
             LazyOp::Unary(u) => u.kernel_name(),
             LazyOp::Reindex(r) => r.kernel_name(),
@@ -54,7 +54,7 @@ impl LazyOp {
     pub fn srcs(&self) -> RVec<&Tensor> {
         match self {
             LazyOp::Binary(b) => b.srcs(),
-            LazyOp::GEMM(m) => m.srcs(),
+            LazyOp::Matmul(m) => m.srcs(),
             LazyOp::RoPE(r) => r.srcs(),
             LazyOp::Softmax(s) => s.srcs(),
             LazyOp::Unary(u) => u.srcs(),
@@ -73,7 +73,7 @@ impl LazyOp {
     pub fn supports_inplace(&self) -> bool {
         match self {
             LazyOp::Binary(b) => b.supports_inplace(),
-            LazyOp::GEMM(m) => m.supports_inplace(),
+            LazyOp::Matmul(m) => m.supports_inplace(),
             LazyOp::RoPE(r) => r.supports_inplace(),
             LazyOp::Softmax(s) => s.supports_inplace(),
             LazyOp::Unary(u) => u.supports_inplace(),
@@ -97,7 +97,7 @@ impl LazyOp {
     pub fn check_invariants(&self) {
         match self {
             LazyOp::Binary(b) => b.check_invariants(),
-            LazyOp::GEMM(m) => m.check_invariants(),
+            LazyOp::Matmul(m) => m.check_invariants(),
             LazyOp::RoPE(r) => r.check_invariants(),
             LazyOp::Softmax(s) => s.check_invariants(),
             LazyOp::Unary(u) => u.check_invariants(),

@@ -85,7 +85,6 @@ impl IndexSelect {
 
             let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
             Y[tid] = unpack4x8snorm_gguf(E[src_i]) * S[src_i / 8u];
-
         });
 
         Ok(kernel_builder.build()?)

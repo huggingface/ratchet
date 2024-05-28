@@ -359,9 +359,9 @@ impl Tensor {
     //TODO: horrific interface
     pub fn matmul(self, rhs: Tensor, trans_lhs: bool, trans_rhs: bool) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let gemm = GEMM::new(self, rhs, None, trans_lhs, trans_rhs, false);
-        let new_view = gemm.compute_view()?;
-        Ok(Tensor::lazy(LazyOp::GEMM(gemm), new_view, device))
+        let matmul = Matmul::new(self, rhs, None, trans_lhs, trans_rhs, false);
+        let new_view = matmul.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
     }
 
     pub fn gemm(
@@ -373,9 +373,9 @@ impl Tensor {
         trans_out: bool,
     ) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let gemm = GEMM::new(self, rhs, bias, trans_lhs, trans_rhs, trans_out);
+        let gemm = Matmul::new(self, rhs, bias, trans_lhs, trans_rhs, trans_out);
         let new_view = gemm.compute_view()?;
-        Ok(Tensor::lazy(LazyOp::GEMM(gemm), new_view, device))
+        Ok(Tensor::lazy(LazyOp::Matmul(gemm), new_view, device))
     }
 
     /// # Slice
@@ -695,7 +695,7 @@ impl Tensor {
     ) -> Option<CompiledOp> {
         match self.op() {
             LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::GEMM(m) => m.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::RoPE(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),

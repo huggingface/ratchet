@@ -7,7 +7,7 @@ pub(crate) enum BindingType {
     Uniform,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub(crate) enum BindingMode {
     ReadOnly,
     ReadWrite,

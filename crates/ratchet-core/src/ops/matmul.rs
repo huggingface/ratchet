@@ -225,7 +225,7 @@ impl GEMMSpec {
 }
 
 #[derive(Debug, Clone)]
-pub struct GEMM {
+pub struct Matmul {
     lhs: Tensor,
     rhs: Tensor,
     bias: Option<Tensor>,
@@ -234,7 +234,7 @@ pub struct GEMM {
     trans_out: bool,
 }
 
-impl GEMM {
+impl Matmul {
     pub fn new(
         lhs: Tensor,
         rhs: Tensor,
@@ -439,9 +439,9 @@ pub struct MatmulMeta {
 
 impl OpMetadata for MatmulMeta {}
 
-impl Operation for GEMM {
+impl Operation for Matmul {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        let c_shape = GEMM::compute_c_shape(
+        let c_shape = Matmul::compute_c_shape(
             &self.lhs,
             &self.rhs,
             self.trans_lhs,
@@ -454,9 +454,9 @@ impl Operation for GEMM {
     }
 }
 
-impl OpGuards for GEMM {
+impl OpGuards for Matmul {
     fn check_shapes(&self) {
-        let c_shape = GEMM::compute_c_shape(
+        let c_shape = Matmul::compute_c_shape(
             &self.lhs,
             &self.rhs,
             self.trans_lhs,
@@ -481,7 +481,7 @@ impl OpGuards for GEMM {
     }
 }
 
-impl MetaOperation for GEMM {
+impl MetaOperation for Matmul {
     fn kernel_name(&self) -> String {
         "GEMM".to_string()
     }
