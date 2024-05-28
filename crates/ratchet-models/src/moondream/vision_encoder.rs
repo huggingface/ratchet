@@ -4,6 +4,8 @@ use ratchet::{prelude::shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{LayerNorm, Linear, Module};
 
+use super::mlp::MLP;
+
 #[derive(Debug, derive_new::new)]
 struct Attention {
     n_heads: usize,
@@ -61,20 +63,6 @@ impl Module for Attention {
         let mut x = attn_weights.matmul(v, false, false)?;
         x = x.permute(&[0, 2, 1, 3])?.view(shape![b, n, c])?;
         self.proj.schedule(x)
-    }
-}
-
-#[derive(Debug, derive_new::new)]
-struct MLP {
-    fc1: Linear,
-    fc2: Linear,
-}
-
-impl Module for MLP {
-    type Input = Tensor;
-
-    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        self.fc2.schedule(self.fc1.schedule(input)?.gelu()?)
     }
 }
 
@@ -167,7 +155,7 @@ impl Module for VisionProjection {
     }
 }
 
-struct VisionEncoder {
+pub struct VisionEncoder {
     projection: VisionProjection,
     transformer: VisionTransformer,
 }
