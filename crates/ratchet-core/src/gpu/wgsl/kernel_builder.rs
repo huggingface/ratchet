@@ -169,6 +169,37 @@ impl WgslKernelBuilder {
             "Meta".to_string(),
         );
     }
+
+    pub(crate) fn write_offset_to_index(&mut self) {
+        self.write_global(wgsl! {
+            //Converts 1D offset into 4D index
+            fn offsetToNdIndex(offset: u32, stride: vec4<u32>) -> vec4<u32> {
+                var index: vec4<u32> = vec4<u32>(0u, 0u, 0u, 0u);
+                var remaining = offset;
+
+                for (var i: i32 = 0; i < 3; i++) {
+                    let idx = remaining / stride[i];
+                    index[i] = idx;
+                    remaining -= idx * stride[i];
+                }
+                index.w = remaining;
+                return index;
+            }
+        });
+    }
+
+    pub(crate) fn write_index_to_offset(&mut self) {
+        self.write_global(wgsl! {
+            //Converts 4D index into 1D offset
+            fn ndIndexToOffset(index: vec4<u32>, stride: vec4<u32>) -> u32 {
+                var offset: u32 = 0u;
+                for (var i: i32 = 0; i < 4; i++) {
+                    offset += index[i] * stride[i];
+                }
+                return offset;
+            }
+        });
+    }
 }
 
 /// WGSL built-in variables.

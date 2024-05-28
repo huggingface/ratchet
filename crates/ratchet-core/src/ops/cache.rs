@@ -1,12 +1,18 @@
 use derive_new::new;
 use encase::ShaderType;
 use glam::UVec4;
+use inline_wgsl::wgsl;
+use ratchet_macros::WgslMetadata;
 use wgpu::BindGroupLayoutEntry;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    gpu::{
+        dtype::WgslDType, BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform,
+        WorkgroupCount,
+    },
+    rvec, wgc, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource, MetaOperation,
+    OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
 /// # Cache
@@ -25,7 +31,80 @@ pub struct Cache {
     offset: usize,
 }
 
-#[derive(Debug, derive_new::new, ShaderType)]
+impl Cache {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        _: bool,
+    ) -> Result<(), OperationError> {
+        builder.register_storage("C", BindingMode::ReadWrite, Array::<P>::default());
+        builder.register_storage("S", BindingMode::ReadOnly, Array::<P>::default());
+        builder.register_storage("D", BindingMode::ReadWrite, Array::<P>::default());
+
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn build_cache<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError>
+    where
+        P::T: num_traits::Float,
+    {
+        let device = self.cache.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::WorkgroupId,
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::NumWorkgroups,
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<CacheMeta>();
+        kernel_builder.write_offset_to_index();
+        kernel_builder.write_index_to_offset();
+
+        kernel_builder.write_main(wgsl! {
+            //Dispatch 1 thread per output element
+            //dst_offset is index into the output buffer (1D)
+            let x_offset = group_id.x * 64u;
+            let dst_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
+            if (dst_offset >= metadata.dst_numel) {
+                return;
+            }
+            //Convert 1D offset into 4D index
+            var dst_index = offsetToNdIndex(dst_offset, metadata.dst_stride);
+
+            let dim = metadata.dim;
+            if (dst_index[dim] < metadata.cum0) {
+                //Inside cache, just copy from cache to DST
+                let src_offset = ndIndexToOffset(dst_index, metadata.cache_stride);
+                D[dst_offset] = C[src_offset];
+                return;
+            }
+
+            if (dst_index[dim] < metadata.cum1) {
+                //Inside src, copy from src to cache and then to DST
+                let cache_offset = ndIndexToOffset(dst_index, metadata.cache_stride);
+                dst_index[dim] -= metadata.cum0;
+                let src_offset = ndIndexToOffset(dst_index, metadata.src_stride);
+                let val = S[src_offset];
+                C[cache_offset] = val;
+                D[dst_offset] = val;
+                return;
+            }
+        });
+
+        Ok(kernel_builder.build()?)
+    }
+}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct CacheMeta {
     cache_stride: glam::UVec4,
     source_stride: glam::UVec4,
@@ -35,8 +114,6 @@ pub struct CacheMeta {
     cum1: u32,
     dim: u32,
 }
-
-impl OpMetadata for CacheMeta {}
 
 impl OpGuards for Cache {
     fn check_shapes(&self) {

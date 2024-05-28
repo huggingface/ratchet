@@ -45,6 +45,9 @@ impl Softmax {
         builder: &mut WgslKernelBuilder,
         inplace: bool,
     ) -> Result<(), OperationError> {
+        if !inplace {
+            panic!("Only inplace softmax is supported");
+        }
         let arr = Array::<P>::default();
         builder.register_storage("X", BindingMode::ReadWrite, arr);
         builder.register_uniform();
