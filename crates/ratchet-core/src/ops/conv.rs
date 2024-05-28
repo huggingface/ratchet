@@ -61,7 +61,7 @@ impl Conv {
             fn inner(input_index: u32, filter_index: u32, output_index: u32, bias_index: u32, start: u32, end: u32) {
                 var inp = vec3<'dt>(0f);
                 var kernel = vec3<'dt>(0f);
-                var acc = vec3<'dt>(0f); 
+                var acc = vec3<'dt>(0f);
                 for(var i = 0u; i < metadata.Cin; i++) {
                     let input_start = input_index + (i * metadata.Lin) - metadata.padding; //-1 is for padding
                     //We only populate the input between the provided indices, used for padding
@@ -75,10 +75,9 @@ impl Conv {
                     kernel.z = F[filter_start + 2u];
 
                     acc = fma(inp, kernel, acc);
-                }        
+                }
                 Y[output_index] = acc.x + acc.y + acc.z + B[bias_index];
             }
-
 
             //Each thread may load more than 1 element into shared memory
             fn load_filters_into_smem(local_id: vec3<u32>, filter_index: u32) {
@@ -93,10 +92,9 @@ impl Conv {
         });
 
         let wgsx = workgroup_size.x.render();
-        kernel_builder.write_main(wgsl!{ 
+        kernel_builder.write_main(wgsl!{
             let input_index = (workgroup_id.x * 'wgsx + local_id.x) * metadata.stride;
             let filter_index = (workgroup_id.y * metadata.F_numel);
-            
             load_filters_into_smem(local_id, filter_index);
             workgroupBarrier();
 
