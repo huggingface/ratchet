@@ -83,7 +83,6 @@ impl RoPE {
 
             in[out_index_1] = rx1;
             in[out_index_2] = rx2;
-
         });
 
         Ok(kernel_builder.build()?)
