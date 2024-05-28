@@ -1,16 +1,17 @@
-//TODO: move to custom Op
-
 mod groupnorm;
 
 use encase::ShaderType;
 pub use groupnorm::GroupNorm;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, StorageView, Tensor,
+    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    rvec, wgc, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, StorageView, Tensor,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use derive_new::new;
+use inline_wgsl::wgsl;
 
 #[derive(new, Debug, Clone)]
 pub struct Norm {
@@ -25,10 +26,10 @@ impl OpGuards for Norm {
     }
 
     fn check_dtypes(&self) {
-        assert!(self.input.dt() == DType::F32);
-        assert!(self.scale.dt() == DType::F32);
+        self.input.dt().is_float();
+        self.scale.dt().is_float();
         if self.bias.is_some() {
-            assert!(self.bias.as_ref().unwrap().dt() == DType::F32);
+            self.bias.as_ref().unwrap().dt().is_float();
         }
     }
 }
@@ -46,7 +47,141 @@ pub enum NormOp {
     GroupNorm(GroupNorm),
 }
 
-#[derive(Debug, derive_new::new, ShaderType)]
+impl NormOp {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        if !inplace {
+            panic!("Only inplace softmax is supported");
+        }
+        let arr = Array::<P>::default();
+        builder.register_storage("X", BindingMode::ReadOnly, arr);
+        builder.register_storage("S", BindingMode::ReadOnly, arr);
+
+        if !matches!(self, NormOp::RMSNorm(_)) {
+            builder.register_storage("B", BindingMode::ReadOnly, arr);
+        }
+        builder.register_storage("Y", BindingMode::ReadWrite, arr);
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn build_norm<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError>
+    where
+        P::T: num_traits::Float,
+    {
+        let device = dst.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::GlobalInvocationId,
+                BuiltIn::LocalInvocationId,
+                BuiltIn::WorkgroupId,
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<NormMeta>();
+
+        let reduction_len = match P::W {
+            1 => "metadata.N",
+            2 => "metadata.ND2",
+            4 => "metadata.ND4",
+            v => panic!("Invalid reduction length: {}", v),
+        };
+
+        let dt = P::T::DT;
+        let accessor = P::render_type();
+        let BLOCK_SIZE = workgroup_size.x.render();
+
+        kernel_builder.write_global(wgsl! {
+            var<workgroup> smem: array<'accessor, 'BLOCK_SIZE>;
+            var<workgroup> sum: 'dt;
+        });
+
+        kernel_builder.write_global(wgsl! {
+            fn block_sum(index: u32, stride: u32) {
+                if index < stride {
+                    smem[index] += smem[index + stride];
+                }
+                workgroupBarrier();
+            }
+        });
+
+        kernel_builder.write_main(wgsl!{
+            let anchor = (workgroup_id.y * metadata.M * 'reduction_len) + workgroup_id.x * 'reduction_len;
+        });
+
+        kernel_builder.write_main(wgsl! {
+            var threadSum = 'accessor(0.);
+            for (var i: u32 = local_invocation_id.x; i < 'reduction_len; i += 'BLOCK_SIZE) {
+                threadSum += X[anchor + i];
+            }
+            workgroupBarrier();
+            smem[local_invocation_id.x] = threadSum;
+            workgroupBarrier();
+        });
+
+        for i in (0..=workgroup_size.x).rev().map(|x| 2u32.pow(x)) {
+            let v = i.render();
+            kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
+        }
+
+        let mu = match P::W {
+            1 => wgsl! { let mu = smem[0] / 'dt(metadata.N); },
+            2 | 4 => wgsl! {let mu = dot(smem[0], 'accessor(1.)) / 'dt(metadata.N); },
+            _ => unreachable!(),
+        };
+        kernel_builder.write_main(mu);
+
+        kernel_builder.write_main(wgsl! {
+            var threadSum = 'accessor(0.);
+            for (var i: u32 = local_invocation_id.x; i < 'reduction_len; i += 'BLOCK_SIZE) {
+                let val = X[anchor + i] - mu;
+                threadSum = fma(val, val, threadSum);
+            }
+            workgroupBarrier();
+            smem[local_invocation_id.x] = threadSum;
+            workgroupBarrier();
+        });
+
+        for i in (0..=workgroup_size.x).rev().map(|x| 2u32.pow(x)) {
+            let v = i.render();
+            kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
+        }
+
+        let sigma = match P::W {
+            1 => wgsl! { let mu = smem[0] / 'dt(metadata.N); },
+            2 | 4 => wgsl! {let mu = dot(smem[0], 'accessor(1.)) / 'dt(metadata.N); },
+            _ => unreachable!(),
+        };
+        kernel_builder.write_main(sigma);
+
+        let loop_core = if matches!(self, NormOp::RMSNorm(_)) {
+            wgsl! { Y[anchor + i] = val * S[i]; }
+        } else {
+            wgsl! { Y[anchor + i] = fma(val, S[i], B[i]); }
+        };
+
+        kernel_builder.write_main(wgsl! {
+            let denom = inverseSqrt(sigma + 'accessor(metadata.eps));
+            for(var i: u32 = local_invocation_id.x; i < 'reduction_len; i += 'BLOCK_SIZE) {
+                let val = (X[anchor + i] - mu) * denom;
+                'loop_core
+            }
+        });
+        Ok(kernel_builder.build()?)
+    }
+}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct NormMeta {
     M: u32,
     N: u32,
@@ -54,8 +189,6 @@ pub struct NormMeta {
     ND4: u32,
     eps: f32,
 }
-
-impl OpMetadata for NormMeta {}
 
 impl MetaOperation for NormOp {
     fn kernel_name(&self) -> String {

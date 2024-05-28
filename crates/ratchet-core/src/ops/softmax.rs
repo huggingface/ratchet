@@ -81,10 +81,9 @@ impl Softmax {
 
         let BLOCK_SIZE = workgroup_size.x.render();
         let minFloat = P::T::NEG_INF;
-        let workgroup_size_x = workgroup_size.x;
 
         kernel_builder.write_global(wgsl! {
-            var<workgroup> smem: array<'accessor, 'workgroup_size_x>;
+            var<workgroup> smem: array<'accessor, 'BLOCK_SIZE>;
             var<workgroup> maximum: 'dt;
             var<workgroup> sum: 'dt;
         });
@@ -165,8 +164,7 @@ impl Softmax {
 
         let finalize_sum = match P::W {
             1 => wgsl! { sum = smem[0]; },
-            2 => wgsl! { sum = dot(smem[0], 'accessor(1.0, 1.0)); },
-            4 => wgsl! { sum = dot(smem[0], 'accessor(1.0, 1.0, 1.0, 1.0)); },
+            2 | 4 => wgsl! { sum = dot(smem[0], 'accessor(1.)); },
             _ => unreachable!(),
         };
         kernel_builder.write_main(wgsl! {
