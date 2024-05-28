@@ -88,7 +88,6 @@ fn mm_write(batch: i32, row: i32, col: i32, valueIn: vec4<f32>) {
 {% endif %}
 }
 
-      
 var<private> localId: vec3<u32>;
 var<private> globalId: vec3<u32>;
 var<private> workgroupId: vec3<u32>;

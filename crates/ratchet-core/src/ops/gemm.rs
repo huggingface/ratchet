@@ -48,7 +48,7 @@ impl GEMM {
             }
 
             fn getOutputIndexFromCoords(coords : vec3<i32>) -> i32 {
-              return dot(coords, metadata.outStrides);
+                return dot(coords, metadata.outStrides);
             }
 
             fn setOutputAtIndex(flatIndex : i32, value : 'accessor) {
@@ -64,7 +64,7 @@ impl GEMM {
 
     fn write_getters<P: WgslPrimitive>(
         &self,
-        dst: &Tensor,
+        _: &Tensor,
         builder: &mut WgslKernelBuilder,
     ) -> Result<(), OperationError> {
         let (A, _, _) = (&self.lhs, &self.rhs, &self.bias);
@@ -81,12 +81,8 @@ impl GEMM {
             }
             DType::GGUF(GGUFDType::Q8_0(_)) => {
                 wgsl! {
-                    fn unpack4x8snorm_gguf(x: u32) -> vec4<f32> {
-                        return unpack4x8snorm(x) * 127f;
-                    }
-
                     fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-                        return unpack4x8snorm_gguf(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
+                        return unpack4x8snorm(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]) * 127.0;
                     }
 
                     fn getAbsMax(d0 : i32, d1 : i32, d2 : i32) -> f32 {
@@ -102,6 +98,76 @@ impl GEMM {
         builder.write_global(wgsl! {
             fn getB(d0 : i32, d1 : i32, d2 : i32) -> 'accessor {
                 return 'accessor(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 'W]);
+            }
+        });
+
+        Ok(())
+    }
+
+    fn write_readers_and_writers<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+    ) -> Result<(), OperationError> {
+        let mut FIT_A_OUTER = true;
+        let mut FIT_INNER = true;
+        let mut FIT_B_OUTER = true;
+        let accessor = P::render_type();
+
+        let readA = if FIT_A_OUTER && FIT_INNER {
+            wgsl! { value = getA(batch, row, col); }
+        } else {
+            wgsl! {
+                if (row < metadata.aShape.y && col < metadata.aShape.z) {
+                    value = getA(batch, row, col);
+                }
+            }
+        };
+
+        builder.write_global(wgsl! {
+            fn mm_readA(batch: i32, row: i32, col: i32) -> 'accessor {
+                var value = 'accessor(0.0);
+                'readA
+                return value;
+            }
+        });
+
+        let readB = if FIT_INNER && FIT_B_OUTER {
+            wgsl! { value = getB(batch, row, col); }
+        } else {
+            wgsl! {
+                if (row < metadata.bShape.y && col < metadata.bShape.z) {
+                    value = getB(batch, row, col);
+                }
+            }
+        };
+
+        builder.write_global(wgsl! {
+            fn mm_readB(batch: i32, row: i32, col: i32) -> 'accessor {
+                var value = 'accessor(0.0);
+                'readB
+                return value;
+            }
+        });
+
+        let write = if FIT_A_OUTER && FIT_B_OUTER {
+            wgsl! {
+                var value = valueIn;
+                let coords = vec3<i32>(batch, row, col);
+                setOutputAtCoords(coords[0], coords[1], coords[2], value);
+            }
+        } else {
+            wgsl! {
+                if (row < metadata.dimAOuter && col < metadata.dimBOuter) {
+                    var value = valueIn;
+                    let coords = vec3<i32>(batch, row, col);
+                    setOutputAtCoords(coords[0], coords[1], coords[2], value);
+                }
+            }
+        };
+
+        builder.write_global(wgsl! {
+            fn mm_write(batch: i32, row: i32, col: i32, valueIn: 'accessor) {
+                'write
             }
         });
 
@@ -194,6 +260,116 @@ impl GEMM {
         kernel_builder.write_metadata::<GEMMMeta>();
         self.write_indexing::<P>(&mut kernel_builder);
         self.write_getters::<P>(dst, &mut kernel_builder)?;
+        self.write_readers_and_writers::<P>(&mut kernel_builder)?;
+
+        const ROW_PER_THREAD: usize = 4;
+        const TILE_DIM: usize = 32;
+        let accessor = P::render_type();
+
+        kernel_builder.write_main(wgsl! {
+            let batch = i32(globalId.z);
+            let batchA = batch % metadata.aShape[0];
+            let batchB = batch % metadata.bShape[0];
+
+            let localRow = i32(localId.y);
+            let tileRow = localRow * 'ROW_PER_THREAD;
+            let tileCol = i32(localId.x);
+
+            let globalRow = i32(globalId.y) * 'ROW_PER_THREAD;
+            let globalCol = i32(globalId.x) * 4;
+
+            let numTiles = (metadata.dimInner - 1) / 'TILE_DIM + 1;
+            var kStart = 0;
+
+            var acc: array<vec4<f32>, 'ROW_PER_THREAD>;
+
+            // Loop over shared dimension.
+            let tileRowB = localRow * 'ROW_PER_THREAD;
+        });
+
+        let load_a_inner = match self.lhs.dt() {
+            DType::F32 | DType::F16 => {
+                wgsl! { mm_Asub[inputRow][inputCol] = mm_readA(batchA, globalRow + innerRow, kStart + inputCol * 4); }
+            }
+            DType::GGUF(GGUFDType::Q8_0(_)) => {
+                wgsl! {
+                    let curRow = globalRow + innerRow;
+                    let curCol = kStart + inputCol * 4;
+
+                    let absmax = getAbsMax(batchA, curRow, curCol);
+                    mm_Asub[inputRow][inputCol] = mm_readA(batchA, curRow, curCol) * absmax;
+                }
+            }
+            _ => panic!("Unsupported dtype"),
+        };
+
+        let load_a = wgsl! {
+            // Load one tile of A into local memory.
+            for (var innerRow = 0; innerRow < 'ROW_PER_THREAD; innerRow++) {
+                let inputRow = tileRow + innerRow;
+                let inputCol = tileCol;
+
+                'load_a_inner
+            }
+        };
+
+        let load_b = wgsl! {
+            // Load one tile of B into local memory.
+            for (var innerRow = 0; innerRow < 'ROW_PER_THREAD; innerRow++) {
+                let inputRow = tileRowB + innerRow;
+                let inputCol = tileCol;
+
+                mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol);
+            }
+        };
+
+        let compute_acc = wgsl! {
+            // Compute acc values for a single thread.
+            for (var k = 0; k < 'TILE_DIM / 4; k++) {
+              let bidx = k * 4;
+              let BCached0 = mm_Bsub[bidx][tileCol];
+              let BCached1 = mm_Bsub[bidx + 1][tileCol];
+              let BCached2 = mm_Bsub[bidx + 2][tileCol];
+              let BCached3 = mm_Bsub[bidx + 3][tileCol];
+              for (var i = 0; i < 'ROW_PER_THREAD; i++) {
+                let ACached = mm_Asub[tileRow + i][k];
+                acc[i] = fma(BCached0, 'accessor(ACached[0]), acc[i]);
+                acc[i] = fma(BCached1, 'accessor(ACached[1]), acc[i]);
+                acc[i] = fma(BCached2, 'accessor(ACached[2]), acc[i]);
+                acc[i] = fma(BCached3, 'accessor(ACached[3]), acc[i]);
+              }
+            }
+        };
+
+        kernel_builder.write_main(wgsl! {
+            for (var t = 0; t < numTiles; t++) {
+
+                'load_a
+
+                'load_b
+
+                kStart = kStart + 'TILE_DIM;
+                workgroupBarrier();
+
+                'compute_acc
+                workgroupBarrier();
+            }
+
+            var val: vec4<f32>;
+        });
+
+        let bias_val = if self.bias.is_some() {
+            wgsl! { bias[globalCol / 4] }
+        } else {
+            wgsl! { 0.0 }
+        };
+
+        for i in 0..ROW_PER_THREAD {
+            kernel_builder.write_main(wgsl! {
+                val = acc['i] + 'bias_val;
+                mm_write(batch, globalRow + 'i, globalCol, val);
+            });
+        }
 
         Ok(kernel_builder.build()?)
     }
