@@ -1,11 +1,14 @@
 use derive_new::new;
 use encase::ShaderType;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, StorageView, Strides, Tensor,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
+    Vec2, Vec4, WgpuDevice, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
+use inline_wgsl::wgsl;
 
 #[derive(new, Debug, Clone)]
 pub struct RoPE {
@@ -15,7 +18,79 @@ pub struct RoPE {
     offset: usize,
 }
 
-#[derive(Debug, derive_new::new, ShaderType)]
+impl RoPE {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        if !inplace {
+            panic!("Only inplace rope is supported");
+        }
+        let arr = Array::<P>::default();
+        builder.register_storage("X", BindingMode::ReadWrite, arr);
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn build_rope<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError>
+    where
+        P::T: num_traits::Float,
+    {
+        let device = self.input.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::GlobalInvocationId,
+                BuiltIn::LocalInvocationId,
+                BuiltIn::NumWorkgroups,
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<RoPEMeta>();
+
+        kernel_builder.write_main(wgsl! {
+            if(global_id.y >= metadata.seq_len) {
+              return;
+            }
+
+            let grid = vec3<u32>(num_workgroups.x * 8u, num_workgroups.y * 8u, num_workgroups.z * 1u);
+
+            let out_index_1 = dot(global_id, vec3<u32>(metadata.out_strides[2], metadata.out_strides[1], metadata.out_strides[0]));
+            let out_index_2 = out_index_1 + grid.x * metadata.out_strides[2];
+
+            let in_index_1 = dot(global_id, vec3<u32>(metadata.in_strides[2], metadata.in_strides[1], metadata.in_strides[0]));
+            let in_index_2 = in_index_1 + grid.x * metadata.in_strides[2];
+
+            let L = metadata.scale * f32(global_id.y + metadata.offset);
+            let d = f32(global_id.x) / f32(grid.x);
+
+            let theta = L * exp2(-d * metadata.base);
+            let costheta = cos(theta);
+            let sintheta = sin(theta);
+
+            let x1 = in[in_index_1];
+            let x2 = in[in_index_2];
+
+            let rx1 = x1 * costheta - x2 * sintheta;
+            let rx2 = x1 * sintheta + x2 * costheta;
+
+            in[out_index_1] = rx1;
+            in[out_index_2] = rx2;
+
+        });
+
+        Ok(kernel_builder.build()?)
+    }
+}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct RoPEMeta {
     in_strides: glam::UVec3,
     out_strides: glam::UVec3,
@@ -24,8 +99,6 @@ pub struct RoPEMeta {
     base: f32,
     scale: f32,
 }
-
-impl OpMetadata for RoPEMeta {}
 
 impl OpGuards for RoPE {
     fn check_shapes(&self) {
@@ -78,7 +151,7 @@ impl MetaOperation for RoPE {
         let [_, _, SL, HD]: [usize; 4] = input.shape().try_into()?;
         let mat_size = SL * HD;
 
-        let total_x = self.dim / 2;
+        let total_x = self.dim / 2; //solve pairs
         let total_y = SL;
         let total_z = input.shape().numel() / mat_size;
 
