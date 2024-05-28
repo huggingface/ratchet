@@ -1,11 +1,15 @@
 use derive_new::new;
 use encase::ShaderType;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
+    gguf::GGUFDType,
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, KernelElement, KernelKey, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, StorageView, Strides, Tensor,
+    rvec, wgc, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
+use inline_wgsl::wgsl;
 
 #[derive(new, Debug, Clone)]
 pub struct IndexSelect {
@@ -14,15 +18,87 @@ pub struct IndexSelect {
     dim: usize,
 }
 
-#[derive(Debug, derive_new::new, ShaderType)]
+impl IndexSelect {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        if !inplace {
+            panic!("Only inplace softmax is supported");
+        }
+
+        let index_arr = Array::<Scalar<i32>>::default();
+        match self.input.dt() {
+            DType::F16 | DType::F32 => {
+                builder.register_storage("E", BindingMode::ReadOnly, Array::<P>::default());
+                builder.register_storage("I", BindingMode::ReadWrite, index_arr);
+            }
+            DType::GGUF(g) => match g {
+                GGUFDType::Q8_0(_) => {
+                    let packed_arr = Array::<Scalar<u32>>::default();
+                    let scale_arr = Array::<Scalar<f32>>::default();
+                    builder.register_storage("E", BindingMode::ReadOnly, packed_arr);
+                    builder.register_storage("S", BindingMode::ReadWrite, scale_arr);
+                    builder.register_storage("I", BindingMode::ReadOnly, index_arr);
+                }
+                _ => unimplemented!(),
+            },
+            _ => unimplemented!(),
+        }
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn build_index_select<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.input.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::GlobalInvocationId,
+                BuiltIn::LocalInvocationId,
+                BuiltIn::WorkgroupId,
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<IndexSelectMeta>();
+
+        kernel_builder.write_main(wgsl! {
+            let tid = (group_id.x * 64u + local_index);
+            let right_numel = metadata.right_numel/ 4u;
+            let src_dim_numel = metadata.src_dim_numel/ 4u;
+
+            if (tid >= metadata.dst_numel / 4u) {
+                return;
+            }
+
+            let id_i = (tid / right_numel) % metadata.ids_numel;
+            let input_i = min(u32(I[id_i]), (src_dim_numel * 4u) - 1u);
+            let right_rank_i = tid % right_numel;
+            let left_rank_i = tid / (right_numel * metadata.ids_numel);
+
+            let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
+            Y[tid] = unpack4x8snorm_gguf(E[src_i]) * S[src_i / 8u];
+
+        });
+
+        Ok(kernel_builder.build()?)
+    }
+}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct IndexSelectMeta {
     dst_numel: u32,
     right_numel: u32,
     ids_numel: u32,
     src_dim_numel: u32,
 }
-
-impl OpMetadata for IndexSelectMeta {}
 
 impl Operation for IndexSelect {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
@@ -45,6 +121,7 @@ impl OpGuards for IndexSelect {
 
     fn check_dtypes(&self) {
         let indices = &self.indices;
+        //TODO: support others
         assert_eq!(indices.dt(), DType::I32);
     }
 }

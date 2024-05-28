@@ -2,8 +2,8 @@ use inline_wgsl::wgsl;
 use std::fmt::Write;
 
 use crate::{
-    Array, BindingMode, BindingType, DeviceFeatures, KernelBinding, KernelSource, OpMetadata, RVec,
-    Scalar, Vec3, WgslPrimitive, WorkgroupSize,
+    Array, BindingMode, BindingType, DType, DeviceFeatures, KernelBinding, KernelSource,
+    OpMetadata, RVec, Scalar, Vec3, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(Debug)]
@@ -199,6 +199,10 @@ impl WgslKernelBuilder {
                 return offset;
             }
         });
+    }
+
+    pub(crate) fn write_unpack(&mut self, dt: DType) {
+        todo!()
     }
 }
 
