@@ -1,16 +1,93 @@
 use derive_new::new;
 use glam::UVec4;
+use half::f16;
+use inline_wgsl::wgsl;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount, UNIFORM_ALIGN},
-    wgc, KernelElement, KernelKey, MetaOperation, OpGuards, Operation, OperationError, RVec, Shape,
-    StorageView, Strides, Tensor,
+    rvec, wgc, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
+    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(new, Debug, Clone)]
 pub struct Concat {
     inputs: RVec<Tensor>,
     dim: usize,
+}
+
+impl Concat {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        if !inplace {
+            panic!("Only inplace concat is supported");
+        }
+        let arr = Array::<P>::default();
+        for i in 0..self.inputs.len() {
+            builder.register_storage(format!("X{}", i).as_str(), BindingMode::ReadOnly, arr);
+        }
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn build_concat<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.inputs[0].device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::NumWorkgroups,
+                BuiltIn::WorkgroupId,
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_offset_to_index();
+        kernel_builder.write_index_to_offset();
+
+        kernel_builder.write_main(wgsl! {
+            let x_offset = group_id.x * 64u;
+            let dst_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
+            if (dst_offset >= metadata.dst_numel) {
+                return;
+            }
+
+            var dst_index = offsetToNdIndex(dst_offset, metadata.dst_stride);
+            let dim = metadata.dim;
+        });
+
+        kernel_builder.write_main(wgsl! {
+            if(dst_index[dim] < metadata.cum0) {
+                let src_offset = ndIndexToOffset(dst_index, metadata.x0_stride);
+                Y[dst_offset] = X0[src_offset];
+            }
+        });
+
+        for i in 1..self.inputs.len() {
+            let prevcum = format!("metadata.cum{}", i - 1);
+            let cum = format!("metadata.cum{}", i);
+            let stride = format!("metadata.x{}_stride", i);
+            let src = format!("X{}", i);
+
+            kernel_builder.write_main(wgsl! {
+                if(dst_index[dim] < 'cum) {
+                    dst_index[dim] -= 'prevcum;
+                    let src_offset = ndIndexToOffset(dst_index, 'stride);
+                    Y[dst_offset] = 'src[src_offset];
+                }
+            });
+        }
+
+        Ok(kernel_builder.build()?)
+    }
 }
 
 impl Operation for Concat {
@@ -137,11 +214,50 @@ impl MetaOperation for Concat {
         //with standard `.write()` it returns the offset where the struct writing started
         Ok(uniform.write_struct_end()? - UNIFORM_ALIGN as u64)
     }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (dst.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_concat::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_concat::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_concat::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_concat::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_concat::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_concat::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                dst.dt(),
+                kernel_element
+            ))),
+        }
+    }
 }
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
-    use crate::{rvec, shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use half::f16;
+
+    use crate::{
+        rvec, shape, test_util::run_py_prg, wgs, Concat, Device, DeviceRequest, MetaOperation,
+        Tensor,
+    };
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
@@ -220,5 +336,23 @@ def permute(t0, t1, t2, t3, t4):
             dim,
         })
         .unwrap();
+    }
+
+    #[test]
+    fn test_render_concat() {
+        let device = GPU_DEVICE.with(|d| d.clone());
+
+        let t0 = Tensor::randn::<f16>(shape![4, 2, 50, 128], device.clone());
+        let t1 = Tensor::randn::<f16>(shape![4, 2, 13, 128], device.clone());
+        let t2 = Tensor::randn::<f16>(shape![4, 2, 77, 128], device.clone());
+        let t3 = Tensor::randn::<f16>(shape![4, 2, 55, 128], device.clone());
+        let t4 = Tensor::randn::<f16>(shape![4, 2, 11, 128], device.clone());
+        let to_concat = rvec![t0, t1, t2, t3, t4];
+
+        let dst = Tensor::zeros::<f16>(&shape![1, 2, 128], &device);
+        let op = Concat::new(to_concat, 2);
+        let wgs = wgs![128, 1, 1];
+        let kern = op.build_kernel(true, &dst, &wgs).unwrap();
+        println!("{}", kern);
     }
 }
