@@ -5,17 +5,17 @@ use ratchet::{shape, Device, Tensor};
 use ratchet_nn::Module;
 use tokenizers::Tokenizer;
 
-use super::{text_model::Phi2, vision_encoder::VisionEncoder};
+use super::{text_model::TextModel, vision_encoder::VisionEncoder};
 
 struct Moondream {
     vision_encoder: VisionEncoder,
-    text_model: Phi2,
+    text_model: TextModel,
     tokenizer: Tokenizer,
 }
 
 impl Moondream {
     fn generate(
-        &self,
+        &mut self,
         image_bytes: &[u8],
         image_format: ImageFormat,
         prompt: String,
@@ -55,21 +55,31 @@ impl Moondream {
             .collect::<Vec<_>>();
 
         let mut generated_tokens = vec![];
+        let mut all_tokens = tokens.clone();
 
-        while tokens.len() < max_tokens && *tokens.last().unwrap() != 50256 {
+        while all_tokens.len() < max_tokens && *tokens.last().unwrap() != 50256 {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let mut embeds = self.text_model.embedding.schedule(input).unwrap();
-            embeds = Tensor::cat(
-                vec![bos_token.clone(), img_embed.clone(), embeds.clone()].into(),
-                1,
-            )
-            .unwrap();
+            let mut embeds: Tensor;
+            if generated_tokens.len() == 0 {
+                embeds = self.text_model.embedding.schedule(input).unwrap();
+                embeds = Tensor::cat(
+                    vec![bos_token.clone(), img_embed.clone(), embeds.clone()].into(),
+                    1,
+                )
+                .unwrap();
+            } else {
+                embeds = self.text_model.embedding.schedule(input).unwrap();
+            }
+
             let result = self
                 .text_model
                 .schedule(embeds.clone())
                 .unwrap()
                 .resolve()
                 .unwrap();
+
+            self.text_model.cache_mut().update(embeds.shape()[1]);
+
             let logits = result.to(&Device::CPU).unwrap();
             let next_tokens = logits
                 .to_ndarray_view::<f32>()
@@ -77,9 +87,9 @@ impl Moondream {
                 .iter()
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
-
-            tokens.extend(next_tokens.clone());
-            generated_tokens.extend(next_tokens);
+            tokens = next_tokens.clone();
+            generated_tokens.extend(next_tokens.clone());
+            all_tokens.extend(next_tokens.clone());
         }
 
         let u32_toks = generated_tokens
@@ -98,13 +108,14 @@ mod example {
     use ratchet_loader::gguf;
     use tokenizers::Tokenizer;
 
-    use crate::moondream::{text_model::Phi2, vision_encoder::VisionEncoder};
+    use crate::moondream::{text_model::TextModel, vision_encoder::VisionEncoder};
 
     use super::Moondream;
 
+    #[test]
     fn end_to_end() {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let img = fs::read("<Insert Local File Here>").unwrap();
+        let img = fs::read("<Insert Local Image Here>").unwrap();
 
         let api = Api::new().unwrap();
         let model_repo = api.model("tgestson/ratchet-moondream2".to_string());
@@ -117,7 +128,7 @@ mod example {
         let model_path = model_repo.get("moondream2-text-model-f16.gguf").unwrap();
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let content = gguf::gguf::Header::read(&mut reader).unwrap();
-        let text_model = Phi2::load(content, &mut reader, &device).unwrap();
+        let text_model = TextModel::load(content, &mut reader, &device).unwrap();
 
         let tokenizer_repo = api.model("vikhyatk/moondream2".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
@@ -125,7 +136,7 @@ mod example {
 
         let prompt = "\n\nQuestion: What is happening here?\n\nAnswer:";
 
-        let model = Moondream {
+        let mut model = Moondream {
             vision_encoder: vision_encoder,
             text_model: text_model,
             tokenizer: tokenizer,
@@ -136,7 +147,7 @@ mod example {
                 &img,
                 image::ImageFormat::Jpeg,
                 prompt.to_owned(),
-                50,
+                150,
                 device,
             )
             .unwrap();

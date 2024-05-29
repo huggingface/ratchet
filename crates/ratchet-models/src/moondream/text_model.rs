@@ -8,8 +8,8 @@ use ratchet_nn::{
 
 use super::mlp::MLP;
 
-#[derive(Debug)]
-pub struct PhiSelfAttention {
+#[derive(Debug, derive_new::new)]
+pub struct SelfAttention {
     qkv: Linear,
     o: Linear,
     rope: RotaryEmbedding,
@@ -18,58 +18,21 @@ pub struct PhiSelfAttention {
     n_kv_heads: u32,
 }
 
-impl PhiSelfAttention {
-    pub fn load<R: BufRead + Seek>(
-        disk_model: &Header,
-        reader: &mut R,
-        layer_index: usize,
-        device: &Device,
-    ) -> anyhow::Result<Self> {
-        let lt = |name: &str| {
-            let key = format!("blk.{}.{}", layer_index, name);
-            disk_model.tensor(reader, &key, device)
-        };
-        Self::load_inner(disk_model, lt, device)
-    }
-    fn load_inner<F>(header: &Header, mut lt: F, device: &Device) -> anyhow::Result<Self>
-    where
-        F: FnMut(&str) -> anyhow::Result<Tensor>,
-    {
-        let qkv = Linear::new(lt("attn_qkv.weight")?, None);
-        let o = Linear::new(lt("attn_output.weight")?, None);
-
-        let metadata = &header.metadata;
-        let n_heads = metadata.get("phi2.attention.head_count")?.to_u32()?;
-        let n_kv_heads = metadata.get("phi2.attention.head_count_kv")?.to_u32()?;
-        let d_model = metadata.get("phi2.embedding_length")?.to_u32()?;
-        let rope_base = 10000.0f32;
-        let rope_dim = metadata.get("phi2.rope.dimension_count")?.to_u32()?;
-
-        let hdim = d_model as f32 / n_heads as f32;
-        let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());
-        let rope = RotaryEmbedding::new(rope_dim as _, false, rope_base, 1.0);
-        Ok(Self {
-            qkv,
-            o,
-            rope,
-            n_heads,
-            softmax_scale,
-            n_kv_heads,
-        })
-    }
-}
-
-pub struct PhiAttnInput {
+pub struct AttnInput {
     pub input: Tensor,
     pub mask: Option<Tensor>,
-    pub cache: Option<KVEntry>,
+    pub kv_cache: Option<KVEntry>,
 }
 
-impl Module for PhiSelfAttention {
-    type Input = PhiAttnInput;
+impl Module for SelfAttention {
+    type Input = AttnInput;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let PhiAttnInput { input, mask, cache } = input;
+        let AttnInput {
+            input,
+            mask,
+            kv_cache,
+        } = input;
         let [batch_size, q_len, n_state]: [usize; 3] = input.shape().try_into()?;
 
         let hdim = n_state / self.n_heads as usize;
@@ -97,7 +60,7 @@ impl Module for PhiSelfAttention {
         let key_states = key_states.view(kv_shape.clone())?.permute(&[0, 2, 1, 3])?;
         let value_states = value_states.view(kv_shape)?.permute(&[0, 2, 1, 3])?;
 
-        let offset = cache.as_ref().map(|kv| kv.entries).unwrap_or(0);
+        let offset = kv_cache.as_ref().map(|kv| kv.entries).unwrap_or(0);
         let query_states = self.rope.schedule(RotaryInput {
             input: query_states,
             offset,
@@ -107,7 +70,7 @@ impl Module for PhiSelfAttention {
             offset,
         })?;
 
-        let (key_states, value_states) = if let Some(kv) = cache {
+        let (key_states, value_states) = if let Some(kv) = kv_cache {
             let k_cache = kv.k_cache.cache(key_states, 2, offset)?;
             let v_cache = kv.v_cache.cache(value_states, 2, offset)?;
             (k_cache, v_cache)
@@ -132,61 +95,39 @@ impl Module for PhiSelfAttention {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_new::new)]
 pub struct DecoderLayer {
-    ln: LayerNorm,
-    self_attn: PhiSelfAttention,
-    mlp: MLP,
+    pub ln: LayerNorm,
+    pub self_attn: SelfAttention,
+    pub mlp: MLP,
 }
 
-impl DecoderLayer {
-    pub fn load<R: BufRead + Seek>(
-        disk_model: &Header,
-        reader: &mut R,
-        layer_index: usize,
-        device: &Device,
-    ) -> anyhow::Result<Self> {
-        let self_attn = PhiSelfAttention::load(disk_model, reader, layer_index, device)?;
-        let mut lt = |name: &str| {
-            let key = format!("blk.{}.{}", layer_index, name);
-            disk_model.tensor(reader, &key, device)
-        };
-
-        let ln = LayerNorm::new(lt("attn_norm.weight")?, Some(lt("attn_norm.bias")?), 1e-5);
-
-        let mlp = MLP::new(
-            Linear::new(lt("ffn_up.weight")?, Some(lt("ffn_up.bias")?)),
-            Linear::new(lt("ffn_down.weight")?, Some(lt("ffn_down.bias")?)),
-        );
-        Ok(Self { ln, self_attn, mlp })
-    }
-}
-
+#[derive(Debug)]
 pub struct DecoderLayerInput {
     pub x: Tensor,
     pub mask: Option<Tensor>,
-    pub cache: Option<KVEntry>,
+    pub kv_cache: Option<KVEntry>,
 }
 
 impl Module for DecoderLayer {
     type Input = DecoderLayerInput;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let DecoderLayerInput { x, mask, cache } = input;
+        let DecoderLayerInput { x, mask, kv_cache } = input;
         let residual = x.clone();
         let xs = self.ln.schedule(x)?;
-        let attn_output = self.self_attn.schedule(PhiAttnInput {
+        let attn_output = self.self_attn.schedule(AttnInput {
             input: xs.clone(),
             mask,
-            cache,
+            kv_cache,
         })?;
         let ff_hs = self.mlp.schedule(xs)?;
         attn_output.add(ff_hs)?.add(residual)
     }
 }
 
-#[derive(Debug)]
-pub struct Phi2 {
+#[derive(Debug, derive_new::new)]
+pub struct TextModel {
     pub embedding: Embedding,
     pub layers: Vec<DecoderLayer>,
     pub ln_post: LayerNorm,
@@ -195,11 +136,11 @@ pub struct Phi2 {
     pub device: Device,
 }
 
-impl Module for Phi2 {
+impl Module for TextModel {
     type Input = Tensor;
 
-    fn schedule(&self, embedding: Self::Input) -> anyhow::Result<Tensor> {
-        let mut x = embedding.clone();
+    fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let mut x = input.clone();
         let [_, seq_len, n_state]: [usize; 3] = x.shape().try_into()?;
         let mask = if seq_len <= 1 {
             None
@@ -207,11 +148,11 @@ impl Module for Phi2 {
             Some(Self::generate_mask(seq_len, x.device())?)
         };
 
-        for (layer_idx, layer) in self.layers.iter().enumerate() {
+        for (i, layer) in self.layers.iter().enumerate() {
             let input = DecoderLayerInput {
                 x,
                 mask: mask.clone(),
-                cache: Some(self.kv_cache[layer_idx].clone()),
+                kv_cache: Some(self.kv_cache[i].clone()),
             };
             x = layer.schedule(input)?;
         }
@@ -222,9 +163,7 @@ impl Module for Phi2 {
     }
 }
 
-impl Phi2 {
-    const MAX_CACHE: usize = 1024;
-
+impl TextModel {
     pub fn load<R: BufRead + Seek>(
         header: Header,
         reader: &mut R,
@@ -233,31 +172,68 @@ impl Phi2 {
         let embedding = Embedding::new(header.tensor(reader, "token_embd.weight", device)?);
 
         let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
+        let dim = header.metadata.get("phi2.embedding_length")?.to_u32()?;
+        let n_heads = header.metadata.get("phi2.attention.head_count")?.to_u32()?;
+        let n_kv_heads = header
+            .metadata
+            .get("phi2.attention.head_count_kv")?
+            .to_u32()?;
+        let rope_base = 10000.0f32;
+        let rope_dim = header.metadata.get("phi2.rope.dimension_count")?.to_u32()?;
+        let ln_eps = 1e-05;
+        let hdim = dim as f32 / n_heads as f32;
+        let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());
 
-        let layers = (0..n_layers)
-            .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
-                blocks.push(DecoderLayer::load(&header, reader, i as _, device));
-                blocks
-            })
-            .into_iter()
-            .collect::<anyhow::Result<Vec<_>>>()?;
+        let mut lt = |name: String| header.tensor(reader, &name, device).unwrap();
+        let cache_shape = shape![1, 32, 4096, 64];
 
-        let mut lt = |name: &str| {
-            let key = format!("output{}", name);
-            header.tensor(reader, &key, device)
-        };
-
-        let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
-        let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
-
-        Ok(Self {
+        Ok(TextModel::new(
             embedding,
-            layers,
-            ln_post,
-            lm_head,
-            kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 64], device),
-            device: device.clone(),
-        })
+            (0..n_layers)
+                .map(|i| DecoderLayer {
+                    self_attn: SelfAttention::new(
+                        Linear::new(
+                            lt(format!("blk.{}.attn_qkv.weight", i)),
+                            Some(lt(format!("blk.{}.attn_qkv.bias", i))),
+                        ),
+                        Linear::new(
+                            lt(format!("blk.{}.attn_output.weight", i)),
+                            Some(lt(format!("blk.{}.attn_output.bias", i))),
+                        ),
+                        RotaryEmbedding::new(rope_dim as usize, false, rope_base, 1.0),
+                        n_heads,
+                        softmax_scale.clone(),
+                        n_kv_heads,
+                    ),
+                    ln: LayerNorm::new(
+                        lt(format!("blk.{}.attn_norm.weight", i)),
+                        Some(lt(format!("blk.{}.attn_norm.bias", i))),
+                        ln_eps,
+                    ),
+                    mlp: MLP::new(
+                        Linear::new(
+                            lt(format!("blk.{}.ffn_up.weight", i)),
+                            Some(lt(format!("blk.{}.ffn_up.bias", i))),
+                        ),
+                        Linear::new(
+                            lt(format!("blk.{}.ffn_down.weight", i)),
+                            Some(lt(format!("blk.{}.ffn_down.bias", i))),
+                        ),
+                    ),
+                })
+                .collect(),
+            LayerNorm::new(
+                lt("output_norm.weight".to_owned()),
+                Some(lt("output_norm.bias".to_owned())),
+                ln_eps,
+            ),
+            Linear::new(
+                lt("output.weight".to_owned()),
+                Some(lt("output.bias".to_owned())),
+            ),
+            KVCache::new(n_layers as _, cache_shape, device),
+            device.clone(),
+        ))
     }
 
     pub fn generate_mask(seq_len: usize, device: &Device) -> anyhow::Result<Tensor> {
@@ -270,10 +246,6 @@ impl Phi2 {
             shape![seq_len, seq_len],
             device.clone(),
         ))
-    }
-
-    pub fn reset(&mut self) {
-        self.kv_cache.reset();
     }
 
     pub fn cache_mut(&mut self) -> &mut KVCache {
