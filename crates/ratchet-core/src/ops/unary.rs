@@ -5,9 +5,9 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec, Scalar, StorageView,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
     Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 
@@ -61,8 +61,8 @@ pub struct Unary {
 }
 
 impl Unary {
-    const SQRT_2_OVER_PI: f32 = 0.7978845608028654;
-    const SCALED_SQRT_2_OVER_PI: f32 = 0.035677408136300125;
+    const SQRT_2_OVER_PI: f32 = 0.797_884_6;
+    const SCALED_SQRT_2_OVER_PI: f32 = 0.035_677_407;
 
     pub fn op(&self) -> &UnaryOp {
         &self.op

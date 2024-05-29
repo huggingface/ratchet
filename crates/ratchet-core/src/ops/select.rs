@@ -6,8 +6,7 @@ use crate::{
     gguf::GGUFDType,
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
-    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use inline_wgsl::wgsl;
 

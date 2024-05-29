@@ -3,7 +3,7 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType,
+    gguf::GGUFDType, rvec, Array, BindingMode, BuiltIn, DType,
     InvariantError, KernelElement, KernelSource, OperationError, Scalar, Tensor, Vec2, Vec4,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
@@ -108,9 +108,9 @@ impl GEMM {
         &self,
         builder: &mut WgslKernelBuilder,
     ) -> Result<(), OperationError> {
-        let mut FIT_A_OUTER = true;
-        let mut FIT_INNER = true;
-        let mut FIT_B_OUTER = true;
+        let FIT_A_OUTER = true;
+        let FIT_INNER = true;
+        let FIT_B_OUTER = true;
         let accessor = P::render_type();
 
         let readA = if FIT_A_OUTER && FIT_INNER {

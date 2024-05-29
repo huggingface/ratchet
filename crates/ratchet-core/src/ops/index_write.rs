@@ -6,7 +6,7 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource, MetaOperation,
-    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 

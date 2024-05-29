@@ -7,7 +7,7 @@ use wgpu::BindGroupLayoutEntry;
 
 use crate::{
     gpu::{
-        dtype::WgslDType, BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform,
+        BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform,
         WorkgroupCount,
     },
     rvec, wgc, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource, MetaOperation,
