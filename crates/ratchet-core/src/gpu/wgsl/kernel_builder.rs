@@ -177,11 +177,18 @@ impl WgslKernelBuilder {
                 var index: vec4<u32> = vec4<u32>(0u, 0u, 0u, 0u);
                 var remaining = offset;
 
-                for (var i: i32 = 0; i < 3; i++) {
-                    let idx = remaining / stride[i];
-                    index[i] = idx;
-                    remaining -= idx * stride[i];
-                }
+                var idx = remaining / stride[0];
+                index[0] = idx;
+                remaining -= idx * stride[0];
+
+                idx = remaining / stride[1];
+                index[1] = idx;
+                remaining -= idx * stride[1];
+
+                idx = remaining / stride[2];
+                index[2] = idx;
+                remaining -= idx * stride[2];
+
                 index.w = remaining;
                 return index;
             }
@@ -192,11 +199,7 @@ impl WgslKernelBuilder {
         self.write_global(wgsl! {
             //Converts 4D index into 1D offset
             fn ndIndexToOffset(index: vec4<u32>, stride: vec4<u32>) -> u32 {
-                var offset: u32 = 0u;
-                for (var i: i32 = 0; i < 4; i++) {
-                    offset += index[i] * stride[i];
-                }
-                return offset;
+                return dot(index, stride);
             }
         });
     }

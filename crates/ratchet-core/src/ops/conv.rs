@@ -1,13 +1,14 @@
 //TODO: move this to a custom operation
 use derive_new::new;
 use encase::ShaderType;
+use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, StorageView, Strides, Tensor,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey,
+    KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
+    Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -179,6 +180,40 @@ impl MetaOperation for Conv {
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         KernelElement::Scalar
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (self.input.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_conv::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_conv::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_conv::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_conv::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_conv::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_conv::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                self.input.dt(),
+                kernel_element
+            ))),
+        }
     }
 
     fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {

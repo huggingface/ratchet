@@ -1,15 +1,16 @@
 use derive_new::new;
 use encase::ShaderType;
 use glam::UVec4;
+use half::f16;
 use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 use wgpu::BindGroupLayoutEntry;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
+    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 /// # Cache
@@ -219,6 +220,40 @@ impl MetaOperation for Cache {
         };
 
         Ok(uniform.write(&meta)?)
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (dst.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_cache::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_cache::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_cache::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_cache::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_cache::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_cache::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                dst.dt(),
+                kernel_element
+            ))),
+        }
     }
 }
 

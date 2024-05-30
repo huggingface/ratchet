@@ -237,9 +237,7 @@ pub trait MetaOperation: Debug + 'static {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-    ) -> Result<KernelSource, OperationError> {
-        todo!()
-    }
+    ) -> Result<KernelSource, OperationError>;
 
     fn compile(
         &self,

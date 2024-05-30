@@ -2,13 +2,14 @@ mod groupnorm;
 
 use encase::ShaderType;
 pub use groupnorm::GroupNorm;
+use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, StorageView, Tensor,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use derive_new::new;
 use inline_wgsl::wgsl;
@@ -239,6 +240,40 @@ impl MetaOperation for NormOp {
             KernelElement::Vec2
         } else {
             KernelElement::Scalar
+        }
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (dst.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_norm::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_norm::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_norm::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_norm::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_norm::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_norm::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                dst.dt(),
+                kernel_element
+            ))),
         }
     }
 
