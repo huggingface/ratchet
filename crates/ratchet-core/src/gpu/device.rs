@@ -203,7 +203,7 @@ impl WgpuDevice {
         Ok(self.compute_pipeline_pool.get_or_create(desc, self))
     }
 
-    pub fn get_or_create_compute_module<O: MetaOperation>(
+    pub fn get_or_create_compute_module<O: MetaOperation + ?Sized>(
         &self,
         desc: &KernelSourceDesc,
         op: &O,

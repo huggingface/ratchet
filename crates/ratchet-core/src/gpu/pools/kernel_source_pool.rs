@@ -15,7 +15,7 @@ pub struct KernelSourceDesc {
 }
 
 impl KernelSourceDesc {
-    pub fn create_compute_module<O: MetaOperation>(
+    pub fn create_compute_module<O: MetaOperation + ?Sized>(
         &self,
         op: &O,
         inplace: bool,
@@ -38,7 +38,7 @@ impl KernelSourcePool {
         }
     }
 
-    pub fn get_or_create<O: MetaOperation>(
+    pub fn get_or_create<O: MetaOperation + ?Sized>(
         &self,
         desc: &KernelSourceDesc,
         op: &O,

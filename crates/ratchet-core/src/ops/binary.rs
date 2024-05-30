@@ -6,9 +6,10 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement, KernelKey,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement, KernelKey,
     KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
     StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -188,16 +189,22 @@ impl MetaOperation for Binary {
         }
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![8, 8, 1];
+
         let numel = dst.shape().numel();
-        let x_groups = WorkgroupCount::div_ceil(numel as _, 64);
+        let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
         let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
             let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
             (WorkgroupCount::MAX_WGS_PER_DIM, y_groups)
         } else {
             (x_groups, 1)
         };
-        Ok(wgc![x_groups as _, y_groups as _, 1])
+
+        Ok(Workload {
+            workgroup_count: wgc![x_groups as _, y_groups as _, 1],
+            workgroup_size,
+        })
     }
 
     fn storage_bind_group_layout(

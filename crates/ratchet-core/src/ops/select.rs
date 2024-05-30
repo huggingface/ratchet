@@ -5,8 +5,9 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gguf::GGUFDType,
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -146,14 +147,18 @@ impl MetaOperation for IndexSelect {
         KernelElement::Scalar
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![8, 8, 1];
         let numel = match self.input.dt() {
             DType::F32 => dst.shape().numel(),
             DType::GGUF(_) => dst.shape().numel() / 4,
             _ => unimplemented!(),
         };
-        let wgcx = WorkgroupCount::div_ceil(numel, 64);
-        Ok(wgc![wgcx as _, 1, 1])
+        let wgcx = WorkgroupCount::div_ceil(numel, 64) as _;
+        Ok(Workload {
+            workgroup_size,
+            workgroup_count: wgc![wgcx, 1, 1],
+        })
     }
 
     fn storage_bind_group_layout(

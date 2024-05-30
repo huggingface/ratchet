@@ -4,8 +4,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, StorageView, Strides, Tensor, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, StorageView, Strides, Tensor,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -140,10 +141,11 @@ impl MetaOperation for RoPE {
         KernelElement::Scalar
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {
         const WGSX: usize = 8;
         const WGSY: usize = 8;
         const WGSZ: usize = 1;
+        let workgroup_size = wgs![WGSX as _, WGSY as _, WGSZ as _];
 
         let input = &self.input;
         let [_, _, SL, HD]: [usize; 4] = input.shape().try_into()?;
@@ -157,7 +159,10 @@ impl MetaOperation for RoPE {
         let wgcy = WorkgroupCount::div_ceil(total_y, WGSY) as u32;
         let wgcz = WorkgroupCount::div_ceil(total_z, WGSZ) as u32;
 
-        Ok(wgc![wgcx, wgcy, wgcz])
+        Ok(Workload {
+            workgroup_count: wgc![wgcx, wgcy, wgcz],
+            workgroup_size,
+        })
     }
 
     fn storage_bind_group_layout(

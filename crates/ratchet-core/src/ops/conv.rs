@@ -5,9 +5,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, shape, wgc, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource,
+    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, KernelElement, KernelKey, KernelSource,
     MetaOperation, OpGuards, Operation, OperationError, RVec, StorageView, Strides, Tensor,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -181,14 +181,19 @@ impl MetaOperation for Conv {
         KernelElement::Scalar
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![256, 1, 1];
+
         let input = &self.input;
         let [_N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
         let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
         let _F_numel = Cin * KS;
         let padded_strided_Lin = (Lin + 2 * self.padding) / self.stride;
-        let wgcx = WorkgroupCount::div_ceil(padded_strided_Lin, 256);
-        Ok(wgc![wgcx as _, Cout as _, 1])
+        let wgcx = WorkgroupCount::div_ceil(padded_strided_Lin, workgroup_size.product() as _);
+        Ok(Workload {
+            workgroup_count: wgc![wgcx as _, Cout as _, 1],
+            workgroup_size,
+        })
     }
 
     fn storage_bind_group_layout(

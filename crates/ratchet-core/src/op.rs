@@ -3,8 +3,8 @@ use crate::gpu::{
     PoolError, WgpuDevice, WorkgroupCount,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, RVec, StorageView, Tensor,
-    WgslFragment, WorkgroupSize,
+    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelSourceDesc, RVec,
+    StorageView, Tensor, WgslFragment, WorkgroupSize, Workload,
 };
 use encase::internal::WriteInto;
 use encase::ShaderType;
@@ -208,7 +208,7 @@ pub trait MetaOperation: Debug + 'static {
     /// # Calculate Dispatch
     ///
     /// Determine required amount of workgroups to execute the operation.
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError>;
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError>;
 
     /// # Storage Bind Group Layout
     ///
@@ -251,7 +251,7 @@ pub trait MetaOperation: Debug + 'static {
         let kernel_element = self.kernel_element(dst);
         let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
 
-        let workgroup_count = self.calculate_dispatch(dst)?;
+        let workload = self.calculate_dispatch(dst)?;
 
         let storage_layout = device
             .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
@@ -261,11 +261,24 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let kernel_key = self.kernel_key(can_inplace, dst);
+        let kernel_key = self.kernel_key(can_inplace, dst); //TODO: needs DTYPES
+
+        let source_descriptor = KernelSourceDesc {
+            key: kernel_key.clone(),
+        };
+
+        let compute_module = device.get_or_create_compute_module(
+            &source_descriptor,
+            self,
+            can_inplace,
+            dst,
+            &workload.workgroup_size,
+        );
+
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
             kernel_key: kernel_key.clone(),
-            compute_module: None,
+            compute_module: Some(compute_module),
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
@@ -280,7 +293,7 @@ pub trait MetaOperation: Debug + 'static {
 
         Ok(CompiledOp::new(
             pipeline_handle,
-            workgroup_count,
+            workload.workgroup_count,
             storage_bind_groups,
             offset as _,
             kernel_key,

@@ -6,9 +6,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
     MetaOperation, OpGuards, Operation, OperationError, RVec, StorageView, Tensor,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use derive_new::new;
 use inline_wgsl::wgsl;
@@ -242,24 +242,29 @@ impl MetaOperation for NormOp {
         }
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
-        match self {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_count = match self {
             NormOp::LayerNorm(_) | NormOp::RMSNorm(_) => {
                 let input = self.srcs()[0];
                 let rank = input.rank();
 
                 let M = input.shape()[rank - 2] as u32;
                 let stacks = input.shape().slice(0..rank - 2).numel();
-                Ok(wgc![M as _, stacks as _, 1])
+                wgc![M as _, stacks as _, 1]
             }
             NormOp::GroupNorm(GroupNorm { num_groups, .. }) => {
                 let input = self.srcs()[0];
                 let rank = input.rank();
                 let M = *num_groups;
                 let stacks = input.shape().slice(0..rank - 2).numel();
-                Ok(wgc![M as _, stacks as _, 1])
+                wgc![M as _, stacks as _, 1]
             }
-        }
+        };
+
+        Ok(Workload {
+            workgroup_count,
+            workgroup_size: wgs![128, 1, 1],
+        })
     }
 
     fn storage_bind_group_layout(

@@ -8,6 +8,12 @@ pub struct WorkgroupSize {
     pub z: u32,
 }
 
+impl WorkgroupSize {
+    pub fn product(&self) -> u32 {
+        self.x * self.y * self.z
+    }
+}
+
 #[macro_export]
 macro_rules! wgs {
     ($x:expr, $y:expr, $z:expr) => {
@@ -59,7 +65,7 @@ impl WorkgroupCount {
         [self.x, self.y, self.z]
     }
 
-    pub fn total_count(&self) -> u32 {
+    pub fn product(&self) -> u32 {
         self.x * self.y * self.z
     }
 
@@ -79,4 +85,9 @@ impl Default for WorkgroupCount {
     fn default() -> Self {
         Self::new(1, 1, 1)
     }
+}
+
+pub struct Workload {
+    pub workgroup_size: WorkgroupSize,
+    pub workgroup_count: WorkgroupCount,
 }

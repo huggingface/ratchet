@@ -5,8 +5,8 @@ use encase::ShaderType;
 use crate::{
     gguf::{GGUFDType, Q8_0},
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, InvariantError, KernelElement, KernelKey, MetaOperation, OpGuards,
-    OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, MetaOperation, OpGuards,
+    OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor, Workload,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -19,7 +19,7 @@ pub enum GEMVHeuristic {
 }
 
 impl GEMVHeuristic {
-    pub fn as_workload(&self) -> (usize, usize) {
+    pub fn as_workgroup_size(&self) -> (usize, usize) {
         match self {
             GEMVHeuristic::Fat => (4, 256),
             _ => (16, 16),
@@ -407,7 +407,7 @@ impl Matmul {
 
         let has_bias = self.bias.is_some();
 
-        let (TILE_X, YT) = spec.heuristic.as_workload();
+        let (TILE_X, YT) = spec.heuristic.as_workgroup_size();
 
         let a_fit = spec.lhs_shape()[1] % TILE_X == 0;
 
@@ -508,14 +508,17 @@ impl MetaOperation for Matmul {
         spec.select_kernel_element()
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let spec = self.compute_spec(dst);
 
         if spec.rhs_shape().is_vector() && !self.trans_lhs {
-            let (TILE_X, _) = spec.heuristic.as_workload();
-            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TILE_X);
-            let wgc = wgc![group_x as _, 1, spec.stacks() as _];
-            Ok(wgc)
+            let (TX, TY) = spec.heuristic.as_workgroup_size();
+            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TX);
+
+            Ok(Workload {
+                workgroup_count: wgc![group_x as _, 1, spec.stacks() as _],
+                workgroup_size: wgs![TX as _, TY as _, 1],
+            })
         } else {
             let TILE_DIM = 32;
             let a_shape = spec.lhs_shape();
@@ -537,7 +540,10 @@ impl MetaOperation for Matmul {
             let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
             let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
 
-            Ok(workgroup_count)
+            Ok(Workload {
+                workgroup_count,
+                workgroup_size: wgs![8, 8, 1],
+            })
         }
     }
 

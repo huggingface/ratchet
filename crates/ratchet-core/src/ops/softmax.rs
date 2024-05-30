@@ -9,7 +9,7 @@ use crate::{
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, CompiledOp, ComputePipelineDescriptor, DType,
     KernelElement, KernelKey, KernelSource, KernelSourceDesc, MetaOperation, OpGuards, Operation,
     OperationError, PipelineLayoutDescriptor, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
-    WgpuDevice, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    WgpuDevice, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -254,11 +254,15 @@ impl MetaOperation for Softmax {
         }
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![128, 1, 1];
         let input = &self.input;
         let stacks = input.shape().slice(0..self.dim - 1).numel();
         let M = input.shape()[self.dim - 1] as u32;
-        Ok(wgc![M as _, stacks as _, 1])
+        Ok(Workload {
+            workgroup_size,
+            workgroup_count: wgc![M as _, stacks as _, 1],
+        })
     }
 
     fn storage_bind_group_layout(
@@ -284,65 +288,6 @@ impl MetaOperation for Softmax {
         let ND4 = N / 4;
         let meta = SoftmaxMeta { M, N, ND2, ND4 };
         Ok(uniform.write(&meta)?)
-    }
-
-    fn compile(
-        &self,
-        dst: &Tensor,
-        uniform: &mut CpuUniform,
-        device: &WgpuDevice,
-        can_inplace: bool,
-    ) -> Result<CompiledOp, OperationError> {
-        let kernel_element = self.kernel_element(dst);
-        let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
-
-        let workgroup_count = self.calculate_dispatch(dst)?;
-
-        let storage_layout = device
-            .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
-        let uniform_layout =
-            device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
-        let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {
-            entries: rvec![storage_layout, uniform_layout],
-        })?;
-
-        let kernel_key = self.kernel_key(can_inplace, dst); //TODO: needs DTYPES
-
-        let source_descriptor = KernelSourceDesc {
-            key: kernel_key.clone(),
-        };
-
-        let compute_module = device.get_or_create_compute_module(
-            &source_descriptor,
-            self,
-            can_inplace,
-            dst,
-            &wgs![128, 1, 1],
-        );
-
-        let pipeline_descriptor = ComputePipelineDescriptor {
-            pipeline_layout,
-            kernel_key: kernel_key.clone(),
-            compute_module: Some(compute_module),
-        };
-        let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
-
-        //TODO: Not sure i like this call here
-        let storage_bind_groups = CompiledOp::create_storage_bind_groups(
-            &self.srcs(),
-            dst,
-            rvec![storage_layout],
-            device,
-            can_inplace,
-        )?;
-
-        Ok(CompiledOp::new(
-            pipeline_handle,
-            workgroup_count,
-            storage_bind_groups,
-            offset as _,
-            kernel_key,
-        ))
     }
 }
 

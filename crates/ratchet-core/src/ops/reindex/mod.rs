@@ -11,8 +11,8 @@ use encase::ShaderType;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, KernelKey, MetaOperation, OpMetadata, OperationError, RVec, Shape,
-    Strides, Tensor,
+    rvec, wgc, wgs, KernelElement, KernelKey, MetaOperation, OpMetadata, OperationError, RVec,
+    Shape, Strides, Tensor, Workload,
 };
 use glam::UVec4;
 
@@ -59,16 +59,20 @@ impl MetaOperation for Reindex {
         KernelElement::Scalar
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![8, 8, 1];
         let numel = dst.shape().numel();
-        let x_groups = WorkgroupCount::div_ceil(numel as _, 64);
+        let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
         let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
             let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
             (WorkgroupCount::MAX_WGS_PER_DIM, y_groups)
         } else {
             (x_groups, 1)
         };
-        Ok(wgc![x_groups as _, y_groups as _, 1])
+        Ok(Workload {
+            workgroup_size,
+            workgroup_count: wgc![x_groups as _, y_groups as _, 1],
+        })
     }
 
     fn storage_bind_group_layout(
