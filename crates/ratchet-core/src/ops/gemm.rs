@@ -4,8 +4,8 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gguf::GGUFDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
-    KernelSource, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupSize,
+    KernelSource, Matmul, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -18,6 +18,27 @@ pub struct GEMM {
     trans_lhs: bool,
     trans_rhs: bool,
     trans_out: bool,
+}
+
+impl From<Matmul> for GEMM {
+    fn from(matmul: Matmul) -> Self {
+        let Matmul {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+        } = matmul;
+        GEMM {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -205,7 +226,7 @@ impl GEMM {
         Ok(())
     }
 
-    fn build_kernel(
+    pub fn build_kernel(
         &self,
         inplace: bool,
         dst: &Tensor,

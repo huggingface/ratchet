@@ -5,8 +5,9 @@ use encase::ShaderType;
 use crate::{
     gguf::{GGUFDType, Q8_0},
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, MetaOperation, OpGuards,
-    OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor, Workload,
+    rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
+    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    WorkgroupSize, Workload, GEMM, GEMV,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -202,6 +203,10 @@ impl GEMMSpec {
         self.b_dt
     }
 
+    pub fn is_gemv(&self) -> bool {
+        self.b_shape.is_vector() && !self.trans_a
+    }
+
     pub fn stacked_shapes(&self) -> (Shape, Shape, Shape) {
         let mut a_shape = self.a_shape.clone();
         let mut b_shape = self.b_shape.clone();
@@ -226,12 +231,12 @@ impl GEMMSpec {
 
 #[derive(Debug, Clone)]
 pub struct Matmul {
-    lhs: Tensor,
-    rhs: Tensor,
-    bias: Option<Tensor>,
-    trans_lhs: bool,
-    trans_rhs: bool,
-    trans_out: bool,
+    pub(crate) lhs: Tensor,
+    pub(crate) rhs: Tensor,
+    pub(crate) bias: Option<Tensor>,
+    pub(crate) trans_lhs: bool,
+    pub(crate) trans_rhs: bool,
+    pub(crate) trans_out: bool,
 }
 
 impl Matmul {
@@ -598,6 +603,22 @@ impl MetaOperation for Matmul {
             dimInner,
         };
         Ok(uniform.write(&meta)?)
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let spec = self.compute_spec(dst);
+        if spec.is_gemv() {
+            let gemv: GEMV = self.clone().into();
+            gemv.build_kernel(inplace, dst, workgroup_size)
+        } else {
+            let gemm: GEMM = self.clone().into();
+            gemm.build_kernel(inplace, dst, workgroup_size)
+        }
     }
 }
 

@@ -4,7 +4,7 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gguf::GGUFDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
-    KernelSource, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4, WgslKernelBuilder, WgslPrimitive,
     WorkgroupSize,
 };
 use glam::IVec3;
@@ -18,6 +18,27 @@ pub struct GEMV {
     trans_lhs: bool,
     trans_rhs: bool,
     trans_out: bool,
+}
+
+impl From<Matmul> for GEMV {
+    fn from(matmul: Matmul) -> Self {
+        let Matmul {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+        } = matmul;
+        GEMV {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -63,31 +84,19 @@ impl GEMV {
         Ok(())
     }
 
-    pub fn render(
+    pub fn build_kernel(
         &self,
         inplace: bool,
         dst: &Tensor,
-        workgroup_size: WorkgroupSize,
-    ) -> KernelSource {
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
         let kernel_element = KernelElement::Scalar;
         match (self.lhs.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
                 self.render_gemv::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
-            (DType::F32, KernelElement::Vec2) => {
-                self.render_gemv::<Vec2<f32>>(inplace, dst, workgroup_size)
-            }
-            (DType::F32, KernelElement::Vec4) => {
-                self.render_gemv::<Vec4<f32>>(inplace, dst, workgroup_size)
-            }
             (DType::F16, KernelElement::Scalar) => {
                 self.render_gemv::<Scalar<f16>>(inplace, dst, workgroup_size)
-            }
-            (DType::F16, KernelElement::Vec2) => {
-                self.render_gemv::<Vec2<f16>>(inplace, dst, workgroup_size)
-            }
-            (DType::F16, KernelElement::Vec4) => {
-                self.render_gemv::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             (DType::GGUF(g), _) => match g {
                 crate::gguf::GGUFDType::Q8_0(_) => todo!(),
@@ -100,9 +109,9 @@ impl GEMV {
     fn render_gemv<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        dst: &Tensor,
-        workgroup_size: WorkgroupSize,
-    ) -> KernelSource {
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
@@ -171,7 +180,7 @@ impl GEMV {
 
         kernel_builder.write_main(main_loop);
 
-        kernel_builder.build().unwrap()
+        Ok(kernel_builder.build()?)
     }
 }
 
