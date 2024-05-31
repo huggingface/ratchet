@@ -269,11 +269,7 @@ impl GEMM {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
-            rvec![
-                BuiltIn::GlobalInvocationId,
-                BuiltIn::LocalInvocationId,
-                BuiltIn::WorkgroupId,
-            ],
+            rvec![BuiltIn::GlobalInvocationId, BuiltIn::LocalInvocationId,],
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)
@@ -285,24 +281,31 @@ impl GEMM {
 
         const ROW_PER_THREAD: usize = 4;
         const TILE_DIM: usize = 32;
+
         let accessor = P::render_type();
+        let W = P::W;
+        let T_W = TILE_DIM / W;
+        kernel_builder.write_global(wgsl! {
+            var<workgroup> mm_Asub: array<array<'accessor, 'T_W>, 'TILE_DIM>;
+            var<workgroup> mm_Bsub: array<array<'accessor, 'T_W>, 'TILE_DIM>;
+        });
 
         kernel_builder.write_main(wgsl! {
-            let batch = i32(globalId.z);
+            let batch = i32(global_invocation_id.z);
             let batchA = batch % metadata.aShape[0];
             let batchB = batch % metadata.bShape[0];
 
-            let localRow = i32(localId.y);
+            let localRow = i32(local_invocation_id.y);
             let tileRow = localRow * 'ROW_PER_THREAD;
-            let tileCol = i32(localId.x);
+            let tileCol = i32(local_invocation_id.x);
 
-            let globalRow = i32(globalId.y) * 'ROW_PER_THREAD;
-            let globalCol = i32(globalId.x) * 4;
+            let globalRow = i32(global_invocation_id.y) * 'ROW_PER_THREAD;
+            let globalCol = i32(global_invocation_id.x) * 4;
 
             let numTiles = (metadata.dimInner - 1) / 'TILE_DIM + 1;
             var kStart = 0;
 
-            var acc: array<vec4<f32>, 'ROW_PER_THREAD>;
+            var acc: array<'accessor, 'ROW_PER_THREAD>;
 
             // Loop over shared dimension.
             let tileRowB = localRow * 'ROW_PER_THREAD;
@@ -346,8 +349,8 @@ impl GEMM {
 
         let compute_acc = wgsl! {
             // Compute acc values for a single thread.
-            for (var k = 0; k < 'TILE_DIM / 4; k++) {
-              let bidx = k * 4;
+            for (var k = 0; k < 'T_W; k++) {
+              let bidx = k * 'W;
               let BCached0 = mm_Bsub[bidx][tileCol];
               let BCached1 = mm_Bsub[bidx + 1][tileCol];
               let BCached2 = mm_Bsub[bidx + 2][tileCol];
@@ -376,7 +379,7 @@ impl GEMM {
                 workgroupBarrier();
             }
 
-            var val: vec4<f32>;
+            var val: 'accessor;
         });
 
         let bias_val = if self.bias.is_some() {

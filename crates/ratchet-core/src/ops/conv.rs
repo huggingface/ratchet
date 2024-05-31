@@ -59,6 +59,10 @@ impl Conv {
 
         let dt = P::T::DT;
         kernel_builder.write_global(wgsl! {
+            var<workgroup> F: array<'dt, 4096u>;
+        });
+
+        kernel_builder.write_global(wgsl! {
             fn inner(input_index: u32, filter_index: u32, output_index: u32, bias_index: u32, start: u32, end: u32) {
                 var inp = vec3<'dt>(0f);
                 var kernel = vec3<'dt>(0f);
@@ -81,9 +85,9 @@ impl Conv {
             }
 
             //Each thread may load more than 1 element into shared memory
-            fn load_filters_into_smem(local_id: vec3<u32>, filter_index: u32) {
-                let windex = filter_index + (local_id.x * metadata.Fperthread);
-                let findex = (local_id.x * metadata.Fperthread);
+            fn load_filters_into_smem(local_invocation_id: vec3<u32>, filter_index: u32) {
+                let windex = filter_index + (local_invocation_id.x * metadata.Fperthread);
+                let findex = (local_invocation_id.x * metadata.Fperthread);
                 for(var i=0u; i < metadata.Fperthread; i++) {
                     if findex + i < metadata.F_numel {
                         F[findex + i] = W[windex + i];
@@ -94,9 +98,9 @@ impl Conv {
 
         let wgsx = workgroup_size.x.render();
         kernel_builder.write_main(wgsl!{
-            let input_index = (workgroup_id.x * 'wgsx + local_id.x) * metadata.stride;
+            let input_index = (workgroup_id.x * 'wgsx + local_invocation_id.x) * metadata.stride;
             let filter_index = (workgroup_id.y * metadata.F_numel);
-            load_filters_into_smem(local_id, filter_index);
+            load_filters_into_smem(local_invocation_id, filter_index);
             workgroupBarrier();
 
             if input_index >= metadata.Lin {
@@ -104,7 +108,7 @@ impl Conv {
                 return;
             }
 
-            let output_index = (workgroup_id.x * 'wgsx + local_id.x) + (workgroup_id.y * metadata.Lout);
+            let output_index = (workgroup_id.x * 'wgsx + local_invocation_id.x) + (workgroup_id.y * metadata.Lout);
             let bias_index = workgroup_id.y;
 
             if input_index == metadata.Lin - metadata.padding {

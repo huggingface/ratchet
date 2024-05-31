@@ -207,6 +207,6 @@ mod tests {
             trans_out: false,
         };
         let dst = Tensor::zeros::<f32>(&shape![128, 1], &device);
-        let kernel = op.render(false, &dst, wgs![16, 16, 1]);
+        let kernel = op.build_kernel(false, &dst, &wgs![16, 16, 1]);
     }
 }

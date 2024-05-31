@@ -79,7 +79,7 @@ impl Binary {
 
         kernel_builder.write_main(wgsl! {
             let x_offset = workgroup_id.x * 64u;
-            let index = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_id;
+            let index = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_index;
             if (index >= metadata.numel / 'N) {
                 return;
             }

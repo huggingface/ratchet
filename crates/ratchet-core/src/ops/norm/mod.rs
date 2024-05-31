@@ -54,9 +54,6 @@ impl NormOp {
         builder: &mut WgslKernelBuilder,
         inplace: bool,
     ) -> Result<(), OperationError> {
-        if !inplace {
-            panic!("Only inplace softmax is supported");
-        }
         let arr = Array::<P>::default();
         builder.register_storage("X", BindingMode::ReadOnly, arr);
         builder.register_storage("S", BindingMode::ReadOnly, arr);
@@ -130,7 +127,8 @@ impl NormOp {
             workgroupBarrier();
         });
 
-        for i in (0..=workgroup_size.x).rev().map(|x| 2u32.pow(x)) {
+        let steps = (workgroup_size.x - 1).ilog2();
+        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
             let v = i.render();
             kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
         }
@@ -143,7 +141,7 @@ impl NormOp {
         kernel_builder.write_main(mu);
 
         kernel_builder.write_main(wgsl! {
-            var threadSum = 'accessor(0.);
+            threadSum = 'accessor(0.);
             for (var i: u32 = local_invocation_id.x; i < 'reduction_len; i += 'BLOCK_SIZE) {
                 let val = X[anchor + i] - mu;
                 threadSum = fma(val, val, threadSum);
@@ -153,14 +151,14 @@ impl NormOp {
             workgroupBarrier();
         });
 
-        for i in (0..=workgroup_size.x).rev().map(|x| 2u32.pow(x)) {
+        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
             let v = i.render();
             kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
         }
 
         let sigma = match P::W {
-            1 => wgsl! { let mu = smem[0] / 'dt(metadata.N); },
-            2 | 4 => wgsl! {let mu = dot(smem[0], 'accessor(1.)) / 'dt(metadata.N); },
+            1 => wgsl! { let sigma = smem[0] / 'dt(metadata.N); },
+            2 | 4 => wgsl! {let sigma = dot(smem[0], 'accessor(1.)) / 'dt(metadata.N); },
             _ => unreachable!(),
         };
         kernel_builder.write_main(sigma);

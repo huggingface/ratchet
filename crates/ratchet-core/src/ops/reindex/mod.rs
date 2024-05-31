@@ -13,10 +13,10 @@ use encase::ShaderType;
 use inline_wgsl::wgsl;
 
 use crate::{
-    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpMetadata, OperationError, RVec, Scalar, Shape, Strides, Tensor,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    MetaOperation, OperationError, RVec, Scalar, Shape, Strides, Tensor, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize, Workload,
 };
 use glam::UVec4;
 
@@ -76,8 +76,8 @@ impl Reindex {
         kernel_builder.write_main(wgsl! {
             //Dispatch 1 thread per output element
             //dst_offset is index into the output buffer (1D)
-            let x_offset = group_id.x * 64u;
-            var dst_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
+            let x_offset = workgroup_id.x * 64u;
+            var dst_offset = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_index;
             if (dst_offset >= metadata.dst_numel / 'n) {
                 return;
             }
@@ -123,7 +123,7 @@ pub struct ReindexMeta {
     src_numel: u32,
     dst_numel: u32,
     //"Optional" fields below (if not present, they are set to 0) this is dumb
-    permute: glam::UVec4,
+    perm: glam::UVec4,
     src_offsets: glam::UVec4,
 }
 
@@ -228,7 +228,7 @@ impl MetaOperation for Reindex {
             }
             _ => [0, 0, 0, 0],
         };
-        let permute = glam::UVec4::from(permute);
+        let perm = glam::UVec4::from(permute);
         let src_offsets = glam::UVec4::from(src_offsets);
         let meta = ReindexMeta {
             src_shape,
@@ -237,7 +237,7 @@ impl MetaOperation for Reindex {
             dst_stride,
             src_numel,
             dst_numel,
-            permute,
+            perm,
             src_offsets,
         };
         Ok(uniform.write(&meta)?)

@@ -101,8 +101,8 @@ impl Unary {
         let accessor = P::render_type();
 
         wgsl! {
-            fn safe_tanh(val: 'accessor) -> 'accessor {
-                return select(tanh(x), sign(x), abs(x) >= 10f);
+            fn safe_tanh(x: 'accessor) -> 'accessor {
+                return select(tanh(x), sign(x), abs(x) >= 'accessor(10.));
             }
         }
     }
@@ -126,7 +126,11 @@ impl Unary {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
-            rvec![BuiltIn::WorkgroupId, BuiltIn::LocalInvocationIndex,],
+            rvec![
+                BuiltIn::WorkgroupId,
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::NumWorkgroups
+            ],
             device.compute_features().clone(),
         );
 
