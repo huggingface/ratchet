@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
-    KernelSource, Matmul, OperationError, Scalar, Tensor, Vec2, Vec4, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize,
+    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType,
+    InvariantError, KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec2,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -260,25 +260,154 @@ impl GEMM {
         }
     }
 
-    fn build_gemm<P: WgslPrimitive>(
+    fn build_gemm_scalar<P: WgslPrimitive>(
         &self,
-        inplace: bool,
-        dst: &Tensor,
-        workgroup_size: &WorkgroupSize,
+        mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.lhs.device().try_gpu().unwrap();
-        let mut kernel_builder = WgslKernelBuilder::new(
-            workgroup_size.clone(),
-            rvec![BuiltIn::GlobalInvocationId, BuiltIn::LocalInvocationId,],
-            device.compute_features().clone(),
-        );
-        self.register_bindings::<P>(&mut kernel_builder, inplace)
-            .unwrap();
-        kernel_builder.write_metadata::<GEMMMeta>();
-        self.write_indexing::<P>(&mut kernel_builder);
-        self.write_getters::<P>(dst, &mut kernel_builder)?;
-        self.write_readers_and_writers::<P>(&mut kernel_builder)?;
+        const ROW_PER_THREAD: usize = 4;
+        const TILE_DIM: usize = 32;
 
+        let accessor = P::render_type();
+        let dt = P::T::DT;
+        let W = P::W;
+        let T_W = TILE_DIM / W;
+        kernel_builder.write_global(wgsl! {
+            var<workgroup> mm_Asub: array<array<'accessor, 'T_W>, 'TILE_DIM>;
+            var<workgroup> mm_Bsub: array<array<'accessor, 'T_W>, 'TILE_DIM>;
+        });
+
+        kernel_builder.write_main(wgsl! {
+            let batch = i32(global_invocation_id.z);
+            let batchA = batch % metadata.aShape[0];
+            let batchB = batch % metadata.bShape[0];
+
+            let localRow = i32(local_invocation_id.y);
+            let tileRow = localRow * 'ROW_PER_THREAD;
+            let tileCol = i32(local_invocation_id.x);
+
+            let globalRowStart = i32(workgroup_id.y) * 'T_W;
+            let globalRow = i32(global_invocation_id.y) * 'ROW_PER_THREAD;
+            let globalCol = i32(global_invocation_id.x) * 'ROW_PER_THREAD;
+
+            let numTiles = (metadata.dimInner - 1) / 'TILE_DIM + 1;
+            var kStart = 0;
+
+            var acc: array<array<'dt, 'ROW_PER_THREAD>, 'ROW_PER_THREAD>;
+
+            let tileRowA = i32(local_invocation_id.y) * 'ROW_PER_THREAD;
+            let tileColA = i32(local_invocation_id.x) * 'ROW_PER_THREAD;
+            let tileRowB = i32(local_invocation_id.y) * 'ROW_PER_THREAD;
+            // Loop over shared dimension.
+        });
+
+        let load_a_inner = match self.lhs.dt() {
+            DType::F32 | DType::F16 => {
+                wgsl! {
+                    let inputRow = tileRowA + innerRow;
+                    let inputCol = tileColA + innerCol;
+
+                    mm_Asub[inputRow][inputCol] = mm_readA(batchA,
+                        globalRowStart + inputRow,
+                        kStart + inputCol);
+                }
+            }
+            DType::GGUF(GGUFDType::Q8_0(_)) => {
+                todo!()
+            }
+            _ => panic!("Unsupported dtype"),
+        };
+
+        let load_a = wgsl! {
+            // Load one tile of A into local memory.
+            for (var innerRow = 0; innerRow < 'ROW_PER_THREAD; innerRow++) {
+                let inputRow = tileRow + innerRow;
+                let inputCol = tileCol;
+
+                for (var innerCol = 0; innerCol < 'ROW_PER_THREAD; innerCol++) {
+                    'load_a_inner
+                }
+            }
+        };
+
+        let load_b = wgsl! {
+            // Load one tile of B into local memory.
+            for (var innerRow = 0; innerRow < 'ROW_PER_THREAD; innerRow++) {
+                for (var innerCol = 0; innerCol < 'ROW_PER_THREAD; innerCol++) {
+                    let inputRow = tileRowB + innerRow;
+                    let inputCol = tileCol + innerCol;
+
+                    mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol + innerCol);
+                }
+            }
+        };
+
+        let compute_acc = wgsl! {
+            // Compute acc values for a single thread.
+            for (var k = 0; k < 'T_W; k++) {
+              let bidx = k * 'W;
+              let BCached0 = mm_Bsub[bidx][tileCol + 0];
+              let BCached1 = mm_Bsub[bidx][tileCol + 1];
+              let BCached2 = mm_Bsub[bidx][tileCol + 2];
+              let BCached3 = mm_Bsub[bidx][tileCol + 3];
+              for (var innerRow = 0; innerRow < 'ROW_PER_THREAD; innerRow++) {
+                let ACached = mm_Asub[tileRow + innerRow][k];
+                acc[innerRow][0] = fma(ACached, BCached0, acc[innerRow][0]);
+                acc[innerRow][1] = fma(ACached, BCached1, acc[innerRow][1]);
+                acc[innerRow][2] = fma(ACached, BCached2, acc[innerRow][2]);
+                acc[innerRow][3] = fma(ACached, BCached3, acc[innerRow][3]);
+              }
+            }
+        };
+
+        kernel_builder.write_main(wgsl! {
+            for (var t = 0; t < numTiles; t++) {
+
+                'load_a
+
+                'load_b
+
+                kStart = kStart + 'TILE_DIM;
+                workgroupBarrier();
+
+                'compute_acc
+                workgroupBarrier();
+            }
+
+            var val: 'accessor;
+        });
+
+        for row in 0..ROW_PER_THREAD {
+            for col in 0..ROW_PER_THREAD {
+                let bias_val = if self.bias.is_some() {
+                    if self.trans_out {
+                        wgsl! { bias[globalRow + 'row] }
+                    } else {
+                        wgsl! { bias[globalCol + 'col] }
+                    }
+                } else {
+                    wgsl! { 0.0 }
+                };
+
+                let writer = if self.trans_out {
+                    wgsl! { mm_write(batch, globalCol + 'col, globalRow + 'row, val); }
+                } else {
+                    wgsl! { mm_write(batch, globalRow + 'row, globalCol + 'col, val); }
+                };
+
+                kernel_builder.write_main(wgsl! {
+                    val = acc['row]['col] + 'bias_val;
+                    'writer
+                });
+            }
+        }
+
+        Ok(kernel_builder.build()?)
+    }
+
+    fn build_gemm_vectorized<P: WgslPrimitive>(
+        &self,
+        mut kernel_builder: WgslKernelBuilder,
+    ) -> Result<KernelSource, OperationError> {
         const ROW_PER_THREAD: usize = 4;
         const TILE_DIM: usize = 32;
 
@@ -396,6 +525,35 @@ impl GEMM {
         }
 
         Ok(kernel_builder.build()?)
+    }
+
+    fn build_gemm<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.lhs.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::GlobalInvocationId,
+                BuiltIn::LocalInvocationId,
+                BuiltIn::WorkgroupId
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)
+            .unwrap();
+        kernel_builder.write_metadata::<GEMMMeta>();
+        self.write_indexing::<P>(&mut kernel_builder);
+        self.write_getters::<P>(dst, &mut kernel_builder)?;
+        self.write_readers_and_writers::<P>(&mut kernel_builder)?;
+        if P::W == 1 {
+            self.build_gemm_scalar::<P>(kernel_builder)
+        } else {
+            self.build_gemm_vectorized::<P>(kernel_builder)
+        }
     }
 }
 

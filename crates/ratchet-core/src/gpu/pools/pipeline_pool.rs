@@ -45,6 +45,7 @@ impl ComputePipelinePool {
 
             let shader_source = if let Some(source) = desc.compute_module {
                 let kernel_source = kernel_resources.get(source).unwrap();
+                //TODO: NO CLONE NO CLONE NO CLONE
                 wgpu::ShaderSource::Wgsl(kernel_source.0.clone())
             } else {
                 let shader = kernels()
@@ -67,7 +68,6 @@ impl ComputePipelinePool {
 
             let pipeline_layouts = device.pipeline_layout_resources();
             let pipeline_layout = pipeline_layouts.get(desc.pipeline_layout).unwrap();
-            println!("MODULE: {:?}", module);
 
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label,

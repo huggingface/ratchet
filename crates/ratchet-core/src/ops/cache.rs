@@ -70,8 +70,8 @@ impl Cache {
         kernel_builder.write_main(wgsl! {
             //Dispatch 1 thread per output element
             //dst_offset is index into the output buffer (1D)
-            let x_offset = group_id.x * 64u;
-            let dst_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
+            let x_offset = workgroup_id.x * 64u;
+            let dst_offset = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_index;
             if (dst_offset >= metadata.dst_numel) {
                 return;
             }
@@ -105,7 +105,7 @@ impl Cache {
 #[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct CacheMeta {
     cache_stride: glam::UVec4,
-    source_stride: glam::UVec4,
+    src_stride: glam::UVec4,
     dst_stride: glam::UVec4,
     dst_numel: u32,
     cum0: u32,
@@ -211,7 +211,7 @@ impl MetaOperation for Cache {
 
         let meta = CacheMeta {
             cache_stride: UVec4::from(&cache_strides),
-            source_stride: UVec4::from(&source_strides),
+            src_stride: UVec4::from(&source_strides),
             dst_stride: UVec4::from(&dst_strides),
             dst_numel: dst_shape.numel() as u32,
             cum0,

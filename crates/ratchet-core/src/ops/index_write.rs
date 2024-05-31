@@ -41,8 +41,8 @@ impl IndexWrite {
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
-                BuiltIn::GlobalInvocationId,
-                BuiltIn::LocalInvocationId,
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::NumWorkgroups,
                 BuiltIn::WorkgroupId,
             ],
             device.compute_features().clone(),
@@ -52,8 +52,8 @@ impl IndexWrite {
         kernel_builder.write_index_to_offset();
 
         kernel_builder.write_main(wgsl! {
-            let x_offset = group_id.x * 64u;
-            let thread_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
+            let x_offset = workgroup_id.x * 64u;
+            let thread_offset = (workgroup_id.y * num_groups.x * 64u) + x_offset + local_invocation_index;
             if (thread_offset >= metadata.src_numel) {
                 return;
             }

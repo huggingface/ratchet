@@ -22,9 +22,6 @@ impl Concat {
         builder: &mut WgslKernelBuilder,
         inplace: bool,
     ) -> Result<(), OperationError> {
-        if !inplace {
-            panic!("Only inplace concat is supported");
-        }
         let arr = Array::<P>::default();
         for i in 0..self.inputs.len() {
             builder.register_storage(format!("X{}", i).as_str(), BindingMode::ReadOnly, arr);

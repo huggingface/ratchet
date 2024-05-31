@@ -25,15 +25,12 @@ impl IndexSelect {
         builder: &mut WgslKernelBuilder,
         inplace: bool,
     ) -> Result<(), OperationError> {
-        if !inplace {
-            panic!("Only inplace softmax is supported");
-        }
-
         let index_arr = Array::<Scalar<i32>>::default();
         match self.input.dt() {
             DType::F16 | DType::F32 => {
                 builder.register_storage("E", BindingMode::ReadOnly, Array::<P>::default());
-                builder.register_storage("I", BindingMode::ReadWrite, index_arr);
+                builder.register_storage("I", BindingMode::ReadOnly, index_arr);
+                builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
             }
             DType::GGUF(g) => match g {
                 GGUFDType::Q8_0(_) => {
@@ -62,7 +59,7 @@ impl IndexSelect {
             workgroup_size.clone(),
             rvec![
                 BuiltIn::GlobalInvocationId,
-                BuiltIn::LocalInvocationId,
+                BuiltIn::LocalInvocationIndex,
                 BuiltIn::WorkgroupId,
             ],
             device.compute_features().clone(),
@@ -71,21 +68,18 @@ impl IndexSelect {
         kernel_builder.write_metadata::<IndexSelectMeta>();
 
         kernel_builder.write_main(wgsl! {
-            let tid = (group_id.x * 64u + local_index);
-            let right_numel = metadata.right_numel/ 4u;
-            let src_dim_numel = metadata.src_dim_numel/ 4u;
-
-            if (tid >= metadata.dst_numel / 4u) {
+            let tid = workgroup_id.x * 64u + local_invocation_index;
+            if (tid >= metadata.dst_numel) {
                 return;
             }
+            let id_i = (tid / metadata.right_numel) % metadata.ids_numel;
+            let input_i = min(u32(I[id_i]), metadata.src_dim_numel - 1u);
+            let right_rank_index = tid % metadata.right_numel;
+            let left_rank_index = tid / (metadata.right_numel * metadata.ids_numel);
 
-            let id_i = (tid / right_numel) % metadata.ids_numel;
-            let input_i = min(u32(I[id_i]), (src_dim_numel * 4u) - 1u);
-            let right_rank_i = tid % right_numel;
-            let left_rank_i = tid / (right_numel * metadata.ids_numel);
-
-            let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
-            Y[tid] = unpack4x8snorm_gguf(E[src_i]) * S[src_i / 8u];
+            let left_offset = left_rank_index * metadata.src_dim_numel * metadata.right_numel;
+            let right_offset = input_i * metadata.right_numel + right_rank_index;
+            Y[tid] = E[left_offset + right_offset];
         });
 
         Ok(kernel_builder.build()?)
