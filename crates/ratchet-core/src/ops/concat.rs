@@ -7,7 +7,7 @@ use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount, UNIFORM_ALIGN},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelKey, KernelSource,
     MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
-    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -20,14 +20,30 @@ impl Concat {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        inplace: bool,
+        _: bool,
     ) -> Result<(), OperationError> {
         let arr = Array::<P>::default();
         for i in 0..self.inputs.len() {
             builder.register_storage(format!("X{}", i).as_str(), BindingMode::ReadOnly, arr);
         }
+        builder.register_storage("Y", BindingMode::ReadWrite, arr);
         builder.register_uniform();
         Ok(())
+    }
+
+    //TODO: bodge, should be connected to the data
+    fn write_metadata(&self, builder: &mut WgslKernelBuilder) {
+        builder.write_global(r#"struct Meta {"#);
+        for i in 0..self.inputs.len() {
+            builder.write_global(format!("x{}_stride: vec4<u32>,", i).as_str());
+        }
+        builder.write_global(r#"dst_stride: vec4<u32>,"#);
+        builder.write_global(r#"dst_numel: u32,"#);
+        for i in 0..self.inputs.len() {
+            builder.write_global(format!("cum{}: u32,", i).as_str());
+        }
+        builder.write_global(r#"dim: u32"#);
+        builder.write_global("}\n");
     }
 
     fn build_concat<P: WgslPrimitive>(
@@ -49,10 +65,11 @@ impl Concat {
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.write_offset_to_index();
         kernel_builder.write_index_to_offset();
+        self.write_metadata(&mut kernel_builder);
 
         kernel_builder.write_main(wgsl! {
-            let x_offset = group_id.x * 64u;
-            let dst_offset = (group_id.y * num_groups.x * 64u) + x_offset + local_index;
+            let x_offset = workgroup_id.x * 64u;
+            let dst_offset = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_index;
             if (dst_offset >= metadata.dst_numel) {
                 return;
             }
@@ -65,6 +82,7 @@ impl Concat {
             if(dst_index[dim] < metadata.cum0) {
                 let src_offset = ndIndexToOffset(dst_index, metadata.x0_stride);
                 Y[dst_offset] = X0[src_offset];
+                return;
             }
         });
 
@@ -79,6 +97,7 @@ impl Concat {
                     dst_index[dim] -= 'prevcum;
                     let src_offset = ndIndexToOffset(dst_index, 'stride);
                     Y[dst_offset] = 'src[src_offset];
+                    return;
                 }
             });
         }

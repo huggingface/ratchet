@@ -53,7 +53,7 @@ impl IndexWrite {
 
         kernel_builder.write_main(wgsl! {
             let x_offset = workgroup_id.x * 64u;
-            let thread_offset = (workgroup_id.y * num_groups.x * 64u) + x_offset + local_invocation_index;
+            let thread_offset = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_index;
             if (thread_offset >= metadata.src_numel) {
                 return;
             }

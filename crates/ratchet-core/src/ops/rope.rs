@@ -29,7 +29,7 @@ impl RoPE {
             panic!("Only inplace rope is supported");
         }
         let arr = Array::<P>::default();
-        builder.register_storage("X", BindingMode::ReadWrite, arr);
+        builder.register_storage("in", BindingMode::ReadWrite, arr);
         builder.register_uniform();
         Ok(())
     }
@@ -57,20 +57,20 @@ impl RoPE {
         kernel_builder.write_metadata::<RoPEMeta>();
 
         kernel_builder.write_main(wgsl! {
-            if(global_id.y >= metadata.seq_len) {
+            if(global_invocation_id.y >= metadata.seq_len) {
               return;
             }
 
             let grid = vec3<u32>(num_workgroups.x * 8u, num_workgroups.y * 8u, num_workgroups.z * 1u);
 
-            let out_index_1 = dot(global_id, vec3<u32>(metadata.out_strides[2], metadata.out_strides[1], metadata.out_strides[0]));
+            let out_index_1 = dot(global_invocation_id, vec3<u32>(metadata.out_strides[2], metadata.out_strides[1], metadata.out_strides[0]));
             let out_index_2 = out_index_1 + grid.x * metadata.out_strides[2];
 
-            let in_index_1 = dot(global_id, vec3<u32>(metadata.in_strides[2], metadata.in_strides[1], metadata.in_strides[0]));
+            let in_index_1 = dot(global_invocation_id, vec3<u32>(metadata.in_strides[2], metadata.in_strides[1], metadata.in_strides[0]));
             let in_index_2 = in_index_1 + grid.x * metadata.in_strides[2];
 
-            let L = metadata.scale * f32(global_id.y + metadata.offset);
-            let d = f32(global_id.x) / f32(grid.x);
+            let L = metadata.scale * f32(global_invocation_id.y + metadata.offset);
+            let d = f32(global_invocation_id.x) / f32(grid.x);
 
             let theta = L * exp2(-d * metadata.base);
             let costheta = cos(theta);

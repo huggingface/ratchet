@@ -52,6 +52,14 @@ impl UnaryOp {
             UnaryOp::Sigmoid => "sigmoid",
         }
     }
+
+    pub fn kernel_operation(&self) -> &'static str {
+        match self {
+            UnaryOp::Tanh => "safe_tanh",
+            UnaryOp::Neg => "-",
+            _ => self.kernel_name(),
+        }
+    }
 }
 
 #[derive(new, Debug, Clone)]
@@ -151,6 +159,7 @@ impl Unary {
                 kernel_builder.write_global(Unary::render_sigmoid::<P>());
             }
             UnaryOp::Silu => {
+                kernel_builder.write_global(Unary::render_sigmoid::<P>());
                 kernel_builder.write_global(wgsl! {
                     fn silu(val: 'accessor) -> 'accessor {
                         return val * sigmoid(val);
@@ -164,7 +173,7 @@ impl Unary {
                     }
                 });
             }
-            _ => todo!(),
+            _ => {}
         };
 
         let n = P::W;
@@ -177,7 +186,7 @@ impl Unary {
             }
         });
 
-        let func = self.op.kernel_name();
+        let func = self.op.kernel_operation();
         if inplace {
             kernel_builder.write_main(wgsl! {
                 let val = X[index];

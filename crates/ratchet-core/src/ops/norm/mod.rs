@@ -66,6 +66,37 @@ impl NormOp {
         Ok(())
     }
 
+    fn compute_mu<P: WgslPrimitive>(
+        kernel_builder: &mut WgslKernelBuilder,
+        accessor: String,
+        reduction_len: &str,
+        workgroup_size: &WorkgroupSize,
+    ) {
+        let BLOCK_SIZE = workgroup_size.x.render();
+        let dt = P::T::DT;
+        kernel_builder.write_main(wgsl! {
+            for (var i: u32 = local_invocation_id.x; i < 'reduction_len; i += 'BLOCK_SIZE) {
+                threadSum += X[anchor + i];
+            }
+            workgroupBarrier();
+            smem[local_invocation_id.x] = threadSum;
+            workgroupBarrier();
+        });
+
+        let steps = (workgroup_size.x - 1).ilog2();
+        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
+            let v = i.render();
+            kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
+        }
+
+        let mu = match P::W {
+            1 => wgsl! { let mu = smem[0] / 'dt(metadata.N); },
+            2 | 4 => wgsl! {let mu = dot(smem[0], 'accessor(1.)) / 'dt(metadata.N); },
+            _ => unreachable!(),
+        };
+        kernel_builder.write_main(mu);
+    }
+
     fn build_norm<P: WgslPrimitive>(
         &self,
         inplace: bool,
@@ -117,28 +148,17 @@ impl NormOp {
             let anchor = (workgroup_id.y * metadata.M * 'reduction_len) + workgroup_id.x * 'reduction_len;
         });
 
-        kernel_builder.write_main(wgsl! {
-            var threadSum = 'accessor(0.);
-            for (var i: u32 = local_invocation_id.x; i < 'reduction_len; i += 'BLOCK_SIZE) {
-                threadSum += X[anchor + i];
-            }
-            workgroupBarrier();
-            smem[local_invocation_id.x] = threadSum;
-            workgroupBarrier();
-        });
-
-        let steps = (workgroup_size.x - 1).ilog2();
-        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
-            let v = i.render();
-            kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
-        }
-
-        let mu = match P::W {
-            1 => wgsl! { let mu = smem[0] / 'dt(metadata.N); },
-            2 | 4 => wgsl! {let mu = dot(smem[0], 'accessor(1.)) / 'dt(metadata.N); },
-            _ => unreachable!(),
+        kernel_builder.write_main(wgsl! { var threadSum = 'accessor(0.); });
+        if matches!(self, NormOp::RMSNorm(_)) {
+            kernel_builder.write_main(wgsl! { let mu = 0.; });
+        } else {
+            Self::compute_mu::<P>(
+                &mut kernel_builder,
+                accessor.clone(),
+                reduction_len,
+                workgroup_size,
+            );
         };
-        kernel_builder.write_main(mu);
 
         kernel_builder.write_main(wgsl! {
             threadSum = 'accessor(0.);
@@ -151,6 +171,7 @@ impl NormOp {
             workgroupBarrier();
         });
 
+        let steps = (workgroup_size.x - 1).ilog2();
         for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
             let v = i.render();
             kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
@@ -439,6 +460,19 @@ def manual_rms_norm(input, scale):
         M: usize,
         #[strategy(1..=256usize)]
         N: usize,
+    }
+
+    #[test]
+    fn debug_norm() {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let prob = NormProblem {
+            var: NormVariant::LayerNorm,
+            B: 2,
+            M: 57,
+            N: 1001,
+        };
+        println!("prob = {:#?}", prob);
+        run_norm_trial(&device, prob).unwrap();
     }
 
     #[proptest(cases = 64)]
