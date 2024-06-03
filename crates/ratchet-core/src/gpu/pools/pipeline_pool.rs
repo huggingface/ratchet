@@ -44,21 +44,11 @@ impl ComputePipelinePool {
             println!("LABEL: {:?}", label);
             let kernel_resources = device.kernel_source_resources();
 
-            let shader_source = if let Some(source) = desc.compute_module {
-                let kernel_source = kernel_resources.get(source).unwrap();
-                //TODO: NO CLONE NO CLONE NO CLONE
-                wgpu::ShaderSource::Wgsl(kernel_source.0.clone())
-            } else {
-                let shader = kernels()
-                    .get(desc.kernel_key.as_str())
-                    .unwrap_or_else(|| panic!("Kernel {} not found", desc.kernel_key));
-                wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader))
-            };
+            let shader_source = kernel_resources.get(desc.compute_module.unwrap()).unwrap();
+            //TODO: REMOVE CLONE
+            let source = wgpu::ShaderSource::Wgsl(shader_source.0.clone());
 
-            let shader_module_desc = wgpu::ShaderModuleDescriptor {
-                label,
-                source: shader_source,
-            };
+            let shader_module_desc = wgpu::ShaderModuleDescriptor { label, source };
 
             let module = if std::env::var("RATCHET_CHECKED").is_ok() {
                 log::warn!("Using checked shader compilation");

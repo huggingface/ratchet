@@ -34,8 +34,6 @@ pub use strides::*;
 pub use tensor::*;
 pub use tensor_id::*;
 
-pub use wgpu::naga::Module as ComputeModule;
-
 #[cfg(feature = "plotting")]
 pub use plot::render_to_file;
 

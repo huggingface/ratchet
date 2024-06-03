@@ -8,6 +8,8 @@ use crate::{
 };
 use encase::internal::WriteInto;
 use encase::ShaderType;
+use rand::Rng;
+use rand_distr::Alphanumeric;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -259,14 +261,11 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let kernel_key = self.kernel_key(can_inplace, dst); //TODO: needs DTYPES
-
-        let source_descriptor = KernelSourceDesc {
-            key: kernel_key.clone(),
-        };
+        let key = self.kernel_key(can_inplace, dst); //TODO: needs DTYPES
+        let kernel_src_desc = KernelSourceDesc { key };
 
         let compute_module = device.get_or_create_compute_module(
-            &source_descriptor,
+            &kernel_src_desc,
             self,
             can_inplace,
             dst,
@@ -275,7 +274,7 @@ pub trait MetaOperation: Debug + 'static {
 
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
-            kernel_key: kernel_key.clone(),
+            kernel_key: kernel_src_desc.key.clone(),
             compute_module: Some(compute_module),
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
@@ -294,7 +293,7 @@ pub trait MetaOperation: Debug + 'static {
             workload.workgroup_count,
             storage_bind_groups,
             offset as _,
-            kernel_key,
+            kernel_src_desc.key,
         ))
     }
 }

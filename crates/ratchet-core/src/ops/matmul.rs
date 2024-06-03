@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
 use encase::ShaderType;
+use rand::Rng;
+use rand_distr::Alphanumeric;
 
 use crate::{
     gguf::{GGUFDType, Q8_0},
@@ -416,12 +418,13 @@ impl Matmul {
         let a_fit = spec.lhs_shape()[1] % TILE_X == 0;
 
         format!(
-            "{}_{}_{}_{}_{}_{}",
+            "{}_{}_{}_{}_{}_{:?}_{}",
             kernel_stem,
             has_bias,
             TILE_X,
             YT,
             a_fit,
+            spec.heuristic.as_workgroup_size(),
             ke.as_str()
         )
     }
@@ -494,7 +497,14 @@ impl MetaOperation for Matmul {
         let key = if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {
-            self.gemm_kernel_key(inplace, dst)
+            let g = self.gemm_kernel_key(inplace, dst);
+            let cache_buster: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(4)
+                .map(char::from)
+                .collect();
+            format!("{}_{}", cache_buster, g)
+            //self.gemm_kernel_key(inplace, dst)
         };
         KernelKey::new(key)
     }
@@ -632,6 +642,10 @@ mod tests {
 
     use super::*;
 
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
     fn ground_truth(
         a: &Tensor,
         b: &Tensor,
@@ -726,7 +740,7 @@ def matmul(a, b{}):
 
     #[proptest(cases = 64)]
     fn test_sgemm(prob: SGEMMProblem) {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let device = GPU_DEVICE.with(|d| d.clone());
         let SGEMMProblem {
             B,
             M,
@@ -800,6 +814,7 @@ def matmul(a, b{}):
 
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
+        let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
@@ -807,7 +822,6 @@ def matmul(a, b{}):
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let aq = quantizer.sint8_quantize(a);
-        let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = aq.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
@@ -823,18 +837,12 @@ def matmul(a, b{}):
 
     #[test]
     fn debug_sgemm() -> anyhow::Result<()> {
-        //Running sgemm: B=3 M=74 N=17 K=179 has_bias=true transpose=RHSAndOut
-        //A shape: [3x74x179]
-        //B shape: [3x17x179]
-        //Bias: None
-        //Ground shape: [3x17x74]
-        //Running sgemm: B=3 M=74 N=17 K=179 has_bias=true transpose=RHSAndOut
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![3, 74, 179], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![3, 17, 179], cpu_device.clone());
         let ground = ground_truth(&a, &b, None, false, true, true)?;
 
-        let device = Device::request_device(DeviceRequest::GPU)?;
+        let device = GPU_DEVICE.with(|d| d.clone());
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
@@ -850,6 +858,7 @@ def matmul(a, b{}):
 
     #[test]
     fn test_qgemv() -> anyhow::Result<()> {
+        let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![1, 1024, 1024], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![1, 1, 1024], cpu_device.clone());
@@ -857,7 +866,6 @@ def matmul(a, b{}):
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let aq = quantizer.sint8_quantize(a);
-        let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = aq.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;

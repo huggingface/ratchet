@@ -108,6 +108,7 @@ impl DecodingTask {
             }
 
             let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
+            println!("NEW TOKENS: {:?}", new_tokens);
 
             if let Some(ref cb) = callback {
                 self.handle_callback(&self.tokenizer, &new_tokens, &mut timestamps_seen, cb);

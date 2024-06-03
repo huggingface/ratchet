@@ -16,8 +16,6 @@ pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 /// Ordinal should always be 0.
 #[derive(Clone)]
 pub struct WgpuDevice {
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
     ordinal: u32,
     buffer_allocator: Arc<BufferAllocator>,
     bind_group_pool: Arc<BindGroupPool>,
@@ -27,6 +25,8 @@ pub struct WgpuDevice {
     compute_module_pool: Arc<KernelSourcePool>,
     device_limits: DeviceLimits,
     device_features: DeviceFeatures,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
 }
 
 impl std::ops::Deref for WgpuDevice {

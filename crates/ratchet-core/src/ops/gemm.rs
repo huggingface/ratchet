@@ -574,7 +574,9 @@ impl GEMM {
         self.write_getters::<P>(dst, &mut kernel_builder)?;
         self.write_readers_and_writers::<P>(&mut kernel_builder)?;
         if P::W == 1 {
-            self.build_gemm_scalar::<P>(kernel_builder)
+            let s = self.build_gemm_scalar::<P>(kernel_builder);
+            println!("{}", s.as_ref().unwrap());
+            s
         } else {
             self.build_gemm_vectorized::<P>(kernel_builder)
         }
