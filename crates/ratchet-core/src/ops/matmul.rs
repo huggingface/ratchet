@@ -823,23 +823,27 @@ def matmul(a, b{}):
 
     #[test]
     fn debug_sgemm() -> anyhow::Result<()> {
+        //Running sgemm: B=3 M=74 N=17 K=179 has_bias=true transpose=RHSAndOut
+        //A shape: [3x74x179]
+        //B shape: [3x17x179]
+        //Bias: None
+        //Ground shape: [3x17x74]
+        //Running sgemm: B=3 M=74 N=17 K=179 has_bias=true transpose=RHSAndOut
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1, 18, 70], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1, 18, 32], cpu_device.clone());
-        let bias = Some(Tensor::randn::<f32>(shape![32], cpu_device.clone()));
-        let ground = ground_truth(&a, &b, None, true, false, true)?;
+        let a = Tensor::randn::<f32>(shape![3, 74, 179], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![3, 17, 179], cpu_device.clone());
+        let ground = ground_truth(&a, &b, None, false, true, true)?;
 
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
-        let bias_gpu = bias.as_ref().map(|b| b.to(&device)).transpose()?;
-        let c_gpu = a_gpu.gemm(b_gpu, bias_gpu, true, false, true)?.resolve()?;
+        let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET QUANT\n{:?}\n", ours);
         println!("PYTORCH FP32:\n{:?}", ground);
 
-        ground.all_close(&ours, 1e1, 1e-1)?;
+        ground.all_close(&ours, 1e-4, 1e-4)?;
 
         Ok(())
     }

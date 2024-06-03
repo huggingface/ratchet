@@ -140,24 +140,22 @@ impl GEMM {
             wgsl! { value = getA(batch, row, col); }
         };
 
-        let a_bounds = if self.trans_lhs {
-            wgsl! {
-                if (row < metadata.aShape.z && col < metadata.aShape.y) {
-                    'a_inner
-                }
-            }
-        } else {
-            wgsl! {
-                if (row < metadata.aShape.y && col < metadata.aShape.z) {
-                    'a_inner
-                }
-            }
-        };
-
         let readA = if FIT_A_OUTER && FIT_INNER {
             a_inner
         } else {
-            a_bounds
+            if self.trans_lhs {
+                wgsl! {
+                    if (row < metadata.aShape.z && col < metadata.aShape.y) {
+                        'a_inner
+                    }
+                }
+            } else {
+                wgsl! {
+                    if (row < metadata.aShape.y && col < metadata.aShape.z) {
+                        'a_inner
+                    }
+                }
+            }
         };
 
         builder.write_global(wgsl! {
@@ -168,12 +166,26 @@ impl GEMM {
             }
         });
 
-        let readB = if FIT_INNER && FIT_B_OUTER {
-            wgsl! { value = getB(batch, row, col); }
+        let b_inner = if self.trans_rhs {
+            wgsl! { value = getB(batch, col, row); }
         } else {
-            wgsl! {
-                if (row < metadata.bShape.y && col < metadata.bShape.z) {
-                    value = getB(batch, row, col);
+            wgsl! { value = getB(batch, row, col); }
+        };
+
+        let readB = if FIT_INNER && FIT_B_OUTER {
+            b_inner
+        } else {
+            if self.trans_rhs {
+                wgsl! {
+                    if (row < metadata.bShape.z && col < metadata.bShape.y) {
+                        'b_inner
+                    }
+                }
+            } else {
+                wgsl! {
+                    if (row < metadata.bShape.y && col < metadata.bShape.z) {
+                        'b_inner
+                    }
                 }
             }
         };
@@ -524,14 +536,14 @@ impl GEMM {
         });
 
         let bias_val = if self.bias.is_some() {
-            wgsl! { bias[globalCol / 4] }
+            wgsl! { bias[globalCol / 4]; }
         } else {
-            wgsl! { 0.0 }
+            wgsl! { 0.0; }
         };
 
         for i in 0..ROW_PER_THREAD {
             kernel_builder.write_main(wgsl! {
-                val = acc['i] + 'bias_val;
+                val = acc['i] + 'bias_val
                 mm_write(batch, globalRow + 'i, globalCol, val);
             });
         }
