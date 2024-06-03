@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
-    KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupSize,
+    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType,
+    InvariantError, KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -125,11 +125,17 @@ impl GEMV {
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)
             .unwrap();
+        let n = P::W;
         let accessor = P::render_type();
 
         kernel_builder.write_metadata::<GEMVMeta>();
 
-        let FIT = true;
+        let work_size = (workgroup_size.x * workgroup_size.y / (n as u32)).render();
+        kernel_builder.write_global(wgsl! {
+            var<workgroup> work: array<'accessor, 'work_size>;
+        });
+
+        let FIT = false;
 
         let workgroup_size_y = workgroup_size.y;
         let main_loop = match self.lhs.dt() {
@@ -168,7 +174,6 @@ impl GEMV {
             let batchB = batch % metadata.bShape.x;
         });
 
-        let n = P::W;
         kernel_builder.write_main(wgsl! {
             let aOffset = metadata.aStrides.x * batchA / 'n;
             let bOffset = metadata.bStrides.x * batchB / 'n;
@@ -179,6 +184,38 @@ impl GEMV {
         kernel_builder.write_main(wgsl! { let aIndex = aOffset + row * metadata.aStrides.y / 'n; });
 
         kernel_builder.write_main(main_loop);
+
+        let workgroup_size_x = workgroup_size.x.render();
+        let workgroup_size_y = workgroup_size.y.render();
+        kernel_builder.write_main(wgsl! {
+            let rows = 'workgroup_size_x;
+            let cols = 'workgroup_size_y / 'n;
+
+            let ii = u32(local_invocation_id.x);
+            let jj = u32(local_invocation_id.y);
+            work[ii + rows * jj] = sum;
+            workgroupBarrier();
+
+            // Reduce sums in log2(cols) steps
+            for (var s = u32(cols) / 2u; s > 0u; s >>= 1u) {
+                if (jj < s) {
+                    work[ii + rows * jj] += work[ii + rows * (jj + s)];
+                }
+                workgroupBarrier();
+            }
+        });
+
+        let bias = if self.bias.is_some() {
+            wgsl! { bias[row] }
+        } else {
+            wgsl! { 'accessor(0.0) }
+        };
+
+        kernel_builder.write_main(wgsl! {
+            if (jj == 0) {
+                result[outOffset + row] = work[ii] + 'bias;
+            }
+        });
 
         Ok(kernel_builder.build()?)
     }

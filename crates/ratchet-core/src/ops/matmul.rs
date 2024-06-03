@@ -23,7 +23,7 @@ impl GEMVHeuristic {
     pub fn as_workgroup_size(&self) -> (usize, usize) {
         match self {
             GEMVHeuristic::Fat => (4, 256),
-            _ => (16, 16),
+            _ => (8, 8),
         }
     }
 }
@@ -115,7 +115,6 @@ impl GEMMSpec {
             (arows, acols) if acols > arows * 2 => GEMVHeuristic::Fat,
             _ => GEMVHeuristic::Square,
         };
-        //println!("SELECTED HEURISTIC: {:?} for {:?}", heuristic, a_shape);
 
         Self {
             a_dt,
@@ -825,8 +824,8 @@ def matmul(a, b{}):
     #[test]
     fn debug_sgemm() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![1, 1500, 64], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![64, 1], cpu_device.clone());
         let ground = ground_truth(&a, &b, None, false, false, false)?;
 
         let device = Device::request_device(DeviceRequest::GPU)?;

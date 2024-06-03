@@ -129,9 +129,9 @@ impl GEMM {
         &self,
         builder: &mut WgslKernelBuilder,
     ) -> Result<(), OperationError> {
-        let FIT_A_OUTER = true;
-        let FIT_INNER = true;
-        let FIT_B_OUTER = true;
+        let FIT_A_OUTER = false;
+        let FIT_INNER = false;
+        let FIT_B_OUTER = false;
         let accessor = P::render_type();
 
         let readA = if FIT_A_OUTER && FIT_INNER {
