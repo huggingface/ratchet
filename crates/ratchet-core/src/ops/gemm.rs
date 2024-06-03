@@ -281,9 +281,8 @@ impl GEMM {
             let batchA = batch % metadata.aShape[0];
             let batchB = batch % metadata.bShape[0];
 
-            let localRow = i32(local_invocation_id.y);
-            let tileRow = localRow * 'ROW_PER_THREAD;
-            let tileCol = i32(local_invocation_id.x);
+            let tileRow = i32(local_invocation_id.y) * 4;
+            let tileCol = i32(local_invocation_id.x) * 4;
 
             let globalRowStart = i32(workgroup_id.y) * 'T_W;
             let globalRow = i32(global_invocation_id.y) * 'ROW_PER_THREAD;
@@ -303,9 +302,6 @@ impl GEMM {
         let load_a_inner = match self.lhs.dt() {
             DType::F32 | DType::F16 => {
                 wgsl! {
-                    let inputRow = tileRowA + innerRow;
-                    let inputCol = tileColA + innerCol;
-
                     mm_Asub[inputRow][inputCol] = mm_readA(batchA,
                         globalRowStart + inputRow,
                         kStart + inputCol);
@@ -320,10 +316,10 @@ impl GEMM {
         let load_a = wgsl! {
             // Load one tile of A into local memory.
             for (var innerRow = 0; innerRow < 'ROW_PER_THREAD; innerRow++) {
-                let inputRow = tileRow + innerRow;
-                let inputCol = tileCol;
-
                 for (var innerCol = 0; innerCol < 'ROW_PER_THREAD; innerCol++) {
+                    let inputRow = tileRowA + innerRow;
+                    let inputCol = tileColA + innerCol;
+
                     'load_a_inner
                 }
             }

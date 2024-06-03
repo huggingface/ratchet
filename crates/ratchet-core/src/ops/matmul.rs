@@ -509,8 +509,9 @@ impl MetaOperation for Matmul {
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
-        let spec = self.compute_spec(dst);
-        spec.select_kernel_element()
+        //let spec = self.compute_spec(dst);
+        //spec.select_kernel_element()
+        KernelElement::Scalar
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
@@ -809,6 +810,27 @@ def matmul(a, b{}):
         let aq = quantizer.sint8_quantize(a);
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = aq.to(&device)?;
+        let b_gpu = b.to(&device)?;
+        let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
+        let ours = c_gpu.to(&Device::CPU)?;
+
+        println!("RATCHET QUANT\n{:?}\n", ours);
+        println!("PYTORCH FP32:\n{:?}", ground);
+
+        ground.all_close(&ours, 1e1, 1e-1)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn debug_sgemm() -> anyhow::Result<()> {
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
+        let ground = ground_truth(&a, &b, None, false, false, false)?;
+
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
