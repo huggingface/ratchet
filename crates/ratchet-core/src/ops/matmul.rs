@@ -151,7 +151,8 @@ impl GEMMSpec {
         ];
 
         if checks.iter().all(|&x| x % 4 == 0) {
-            KernelElement::Vec4
+            //KernelElement::Vec4
+            KernelElement::Scalar
         } else {
             KernelElement::Scalar
         }
@@ -497,14 +498,14 @@ impl MetaOperation for Matmul {
         let key = if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {
-            let g = self.gemm_kernel_key(inplace, dst);
-            let cache_buster: String = rand::thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(4)
-                .map(char::from)
-                .collect();
-            format!("{}_{}", cache_buster, g)
-            //self.gemm_kernel_key(inplace, dst)
+            //let g = self.gemm_kernel_key(inplace, dst);
+            //let cache_buster: String = rand::thread_rng()
+            //    .sample_iter(&Alphanumeric)
+            //    .take(3)
+            //    .map(char::from)
+            //    .collect();
+            //format!("{}_{}", cache_buster, g)
+            self.gemm_kernel_key(inplace, dst)
         };
         KernelKey::new(key)
     }
