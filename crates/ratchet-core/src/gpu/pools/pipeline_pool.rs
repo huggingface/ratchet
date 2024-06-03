@@ -41,6 +41,7 @@ impl ComputePipelinePool {
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
             let label = Some(desc.kernel_key.as_str());
+            println!("LABEL: {:?}", label);
             let kernel_resources = device.kernel_source_resources();
 
             let shader_source = if let Some(source) = desc.compute_module {

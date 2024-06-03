@@ -824,14 +824,16 @@ def matmul(a, b{}):
     #[test]
     fn debug_sgemm() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1, 1500, 64], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![64, 1], cpu_device.clone());
-        let ground = ground_truth(&a, &b, None, false, false, false)?;
+        let a = Tensor::randn::<f32>(shape![1, 18, 70], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 18, 32], cpu_device.clone());
+        let bias = Some(Tensor::randn::<f32>(shape![32], cpu_device.clone()));
+        let ground = ground_truth(&a, &b, None, true, false, true)?;
 
         let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
-        let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
+        let bias_gpu = bias.as_ref().map(|b| b.to(&device)).transpose()?;
+        let c_gpu = a_gpu.gemm(b_gpu, bias_gpu, true, false, true)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET QUANT\n{:?}\n", ours);

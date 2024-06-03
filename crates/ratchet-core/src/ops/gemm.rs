@@ -134,14 +134,30 @@ impl GEMM {
         let FIT_B_OUTER = false;
         let accessor = P::render_type();
 
-        let readA = if FIT_A_OUTER && FIT_INNER {
+        let a_inner = if self.trans_lhs {
+            wgsl! { value = getA(batch, col, row); }
+        } else {
             wgsl! { value = getA(batch, row, col); }
+        };
+
+        let a_bounds = if self.trans_lhs {
+            wgsl! {
+                if (row < metadata.aShape.z && col < metadata.aShape.y) {
+                    'a_inner
+                }
+            }
         } else {
             wgsl! {
                 if (row < metadata.aShape.y && col < metadata.aShape.z) {
-                    value = getA(batch, row, col);
+                    'a_inner
                 }
             }
+        };
+
+        let readA = if FIT_A_OUTER && FIT_INNER {
+            a_inner
+        } else {
+            a_bounds
         };
 
         builder.write_global(wgsl! {
