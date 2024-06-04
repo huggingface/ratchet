@@ -1,6 +1,6 @@
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-    PoolError, WgpuDevice, WorkgroupCount,
+    PoolError, WgpuDevice,
 };
 use crate::{
     ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelModuleDesc, RVec,
@@ -8,8 +8,6 @@ use crate::{
 };
 use encase::internal::WriteInto;
 use encase::ShaderType;
-use rand::Rng;
-use rand_distr::Alphanumeric;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -179,9 +177,9 @@ impl From<WgslFragment> for KernelSource {
     }
 }
 
-impl Into<wgpu::ShaderSource<'static>> for KernelSource {
-    fn into(self) -> wgpu::ShaderSource<'static> {
-        wgpu::ShaderSource::Wgsl(self.0)
+impl From<KernelSource> for wgpu::ShaderSource<'static> {
+    fn from(val: KernelSource) -> Self {
+        wgpu::ShaderSource::Wgsl(val.0)
     }
 }
 
@@ -282,7 +280,7 @@ pub trait MetaOperation: Debug + 'static {
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
             kernel_key: kernel_src_desc.key.clone(),
-            compute_module: Some(compute_module),
+            kernel_module: Some(compute_module),
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 

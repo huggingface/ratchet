@@ -2,8 +2,6 @@ use derive_new::new;
 use encase::ShaderType;
 use half::f16;
 use inline_wgsl::wgsl;
-use rand::Rng;
-use rand_distr::Alphanumeric;
 use ratchet_macros::WgslMetadata;
 
 use crate::{

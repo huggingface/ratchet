@@ -232,7 +232,6 @@ mod tests {
     use crate::whisper::decoder::Config;
     use crate::whisper::{
         decoder::WhisperDecoder,
-        model::Whisper,
         options::{DecodingOptions, DecodingOptionsBuilder},
     };
 

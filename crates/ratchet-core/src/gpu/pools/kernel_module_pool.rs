@@ -7,7 +7,7 @@ use std::hash::Hash;
 
 // ---
 
-slotmap::new_key_type! { pub struct KernelSourceHandle; }
+slotmap::new_key_type! { pub struct KernelModuleHandle; }
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct KernelModuleDesc {
@@ -30,7 +30,7 @@ impl KernelModuleDesc {
 
 #[derive(Default)]
 pub struct KernelModulePool {
-    pool: StaticResourcePool<KernelSourceHandle, KernelModuleDesc, wgpu::ShaderModule>,
+    pool: StaticResourcePool<KernelModuleHandle, KernelModuleDesc, wgpu::ShaderModule>,
 }
 
 impl KernelModulePool {
@@ -48,7 +48,7 @@ impl KernelModulePool {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
         device: &WgpuDevice,
-    ) -> KernelSourceHandle {
+    ) -> KernelModuleHandle {
         self.pool.get_or_create(desc, |desc| {
             let source = desc
                 .create_kernel_source(op, inplace, dst, workgroup_size)
@@ -73,7 +73,7 @@ impl KernelModulePool {
     /// While it is locked, no new resources can be added.
     pub fn resources(
         &self,
-    ) -> StaticResourcePoolReadLockAccessor<'_, KernelSourceHandle, wgpu::ShaderModule> {
+    ) -> StaticResourcePoolReadLockAccessor<'_, KernelModuleHandle, wgpu::ShaderModule> {
         self.pool.resources()
     }
 

@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 
 use encase::ShaderType;
-use rand::Rng;
-use rand_distr::Alphanumeric;
 
 use crate::{
     gguf::{GGUFDType, Q8_0},

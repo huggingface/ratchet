@@ -142,18 +142,16 @@ impl GEMM {
 
         let readA = if FIT_A_OUTER && FIT_INNER {
             a_inner
-        } else {
-            if self.trans_lhs {
-                wgsl! {
-                    if (row < metadata.aShape.z && col < metadata.aShape.y) {
-                        'a_inner
-                    }
+        } else if self.trans_lhs {
+            wgsl! {
+                if (row < metadata.aShape.z && col < metadata.aShape.y) {
+                    'a_inner
                 }
-            } else {
-                wgsl! {
-                    if (row < metadata.aShape.y && col < metadata.aShape.z) {
-                        'a_inner
-                    }
+            }
+        } else {
+            wgsl! {
+                if (row < metadata.aShape.y && col < metadata.aShape.z) {
+                    'a_inner
                 }
             }
         };
@@ -174,18 +172,16 @@ impl GEMM {
 
         let readB = if FIT_INNER && FIT_B_OUTER {
             b_inner
-        } else {
-            if self.trans_rhs {
-                wgsl! {
-                    if (row < metadata.bShape.z && col < metadata.bShape.y) {
-                        'b_inner
-                    }
+        } else if self.trans_rhs {
+            wgsl! {
+                if (row < metadata.bShape.z && col < metadata.bShape.y) {
+                    'b_inner
                 }
-            } else {
-                wgsl! {
-                    if (row < metadata.bShape.y && col < metadata.bShape.z) {
-                        'b_inner
-                    }
+            }
+        } else {
+            wgsl! {
+                if (row < metadata.bShape.y && col < metadata.bShape.z) {
+                    'b_inner
                 }
             }
         };
@@ -574,40 +570,9 @@ impl GEMM {
         self.write_getters::<P>(dst, &mut kernel_builder)?;
         self.write_readers_and_writers::<P>(&mut kernel_builder)?;
         if P::W == 1 {
-            let s = self.build_gemm_scalar::<P>(kernel_builder);
-            //println!("{}", s.as_ref().unwrap());
-            s
+            self.build_gemm_scalar::<P>(kernel_builder)
         } else {
             self.build_gemm_vectorized::<P>(kernel_builder)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{shape, wgs, Device, DeviceRequest, Tensor, GEMM};
-    use half::f16;
-
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
-    #[test]
-    fn render_gemm() {
-        let device = GPU_DEVICE.with(|d| d.clone());
-        let lhs = Tensor::randn::<f16>(shape![128, 128], device.clone());
-        let rhs = Tensor::randn::<f16>(shape![128, 128], device.clone());
-        let bias = Tensor::randn::<f16>(shape![128], device.clone());
-        let op = GEMM {
-            lhs,
-            rhs,
-            bias: Some(bias),
-            trans_lhs: false,
-            trans_rhs: false,
-            trans_out: false,
-        };
-        let dst = Tensor::zeros::<f16>(&shape![128, 128], &device);
-        let kernel = op.build_kernel(false, &dst, &wgs![16, 16, 1]).unwrap();
-        println!("{}", kernel);
     }
 }

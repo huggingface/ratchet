@@ -1,4 +1,4 @@
-use crate::{gpu::*, KernelSource, MetaOperation, Tensor, TensorId};
+use crate::{gpu::*, MetaOperation, Tensor, TensorId};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use wgpu::{Adapter, Limits};
@@ -211,14 +211,14 @@ impl WgpuDevice {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
         device: &WgpuDevice,
-    ) -> KernelSourceHandle {
+    ) -> KernelModuleHandle {
         self.kernel_module_pool
             .get_or_create(desc, op, inplace, dst, workgroup_size, device)
     }
 
     pub fn kernel_module_resources(
         &self,
-    ) -> StaticResourcePoolReadLockAccessor<'_, KernelSourceHandle, wgpu::ShaderModule> {
+    ) -> StaticResourcePoolReadLockAccessor<'_, KernelModuleHandle, wgpu::ShaderModule> {
         self.kernel_module_pool.resources()
     }
 

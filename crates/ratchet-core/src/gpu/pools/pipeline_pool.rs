@@ -1,4 +1,4 @@
-use crate::{gpu::WgpuDevice, KernelKey, KernelSourceHandle};
+use crate::{gpu::WgpuDevice, KernelKey, KernelModuleHandle};
 
 use super::{
     PipelineLayoutHandle, StaticResourcePool, StaticResourcePoolAccessor,
@@ -11,7 +11,7 @@ slotmap::new_key_type! { pub struct ComputePipelineHandle; }
 pub struct ComputePipelineDescriptor {
     pub pipeline_layout: PipelineLayoutHandle,
     pub kernel_key: KernelKey,
-    pub compute_module: Option<KernelSourceHandle>,
+    pub kernel_module: Option<KernelModuleHandle>,
 }
 
 pub struct ComputePipelinePool {
@@ -42,7 +42,7 @@ impl ComputePipelinePool {
             //println!("LABEL: {:?}", label);
             let kernel_resources = device.kernel_module_resources();
 
-            let module = kernel_resources.get(desc.compute_module.unwrap()).unwrap();
+            let module = kernel_resources.get(desc.kernel_module.unwrap()).unwrap();
 
             let pipeline_layouts = device.pipeline_layout_resources();
             let pipeline_layout = pipeline_layouts.get(desc.pipeline_layout).unwrap();
@@ -50,7 +50,7 @@ impl ComputePipelinePool {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label,
                 layout: Some(pipeline_layout),
-                module: &module,
+                module,
                 entry_point: "main",
                 compilation_options: wgpu::PipelineCompilationOptions {
                     zero_initialize_workgroup_memory: false,
