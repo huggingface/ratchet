@@ -39,7 +39,7 @@ impl ComputePipelinePool {
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
             let label = Some(desc.kernel_key.as_str());
-            //println!("LABEL: {:?}", label);
+            println!("LABEL: {:?}", label);
             let kernel_resources = device.kernel_module_resources();
 
             let module = kernel_resources.get(desc.kernel_module).unwrap();

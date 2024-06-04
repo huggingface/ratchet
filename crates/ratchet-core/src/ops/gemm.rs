@@ -237,8 +237,12 @@ impl GEMM {
             }
             DType::GGUF(GGUFDType::Q8_0(_)) => {
                 builder.register_storage("A", ro, Array::<Scalar<u32>>::default());
-                builder.register_storage("scale", ro, float_arr);
-                builder.register_storage("B", ro, Array::<Vec4<P::T>>::default());
+                builder.register_storage("scale", ro, Array::<Scalar<f32>>::default());
+                if self.trans_rhs {
+                    builder.register_storage("B", ro, Array::<Scalar<f32>>::default());
+                } else {
+                    builder.register_storage("B", ro, Array::<Vec4<f32>>::default());
+                }
             }
             _ => return Err(InvariantError::UnsupportedDType(A.dt()).into()),
         }
@@ -279,7 +283,9 @@ impl GEMM {
                 self.build_gemm::<Vec4<f16>>(inplace, dst, workgroup_size, spec)
             }
             (DType::GGUF(g), _) => match g {
-                crate::gguf::GGUFDType::Q8_0(_) => todo!(),
+                crate::gguf::GGUFDType::Q8_0(_) => {
+                    self.build_gemm::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
+                }
                 _ => unimplemented!(),
             },
             _ => panic!("Unsupported dtype"),

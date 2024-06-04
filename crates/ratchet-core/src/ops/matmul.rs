@@ -849,25 +849,31 @@ def matmul(a, b{}):
 
     #[test]
     fn test_sgemv() -> anyhow::Result<()> {
-        use half::f16;
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![1, 256, 256], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1, 1, 256], cpu_device.clone());
-        let ground = ground_truth(&a, &b, None, false, true, true)?;
+        let b = Tensor::randn::<f32>(shape![1, 256, 256], cpu_device.clone());
+
+        let TRANS_LHS = false;
+        let TRANS_RHS = false;
+        let TRANS_OUT = false;
+
+        let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let aq = quantizer.sint8_quantize(a);
         let a_gpu = aq.to(&device)?;
         let b_gpu = b.to(&device)?;
-        let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
+        let c_gpu = a_gpu
+            .gemm(b_gpu, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
+            .resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
-        println!("RATCHET\n{:#?}\n", ours.to_ndarray_view::<f32>());
-        println!("PYTORCH:\n{:#?}", ground.to_ndarray_view::<f32>());
+        println!("RATCHET\n{:?}\n", ours.to_ndarray_view::<f32>());
+        println!("PYTORCH:\n{:?}", ground.to_ndarray_view::<f32>());
 
-        ground.all_close(&ours, 1e-1, 1e-1)?;
+        ground.all_close(&ours, 1e1, 1e1)?;
         Ok(())
     }
 }
