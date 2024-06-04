@@ -37,8 +37,9 @@ impl IndexSelect {
                     let packed_arr = Array::<Scalar<u32>>::default();
                     let scale_arr = Array::<Scalar<f32>>::default();
                     builder.register_storage("E", BindingMode::ReadOnly, packed_arr);
-                    builder.register_storage("S", BindingMode::ReadWrite, scale_arr);
+                    builder.register_storage("S", BindingMode::ReadOnly, scale_arr);
                     builder.register_storage("I", BindingMode::ReadOnly, index_arr);
+                    builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
                 }
                 _ => unimplemented!(),
             },
@@ -67,20 +68,42 @@ impl IndexSelect {
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.write_metadata::<IndexSelectMeta>();
 
-        kernel_builder.write_main(wgsl! {
-            let tid = workgroup_id.x * 64u + local_invocation_index;
-            if (tid >= metadata.dst_numel) {
-                return;
-            }
-            let id_i = (tid / metadata.right_numel) % metadata.ids_numel;
-            let input_i = min(u32(I[id_i]), metadata.src_dim_numel - 1u);
-            let right_rank_index = tid % metadata.right_numel;
-            let left_rank_index = tid / (metadata.right_numel * metadata.ids_numel);
+        //TODO: REFACTOR
+        if matches!(self.input.dt(), DType::GGUF(_)) {
+            kernel_builder.write_main(wgsl! {
+                let tid = workgroup_id.x * 64u + local_invocation_index;
+                let right_numel = metadata.right_numel/ 4u;
+                let src_dim_numel = metadata.src_dim_numel/ 4u;
 
-            let left_offset = left_rank_index * metadata.src_dim_numel * metadata.right_numel;
-            let right_offset = input_i * metadata.right_numel + right_rank_index;
-            Y[tid] = E[left_offset + right_offset];
-        });
+                if (tid >= metadata.dst_numel / 4u) {
+                    return;
+                }
+
+                let id_i = (tid / right_numel) % metadata.ids_numel;
+                let input_i = min(u32(I[id_i]), (src_dim_numel * 4u) - 1u);
+                let right_rank_i = tid % right_numel;
+                let left_rank_i = tid / (right_numel * metadata.ids_numel);
+
+                let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
+                Y[tid] = unpack4x8snorm(E[src_i]) * 127f * S[src_i / 8u];
+
+            });
+        } else {
+            kernel_builder.write_main(wgsl! {
+                let tid = workgroup_id.x * 64u + local_invocation_index;
+                if (tid >= metadata.dst_numel) {
+                    return;
+                }
+                let id_i = (tid / metadata.right_numel) % metadata.ids_numel;
+                let input_i = min(u32(I[id_i]), metadata.src_dim_numel - 1u);
+                let right_rank_index = tid % metadata.right_numel;
+                let left_rank_index = tid / (metadata.right_numel * metadata.ids_numel);
+
+                let left_offset = left_rank_index * metadata.src_dim_numel * metadata.right_numel;
+                let right_offset = input_i * metadata.right_numel + right_rank_index;
+                Y[tid] = E[left_offset + right_offset];
+            });
+        };
 
         Ok(kernel_builder.build()?)
     }
@@ -214,6 +237,10 @@ impl MetaOperation for IndexSelect {
             }
             (DType::F16, KernelElement::Vec4) => {
                 self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::GGUF(g), _) => {
+                assert!(matches!(g, GGUFDType::Q8_0(_)));
+                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
