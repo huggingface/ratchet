@@ -1,4 +1,6 @@
-use crate::{KernelKey, KernelSource, MetaOperation, OperationError, Tensor, WorkgroupSize};
+use crate::{
+    KernelKey, KernelSource, MetaOperation, OperationError, Tensor, WgpuDevice, WorkgroupSize,
+};
 
 use super::static_resource_pool::{StaticResourcePool, StaticResourcePoolReadLockAccessor};
 use std::hash::Hash;
@@ -8,14 +10,14 @@ use std::hash::Hash;
 slotmap::new_key_type! { pub struct KernelSourceHandle; }
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
-pub struct KernelSourceDesc {
-    /// Unique identifier for the compute module.
+pub struct KernelModuleDesc {
+    /// Unique identifier for the kernel module.
     /// e.g softmax_vec4_f32_128_1_1
     pub key: KernelKey,
 }
 
-impl KernelSourceDesc {
-    pub fn create_compute_module<O: MetaOperation + ?Sized>(
+impl KernelModuleDesc {
+    pub fn create_kernel_source<O: MetaOperation + ?Sized>(
         &self,
         op: &O,
         inplace: bool,
@@ -27,11 +29,11 @@ impl KernelSourceDesc {
 }
 
 #[derive(Default)]
-pub struct KernelSourcePool {
-    pool: StaticResourcePool<KernelSourceHandle, KernelSourceDesc, KernelSource>,
+pub struct KernelModulePool {
+    pool: StaticResourcePool<KernelSourceHandle, KernelModuleDesc, wgpu::ShaderModule>,
 }
 
-impl KernelSourcePool {
+impl KernelModulePool {
     pub fn new() -> Self {
         Self {
             pool: StaticResourcePool::default(),
@@ -40,15 +42,29 @@ impl KernelSourcePool {
 
     pub fn get_or_create<O: MetaOperation + ?Sized>(
         &self,
-        desc: &KernelSourceDesc,
+        desc: &KernelModuleDesc,
         op: &O,
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        device: &WgpuDevice,
     ) -> KernelSourceHandle {
         self.pool.get_or_create(desc, |desc| {
-            desc.create_compute_module(op, inplace, dst, workgroup_size)
-                .unwrap()
+            let source = desc
+                .create_kernel_source(op, inplace, dst, workgroup_size)
+                .unwrap();
+
+            let shader_module_desc = wgpu::ShaderModuleDescriptor {
+                label: Some(desc.key.as_str()),
+                source: source.into(),
+            };
+
+            if std::env::var("RATCHET_CHECKED").is_ok() {
+                log::warn!("Using checked shader compilation");
+                device.create_shader_module(shader_module_desc)
+            } else {
+                unsafe { device.create_shader_module_unchecked(shader_module_desc) }
+            }
         })
     }
 
@@ -57,7 +73,7 @@ impl KernelSourcePool {
     /// While it is locked, no new resources can be added.
     pub fn resources(
         &self,
-    ) -> StaticResourcePoolReadLockAccessor<'_, KernelSourceHandle, KernelSource> {
+    ) -> StaticResourcePoolReadLockAccessor<'_, KernelSourceHandle, wgpu::ShaderModule> {
         self.pool.resources()
     }
 

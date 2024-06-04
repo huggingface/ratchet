@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-
-use crate::{gpu::WgpuDevice, kernels, KernelKey, KernelSourceHandle};
+use crate::{gpu::WgpuDevice, KernelKey, KernelSourceHandle};
 
 use super::{
     PipelineLayoutHandle, StaticResourcePool, StaticResourcePoolAccessor,
@@ -42,20 +40,9 @@ impl ComputePipelinePool {
         self.inner.get_or_create(desc, |desc| {
             let label = Some(desc.kernel_key.as_str());
             //println!("LABEL: {:?}", label);
-            let kernel_resources = device.kernel_source_resources();
+            let kernel_resources = device.kernel_module_resources();
 
-            let shader_source = kernel_resources.get(desc.compute_module.unwrap()).unwrap();
-            //TODO: REMOVE CLONE
-            let source = wgpu::ShaderSource::Wgsl(shader_source.0.clone());
-
-            let shader_module_desc = wgpu::ShaderModuleDescriptor { label, source };
-
-            let module = if std::env::var("RATCHET_CHECKED").is_ok() {
-                log::warn!("Using checked shader compilation");
-                device.create_shader_module(shader_module_desc)
-            } else {
-                unsafe { device.create_shader_module_unchecked(shader_module_desc) }
-            };
+            let module = kernel_resources.get(desc.compute_module.unwrap()).unwrap();
 
             let pipeline_layouts = device.pipeline_layout_resources();
             let pipeline_layout = pipeline_layouts.get(desc.pipeline_layout).unwrap();

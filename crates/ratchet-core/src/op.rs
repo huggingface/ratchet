@@ -3,7 +3,7 @@ use crate::gpu::{
     PoolError, WgpuDevice, WorkgroupCount,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelSourceDesc, RVec,
+    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelModuleDesc, RVec,
     StorageView, Tensor, WgslFragment, WorkgroupSize, Workload,
 };
 use encase::internal::WriteInto;
@@ -179,6 +179,12 @@ impl From<WgslFragment> for KernelSource {
     }
 }
 
+impl Into<wgpu::ShaderSource<'static>> for KernelSource {
+    fn into(self) -> wgpu::ShaderSource<'static> {
+        wgpu::ShaderSource::Wgsl(self.0)
+    }
+}
+
 impl std::fmt::Display for KernelSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -262,7 +268,7 @@ pub trait MetaOperation: Debug + 'static {
         })?;
 
         let key = self.kernel_key(can_inplace, dst); //TODO: needs DTYPES
-        let kernel_src_desc = KernelSourceDesc { key };
+        let kernel_src_desc = KernelModuleDesc { key };
 
         let compute_module = device.get_or_create_compute_module(
             &kernel_src_desc,
@@ -270,6 +276,7 @@ pub trait MetaOperation: Debug + 'static {
             can_inplace,
             dst,
             &workload.workgroup_size,
+            dst.device().try_gpu().unwrap(),
         );
 
         let pipeline_descriptor = ComputePipelineDescriptor {

@@ -22,7 +22,7 @@ pub struct WgpuDevice {
     bind_group_layout_pool: Arc<BindGroupLayoutPool>,
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
     compute_pipeline_pool: Arc<ComputePipelinePool>,
-    compute_module_pool: Arc<KernelSourcePool>,
+    kernel_module_pool: Arc<KernelModulePool>,
     device_limits: DeviceLimits,
     device_features: DeviceFeatures,
     device: Arc<wgpu::Device>,
@@ -96,7 +96,7 @@ impl WgpuDevice {
             bind_group_pool: Arc::new(BindGroupPool::new()),
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
-            compute_module_pool: Arc::new(KernelSourcePool::new()),
+            kernel_module_pool: Arc::new(KernelModulePool::new()),
             compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
             device: Arc::new(device),
             device_limits: limits,
@@ -205,20 +205,21 @@ impl WgpuDevice {
 
     pub fn get_or_create_compute_module<O: MetaOperation + ?Sized>(
         &self,
-        desc: &KernelSourceDesc,
+        desc: &KernelModuleDesc,
         op: &O,
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        device: &WgpuDevice,
     ) -> KernelSourceHandle {
-        self.compute_module_pool
-            .get_or_create(desc, op, inplace, dst, workgroup_size)
+        self.kernel_module_pool
+            .get_or_create(desc, op, inplace, dst, workgroup_size, device)
     }
 
-    pub fn kernel_source_resources(
+    pub fn kernel_module_resources(
         &self,
-    ) -> StaticResourcePoolReadLockAccessor<'_, KernelSourceHandle, KernelSource> {
-        self.compute_module_pool.resources()
+    ) -> StaticResourcePoolReadLockAccessor<'_, KernelSourceHandle, wgpu::ShaderModule> {
+        self.kernel_module_pool.resources()
     }
 
     pub fn bind_group_layout_resources(
