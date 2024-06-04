@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType,
+    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec,
     InvariantError, KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec2,
-    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -128,10 +128,11 @@ impl GEMM {
     fn write_readers_and_writers<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
+        fits: (bool, bool, bool),
     ) -> Result<(), OperationError> {
-        let FIT_A_OUTER = false;
-        let FIT_INNER = false;
-        let FIT_B_OUTER = false;
+        let FIT_A_OUTER = fits.0;
+        let FIT_INNER = fits.1;
+        let FIT_B_OUTER = fits.2;
         let accessor = P::render_type();
 
         let a_inner = if self.trans_lhs {
@@ -255,26 +256,27 @@ impl GEMM {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        spec: GEMMSpec,
     ) -> Result<KernelSource, OperationError> {
-        let kernel_element = KernelElement::Scalar;
+        let kernel_element = spec.select_kernel_element();
         match (self.lhs.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_gemm::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_gemm::<Vec2<f32>>(inplace, dst, workgroup_size, spec)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_gemm::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_gemm::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_gemm::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_gemm::<Vec2<f16>>(inplace, dst, workgroup_size, spec)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_gemm::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_gemm::<Vec4<f16>>(inplace, dst, workgroup_size, spec)
             }
             (DType::GGUF(g), _) => match g {
                 crate::gguf::GGUFDType::Q8_0(_) => todo!(),
@@ -288,6 +290,7 @@ impl GEMM {
         &self,
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
+        println!("BUILDING GEMM SCALAR");
         const ROW_PER_THREAD: usize = 4;
         const TILE_DIM: usize = 32;
 
@@ -428,6 +431,7 @@ impl GEMM {
         &self,
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
+        println!("BUILDING VECTORIZED GEMM");
         const ROW_PER_THREAD: usize = 4;
         const TILE_DIM: usize = 32;
 
@@ -449,7 +453,7 @@ impl GEMM {
             let tileCol = i32(local_invocation_id.x);
 
             let globalRow = i32(global_invocation_id.y) * 'ROW_PER_THREAD;
-            let globalCol = i32(global_invocation_id.x) * 4;
+            let globalCol = i32(global_invocation_id.x) * 'W;
 
             let numTiles = (metadata.dimInner - 1) / 'TILE_DIM + 1;
             var kStart = 0;
@@ -462,12 +466,12 @@ impl GEMM {
 
         let load_a_inner = match self.lhs.dt() {
             DType::F32 | DType::F16 => {
-                wgsl! { mm_Asub[inputRow][inputCol] = mm_readA(batchA, globalRow + innerRow, kStart + inputCol * 4); }
+                wgsl! { mm_Asub[inputRow][inputCol] = mm_readA(batchA, globalRow + innerRow, kStart + inputCol * 'W); }
             }
             DType::GGUF(GGUFDType::Q8_0(_)) => {
                 wgsl! {
                     let curRow = globalRow + innerRow;
-                    let curCol = kStart + inputCol * 4;
+                    let curCol = kStart + inputCol * 'W;
 
                     let absmax = getAbsMax(batchA, curRow, curCol);
                     mm_Asub[inputRow][inputCol] = mm_readA(batchA, curRow, curCol) * absmax;
@@ -496,20 +500,22 @@ impl GEMM {
             }
         };
 
+        let mut outer_body = WgslFragment::new(128);
+        let mut inner_body = WgslFragment::new(128);
+        for c in 0..W {
+            let ident = format!("BCached{}", c);
+            inner_body.write(wgsl! { acc[i] = fma('ident, 'accessor(ACached['c]), acc[i]); });
+            outer_body.write(wgsl! { let 'ident = mm_Bsub[bidx + 'c][tileCol]; });
+        }
+
         let compute_acc = wgsl! {
             // Compute acc values for a single thread.
             for (var k = 0; k < 'T_W; k++) {
               let bidx = k * 'W;
-              let BCached0 = mm_Bsub[bidx][tileCol];
-              let BCached1 = mm_Bsub[bidx + 1][tileCol];
-              let BCached2 = mm_Bsub[bidx + 2][tileCol];
-              let BCached3 = mm_Bsub[bidx + 3][tileCol];
+              'outer_body
               for (var i = 0; i < 'ROW_PER_THREAD; i++) {
                 let ACached = mm_Asub[tileRow + i][k];
-                acc[i] = fma(BCached0, 'accessor(ACached[0]), acc[i]);
-                acc[i] = fma(BCached1, 'accessor(ACached[1]), acc[i]);
-                acc[i] = fma(BCached2, 'accessor(ACached[2]), acc[i]);
-                acc[i] = fma(BCached3, 'accessor(ACached[3]), acc[i]);
+                'inner_body
               }
             }
         };
@@ -532,7 +538,7 @@ impl GEMM {
         });
 
         let bias_val = if self.bias.is_some() {
-            wgsl! { bias[globalCol / 4]; }
+            wgsl! { bias[globalCol / 'W]; }
         } else {
             wgsl! { 0.0; }
         };
@@ -552,6 +558,7 @@ impl GEMM {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        spec: GEMMSpec,
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -568,7 +575,7 @@ impl GEMM {
         kernel_builder.write_metadata::<GEMMMeta>();
         self.write_indexing::<P>(&mut kernel_builder);
         self.write_getters::<P>(dst, &mut kernel_builder)?;
-        self.write_readers_and_writers::<P>(&mut kernel_builder)?;
+        self.write_readers_and_writers::<P>(&mut kernel_builder, spec.tile_fit())?;
         if P::W == 1 {
             self.build_gemm_scalar::<P>(kernel_builder)
         } else {

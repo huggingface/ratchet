@@ -266,9 +266,10 @@ pub trait MetaOperation: Debug + 'static {
         })?;
 
         let key = self.kernel_key(can_inplace, dst); //TODO: needs DTYPES
+
         let kernel_src_desc = KernelModuleDesc { key };
 
-        let compute_module = device.get_or_create_compute_module(
+        let kernel_module = device.get_or_create_compute_module(
             &kernel_src_desc,
             self,
             can_inplace,
@@ -280,7 +281,7 @@ pub trait MetaOperation: Debug + 'static {
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
             kernel_key: kernel_src_desc.key.clone(),
-            kernel_module: Some(compute_module),
+            kernel_module,
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 

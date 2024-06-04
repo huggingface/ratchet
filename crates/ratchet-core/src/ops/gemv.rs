@@ -3,7 +3,7 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType,
+    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec,
     InvariantError, KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
@@ -63,23 +63,27 @@ impl GEMV {
     ) -> Result<(), OperationError> {
         let (A, _, bias) = (&self.lhs, &self.rhs, &self.bias);
 
-        let float_arr = Array::<P>::default();
-
         if A.dt().is_float() {
+            let float_arr = Array::<P>::default();
             builder.register_storage("A", BindingMode::ReadOnly, float_arr);
             builder.register_storage("X", BindingMode::ReadOnly, float_arr);
+            if bias.is_some() {
+                builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
+            }
+            builder.register_storage("result", BindingMode::ReadWrite, float_arr);
         } else if A.dt().is_quantized() {
+            let scalar = Array::<Scalar<P::T>>::default();
             builder.register_storage("A", BindingMode::ReadOnly, Array::<Scalar<u32>>::default());
-            builder.register_storage("scale", BindingMode::ReadOnly, float_arr);
+            builder.register_storage("scale", BindingMode::ReadOnly, scalar);
             builder.register_storage("X", BindingMode::ReadOnly, Array::<Vec4<P::T>>::default());
+            if bias.is_some() {
+                builder.register_storage("bias", BindingMode::ReadOnly, scalar);
+            }
+            builder.register_storage("result", BindingMode::ReadWrite, scalar);
         } else {
             return Err(InvariantError::UnsupportedDType(A.dt()).into());
         }
 
-        if bias.is_some() {
-            builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
-        }
-        builder.register_storage("result", BindingMode::ReadWrite, float_arr);
         builder.register_uniform();
         Ok(())
     }
@@ -89,17 +93,20 @@ impl GEMV {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        spec: GEMMSpec,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = KernelElement::Scalar;
         match (self.lhs.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.render_gemv::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render_gemv::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.render_gemv::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render_gemv::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
             }
             (DType::GGUF(g), _) => match g {
-                crate::gguf::GGUFDType::Q8_0(_) => todo!(),
+                crate::gguf::GGUFDType::Q8_0(_) => {
+                    self.render_gemv::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
+                }
                 _ => unimplemented!(),
             },
             _ => panic!("Unsupported dtype"),
@@ -111,6 +118,7 @@ impl GEMV {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        spec: GEMMSpec,
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -135,7 +143,8 @@ impl GEMV {
             var<workgroup> work: array<'accessor, 'work_size>;
         });
 
-        let FIT = false;
+        let (TILE_X, _) = spec.heuristic.as_workgroup_size();
+        let A_FIT = spec.lhs_shape()[1] % TILE_X == 0;
 
         let workgroup_size_y = workgroup_size.y;
         let main_loop = match self.lhs.dt() {
@@ -143,8 +152,8 @@ impl GEMV {
                 GGUFDType::Q8_0(_) => {
                     wgsl! {
                         let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
-                        for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+='workgroup_size_y) {
-                            sum = fma(unpack4x8snorm_gguf(A[aIndex + k]) * scale[sIndex + (k/8)], X[k], sum);
+                        for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+='workgroup_size_y / 4) {
+                            sum = fma(unpack4x8snorm(A[aIndex + k]) * 127f * scale[sIndex + (k/8)], X[k], sum);
                         }
                     }
                 }
@@ -160,7 +169,7 @@ impl GEMV {
         };
 
         kernel_builder.write_main(wgsl! { let row = i32(global_invocation_id.x); });
-        if FIT {
+        if A_FIT {
             kernel_builder.write_main(wgsl! {
                 if (row >= metadata.aShape.y) {
                     return;
@@ -208,42 +217,21 @@ impl GEMV {
         let bias = if self.bias.is_some() {
             wgsl! { bias[row] }
         } else {
-            wgsl! { 'accessor(0.0) }
+            wgsl! { 0. }
+        };
+
+        let finalizer = match P::W {
+            4 | 2 => wgsl! { result[outOffset + row] = dot(work[ii], 'accessor(1.0)) + 'bias; },
+            1 => wgsl! { result[outOffset + row] = work[ii] + 'bias; },
+            _ => unimplemented!(),
         };
 
         kernel_builder.write_main(wgsl! {
             if (jj == 0) {
-                result[outOffset + row] = work[ii] + 'bias;
+                'finalizer
             }
         });
 
         Ok(kernel_builder.build()?)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{shape, wgs, Device, DeviceRequest, Tensor, GEMV};
-
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
-    #[test]
-    fn render_gemv() {
-        let device = GPU_DEVICE.with(|d| d.clone());
-        let lhs = Tensor::randn::<f32>(shape![128, 128], device.clone());
-        let rhs = Tensor::randn::<f32>(shape![128, 1], device.clone());
-        let bias = Tensor::randn::<f32>(shape![128], device.clone());
-        let op = GEMV {
-            lhs,
-            rhs,
-            bias: Some(bias),
-            trans_lhs: false,
-            trans_rhs: false,
-            trans_out: false,
-        };
-        let dst = Tensor::zeros::<f32>(&shape![128, 1], &device);
-        let kernel = op.build_kernel(false, &dst, &wgs![16, 16, 1]);
     }
 }

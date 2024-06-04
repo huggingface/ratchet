@@ -259,7 +259,7 @@ def mlx_rope(input, dim, offset):
     mx.eval(y)
     return np.array(y)
 "#;
-        run_py_prg(prg.to_string(), &[a], &[&dim, &offset])
+        run_py_prg(prg.to_string(), &[a], &[&dim, &offset], a.dt())
     }
 
     fn run_rope_trial(problem: RoPEProblem) {

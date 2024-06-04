@@ -11,7 +11,7 @@ slotmap::new_key_type! { pub struct ComputePipelineHandle; }
 pub struct ComputePipelineDescriptor {
     pub pipeline_layout: PipelineLayoutHandle,
     pub kernel_key: KernelKey,
-    pub kernel_module: Option<KernelModuleHandle>,
+    pub kernel_module: KernelModuleHandle,
 }
 
 pub struct ComputePipelinePool {
@@ -42,7 +42,7 @@ impl ComputePipelinePool {
             //println!("LABEL: {:?}", label);
             let kernel_resources = device.kernel_module_resources();
 
-            let module = kernel_resources.get(desc.kernel_module.unwrap()).unwrap();
+            let module = kernel_resources.get(desc.kernel_module).unwrap();
 
             let pipeline_layouts = device.pipeline_layout_resources();
             let pipeline_layout = pipeline_layouts.get(desc.pipeline_layout).unwrap();

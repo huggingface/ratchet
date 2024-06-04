@@ -43,7 +43,7 @@ pub struct GEMMSpec {
     trans_b: bool,
     trans_out: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
-    heuristic: GEMVHeuristic,
+    pub heuristic: GEMVHeuristic,
 }
 
 impl GEMMSpec {
@@ -149,8 +149,7 @@ impl GEMMSpec {
         ];
 
         if checks.iter().all(|&x| x % 4 == 0) {
-            //KernelElement::Vec4
-            KernelElement::Scalar
+            KernelElement::Vec4
         } else {
             KernelElement::Scalar
         }
@@ -413,7 +412,6 @@ impl Matmul {
         let has_bias = self.bias.is_some();
 
         let (TILE_X, YT) = spec.heuristic.as_workgroup_size();
-
         let a_fit = spec.lhs_shape()[1] % TILE_X == 0;
 
         format!(
@@ -475,6 +473,7 @@ impl OpGuards for Matmul {
     fn check_dtypes(&self) {
         let allowed_pairs = [
             (DType::F32, DType::F32),
+            (DType::F16, DType::F16),
             (DType::GGUF(GGUFDType::Q8_0(Q8_0)), DType::F32),
         ];
         if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
@@ -496,13 +495,6 @@ impl MetaOperation for Matmul {
         let key = if self.rhs.shape().is_vector() && !self.trans_lhs {
             self.gemv_kernel_key(inplace, dst)
         } else {
-            //let g = self.gemm_kernel_key(inplace, dst);
-            //let cache_buster: String = rand::thread_rng()
-            //    .sample_iter(&Alphanumeric)
-            //    .take(3)
-            //    .map(char::from)
-            //    .collect();
-            //format!("{}_{}", cache_buster, g)
             self.gemm_kernel_key(inplace, dst)
         };
         KernelKey::new(key)
@@ -517,9 +509,8 @@ impl MetaOperation for Matmul {
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
-        //let spec = self.compute_spec(dst);
-        //spec.select_kernel_element()
-        KernelElement::Scalar
+        let spec = self.compute_spec(dst);
+        spec.select_kernel_element()
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
@@ -569,6 +560,8 @@ impl MetaOperation for Matmul {
         let layout = match (A.dt(), B.dt(), bias.is_some()) {
             (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
             (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
+            (DType::F16, DType::F16, false) => BindGroupLayoutDescriptor::binary(),
+            (DType::F16, DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
             (DType::GGUF(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
             (DType::GGUF(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
             _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
@@ -623,10 +616,10 @@ impl MetaOperation for Matmul {
         let spec = self.compute_spec(dst);
         if spec.is_gemv() {
             let gemv: GEMV = self.clone().into();
-            gemv.build_kernel(inplace, dst, workgroup_size)
+            gemv.build_kernel(inplace, dst, workgroup_size, spec)
         } else {
             let gemm: GEMM = self.clone().into();
-            gemm.build_kernel(inplace, dst, workgroup_size)
+            gemm.build_kernel(inplace, dst, workgroup_size, spec)
         }
     }
 }
@@ -699,7 +692,7 @@ def matmul(a, b{}):
             vec![a, b]
         };
 
-        run_py_prg(prg.to_string(), &args, &[])
+        run_py_prg(prg.to_string(), &args, &[], a.dt())
     }
 
     #[derive(Arbitrary, Clone, Debug)]
@@ -837,30 +830,31 @@ def matmul(a, b{}):
     #[test]
     fn debug_sgemm() -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![3, 74, 179], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![3, 17, 179], cpu_device.clone());
-        let ground = ground_truth(&a, &b, None, false, true, true)?;
+        let a = Tensor::randn::<f32>(shape![2, 128, 126], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![2, 126, 128], cpu_device.clone());
+        let ground = ground_truth(&a, &b, None, false, false, false)?;
 
         let device = GPU_DEVICE.with(|d| d.clone());
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;
-        let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
+        let c_gpu = a_gpu.gemm(b_gpu, None, false, false, false)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
         println!("RATCHET QUANT\n{:?}\n", ours);
         println!("PYTORCH FP32:\n{:?}", ground);
 
         ground.all_close(&ours, 1e-4, 1e-4)?;
-
         Ok(())
     }
 
     #[test]
-    fn test_qgemv() -> anyhow::Result<()> {
+    fn test_sgemv() -> anyhow::Result<()> {
+        use half::f16;
+        let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1, 1024, 1024], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1, 1, 1024], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![1, 256, 256], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 1, 256], cpu_device.clone());
         let ground = ground_truth(&a, &b, None, false, true, true)?;
 
         let quantizer = Quantizer::new(Quantization::SInt8);
@@ -870,11 +864,10 @@ def matmul(a, b{}):
         let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
-        println!("RATCHET QUANT\n{:?}\n", ours);
-        println!("PYTORCH FP32:\n{:?}", ground);
+        println!("RATCHET\n{:#?}\n", ours.to_ndarray_view::<f32>());
+        println!("PYTORCH:\n{:#?}", ground.to_ndarray_view::<f32>());
 
-        ground.all_close(&ours, 1e1, 1e-1)?;
-
+        ground.all_close(&ours, 1e-1, 1e-1)?;
         Ok(())
     }
 }

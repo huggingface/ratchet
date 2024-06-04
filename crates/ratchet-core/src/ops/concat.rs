@@ -310,7 +310,7 @@ def permute(t0, t1, t2, t3, t4):
 "#,
             args
         );
-        run_py_prg(prg.to_string(), to_cat, &[])
+        run_py_prg(prg.to_string(), to_cat, &[], to_cat[0].dt())
     }
 
     fn run_concat_trial(prob: ConcatProblem) -> anyhow::Result<()> {

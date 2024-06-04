@@ -417,7 +417,7 @@ def manual_rms_norm(input, scale):
             None => rvec![input, scale],
         };
 
-        run_py_prg(prg.to_string(), &inputs, &[])
+        run_py_prg(prg.to_string(), &inputs, &[], input.dt())
     }
 
     fn run_norm_trial(device: &Device, problem: NormProblem) -> anyhow::Result<()> {

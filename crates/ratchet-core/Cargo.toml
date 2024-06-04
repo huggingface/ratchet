@@ -59,7 +59,7 @@ itertools = { workspace = true, optional = true }
 
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true } 
 regex = { workspace = true, optional = true }
-numpy = { workspace = true, optional = true }
+numpy = { workspace = true, optional = true, features=["half"]}
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true 

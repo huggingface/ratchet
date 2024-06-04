@@ -299,6 +299,7 @@ def conv(input, filters, bias, stride, padding):
             prg.to_string(),
             &[input, filters, bias],
             &[&stride, &padding],
+            input.dt(),
         )
     }
 

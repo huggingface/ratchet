@@ -104,6 +104,7 @@ impl WgslKernelBuilder {
             source.write(binding.render().0.as_str());
         }
         source.write(self.main.0.as_str());
+        println!("SOURCE: \n{}", source.0);
         Ok(source.into())
     }
 

@@ -87,6 +87,7 @@ impl Default for WorkgroupCount {
     }
 }
 
+#[derive(Debug)]
 pub struct Workload {
     pub workgroup_size: WorkgroupSize,
     pub workgroup_count: WorkgroupCount,

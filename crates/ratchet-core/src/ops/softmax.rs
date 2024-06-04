@@ -309,7 +309,7 @@ import torch.nn.functional as F
 def softmax(a):
     return F.softmax(torch.from_numpy(a), dim=-1).numpy()
 "#;
-        run_py_prg(prg.to_string(), &[a], &[])
+        run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
     fn run_softmax_trial(problem: SoftmaxProblem) {

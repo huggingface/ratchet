@@ -290,7 +290,7 @@ def {}(a, b):
 "#,
             kn, kn
         );
-        run_py_prg(prg.to_string(), &[a, b], &[])
+        run_py_prg(prg.to_string(), &[a, b], &[], a.dt())
     }
 
     fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
