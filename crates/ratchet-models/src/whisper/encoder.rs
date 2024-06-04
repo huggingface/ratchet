@@ -209,7 +209,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let model_path = model.get("tiny_q8_0.gguf").unwrap();
+        let model_path = model.get("tiny_f32.gguf").unwrap();
         println!("Path: {}", model_path.display());
         let config_path = model.get("config.json").unwrap();
 
