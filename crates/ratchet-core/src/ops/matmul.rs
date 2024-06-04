@@ -848,16 +848,17 @@ def matmul(a, b{}):
     }
 
     #[test]
-    fn test_sgemv() -> anyhow::Result<()> {
+    fn debug_gemm() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1, 256, 256], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1, 256, 256], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![1, 384, 384], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 1500, 384], cpu_device.clone());
+        let bias = Some(Tensor::randn::<f32>(shape![1, 1500], cpu_device.clone()));
 
         let TRANS_LHS = false;
-        let TRANS_RHS = false;
-        let TRANS_OUT = false;
+        let TRANS_RHS = true;
+        let TRANS_OUT = true;
 
         let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
 
@@ -865,8 +866,9 @@ def matmul(a, b{}):
         let aq = quantizer.sint8_quantize(a);
         let a_gpu = aq.to(&device)?;
         let b_gpu = b.to(&device)?;
+        let bias_gpu = bias.as_ref().map(|b| b.to(&device)).transpose()?;
         let c_gpu = a_gpu
-            .gemm(b_gpu, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
+            .gemm(b_gpu, bias_gpu, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
             .resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 

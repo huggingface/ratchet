@@ -157,9 +157,15 @@ impl GEMM {
             }
         };
 
+        let aAccessor = if matches!(self.lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) {
+            Vec4::<f32>::render_type()
+        } else {
+            accessor.clone()
+        };
+
         builder.write_global(wgsl! {
-            fn mm_readA(batch: i32, row: i32, col: i32) -> 'accessor {
-                var value = 'accessor(0.0);
+            fn mm_readA(batch: i32, row: i32, col: i32) -> 'aAccessor {
+                var value = 'aAccessor(0.0);
                 'readA
                 return value;
             }
@@ -234,23 +240,27 @@ impl GEMM {
             DType::F32 | DType::F16 => {
                 builder.register_storage("A", ro, float_arr);
                 builder.register_storage("B", ro, float_arr);
+                if bias.is_some() {
+                    builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
+                }
+                builder.register_storage("result", BindingMode::ReadWrite, float_arr);
             }
             DType::GGUF(GGUFDType::Q8_0(_)) => {
                 builder.register_storage("A", ro, Array::<Scalar<u32>>::default());
-                builder.register_storage("scale", ro, Array::<Scalar<f32>>::default());
+                builder.register_storage("scale", ro, float_arr);
                 if self.trans_rhs {
                     builder.register_storage("B", ro, Array::<Scalar<f32>>::default());
                 } else {
                     builder.register_storage("B", ro, Array::<Vec4<f32>>::default());
                 }
+                if bias.is_some() {
+                    builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
+                }
+                builder.register_storage("result", BindingMode::ReadWrite, float_arr);
             }
             _ => return Err(InvariantError::UnsupportedDType(A.dt()).into()),
         }
 
-        if bias.is_some() {
-            builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
-        }
-        builder.register_storage("result", BindingMode::ReadWrite, float_arr);
         builder.register_uniform();
         Ok(())
     }
@@ -284,7 +294,7 @@ impl GEMM {
             }
             (DType::GGUF(g), _) => match g {
                 crate::gguf::GGUFDType::Q8_0(_) => {
-                    self.build_gemm::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
+                    self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
                 }
                 _ => unimplemented!(),
             },
@@ -296,7 +306,6 @@ impl GEMM {
         &self,
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
-        println!("BUILDING GEMM SCALAR");
         const ROW_PER_THREAD: usize = 4;
         const TILE_DIM: usize = 32;
 
@@ -332,29 +341,40 @@ impl GEMM {
             // Loop over shared dimension.
         });
 
-        let load_a_inner = match self.lhs.dt() {
+        let a_inner = match self.lhs.dt() {
             DType::F32 | DType::F16 => {
                 wgsl! {
-                    mm_Asub[inputRow][inputCol] = mm_readA(batchA,
-                        globalRowStart + inputRow,
-                        kStart + inputCol);
+                    for (var innerCol = 0; innerCol < 'ROW_PER_THREAD; innerCol++) {
+                        let inputRow = tileRowA + innerRow;
+                        let inputCol = tileColA + innerCol;
+
+                        mm_Asub[inputRow][inputCol] = mm_readA(batchA,
+                            globalRowStart + inputRow,
+                            kStart + inputCol);
+                    }
                 }
             }
             DType::GGUF(GGUFDType::Q8_0(_)) => {
-                todo!()
+                let mut inner = wgsl! {
+                    let curRow = globalRow + innerRow;
+                    let curCol = kStart + i32(local_invocation_id.x) * 4;
+
+                    let absmax = getAbsMax(batchA, curRow, curCol);
+                    let val = mm_readA(batchA, curRow, curCol) * absmax;
+                };
+                for i in 0..4 {
+                    inner.push_str(
+                        &wgsl! { mm_Asub[tileRowA + innerRow][tileColA + 'i] = val['i]; },
+                    );
+                }
+                inner
             }
             _ => panic!("Unsupported dtype"),
         };
 
         let load_a = wgsl! {
-            // Load one tile of A into local memory.
             for (var innerRow = 0; innerRow < 'ROW_PER_THREAD; innerRow++) {
-                for (var innerCol = 0; innerCol < 'ROW_PER_THREAD; innerCol++) {
-                    let inputRow = tileRowA + innerRow;
-                    let inputCol = tileColA + innerCol;
-
-                    'load_a_inner
-                }
+                'a_inner
             }
         };
 
@@ -437,7 +457,6 @@ impl GEMM {
         &self,
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
-        println!("BUILDING VECTORIZED GEMM");
         const ROW_PER_THREAD: usize = 4;
         const TILE_DIM: usize = 32;
 
@@ -566,6 +585,7 @@ impl GEMM {
         workgroup_size: &WorkgroupSize,
         spec: GEMMSpec,
     ) -> Result<KernelSource, OperationError> {
+        println!("GEMM SPEC: {:#?}", spec);
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
