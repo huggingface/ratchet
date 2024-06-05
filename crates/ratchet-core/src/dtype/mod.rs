@@ -19,6 +19,20 @@ pub enum DType {
     GGUF(gguf::GGUFDType),
 }
 
+impl std::fmt::Display for DType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DType::Q8 => write!(f, "Q8"),
+            DType::F16 => write!(f, "F16"),
+            DType::BF16 => write!(f, "BF16"),
+            DType::F32 => write!(f, "F32"),
+            DType::I32 => write!(f, "I32"),
+            DType::U32 => write!(f, "U32"),
+            DType::GGUF(g) => write!(f, "{}", g),
+        }
+    }
+}
+
 impl DType {
     pub fn to_u32(self) -> u32 {
         match self {

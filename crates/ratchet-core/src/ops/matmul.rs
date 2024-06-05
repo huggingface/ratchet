@@ -354,77 +354,6 @@ impl Matmul {
             self.trans_out,
         )
     }
-
-    pub fn gemm_kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        let spec = self.compute_spec(dst);
-
-        let (a_fit, b_fit, out_fit) = spec.tile_fit();
-        let ke = spec.select_kernel_element();
-
-        let kernel_stem = if matches!(self.lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) {
-            "qgemm"
-        } else {
-            "sgemm"
-        };
-
-        let has_bias = self.bias.is_some();
-
-        match ke {
-            KernelElement::Scalar => {
-                format!(
-                    "{}_{}_{}_{}_{}_{}_{}_{}_{}",
-                    kernel_stem,
-                    has_bias,
-                    a_fit,
-                    b_fit,
-                    out_fit,
-                    self.trans_lhs,
-                    self.trans_rhs,
-                    self.trans_out,
-                    ke.as_str()
-                )
-            }
-            _ => {
-                format!(
-                    "{}_{}_{}_{}_{}_{}",
-                    kernel_stem,
-                    has_bias,
-                    a_fit,
-                    b_fit,
-                    out_fit,
-                    ke.as_str()
-                )
-            }
-        }
-    }
-
-    pub fn gemv_kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        let spec = self.compute_spec(dst);
-
-        let ke = spec.select_kernel_element();
-
-        let kernel_stem = if matches!(self.lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) {
-            "qgemv"
-        } else {
-            "sgemv"
-        };
-
-        let has_bias = self.bias.is_some();
-
-        let (TILE_X, YT) = spec.heuristic.as_workgroup_size();
-        let a_fit = spec.lhs_shape()[1] % TILE_X == 0;
-
-        format!(
-            "{}_{}_{}_{}_{}_{:?}_{}",
-            kernel_stem,
-            has_bias,
-            TILE_X,
-            YT,
-            a_fit,
-            spec.heuristic.as_workgroup_size(),
-            ke.as_str()
-        )
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -491,13 +420,30 @@ impl MetaOperation for Matmul {
         "GEMM".to_string()
     }
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> KernelKey {
-        let key = if self.rhs.shape().is_vector() && !self.trans_lhs {
-            self.gemv_kernel_key(inplace, dst)
-        } else {
-            self.gemm_kernel_key(inplace, dst)
-        };
-        KernelKey::new(key)
+    fn kernel_key(&self, workgroup_size: &WorkgroupSize, _: bool, dst: &Tensor) -> KernelKey {
+        let spec = self.compute_spec(dst);
+
+        let (a_fit, b_fit, out_fit) = spec.tile_fit();
+        let ke = spec.select_kernel_element();
+        let kernel_stem = if spec.is_gemv() { "gemv" } else { "gemm" };
+        let bias_key = if self.bias.is_some() { "bias" } else { "" };
+
+        KernelKey::new(format!(
+            "{}_{}_l{}_r{}_o{}_lf{}_rf{}_of{}_tl{}_tr{}_to{}_{}_{}",
+            kernel_stem,
+            bias_key,
+            self.lhs.dt(),
+            self.rhs.dt(),
+            dst.dt(),
+            a_fit,
+            b_fit,
+            out_fit,
+            self.trans_lhs,
+            self.trans_rhs,
+            self.trans_out,
+            workgroup_size,
+            ke.as_str()
+        ))
     }
 
     fn srcs(&self) -> RVec<&Tensor> {

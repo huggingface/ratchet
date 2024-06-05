@@ -198,7 +198,7 @@ pub trait MetaOperation: Debug + 'static {
     /// Kernel Name
     fn kernel_name(&self) -> String;
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> KernelKey;
+    fn kernel_key(&self, workgroup_size: &WorkgroupSize, inplace: bool, dst: &Tensor) -> KernelKey;
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -265,7 +265,7 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let key = self.kernel_key(can_inplace, dst); //TODO: needs DTYPES
+        let key = self.kernel_key(&workload.workgroup_size, can_inplace, dst); //TODO: needs DTYPES
 
         let kernel_src_desc = KernelModuleDesc { key };
 

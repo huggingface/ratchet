@@ -48,6 +48,16 @@ impl GGUFDType {
     }
 }
 
+impl std::fmt::Display for GGUFDType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GGUFDType::Q4K(_) => write!(f, "Q4K"),
+            GGUFDType::Q6K(_) => write!(f, "Q6K"),
+            GGUFDType::Q8_0(_) => write!(f, "Q8_0"),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
 pub struct Q4K;
 
