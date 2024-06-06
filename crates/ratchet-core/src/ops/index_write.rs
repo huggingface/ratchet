@@ -22,7 +22,7 @@ impl IndexWrite {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        inplace: bool,
+        _: bool,
     ) -> Result<(), OperationError> {
         let arr = Array::<P>::default();
         builder.register_storage("D", BindingMode::ReadWrite, arr);
@@ -95,10 +95,6 @@ impl MetaOperation for IndexWrite {
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.dst, &self.src]
-    }
-
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
-        KernelKey::new(format!("index_write_{}", self.kernel_element(dst).as_str()))
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

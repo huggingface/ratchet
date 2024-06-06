@@ -178,10 +178,6 @@ impl MetaOperation for Conv {
         rvec![&self.input, &self.weight, self.bias.as_ref().unwrap()]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
-        KernelKey::new(format!("conv_{}", self.kernel_element(dst).as_str()))
-    }
-
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }

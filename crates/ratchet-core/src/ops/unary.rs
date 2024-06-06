@@ -227,17 +227,6 @@ impl MetaOperation for Unary {
         self.op.kernel_name().to_string()
     }
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> KernelKey {
-        let kn = self.kernel_name();
-        let ke = self.kernel_element(dst).as_str();
-        let key = if inplace {
-            format!("{}_inplace_{}", kn, ke)
-        } else {
-            format!("{}_{}", kn, ke)
-        };
-        KernelKey::new(key)
-    }
-
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
     }

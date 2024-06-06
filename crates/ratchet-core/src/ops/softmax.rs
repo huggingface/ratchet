@@ -195,10 +195,6 @@ impl MetaOperation for Softmax {
         "softmax".to_string()
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
-        KernelKey::new(format!("softmax_{}", self.kernel_element(dst).as_str()))
-    }
-
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
     }

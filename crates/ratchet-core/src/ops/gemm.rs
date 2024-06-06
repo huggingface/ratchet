@@ -585,7 +585,6 @@ impl GEMM {
         workgroup_size: &WorkgroupSize,
         spec: GEMMSpec,
     ) -> Result<KernelSource, OperationError> {
-        println!("GEMM SPEC: {:#?}", spec);
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),

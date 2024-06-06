@@ -153,12 +153,41 @@ pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
 
 /// Unique string representing a kernel.
 /// If the key is registered in the compute pipeline pool, the pipeline is reused.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, derive_new::new)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct KernelKey(String);
 
 impl KernelKey {
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub fn new(
+        stem: &str,
+        inputs: &[&Tensor],
+        output: &Tensor,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        kernel_element: &KernelElement,
+        additional: Option<&str>,
+    ) -> Self {
+        let mut key = stem.to_string();
+        key.push_str("_");
+        for input in inputs {
+            key.push_str(&input.dt().to_string());
+            key.push_str("_");
+        }
+        key.push_str(&output.dt().to_string());
+        key.push_str("_");
+        key.push_str(&workgroup_size.as_key());
+        key.push_str("_");
+        key.push_str(&inplace.to_string());
+        key.push_str("_");
+        if let Some(add) = additional {
+            key.push_str(add);
+            key.push_str("_");
+        }
+        key.push_str(&kernel_element.as_str());
+        Self(key)
     }
 }
 
@@ -198,7 +227,30 @@ pub trait MetaOperation: Debug + 'static {
     /// Kernel Name
     fn kernel_name(&self) -> String;
 
-    fn kernel_key(&self, workgroup_size: &WorkgroupSize, inplace: bool, dst: &Tensor) -> KernelKey;
+    /// # Kernel Key
+    ///
+    /// Construct a unique cache key for a kernel.
+    /// If the key is registered in the compute module pool, the module is reused.
+    ///
+    /// Default implementation is provided, but care must be taken to ensure that the key is
+    /// unique via the `additional` parameter.
+    fn kernel_key(
+        &self,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> KernelKey {
+        KernelKey::new(
+            &self.kernel_name(),
+            &self.srcs(),
+            dst,
+            workgroup_size,
+            inplace,
+            &kernel_element,
+            None,
+        )
+    }
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -265,7 +317,7 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let key = self.kernel_key(&workload.workgroup_size, can_inplace, dst); //TODO: needs DTYPES
+        let key = self.kernel_key(&workload.workgroup_size, can_inplace, dst, &kernel_element);
 
         let kernel_src_desc = KernelModuleDesc { key };
 

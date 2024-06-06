@@ -171,17 +171,6 @@ impl MetaOperation for Reindex {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
-        let ke = self.kernel_element(dst);
-        let op_key = match self {
-            Reindex::Permute(_) => "permute",
-            Reindex::Slice(_) => "slice",
-            Reindex::Broadcast(_) => "broadcast",
-        };
-
-        KernelKey::new(format!("{}_{}", op_key, ke.as_str()))
-    }
-
     fn write_metadata(
         &self,
         uniform: &mut CpuUniform,

@@ -150,10 +150,6 @@ impl MetaOperation for Cache {
         rvec![&self.cache, &self.source]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
-        KernelKey::new(format!("cache_{}", self.kernel_element(dst).as_str()))
-    }
-
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }

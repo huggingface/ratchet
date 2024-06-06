@@ -156,12 +156,6 @@ impl MetaOperation for Concat {
         self.inputs.iter().collect()
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
-        let ke = self.kernel_element(dst).as_str();
-        let num_inputs = self.inputs.len();
-        KernelKey::new(format!("concat{}_{}", num_inputs, ke))
-    }
-
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }

@@ -240,15 +240,6 @@ impl MetaOperation for NormOp {
         }
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
-        let op_key = match self {
-            NormOp::LayerNorm(_) => "layernorm",
-            NormOp::RMSNorm(_) => "rmsnorm",
-            NormOp::GroupNorm(_) => "groupnorm",
-        };
-        KernelKey::new(format!("{}_{}", op_key, self.kernel_element(dst).as_str()))
-    }
-
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let input = self.srcs()[0];
         let rank = input.rank();

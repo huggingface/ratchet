@@ -420,30 +420,39 @@ impl MetaOperation for Matmul {
         "GEMM".to_string()
     }
 
-    fn kernel_key(&self, workgroup_size: &WorkgroupSize, _: bool, dst: &Tensor) -> KernelKey {
+    fn kernel_key(
+        &self,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> KernelKey {
         let spec = self.compute_spec(dst);
-
-        let (a_fit, b_fit, out_fit) = spec.tile_fit();
-        let ke = spec.select_kernel_element();
         let kernel_stem = if spec.is_gemv() { "gemv" } else { "gemm" };
+        let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let bias_key = if self.bias.is_some() { "bias" } else { "" };
 
-        KernelKey::new(format!(
-            "{}_{}_l{}_r{}_o{}_lf{}_rf{}_of{}_tl{}_tr{}_to{}_{}_{}",
+        let additional = format!(
+            "{}_{}_{}_{}",
+            if a_fit { "a_unchecked" } else { "a_checked" },
+            if b_fit { "b_unchecked" } else { "b_checked" },
+            if out_fit {
+                "out_unchecked"
+            } else {
+                "out_checked"
+            },
+            bias_key
+        );
+
+        KernelKey::new(
             kernel_stem,
-            bias_key,
-            self.lhs.dt(),
-            self.rhs.dt(),
-            dst.dt(),
-            a_fit,
-            b_fit,
-            out_fit,
-            self.trans_lhs,
-            self.trans_rhs,
-            self.trans_out,
+            &self.srcs(),
+            dst,
             workgroup_size,
-            ke.as_str()
-        ))
+            inplace,
+            &kernel_element,
+            Some(&additional),
+        )
     }
 
     fn srcs(&self) -> RVec<&Tensor> {

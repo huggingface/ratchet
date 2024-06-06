@@ -134,10 +134,6 @@ impl MetaOperation for RoPE {
         rvec![&self.input]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> KernelKey {
-        KernelKey::new(format!("rope_{}", self.kernel_element(dst).as_str()))
-    }
-
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }

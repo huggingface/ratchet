@@ -12,6 +12,10 @@ impl WorkgroupSize {
     pub fn product(&self) -> u32 {
         self.x * self.y * self.z
     }
+
+    pub fn as_key(&self) -> String {
+        format!("{}_{}_{}", self.x, self.y, self.z)
+    }
 }
 
 #[macro_export]
