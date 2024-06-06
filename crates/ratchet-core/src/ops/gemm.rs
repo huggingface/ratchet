@@ -88,7 +88,7 @@ impl GEMM {
         _: &Tensor,
         builder: &mut WgslKernelBuilder,
     ) -> Result<(), OperationError> {
-        let (A, _, _) = (&self.lhs, &self.rhs, &self.bias);
+        let (A, B, _) = (&self.lhs, &self.rhs, &self.bias);
         let accessor = P::render_type();
         let W = P::W;
 
@@ -116,11 +116,19 @@ impl GEMM {
         };
         builder.write_global(a_getters);
 
-        builder.write_global(wgsl! {
-            fn getB(d0 : i32, d1 : i32, d2 : i32) -> 'accessor {
-                return 'accessor(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 'W]);
-            }
-        });
+        if A.dt().is_quantized() {
+            builder.write_global(wgsl! {
+                fn getB(d0 : i32, d1 : i32, d2 : i32) -> f32 {
+                    return f32(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 'W]);
+                }
+            });
+        } else {
+            builder.write_global(wgsl! {
+                fn getB(d0 : i32, d1 : i32, d2 : i32) -> 'accessor {
+                    return 'accessor(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 'W]);
+                }
+            });
+        }
 
         Ok(())
     }
@@ -248,11 +256,7 @@ impl GEMM {
             DType::GGUF(GGUFDType::Q8_0(_)) => {
                 builder.register_storage("A", ro, Array::<Scalar<u32>>::default());
                 builder.register_storage("scale", ro, float_arr);
-                if self.trans_rhs {
-                    builder.register_storage("B", ro, Array::<Scalar<f32>>::default());
-                } else {
-                    builder.register_storage("B", ro, Array::<Vec4<f32>>::default());
-                }
+                builder.register_storage("B", ro, Array::<Scalar<f32>>::default());
                 if bias.is_some() {
                     builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
                 }

@@ -793,7 +793,7 @@ def matmul(a, b{}):
             K: 160,
             N: 32,
             has_bias: false,
-            transpose: TransKind::Out,
+            transpose: TransKind::None,
         };
         let SGEMMProblem {
             B,
