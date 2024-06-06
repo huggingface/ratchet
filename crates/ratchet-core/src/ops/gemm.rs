@@ -434,7 +434,7 @@ impl GEMM {
                         wgsl! { bias[globalCol + 'col] }
                     }
                 } else {
-                    wgsl! { 0.0 }
+                    wgsl! { 0. }
                 };
 
                 let writer = if self.trans_out {

@@ -317,7 +317,7 @@ pub trait MetaOperation: Debug + 'static {
         })?;
 
         let key = self.kernel_key(&workload.workgroup_size, can_inplace, dst, &kernel_element);
-        println!("KEY: {}", key);
+        log::debug!("Kernel key: {}", key);
 
         let kernel_src_desc = KernelModuleDesc { key };
 

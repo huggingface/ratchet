@@ -2,8 +2,8 @@ use inline_wgsl::wgsl;
 use std::fmt::Write;
 
 use crate::{
-    Array, BindingMode, BindingType, DeviceFeatures, KernelBinding, KernelSource,
-    OpMetadata, RVec, Scalar, Vec3, WgslPrimitive, WorkgroupSize,
+    Array, BindingMode, BindingType, DeviceFeatures, KernelBinding, KernelSource, OpMetadata, RVec,
+    Scalar, Vec3, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(Debug)]

@@ -268,12 +268,8 @@ impl MetaOperation for Concat {
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
-    
 
-    use crate::{
-        rvec, shape, test_util::run_py_prg, Device, DeviceRequest,
-        Tensor,
-    };
+    use crate::{rvec, shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();

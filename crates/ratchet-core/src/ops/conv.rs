@@ -6,9 +6,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement,
-    KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
-    Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
+    Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
