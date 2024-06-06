@@ -1,17 +1,21 @@
 use crate::gpu::{
     BindGroupLayoutDescriptor, ComputePipelineDescriptor, CpuUniform, PipelineLayoutDescriptor,
-    PoolError, WgpuDevice, WorkgroupCount,
+    PoolError, WgpuDevice,
 };
-use crate::{ops::*, rvec, CompiledOp, InvariantError, RVec, StorageView, Tensor};
+use crate::{
+    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelModuleDesc, RVec,
+    StorageView, Tensor, WgslFragment, WorkgroupSize, Workload,
+};
 use encase::internal::WriteInto;
 use encase::ShaderType;
+use std::borrow::Cow;
 use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum LazyOp {
     Const,
-    GEMM(GEMM),
+    Matmul(Matmul),
     Binary(Binary),
     Unary(Unary),
     Reindex(Reindex),
@@ -31,7 +35,7 @@ impl LazyOp {
     pub fn name(&self) -> String {
         match self {
             LazyOp::Binary(b) => b.kernel_name(),
-            LazyOp::GEMM(m) => m.kernel_name(),
+            LazyOp::Matmul(m) => m.kernel_name(),
             LazyOp::Softmax(s) => s.kernel_name(),
             LazyOp::Unary(u) => u.kernel_name(),
             LazyOp::Reindex(r) => r.kernel_name(),
@@ -50,7 +54,7 @@ impl LazyOp {
     pub fn srcs(&self) -> RVec<&Tensor> {
         match self {
             LazyOp::Binary(b) => b.srcs(),
-            LazyOp::GEMM(m) => m.srcs(),
+            LazyOp::Matmul(m) => m.srcs(),
             LazyOp::RoPE(r) => r.srcs(),
             LazyOp::Softmax(s) => s.srcs(),
             LazyOp::Unary(u) => u.srcs(),
@@ -69,7 +73,7 @@ impl LazyOp {
     pub fn supports_inplace(&self) -> bool {
         match self {
             LazyOp::Binary(b) => b.supports_inplace(),
-            LazyOp::GEMM(m) => m.supports_inplace(),
+            LazyOp::Matmul(m) => m.supports_inplace(),
             LazyOp::RoPE(r) => r.supports_inplace(),
             LazyOp::Softmax(s) => s.supports_inplace(),
             LazyOp::Unary(u) => u.supports_inplace(),
@@ -93,7 +97,7 @@ impl LazyOp {
     pub fn check_invariants(&self) {
         match self {
             LazyOp::Binary(b) => b.check_invariants(),
-            LazyOp::GEMM(m) => m.check_invariants(),
+            LazyOp::Matmul(m) => m.check_invariants(),
             LazyOp::RoPE(r) => r.check_invariants(),
             LazyOp::Softmax(s) => s.check_invariants(),
             LazyOp::Unary(u) => u.check_invariants(),
@@ -127,6 +131,8 @@ pub enum OperationError {
     #[error(transparent)]
     InvariantError(#[from] InvariantError),
     #[error(transparent)]
+    KernelBuildError(#[from] KernelBuildError),
+    #[error(transparent)]
     UniformError(#[from] encase::internal::Error),
     #[error(transparent)]
     UnknownError(#[from] anyhow::Error),
@@ -139,7 +145,78 @@ pub enum OperationError {
 /// Some kernels may not know their metadata at compile time, so this is not an associated type.
 /// If they do not know their metadata at compile time, they should use [DynamicUniformBuffer] from
 /// encase.
-pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {}
+pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
+    fn render() -> WgslFragment {
+        todo!()
+    }
+}
+
+/// Unique string representing a kernel.
+/// If the key is registered in the compute pipeline pool, the pipeline is reused.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct KernelKey(String);
+
+impl KernelKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn new(
+        stem: &str,
+        inputs: &[&Tensor],
+        output: &Tensor,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        kernel_element: &KernelElement,
+        additional: Option<&str>,
+    ) -> Self {
+        let mut key = stem.to_string();
+        key.push('_');
+        for input in inputs {
+            key.push_str(&input.dt().to_string());
+            key.push('_');
+        }
+        key.push_str(&output.dt().to_string());
+        key.push('_');
+        key.push_str(&workgroup_size.as_key());
+        key.push('_');
+        key.push_str(&inplace.to_string());
+        key.push('_');
+        if let Some(add) = additional {
+            key.push_str(add);
+            key.push('_');
+        }
+        key.push_str(kernel_element.as_str());
+        Self(key)
+    }
+}
+
+impl std::fmt::Display for KernelKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug)]
+pub struct KernelSource(pub Cow<'static, str>);
+
+impl From<WgslFragment> for KernelSource {
+    fn from(value: WgslFragment) -> Self {
+        Self(Cow::Owned(value.0))
+    }
+}
+
+impl From<KernelSource> for wgpu::ShaderSource<'static> {
+    fn from(val: KernelSource) -> Self {
+        wgpu::ShaderSource::Wgsl(val.0)
+    }
+}
+
+impl std::fmt::Display for KernelSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// # MetaOperation
 ///
@@ -150,8 +227,30 @@ pub trait MetaOperation: Debug + 'static {
     /// Kernel Name
     fn kernel_name(&self) -> String;
 
-    /// Return the string key of the kernel source file.
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String;
+    /// # Kernel Key
+    ///
+    /// Construct a unique cache key for a kernel.
+    /// If the key is registered in the compute module pool, the module is reused.
+    ///
+    /// Default implementation is provided, but care must be taken to ensure that the key is
+    /// unique via the `additional` parameter.
+    fn kernel_key(
+        &self,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> KernelKey {
+        KernelKey::new(
+            &self.kernel_name(),
+            &self.srcs(),
+            dst,
+            workgroup_size,
+            inplace,
+            kernel_element,
+            None,
+        )
+    }
 
     fn srcs(&self) -> RVec<&Tensor>;
 
@@ -167,7 +266,7 @@ pub trait MetaOperation: Debug + 'static {
     /// # Calculate Dispatch
     ///
     /// Determine required amount of workgroups to execute the operation.
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError>;
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError>;
 
     /// # Storage Bind Group Layout
     ///
@@ -190,6 +289,13 @@ pub trait MetaOperation: Debug + 'static {
         kernel_element: &KernelElement,
     ) -> Result<u64, OperationError>;
 
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError>;
+
     fn compile(
         &self,
         dst: &Tensor,
@@ -200,7 +306,7 @@ pub trait MetaOperation: Debug + 'static {
         let kernel_element = self.kernel_element(dst);
         let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
 
-        let workgroup_count = self.calculate_dispatch(dst)?;
+        let workload = self.calculate_dispatch(dst)?;
 
         let storage_layout = device
             .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
@@ -210,10 +316,24 @@ pub trait MetaOperation: Debug + 'static {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let kernel_key = self.kernel_key(can_inplace, dst);
+        let key = self.kernel_key(&workload.workgroup_size, can_inplace, dst, &kernel_element);
+        log::debug!("Kernel key: {}", key);
+
+        let kernel_src_desc = KernelModuleDesc { key };
+
+        let kernel_module = device.get_or_create_compute_module(
+            &kernel_src_desc,
+            self,
+            can_inplace,
+            dst,
+            &workload.workgroup_size,
+            dst.device().try_gpu().unwrap(),
+        );
+
         let pipeline_descriptor = ComputePipelineDescriptor {
             pipeline_layout,
-            kernel_key: kernel_key.clone(),
+            kernel_key: kernel_src_desc.key.clone(),
+            kernel_module,
         };
         let pipeline_handle = device.get_or_create_compute_pipeline(&pipeline_descriptor)?;
 
@@ -224,15 +344,14 @@ pub trait MetaOperation: Debug + 'static {
             rvec![storage_layout],
             device,
             can_inplace,
-            &kernel_key,
         )?;
 
         Ok(CompiledOp::new(
             pipeline_handle,
-            workgroup_count,
+            workload.workgroup_count,
             storage_bind_groups,
             offset as _,
-            kernel_key,
+            kernel_src_desc.key,
         ))
     }
 }

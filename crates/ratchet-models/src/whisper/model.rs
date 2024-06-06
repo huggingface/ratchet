@@ -274,9 +274,9 @@ mod tests {
             .iter()
             .flat_map(|s| s.tokens.clone().into_iter())
             .collect::<Vec<_>>();
-        assert_eq!(all_tokens, MM0_Q8_GROUND);
 
         println!("{}", transcript.formatted.unwrap());
         println!("Processing time: {:?}", transcript.processing_time);
+        assert_eq!(all_tokens, MM0_Q8_GROUND);
     }
 }

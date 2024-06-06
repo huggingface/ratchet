@@ -124,6 +124,7 @@ mod tests {
     use super::SpectrogramGenerator;
     use hf_hub::api::sync::Api;
     use ratchet::test_util::run_py_prg;
+    use ratchet::DType;
     use std::path::PathBuf;
 
     const MAX_DIFF: f32 = 5e-5;
@@ -157,7 +158,7 @@ def ground_truth():
 "#,
             gb0.to_str().unwrap()
         );
-        let ground_truth = run_py_prg(prg.to_string(), &[], &[]).unwrap();
+        let ground_truth = run_py_prg(prg.to_string(), &[], &[], DType::F32).unwrap();
         let generator = SpectrogramGenerator::new(load_npy(mels));
         let result = generator.generate(load_sample(gb0)).unwrap();
         ground_truth.all_close(&result, MAX_DIFF, MAX_DIFF).unwrap();

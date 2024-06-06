@@ -78,7 +78,7 @@ def embedding(weight, indices):
 "#,
             arg
         );
-        run_py_prg(prg.to_string(), &[weight, indices], &[])
+        run_py_prg(prg.to_string(), &[weight, indices], &[], weight.dt())
     }
 
     fn run_embedding_trial(problem: EmbeddingProblem) {
@@ -91,7 +91,6 @@ def embedding(weight, indices):
         let weight = Tensor::randn::<f32>(vocab_shape, Device::CPU);
 
         let ground_truth = ground_truth(&weight, &indices).unwrap();
-        println!("GROUND TRUTH: {:?}", ground_truth);
 
         let weight = weight.to(&device).unwrap();
         let indices = indices.to(&device).unwrap();
@@ -99,7 +98,6 @@ def embedding(weight, indices):
         let embedding = Embedding::new(weight);
         let result = embedding.schedule(indices).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
-        println!("OURS: {:?}", x);
         ground_truth.all_close(&x, 1e-6, 1e-6).unwrap();
     }
 

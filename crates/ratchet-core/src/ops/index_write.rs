@@ -1,10 +1,14 @@
 use derive_new::new;
 use encase::ShaderType;
+use half::f16;
+use inline_wgsl::wgsl;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
-    Shape, StorageView, Strides, Tensor,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
+    OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -14,14 +18,59 @@ pub struct IndexWrite {
     write_start: RVec<usize>,
 }
 
-#[derive(Debug, derive_new::new, ShaderType)]
+impl IndexWrite {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        _: bool,
+    ) -> Result<(), OperationError> {
+        let arr = Array::<P>::default();
+        builder.register_storage("D", BindingMode::ReadWrite, arr);
+        builder.register_storage("S", BindingMode::ReadOnly, arr);
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn build_index_write<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.src.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::NumWorkgroups,
+                BuiltIn::WorkgroupId,
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<IndexWriteMeta>();
+        kernel_builder.write_index_to_offset();
+
+        kernel_builder.write_main(wgsl! {
+            let x_offset = workgroup_id.x * 64u;
+            let thread_offset = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_index;
+            if (thread_offset >= metadata.src_numel) {
+                return;
+            }
+            let offset_index = ndIndexToOffset(metadata.write_start, metadata.dst_strides);
+            D[offset_index + thread_offset] = S[thread_offset];
+        });
+
+        Ok(kernel_builder.build()?)
+    }
+}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct IndexWriteMeta {
     dst_strides: glam::UVec4,
     src_numel: u32,
     write_start: glam::UVec4,
 }
-
-impl OpMetadata for IndexWriteMeta {}
 
 impl OpGuards for IndexWrite {
     fn check_shapes(&self) {}
@@ -48,24 +97,58 @@ impl MetaOperation for IndexWrite {
         rvec![&self.dst, &self.src]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        format!("index_write_{}", self.kernel_element(dst).as_str())
-    }
-
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }
 
-    fn calculate_dispatch(&self, _: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (self.src.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_index_write::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_index_write::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_index_write::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_index_write::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_index_write::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_index_write::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                self.src.dt(),
+                kernel_element
+            ))),
+        }
+    }
+
+    fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![8, 8, 1];
         let numel = self.src.shape().numel();
-        let x_groups = WorkgroupCount::div_ceil(numel as _, 64);
+        let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
         let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
             let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
             (WorkgroupCount::MAX_WGS_PER_DIM, y_groups)
         } else {
             (x_groups, 1)
         };
-        Ok(wgc![x_groups as _, y_groups as _, 1])
+        Ok(Workload {
+            workgroup_count: wgc![x_groups as _, y_groups as _, 1],
+            workgroup_size,
+        })
     }
 
     fn storage_bind_group_layout(

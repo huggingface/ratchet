@@ -1,4 +1,36 @@
 use derive_new::new;
+use inline_wgsl::wgsl;
+
+#[derive(Debug, Clone, new, PartialEq, Eq, Hash)]
+pub struct WorkgroupSize {
+    pub x: u32,
+    pub y: u32,
+    pub z: u32,
+}
+
+impl WorkgroupSize {
+    pub fn product(&self) -> u32 {
+        self.x * self.y * self.z
+    }
+
+    pub fn as_key(&self) -> String {
+        format!("{}_{}_{}", self.x, self.y, self.z)
+    }
+}
+
+#[macro_export]
+macro_rules! wgs {
+    ($x:expr, $y:expr, $z:expr) => {
+        $crate::gpu::WorkgroupSize::new($x, $y, $z)
+    };
+}
+
+impl std::fmt::Display for WorkgroupSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let WorkgroupSize { x, y, z } = self;
+        write!(f, "{}", wgsl! { @compute @workgroup_size('x, 'y, 'z) })
+    }
+}
 
 #[macro_export]
 macro_rules! wgc {
@@ -37,7 +69,7 @@ impl WorkgroupCount {
         [self.x, self.y, self.z]
     }
 
-    pub fn total_count(&self) -> u32 {
+    pub fn product(&self) -> u32 {
         self.x * self.y * self.z
     }
 
@@ -57,4 +89,10 @@ impl Default for WorkgroupCount {
     fn default() -> Self {
         Self::new(1, 1, 1)
     }
+}
+
+#[derive(Debug)]
+pub struct Workload {
+    pub workgroup_size: WorkgroupSize,
+    pub workgroup_count: WorkgroupCount,
 }

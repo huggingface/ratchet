@@ -1,11 +1,16 @@
 use derive_new::new;
 use encase::ShaderType;
+use half::f16;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
+    gguf::GGUFDType,
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation,
-    OperationError, RVec, StorageView, Strides, Tensor,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
+    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
+use inline_wgsl::wgsl;
 
 #[derive(new, Debug, Clone)]
 pub struct IndexSelect {
@@ -14,15 +19,103 @@ pub struct IndexSelect {
     dim: usize,
 }
 
-#[derive(Debug, derive_new::new, ShaderType)]
+impl IndexSelect {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        let index_arr = Array::<Scalar<i32>>::default();
+        match self.input.dt() {
+            DType::F16 | DType::F32 => {
+                builder.register_storage("E", BindingMode::ReadOnly, Array::<P>::default());
+                builder.register_storage("I", BindingMode::ReadOnly, index_arr);
+                builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
+            }
+            DType::GGUF(g) => match g {
+                GGUFDType::Q8_0(_) => {
+                    let packed_arr = Array::<Scalar<u32>>::default();
+                    let scale_arr = Array::<Scalar<f32>>::default();
+                    builder.register_storage("E", BindingMode::ReadOnly, packed_arr);
+                    builder.register_storage("S", BindingMode::ReadOnly, scale_arr);
+                    builder.register_storage("I", BindingMode::ReadOnly, index_arr);
+                    builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
+                }
+                _ => unimplemented!(),
+            },
+            _ => unimplemented!(),
+        }
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn build_index_select<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.input.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::GlobalInvocationId,
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::WorkgroupId,
+            ],
+            device.compute_features().clone(),
+        );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<IndexSelectMeta>();
+
+        //TODO: REFACTOR
+        if matches!(self.input.dt(), DType::GGUF(_)) {
+            kernel_builder.write_main(wgsl! {
+                let tid = workgroup_id.x * 64u + local_invocation_index;
+                let right_numel = metadata.right_numel/ 4u;
+                let src_dim_numel = metadata.src_dim_numel/ 4u;
+
+                if (tid >= metadata.dst_numel / 4u) {
+                    return;
+                }
+
+                let id_i = (tid / right_numel) % metadata.ids_numel;
+                let input_i = min(u32(I[id_i]), (src_dim_numel * 4u) - 1u);
+                let right_rank_i = tid % right_numel;
+                let left_rank_i = tid / (right_numel * metadata.ids_numel);
+
+                let src_i = left_rank_i * src_dim_numel * right_numel + input_i * right_numel + right_rank_i;
+                Y[tid] = unpack4x8snorm(E[src_i]) * 127f * S[src_i / 8u];
+
+            });
+        } else {
+            kernel_builder.write_main(wgsl! {
+                let tid = workgroup_id.x * 64u + local_invocation_index;
+                if (tid >= metadata.dst_numel) {
+                    return;
+                }
+                let id_i = (tid / metadata.right_numel) % metadata.ids_numel;
+                let input_i = min(u32(I[id_i]), metadata.src_dim_numel - 1u);
+                let right_rank_index = tid % metadata.right_numel;
+                let left_rank_index = tid / (metadata.right_numel * metadata.ids_numel);
+
+                let left_offset = left_rank_index * metadata.src_dim_numel * metadata.right_numel;
+                let right_offset = input_i * metadata.right_numel + right_rank_index;
+                Y[tid] = E[left_offset + right_offset];
+            });
+        };
+
+        Ok(kernel_builder.build()?)
+    }
+}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct IndexSelectMeta {
     dst_numel: u32,
     right_numel: u32,
     ids_numel: u32,
     src_dim_numel: u32,
 }
-
-impl OpMetadata for IndexSelectMeta {}
 
 impl Operation for IndexSelect {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
@@ -45,6 +138,7 @@ impl OpGuards for IndexSelect {
 
     fn check_dtypes(&self) {
         let indices = &self.indices;
+        //TODO: support others
         assert_eq!(indices.dt(), DType::I32);
     }
 }
@@ -58,27 +152,22 @@ impl MetaOperation for IndexSelect {
         rvec![&self.input, &self.indices]
     }
 
-    fn kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        let op_key = match self.input.dt() {
-            DType::F32 => "f32_index_select",
-            DType::GGUF(_) => "wq8_index_select",
-            _ => unimplemented!(),
-        };
-        format!("{}_{}", op_key, self.kernel_element(dst).as_str())
-    }
-
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![8, 8, 1];
         let numel = match self.input.dt() {
             DType::F32 => dst.shape().numel(),
             DType::GGUF(_) => dst.shape().numel() / 4,
             _ => unimplemented!(),
         };
-        let wgcx = WorkgroupCount::div_ceil(numel, 64);
-        Ok(wgc![wgcx as _, 1, 1])
+        let wgcx = WorkgroupCount::div_ceil(numel, 64) as _;
+        Ok(Workload {
+            workgroup_size,
+            workgroup_count: wgc![wgcx, 1, 1],
+        })
     }
 
     fn storage_bind_group_layout(
@@ -112,6 +201,44 @@ impl MetaOperation for IndexSelect {
             src_dim_numel,
         };
         Ok(uniform.write(&meta)?)
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (self.input.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_index_select::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_index_select::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_index_select::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_index_select::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::GGUF(g), _) => {
+                assert!(matches!(g, GGUFDType::Q8_0(_)));
+                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                self.input.dt(),
+                kernel_element
+            ))),
+        }
     }
 }
 
@@ -156,7 +283,7 @@ def index_select(input, indices):
 "#,
             dim
         );
-        run_py_prg(prg.to_string(), &[input, indices], &[])
+        run_py_prg(prg.to_string(), &[input, indices], &[], input.dt())
     }
 
     fn run_index_select_trial(problem: IndexSelectProblem, quantize: bool) {

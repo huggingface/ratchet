@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-
-use crate::{gpu::WgpuDevice, kernels};
+use crate::{gpu::WgpuDevice, KernelKey, KernelModuleHandle};
 
 use super::{
     PipelineLayoutHandle, StaticResourcePool, StaticResourcePoolAccessor,
@@ -12,13 +10,19 @@ slotmap::new_key_type! { pub struct ComputePipelineHandle; }
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ComputePipelineDescriptor {
     pub pipeline_layout: PipelineLayoutHandle,
-    pub kernel_key: String,
-    //aux_ctx: Option<RVec<(&'static str, u32)>>, Used for sizing SMEM
+    pub kernel_key: KernelKey,
+    pub kernel_module: KernelModuleHandle,
 }
 
 pub struct ComputePipelinePool {
     inner:
         StaticResourcePool<ComputePipelineHandle, ComputePipelineDescriptor, wgpu::ComputePipeline>,
+}
+
+impl Default for ComputePipelinePool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ComputePipelinePool {
@@ -34,25 +38,11 @@ impl ComputePipelinePool {
         device: &WgpuDevice,
     ) -> ComputePipelineHandle {
         self.inner.get_or_create(desc, |desc| {
-            //println!("Kernel: {}", desc.kernel_key);
-            let shader = kernels()
-                .get(desc.kernel_key.as_str())
-                .unwrap_or_else(|| panic!("Kernel {} not found", desc.kernel_key));
-
             let label = Some(desc.kernel_key.as_str());
+            println!("LABEL: {:?}", label);
+            let kernel_resources = device.kernel_module_resources();
 
-            let shader_module_desc = wgpu::ShaderModuleDescriptor {
-                label,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader)),
-            };
-
-            //We don't cache shader modules because pipelines are cached
-            let module = if std::env::var("RATCHET_CHECKED").is_ok() {
-                log::warn!("Using checked shader compilation");
-                device.create_shader_module(shader_module_desc)
-            } else {
-                unsafe { device.create_shader_module_unchecked(shader_module_desc) }
-            };
+            let module = kernel_resources.get(desc.kernel_module).unwrap();
 
             let pipeline_layouts = device.pipeline_layout_resources();
             let pipeline_layout = pipeline_layouts.get(desc.pipeline_layout).unwrap();
@@ -60,12 +50,13 @@ impl ComputePipelinePool {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label,
                 layout: Some(pipeline_layout),
-                module: &module,
+                module,
                 entry_point: "main",
                 compilation_options: wgpu::PipelineCompilationOptions {
                     zero_initialize_workgroup_memory: false,
                     ..Default::default()
                 },
+                cache: None,
             })
         })
     }

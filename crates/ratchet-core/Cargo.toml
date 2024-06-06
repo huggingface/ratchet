@@ -23,6 +23,8 @@ serde = { workspace = true, features = ["derive"] }
 pathdiff = { workspace = true }
 
 [dependencies]
+ratchet-macros = { path = "../ratchet-macros"}
+inline-wgsl = { git = "https://github.com/FL33TW00D/inline-wgsl.git", branch = "master" }
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
 half = { workspace = true }
@@ -57,7 +59,7 @@ itertools = { workspace = true, optional = true }
 
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true } 
 regex = { workspace = true, optional = true }
-numpy = { workspace = true, optional = true }
+numpy = { workspace = true, optional = true, features=["half"]}
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true 

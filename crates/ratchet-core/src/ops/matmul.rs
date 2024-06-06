@@ -5,8 +5,9 @@ use encase::ShaderType;
 use crate::{
     gguf::{GGUFDType, Q8_0},
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, DType, InvariantError, KernelElement, MetaOperation, OpGuards, OpMetadata,
-    Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
+    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    WorkgroupSize, Workload, GEMM, GEMV,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -19,10 +20,10 @@ pub enum GEMVHeuristic {
 }
 
 impl GEMVHeuristic {
-    pub fn as_workload(&self) -> (usize, usize) {
+    pub fn as_workgroup_size(&self) -> (usize, usize) {
         match self {
             GEMVHeuristic::Fat => (4, 256),
-            _ => (16, 16),
+            _ => (8, 8),
         }
     }
 }
@@ -30,103 +31,103 @@ impl GEMVHeuristic {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct GEMMSpec {
-    a_dt: DType,
-    b_dt: DType,
-    a_shape: Shape,
-    b_shape: Shape,
-    c_shape: Shape,
-    a_stack: usize,
-    b_stack: usize,
-    c_stack: usize,
-    trans_a: bool,
-    trans_b: bool,
+    lhs_dt: DType,
+    rhs_dt: DType,
+    lhs_shape: Shape,
+    rhs_shape: Shape,
+    out_shape: Shape,
+    lhs_stack: usize,
+    rhs_stack: usize,
+    out_stack: usize,
+    trans_lhs: bool,
+    trans_rhs: bool,
     trans_out: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
-    heuristic: GEMVHeuristic,
+    pub heuristic: GEMVHeuristic, //TODO: split this
 }
 
 impl GEMMSpec {
+    //TODO: variable tiles
     pub const TILE_DIM: usize = 32;
     pub const ROW_PER_THREAD: usize = 4;
 
     pub fn new(
-        A: &Tensor,
-        B: &Tensor,
-        C: &Tensor,
-        trans_a: bool,
-        trans_b: bool,
+        LHS: &Tensor,
+        RHS: &Tensor,
+        OUT: &Tensor,
+        trans_lhs: bool,
+        trans_rhs: bool,
         trans_out: bool,
     ) -> Self {
-        let mut a_shape = A.shape().clone();
-        let mut b_shape = B.shape().clone();
-        let mut c_shape = C.shape().clone();
-        let a_dt = A.dt();
-        let b_dt = B.dt();
+        let mut lhs_shape = LHS.shape().clone();
+        let mut rhs_shape = RHS.shape().clone();
+        let mut c_shape = OUT.shape().clone();
+        let a_dt = LHS.dt();
+        let rhs_dt = RHS.dt();
 
-        if (a_shape.rank() < 2) || (b_shape.rank() < 2) {
+        if (lhs_shape.rank() < 2) || (rhs_shape.rank() < 2) {
             panic!("MatMul: inputs must be at least 2D");
         }
 
-        match a_shape.rank().cmp(&b_shape.rank()) {
+        match lhs_shape.rank().cmp(&rhs_shape.rank()) {
             Ordering::Less => {
-                a_shape.left_pad_to(1, b_shape.rank());
+                lhs_shape.left_pad_to(1, rhs_shape.rank());
             }
             Ordering::Greater => {
-                b_shape.left_pad_to(1, a_shape.rank());
+                rhs_shape.left_pad_to(1, lhs_shape.rank());
             }
             _ => {}
         };
 
-        let _b_rank = b_shape.rank();
+        let _b_rank = rhs_shape.rank();
 
         let stack_dims = c_shape.rank() - 2;
         let stack_shape = c_shape.slice(0..stack_dims);
 
-        let a_stack = a_shape.drain(0..stack_dims).product();
-        let b_stack = b_shape.drain(0..stack_dims).product();
-        let c_stack = c_shape.drain(0..stack_dims).product();
+        let lhs_stack = lhs_shape.drain(0..stack_dims).product();
+        let rhs_stack = rhs_shape.drain(0..stack_dims).product();
+        let out_stack = c_shape.drain(0..stack_dims).product();
 
-        if a_stack != 1 && b_stack != 1 {
+        if lhs_stack != 1 && rhs_stack != 1 {
             //Here we want all of the stacks to be equal
             //OR A or B to be 1
-            assert!(a_stack == b_stack && b_stack == c_stack);
+            assert!(lhs_stack == rhs_stack && rhs_stack == out_stack);
         }
 
-        if a_shape.rank() == 1 {
-            a_shape.insert(0, 1);
+        if lhs_shape.rank() == 1 {
+            lhs_shape.insert(0, 1);
         }
 
-        if b_shape.rank() == 1 {
-            b_shape.insert(0, 1);
+        if rhs_shape.rank() == 1 {
+            rhs_shape.insert(0, 1);
         }
 
         log::debug!(
             "MatMul stacking: left {} right {} stack_dims={} stack_count={}",
-            a_shape,
-            b_shape,
+            lhs_shape,
+            rhs_shape,
             stack_dims,
             stack_shape.numel(),
         );
 
-        let heuristic = match (a_shape[0], a_shape[1]) {
+        let heuristic = match (lhs_shape[0], lhs_shape[1]) {
             (arows, acols) if arows > acols * 4 => GEMVHeuristic::VeryTall,
             (arows, acols) if arows > acols * 2 => GEMVHeuristic::Tall,
             (arows, acols) if acols > arows * 2 => GEMVHeuristic::Fat,
             _ => GEMVHeuristic::Square,
         };
-        //println!("SELECTED HEURISTIC: {:?} for {:?}", heuristic, a_shape);
 
         Self {
-            a_dt,
-            b_dt,
-            a_shape,
-            b_shape,
-            c_shape,
-            a_stack,
-            b_stack,
-            c_stack,
-            trans_a,
-            trans_b,
+            lhs_dt: a_dt,
+            rhs_dt,
+            lhs_shape,
+            rhs_shape,
+            out_shape: c_shape,
+            lhs_stack,
+            rhs_stack,
+            out_stack,
+            trans_lhs,
+            trans_rhs,
             trans_out,
             stack_shape,
             heuristic,
@@ -134,7 +135,7 @@ impl GEMMSpec {
     }
 
     pub fn select_kernel_element(&self) -> KernelElement {
-        if self.trans_a || self.trans_b || self.trans_out || self.b_shape.is_vector() {
+        if self.trans_lhs || self.trans_rhs || self.trans_out || self.rhs_shape.is_vector() {
             //We cannot support transposed with vectorized kernels
             //If GEMV we use Scalar
             return KernelElement::Scalar;
@@ -142,10 +143,10 @@ impl GEMMSpec {
 
         let checks = [
             self.dim_inner(),
-            self.c_shape[1],
-            self.a_shape.numel(),
-            self.b_shape.numel(),
-            self.c_shape.numel(),
+            self.out_shape[1],
+            self.lhs_shape.numel(),
+            self.rhs_shape.numel(),
+            self.out_shape.numel(),
         ];
 
         if checks.iter().all(|&x| x % 4 == 0) {
@@ -156,65 +157,69 @@ impl GEMMSpec {
     }
 
     pub fn lhs_shape(&self) -> &Shape {
-        &self.a_shape
+        &self.lhs_shape
     }
 
     pub fn rhs_shape(&self) -> &Shape {
-        &self.b_shape
+        &self.rhs_shape
     }
 
-    pub fn c_shape(&self) -> &Shape {
-        &self.c_shape
+    pub fn out_shape(&self) -> &Shape {
+        &self.out_shape
     }
 
-    pub fn dim_a_outer(&self) -> usize {
-        self.c_shape[0]
+    pub fn dim_lhs_outer(&self) -> usize {
+        self.out_shape[0]
     }
-    pub fn dim_b_outer(&self) -> usize {
-        self.c_shape[1]
+    pub fn dim_rhs_outer(&self) -> usize {
+        self.out_shape[1]
     }
 
     pub fn dim_inner(&self) -> usize {
-        if self.trans_a {
-            self.a_shape[0]
+        if self.trans_lhs {
+            self.lhs_shape[0]
         } else {
-            self.a_shape[1]
+            self.lhs_shape[1]
         }
     }
 
-    pub fn a_stack(&self) -> usize {
-        self.a_stack
+    pub fn lhs_stack(&self) -> usize {
+        self.lhs_stack
     }
 
-    pub fn b_stack(&self) -> usize {
-        self.b_stack
+    pub fn rhs_stack(&self) -> usize {
+        self.rhs_stack
     }
 
-    pub fn c_stack(&self) -> usize {
-        self.c_stack
+    pub fn out_stack(&self) -> usize {
+        self.out_stack
     }
 
     pub fn stacks(&self) -> usize {
         self.stack_shape.numel()
     }
 
-    pub fn b_dt(&self) -> DType {
-        self.b_dt
+    pub fn rhs_dt(&self) -> DType {
+        self.rhs_dt
+    }
+
+    pub fn is_gemv(&self) -> bool {
+        self.rhs_shape.is_vector() && !self.trans_lhs
     }
 
     pub fn stacked_shapes(&self) -> (Shape, Shape, Shape) {
-        let mut a_shape = self.a_shape.clone();
-        let mut b_shape = self.b_shape.clone();
-        let mut c_shape = self.c_shape.clone();
-        a_shape.insert(0, self.stacks());
-        b_shape.insert(0, self.stacks());
-        c_shape.insert(0, self.stacks());
-        (a_shape, b_shape, c_shape)
+        let mut lhs_shape = self.lhs_shape.clone();
+        let mut rhs_shape = self.rhs_shape.clone();
+        let mut out_shape = self.out_shape.clone();
+        lhs_shape.insert(0, self.stacks());
+        rhs_shape.insert(0, self.stacks());
+        out_shape.insert(0, self.stacks());
+        (lhs_shape, rhs_shape, out_shape)
     }
 
     pub fn tile_fit(&self) -> (bool, bool, bool) {
-        let dimAOuter = self.dim_a_outer();
-        let dimBOuter = self.dim_b_outer();
+        let dimAOuter = self.dim_lhs_outer();
+        let dimBOuter = self.dim_rhs_outer();
         let dimInner = self.dim_inner();
 
         let a_fit = dimAOuter % Self::TILE_DIM == 0;
@@ -225,16 +230,16 @@ impl GEMMSpec {
 }
 
 #[derive(Debug, Clone)]
-pub struct GEMM {
-    lhs: Tensor,
-    rhs: Tensor,
-    bias: Option<Tensor>,
-    trans_lhs: bool,
-    trans_rhs: bool,
-    trans_out: bool,
+pub struct Matmul {
+    pub(crate) lhs: Tensor,
+    pub(crate) rhs: Tensor,
+    pub(crate) bias: Option<Tensor>,
+    pub(crate) trans_lhs: bool,
+    pub(crate) trans_rhs: bool,
+    pub(crate) trans_out: bool,
 }
 
-impl GEMM {
+impl Matmul {
     pub fn new(
         lhs: Tensor,
         rhs: Tensor,
@@ -350,77 +355,6 @@ impl GEMM {
             self.trans_out,
         )
     }
-
-    pub fn gemm_kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        let spec = self.compute_spec(dst);
-
-        let (a_fit, b_fit, out_fit) = spec.tile_fit();
-        let ke = spec.select_kernel_element();
-
-        let kernel_stem = if matches!(self.lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) {
-            "qgemm"
-        } else {
-            "sgemm"
-        };
-
-        let has_bias = self.bias.is_some();
-
-        match ke {
-            KernelElement::Scalar => {
-                format!(
-                    "{}_{}_{}_{}_{}_{}_{}_{}_{}",
-                    kernel_stem,
-                    has_bias,
-                    a_fit,
-                    b_fit,
-                    out_fit,
-                    self.trans_lhs,
-                    self.trans_rhs,
-                    self.trans_out,
-                    ke.as_str()
-                )
-            }
-            _ => {
-                format!(
-                    "{}_{}_{}_{}_{}_{}",
-                    kernel_stem,
-                    has_bias,
-                    a_fit,
-                    b_fit,
-                    out_fit,
-                    ke.as_str()
-                )
-            }
-        }
-    }
-
-    pub fn gemv_kernel_key(&self, _: bool, dst: &Tensor) -> String {
-        let spec = self.compute_spec(dst);
-
-        let ke = spec.select_kernel_element();
-
-        let kernel_stem = if matches!(self.lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) {
-            "qgemv"
-        } else {
-            "sgemv"
-        };
-
-        let has_bias = self.bias.is_some();
-
-        let (TILE_X, YT) = spec.heuristic.as_workload();
-
-        let a_fit = spec.lhs_shape()[1] % TILE_X == 0;
-
-        format!(
-            "{}_{}_{}_{}_{}_{}",
-            kernel_stem,
-            has_bias,
-            TILE_X,
-            YT,
-            a_fit,
-            ke.as_str()
-        )
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -439,9 +373,9 @@ pub struct MatmulMeta {
 
 impl OpMetadata for MatmulMeta {}
 
-impl Operation for GEMM {
+impl Operation for Matmul {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        let c_shape = GEMM::compute_c_shape(
+        let c_shape = Matmul::compute_c_shape(
             &self.lhs,
             &self.rhs,
             self.trans_lhs,
@@ -454,9 +388,9 @@ impl Operation for GEMM {
     }
 }
 
-impl OpGuards for GEMM {
+impl OpGuards for Matmul {
     fn check_shapes(&self) {
-        let c_shape = GEMM::compute_c_shape(
+        let c_shape = Matmul::compute_c_shape(
             &self.lhs,
             &self.rhs,
             self.trans_lhs,
@@ -469,6 +403,7 @@ impl OpGuards for GEMM {
     fn check_dtypes(&self) {
         let allowed_pairs = [
             (DType::F32, DType::F32),
+            (DType::F16, DType::F16),
             (DType::GGUF(GGUFDType::Q8_0(Q8_0)), DType::F32),
         ];
         if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
@@ -481,17 +416,43 @@ impl OpGuards for GEMM {
     }
 }
 
-impl MetaOperation for GEMM {
+impl MetaOperation for Matmul {
     fn kernel_name(&self) -> String {
         "GEMM".to_string()
     }
 
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        if self.rhs.shape().is_vector() && !self.trans_lhs {
-            self.gemv_kernel_key(inplace, dst)
-        } else {
-            self.gemm_kernel_key(inplace, dst)
-        }
+    fn kernel_key(
+        &self,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> KernelKey {
+        let spec = self.compute_spec(dst);
+        let kernel_stem = if spec.is_gemv() { "gemv" } else { "gemm" };
+        let (a_fit, b_fit, out_fit) = spec.tile_fit();
+        let bias_key = if self.bias.is_some() { "bias" } else { "" };
+
+        let additional = format!(
+            "{}_{}_{}_{}_{}_{}_{}",
+            if a_fit { "" } else { "a_checked" },
+            if b_fit { "" } else { "b_checked" },
+            if out_fit { "" } else { "out_checked" },
+            if self.trans_lhs { "trans_a" } else { "" },
+            if self.trans_rhs { "trans_b" } else { "" },
+            if self.trans_out { "trans_out" } else { "" },
+            bias_key
+        );
+
+        KernelKey::new(
+            kernel_stem,
+            &self.srcs(),
+            dst,
+            workgroup_size,
+            inplace,
+            kernel_element,
+            Some(&additional),
+        )
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -507,36 +468,42 @@ impl MetaOperation for GEMM {
         spec.select_kernel_element()
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let spec = self.compute_spec(dst);
 
         if spec.rhs_shape().is_vector() && !self.trans_lhs {
-            let (TILE_X, _) = spec.heuristic.as_workload();
-            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TILE_X);
-            let wgc = wgc![group_x as _, 1, spec.stacks() as _];
-            Ok(wgc)
+            let (TX, TY) = spec.heuristic.as_workgroup_size();
+            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TX);
+
+            Ok(Workload {
+                workgroup_count: wgc![group_x as _, 1, spec.stacks() as _],
+                workgroup_size: wgs![TX as _, TY as _, 1],
+            })
         } else {
             let TILE_DIM = 32;
-            let a_shape = spec.lhs_shape();
-            let b_shape = spec.rhs_shape();
+            let lhs_shape = spec.lhs_shape();
+            let rhs_shape = spec.rhs_shape();
 
             let dimA = if self.trans_lhs {
-                a_shape[1]
+                lhs_shape[1]
             } else {
-                a_shape[0]
+                lhs_shape[0]
             };
 
             let dimB = if self.trans_rhs {
-                b_shape[0]
+                rhs_shape[0]
             } else {
-                b_shape[1]
+                rhs_shape[1]
             };
 
             let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
             let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
             let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
 
-            Ok(workgroup_count)
+            Ok(Workload {
+                workgroup_count,
+                workgroup_size: wgs![8, 8, 1],
+            })
         }
     }
 
@@ -544,13 +511,15 @@ impl MetaOperation for GEMM {
         &self,
         _inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        let (A, B, bias) = (&self.lhs, &self.rhs, &self.bias);
-        let layout = match (A.dt(), B.dt(), bias.is_some()) {
+        let (LHS, RHS, bias) = (&self.lhs, &self.rhs, &self.bias);
+        let layout = match (LHS.dt(), RHS.dt(), bias.is_some()) {
             (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
             (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
+            (DType::F16, DType::F16, false) => BindGroupLayoutDescriptor::binary(),
+            (DType::F16, DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
             (DType::GGUF(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
             (DType::GGUF(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
-            _ => return Err(InvariantError::UnsupportedDType(B.dt()).into()),
+            _ => return Err(InvariantError::UnsupportedDType(RHS.dt()).into()),
         };
         Ok(layout)
     }
@@ -563,26 +532,26 @@ impl MetaOperation for GEMM {
     ) -> Result<u64, OperationError> {
         let spec = self.compute_spec(dst);
 
-        let mut a_shape = spec.a_shape.clone();
-        a_shape.insert(0, spec.a_stack());
-        let aStrides = Strides::from(&a_shape);
+        let mut lhs_shape = spec.lhs_shape.clone();
+        lhs_shape.insert(0, spec.lhs_stack());
+        let aStrides = Strides::from(&lhs_shape);
 
-        let mut b_shape = spec.b_shape.clone();
-        b_shape.insert(0, spec.b_stack());
-        let bStrides = Strides::from(&b_shape);
+        let mut rhs_shape = spec.rhs_shape.clone();
+        rhs_shape.insert(0, spec.rhs_stack());
+        let bStrides = Strides::from(&rhs_shape);
 
-        let mut out_shape = spec.c_shape.clone();
+        let mut out_shape = spec.out_shape.clone();
         out_shape.insert(0, spec.stacks());
         let outStrides = Strides::from(&out_shape);
 
-        let dimAOuter = spec.dim_a_outer() as i32;
-        let dimBOuter = spec.dim_b_outer() as i32;
+        let dimAOuter = spec.dim_lhs_outer() as i32;
+        let dimBOuter = spec.dim_rhs_outer() as i32;
         let dimInner = spec.dim_inner() as i32;
 
         let meta = MatmulMeta {
-            aShape: a_shape.into(),
+            aShape: lhs_shape.into(),
             aStrides: aStrides.into(),
-            bShape: b_shape.into(),
+            bShape: rhs_shape.into(),
             bStrides: bStrides.into(),
             outShape: out_shape.into(),
             outStrides: outStrides.into(),
@@ -591,6 +560,22 @@ impl MetaOperation for GEMM {
             dimInner,
         };
         Ok(uniform.write(&meta)?)
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let spec = self.compute_spec(dst);
+        if spec.is_gemv() {
+            let gemv: GEMV = self.clone().into();
+            gemv.build_kernel(inplace, dst, workgroup_size, spec)
+        } else {
+            let gemm: GEMM = self.clone().into();
+            gemm.build_kernel(inplace, dst, workgroup_size, spec)
+        }
     }
 }
 
@@ -603,6 +588,10 @@ mod tests {
     use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
 
     use super::*;
+
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
 
     fn ground_truth(
         a: &Tensor,
@@ -658,11 +647,12 @@ def matmul(a, b{}):
             vec![a, b]
         };
 
-        run_py_prg(prg.to_string(), &args, &[])
+        run_py_prg(prg.to_string(), &args, &[], a.dt())
     }
 
     #[derive(Arbitrary, Clone, Debug)]
     enum TransKind {
+        None,
         LHS,
         LHSAndOut,
         RHS,
@@ -673,6 +663,7 @@ def matmul(a, b{}):
     impl From<TransKind> for (bool, bool, bool) {
         fn from(val: TransKind) -> Self {
             match val {
+                TransKind::None => (false, false, false),
                 TransKind::LHS => (true, false, false),
                 TransKind::LHSAndOut => (true, false, true),
                 TransKind::RHS => (false, true, false),
@@ -698,7 +689,7 @@ def matmul(a, b{}):
 
     #[proptest(cases = 64)]
     fn test_sgemm(prob: SGEMMProblem) {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let device = GPU_DEVICE.with(|d| d.clone());
         let SGEMMProblem {
             B,
             M,
@@ -730,13 +721,13 @@ def matmul(a, b{}):
             has_bias = false;
         }
 
-        let a_shape = if trans_lhs {
+        let lhs_shape = if trans_lhs {
             shape![B, K, M]
         } else {
             shape![B, M, K]
         };
 
-        let b_shape = if trans_rhs {
+        let rhs_shape = if trans_rhs {
             shape![B, N, K]
         } else {
             shape![B, K, N]
@@ -747,12 +738,12 @@ def matmul(a, b{}):
         } else {
             None
         };
-        println!("A shape: {:?}", a_shape);
-        println!("B shape: {:?}", b_shape);
+        println!("LHS shape: {:?}", lhs_shape);
+        println!("RHS shape: {:?}", rhs_shape);
         println!("Bias: {:?}", bias.as_ref().map(|b| b.shape()));
 
-        let a = Tensor::randn::<f32>(a_shape, cpu_device.clone());
-        let b = Tensor::randn::<f32>(b_shape, cpu_device.clone());
+        let a = Tensor::randn::<f32>(lhs_shape, cpu_device.clone());
+        let b = Tensor::randn::<f32>(rhs_shape, cpu_device.clone());
         let ground = ground_truth(&a, &b, bias.as_ref(), trans_lhs, trans_rhs, trans_out)?;
         println!("Ground shape: {:?}", ground.shape());
 
@@ -772,6 +763,7 @@ def matmul(a, b{}):
 
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
+        let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
@@ -779,7 +771,6 @@ def matmul(a, b{}):
 
         let quantizer = Quantizer::new(Quantization::SInt8);
         let aq = quantizer.sint8_quantize(a);
-        let device = Device::request_device(DeviceRequest::GPU)?;
         let a_gpu = aq.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
@@ -794,25 +785,68 @@ def matmul(a, b{}):
     }
 
     #[test]
-    fn test_qgemv() -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1, 1024, 1024], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1, 1, 1024], cpu_device.clone());
-        let ground = ground_truth(&a, &b, None, false, true, true)?;
+    fn debug_generated_gemm() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let prob = SGEMMProblem {
+            B: 1,
+            M: 511,
+            K: 511,
+            N: 1,
+            has_bias: false,
+            transpose: TransKind::None,
+        };
+        let SGEMMProblem {
+            B,
+            M,
+            K,
+            N,
+            has_bias,
+            ref transpose,
+        } = prob;
 
-        let quantizer = Quantizer::new(Quantization::SInt8);
-        let aq = quantizer.sint8_quantize(a);
-        let device = Device::request_device(DeviceRequest::GPU)?;
-        let a_gpu = aq.to(&device)?;
+        println!(
+            "Running sgemm: B={} M={} N={} K={} has_bias={} transpose={:?}",
+            B, M, N, K, has_bias, transpose
+        );
+        let device = GPU_DEVICE.with(|d| d.clone());
+        run_matmul_trial(&device, prob)
+    }
+
+    #[test]
+    fn debug_gemm() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let device = GPU_DEVICE.with(|d| d.clone());
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![2, 222, 252], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 222, 238], cpu_device.clone());
+        let bias = Some(Tensor::randn::<f32>(shape![238], cpu_device.clone()));
+
+        let TRANS_LHS = true;
+        let TRANS_RHS = false;
+        let TRANS_OUT = false;
+        let QUANT = false;
+
+        let ground = ground_truth(&a, &b, bias.as_ref(), TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
+
+        let a_gpu = if QUANT {
+            let quantizer = Quantizer::new(Quantization::SInt8);
+            let aq = quantizer.sint8_quantize(a);
+            aq.to(&device)?
+        } else {
+            a.to(&device)?
+        };
+
         let b_gpu = b.to(&device)?;
-        let c_gpu = a_gpu.gemm(b_gpu, None, false, true, true)?.resolve()?;
+        let bias_gpu = bias.as_ref().map(|b| b.to(&device)).transpose()?;
+        let c_gpu = a_gpu
+            .gemm(b_gpu, bias_gpu, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
+            .resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
-        println!("RATCHET QUANT\n{:?}\n", ours);
-        println!("PYTORCH FP32:\n{:?}", ground);
+        println!("RATCHET\n{:?}\n", ours.to_ndarray_view::<f32>());
+        println!("PYTORCH:\n{:?}", ground.to_ndarray_view::<f32>());
 
-        ground.all_close(&ours, 1e1, 1e-1)?;
-
+        ground.all_close(&ours, 1e-3, 1e-3)?;
         Ok(())
     }
 }

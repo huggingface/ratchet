@@ -1,6 +1,6 @@
 use crate::{BufferSegment, RVec};
 
-/// # Segments
+/// # Bindings
 ///
 /// Quantized tensors are made up of segments.
 /// The underlying buffer can be viewed as a blob of bytes, which cannot be read without interpretation.
@@ -24,6 +24,6 @@ use crate::{BufferSegment, RVec};
 /// | q q q q q q q q q q q q q q q q q q q q q q pad pad | d d d pad |
 ///
 /// This is what the buffer may look like in memory. The segments give us the address of |.
-pub trait Segments {
-    fn segments(numel: usize) -> RVec<BufferSegment>;
+pub trait Bindings {
+    fn bindings(numel: usize) -> RVec<BufferSegment>;
 }

@@ -15,12 +15,11 @@ var<private> workgroupId: vec3<u32>;
     {% endif %}
 {% else %}
     @group(0) @binding(0) var<storage, read> A: array<f32>;
+    @group(0) @binding(1) var<storage, read> X: array<f32>;
     {% if BIAS %}
-        @group(0) @binding(1) var<storage, read> X: array<f32>;
         @group(0) @binding(2) var<storage, read> bias: array<f32>;
         @group(0) @binding(3) var<storage, read_write> result: array<f32>;
     {% else %}
-        @group(0) @binding(1) var<storage, read> X: array<f32>;
         @group(0) @binding(2) var<storage, read_write> result: array<f32>;
     {% endif %}
 {% endif %}
@@ -41,6 +40,10 @@ struct Meta {
 
 fn unpack4x8snorm_gguf(x: u32) -> vec4<f32> {
     return unpack4x8snorm(x) * 127f;
+}
+
+fn readA(batch: i32, row: i32, col: i32) -> f32 {
+    return A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
 }
 
 var<workgroup> work: array<{{ ELEM_TYPE }}, {{workgroup_size_x * workgroup_size_y / ELEM_SIZE}}>;

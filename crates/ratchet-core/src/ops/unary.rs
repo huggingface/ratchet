@@ -1,10 +1,14 @@
 use derive_new::new;
 use encase::ShaderType;
+use half::f16;
+use inline_wgsl::wgsl;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, KernelElement, MetaOperation, OpGuards, OpMetadata, Operation, OperationError, RVec,
-    StorageView, Tensor,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
+    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[cfg(test)]
@@ -48,6 +52,14 @@ impl UnaryOp {
             UnaryOp::Sigmoid => "sigmoid",
         }
     }
+
+    pub fn kernel_operation(&self) -> &'static str {
+        match self {
+            UnaryOp::Tanh => "safe_tanh",
+            UnaryOp::Neg => "-",
+            _ => self.kernel_name(),
+        }
+    }
 }
 
 #[derive(new, Debug, Clone)]
@@ -57,17 +69,143 @@ pub struct Unary {
 }
 
 impl Unary {
+    const SQRT_2_OVER_PI: f32 = 0.797_884_6;
+    const SCALED_SQRT_2_OVER_PI: f32 = 0.035_677_407;
+
     pub fn op(&self) -> &UnaryOp {
         &self.op
     }
+
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        if inplace {
+            builder.register_storage("X", BindingMode::ReadWrite, Array::<P>::default());
+        } else {
+            builder.register_storage("X", BindingMode::ReadOnly, Array::<P>::default());
+            builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
+        }
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn render_gelu<P: WgslPrimitive>() -> String {
+        let accessor = P::render_type();
+        let SQRT_2_OVER_PI = Self::SQRT_2_OVER_PI;
+        let SCALED_SQRT_2_OVER_PI = Self::SCALED_SQRT_2_OVER_PI;
+
+        wgsl! {
+            fn gelu(val: 'accessor) -> 'accessor {
+                let cdf = 'accessor(0.5) + 'accessor(0.5) * safe_tanh(val * ('accessor('SCALED_SQRT_2_OVER_PI)
+                        * (val * val) + 'accessor('SQRT_2_OVER_PI)));
+                return val * cdf;
+            }
+        }
+    }
+
+    fn render_tanh<P: WgslPrimitive>() -> String {
+        let accessor = P::render_type();
+
+        wgsl! {
+            fn safe_tanh(x: 'accessor) -> 'accessor {
+                return select(tanh(x), sign(x), abs(x) >= 'accessor(10.));
+            }
+        }
+    }
+
+    fn render_sigmoid<P: WgslPrimitive>() -> String {
+        let accessor = P::render_type();
+
+        wgsl! {
+            fn sigmoid(val: 'accessor) -> 'accessor {
+                return select(1.0f / (1.0f + exp(-val)), exp(val) / (1.0f + exp(val)), val >= 'accessor(0.));
+            }
+        }
+    }
+
+    fn build_unary<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.input.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::WorkgroupId,
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::NumWorkgroups
+            ],
+            device.compute_features().clone(),
+        );
+
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.write_metadata::<UnaryMeta>();
+
+        let accessor = P::render_type();
+        //Write global functions
+        match self.op {
+            UnaryOp::Gelu => {
+                kernel_builder.write_global(Unary::render_tanh::<P>());
+                kernel_builder.write_global(Unary::render_gelu::<P>());
+            }
+            UnaryOp::Tanh => {
+                kernel_builder.write_global(Unary::render_tanh::<P>());
+            }
+            UnaryOp::Sigmoid => {
+                kernel_builder.write_global(Unary::render_sigmoid::<P>());
+            }
+            UnaryOp::Silu => {
+                kernel_builder.write_global(Unary::render_sigmoid::<P>());
+                kernel_builder.write_global(wgsl! {
+                    fn silu(val: 'accessor) -> 'accessor {
+                        return val * sigmoid(val);
+                    }
+                });
+            }
+            UnaryOp::Relu => {
+                kernel_builder.write_global(wgsl! {
+                    fn relu(val: 'accessor) -> 'accessor {
+                        return max(val, 'accessor(0.0));
+                    }
+                });
+            }
+            _ => {}
+        };
+
+        let n = P::W;
+
+        kernel_builder.write_main(wgsl! {
+            let x_offset = workgroup_id.x * 64u;
+            let index = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_index;
+            if (index >= metadata.numel / 'n) {
+                return;
+            }
+        });
+
+        let func = self.op.kernel_operation();
+        if inplace {
+            kernel_builder.write_main(wgsl! {
+                let val = X[index];
+                X[index] = 'func(val);
+            });
+        } else {
+            kernel_builder.write_main(wgsl! {
+                Y[index] = 'func(X[index]);
+            });
+        }
+
+        Ok(kernel_builder.build()?)
+    }
 }
 
-#[derive(Debug, ShaderType)]
+#[derive(Debug, ShaderType, WgslMetadata)]
 pub struct UnaryMeta {
     numel: u32,
 }
-
-impl OpMetadata for UnaryMeta {}
 
 impl OpGuards for Unary {
     fn check_shapes(&self) {}
@@ -87,16 +225,6 @@ impl Operation for Unary {
 impl MetaOperation for Unary {
     fn kernel_name(&self) -> String {
         self.op.kernel_name().to_string()
-    }
-
-    fn kernel_key(&self, inplace: bool, dst: &Tensor) -> String {
-        let kn = self.kernel_name();
-        let ke = self.kernel_element(dst).as_str();
-        if inplace {
-            format!("{}_inplace_{}", kn, ke)
-        } else {
-            format!("{}_{}", kn, ke)
-        }
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -120,16 +248,22 @@ impl MetaOperation for Unary {
         }
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<WorkgroupCount, OperationError> {
+    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![8, 8, 1];
+
         let numel = self.input.shape().numel();
-        let x_groups = WorkgroupCount::div_ceil(numel as _, 64);
+        let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
         let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
             let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
             (WorkgroupCount::MAX_WGS_PER_DIM, y_groups)
         } else {
             (x_groups, 1)
         };
-        Ok(wgc![x_groups as _, y_groups as _, 1])
+
+        Ok(Workload {
+            workgroup_count: wgc![x_groups as _, y_groups as _, 1],
+            workgroup_size,
+        })
     }
 
     fn storage_bind_group_layout(
@@ -154,13 +288,50 @@ impl MetaOperation for Unary {
         let meta = UnaryMeta { numel };
         Ok(uniform.write(&meta)?)
     }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        match (self.input.dt(), &kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.build_unary::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec2) => {
+                self.build_unary::<Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, KernelElement::Vec4) => {
+                self.build_unary::<Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.build_unary::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec2) => {
+                self.build_unary::<Vec2<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Vec4) => {
+                self.build_unary::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            _ => Err(OperationError::CompileError(format!(
+                "Unsupported dtype {:?} or kernel element {:?}",
+                self.input.dt(),
+                kernel_element
+            ))),
+        }
+    }
 }
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 
-    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor, UnaryOp};
+    use crate::{
+        shape, test_util::run_py_prg, wgs, Device, DeviceRequest, MetaOperation, Tensor, Unary,
+        UnaryOp,
+    };
 
     #[derive(Arbitrary, Debug)]
     struct UnaryProblem {
@@ -199,7 +370,7 @@ def {}(a):
             _ => imp_prg,
         };
 
-        run_py_prg(prg.to_string(), &[a], &[])
+        run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
     thread_local! {
@@ -250,5 +421,15 @@ def {}(a):
     #[proptest(cases = 256)]
     fn test_unary(prob: UnaryProblem) {
         run_unary_trial(prob).unwrap();
+    }
+
+    #[test]
+    fn test_render_unary() {
+        let device = GPU_DEVICE.with(|d| d.clone());
+        let input = Tensor::randn::<f32>(shape![1, 128], device.clone());
+        let op = Unary::new(input, UnaryOp::Gelu);
+        let dst = Tensor::randn::<f32>(shape![1, 128], device);
+        let kernel = op.build_kernel(true, &dst, &wgs![8, 8, 1]).unwrap();
+        println!("{}", kernel);
     }
 }

@@ -95,7 +95,8 @@ pub mod prelude {
 
 #[cfg(feature = "pyo3")]
 pub mod test_util {
-    use crate::{DType, Tensor};
+    use crate::{DType, Tensor, TensorDType};
+    use half::f16;
     use regex::Regex;
     use {
         numpy::PyArrayDyn,
@@ -107,6 +108,7 @@ pub mod test_util {
         prg: String,
         tensors: &[&Tensor],
         args: &[&dyn ToPyObject],
+        dst_dtype: DType,
     ) -> anyhow::Result<Tensor> {
         let re = Regex::new(r"def\s+(\w+)\s*\(").unwrap();
         let func = match re.captures(&prg) {
@@ -119,14 +121,21 @@ pub mod test_util {
             let py_tensors = tensors.iter().map(|t| match t.dt() {
                 DType::F32 => t.to_py::<f32>(&py).to_object(py),
                 DType::I32 => t.to_py::<i32>(&py).to_object(py),
+                DType::F16 => t.to_py::<f16>(&py).to_object(py),
                 _ => unimplemented!(),
             });
             let py_args = py_tensors
                 .chain(args.iter().map(|a| a.to_object(py)))
                 .collect::<Vec<_>>();
             let py_args = PyTuple::new(py, py_args);
-            let py_result: &PyArrayDyn<f32> = prg.getattr(func)?.call1(py_args)?.extract()?;
-            Ok(Tensor::from(py_result))
+            let py_result = prg.getattr(func)?.call1(py_args)?;
+            let result: Tensor = match dst_dtype {
+                DType::F32 => py_result.extract::<&PyArrayDyn<f32>>()?.into(),
+                DType::I32 => py_result.extract::<&PyArrayDyn<i32>>()?.into(),
+                DType::F16 => py_result.extract::<&PyArrayDyn<f16>>()?.into(),
+                _ => unimplemented!(),
+            };
+            Ok(result)
         })
     }
 }

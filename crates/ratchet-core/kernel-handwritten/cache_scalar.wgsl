@@ -45,7 +45,6 @@ fn ndIndexToOffset(index: vec4<u32>, stride: vec4<u32>) -> u32 {
 
 @compute @workgroup_size(8,8,1)
 fn main( 
-        @builtin(local_invocation_id) local_id: vec3<u32>,
         @builtin(local_invocation_index) local_index: u32,
         @builtin(workgroup_id) group_id: vec3<u32>,
         @builtin(num_workgroups) num_groups: vec3<u32>

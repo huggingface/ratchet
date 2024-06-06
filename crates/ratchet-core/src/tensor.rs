@@ -1,11 +1,12 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable, GPUBuffer,
-    InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec, RawCPUBuffer, Shape,
-    Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
+    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId, MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
+use std::cmp::max;
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
@@ -358,9 +359,9 @@ impl Tensor {
     //TODO: horrific interface
     pub fn matmul(self, rhs: Tensor, trans_lhs: bool, trans_rhs: bool) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let gemm = GEMM::new(self, rhs, None, trans_lhs, trans_rhs, false);
-        let new_view = gemm.compute_view()?;
-        Ok(Tensor::lazy(LazyOp::GEMM(gemm), new_view, device))
+        let matmul = Matmul::new(self, rhs, None, trans_lhs, trans_rhs, false);
+        let new_view = matmul.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
     }
 
     pub fn gemm(
@@ -372,9 +373,9 @@ impl Tensor {
         trans_out: bool,
     ) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let gemm = GEMM::new(self, rhs, bias, trans_lhs, trans_rhs, trans_out);
+        let gemm = Matmul::new(self, rhs, bias, trans_lhs, trans_rhs, trans_out);
         let new_view = gemm.compute_view()?;
-        Ok(Tensor::lazy(LazyOp::GEMM(gemm), new_view, device))
+        Ok(Tensor::lazy(LazyOp::Matmul(gemm), new_view, device))
     }
 
     /// # Slice
@@ -594,7 +595,7 @@ impl Tensor {
     /// Generates the bind group entries required to bind the tensor to a kernel.
     /// Quantized tensors may use multiple bind groups.
     /// Unquantized tensors should only use a single bind group.
-    pub(crate) fn bindings(&self) -> RVec<BindGroupEntry> {
+    pub(crate) fn bind_group_entries(&self) -> RVec<BindGroupEntry> {
         assert!(self.device().is_gpu());
         let storage_guard = self.storage();
         let storage = storage_guard
@@ -602,16 +603,34 @@ impl Tensor {
             .unwrap_or_else(|| panic!("Storage missing for {:?}", self.id()));
         let gpu_buf = storage.try_gpu().unwrap();
         let handle = gpu_buf.inner().handle;
-        let segments = self.dt().segments(self.shape().numel());
-        segments.iter().fold(rvec![], |mut entries, segment| {
-            let (offset, size) = (segment.offset, segment.size);
-            entries.push(BindGroupEntry {
-                handle,
-                offset,
-                size: Some(size),
-            });
-            entries
-        })
+        self.segments()
+            .iter()
+            .fold(rvec![], |mut entries, segment| {
+                let (offset, size) = (segment.offset, segment.size);
+                entries.push(BindGroupEntry {
+                    handle,
+                    offset,
+                    size: Some(size),
+                });
+                entries
+            })
+    }
+
+    /// # Segments  
+    ///
+    /// In Ratchet, a tensor may be split into multiple segments.
+    /// This is due to our quantization scheme allowing multiple quantized components to be packed
+    /// and stored in a single tensor.
+    pub(crate) fn segments(&self) -> RVec<BufferSegment> {
+        let numel = self.shape().numel();
+        match self.dt() {
+            DType::GGUF(g) => g.bindings(numel),
+            _ => {
+                let mut total_bytes = numel * self.dt().size_of();
+                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
+                rvec![BufferSegment::new(0, total_bytes as u64)]
+            }
+        }
     }
 
     /// Converts the tensor into a 1D vector.
@@ -676,7 +695,7 @@ impl Tensor {
     ) -> Option<CompiledOp> {
         match self.op() {
             LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::GEMM(m) => m.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::RoPE(r) => r.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
@@ -721,6 +740,8 @@ impl Tensor {
 
             if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
+            } else {
+                log::warn!("No compiled op for {:?}", t.op().name());
             }
         }
         #[cfg(feature = "plotting")]
@@ -861,19 +882,19 @@ impl<T: TensorDType + numpy::Element> From<&PyArrayDyn<T>> for Tensor {
 
 #[cfg(feature = "testing")]
 #[derive(Default)]
-struct CloseStats {
-    total_error: f32,
-    max_abs_error: f32,
+struct CloseStats<T> {
+    total_error: T,
+    max_abs_error: T,
     max_abs_error_idxs: Option<Vec<usize>>,
     element_count: usize,
     fail_count: usize,
-    atol: f32,
-    rtol: f32,
+    atol: T,
+    rtol: T,
 }
 
 #[cfg(feature = "testing")]
-impl CloseStats {
-    fn new(atol: f32, rtol: f32) -> Self {
+impl<T: TensorDType + Default + num_traits::Float> CloseStats<T> {
+    fn new(atol: T, rtol: T) -> Self {
         Self {
             atol,
             rtol,
@@ -881,9 +902,9 @@ impl CloseStats {
         }
     }
 
-    fn update(&mut self, a: &f32, b: &f32, index: ndarray::IxDyn) {
-        let abs_diff = (a - b).abs();
-        self.total_error += abs_diff;
+    fn update(&mut self, a: &T, b: &T, index: ndarray::IxDyn) {
+        let abs_diff = (*a - *b).abs();
+        self.total_error = self.total_error + abs_diff;
         self.element_count += 1;
 
         if abs_diff > self.max_abs_error {
@@ -896,11 +917,11 @@ impl CloseStats {
         }
     }
 
-    fn avg_error(&self) -> f32 {
-        self.total_error / self.element_count as f32
+    fn avg_error(&self) -> T {
+        self.total_error / T::from(self.element_count).expect("Failed to convert")
     }
 
-    fn is_close(&self, a: &f32, b: &f32, abs_diff: f32) -> bool {
+    fn is_close(&self, a: &T, b: &T, abs_diff: T) -> bool {
         (a.is_nan() && b.is_nan())
             || (a.is_infinite() && b.is_infinite() && a.signum() == b.signum())
             || abs_diff <= self.atol + self.rtol * b.abs()
@@ -941,6 +962,7 @@ impl Tensor {
             panic!("Tensor is not resolved");
         }
         assert!(self.device().is_cpu());
+        assert!(self.dt() == T::dt());
         let shape = self.shape().to_vec();
         if self.num_bytes() != 0 {
             let storage_guard = self.storage();
@@ -952,13 +974,18 @@ impl Tensor {
         }
     }
 
-    pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
+    pub fn all_close<T>(&self, other: &Self, atol: T, rtol: T) -> anyhow::Result<()>
+    where
+        T: TensorDType + std::fmt::Display + num_traits::Float + Default,
+    {
         if self.shape() != other.shape() {
             anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
         }
+        assert!(self.dt() == other.dt());
+        assert!(self.dt() == T::dt());
 
-        let self_nd = self.to_ndarray_view::<f32>();
-        let other_nd = other.to_ndarray_view::<f32>();
+        let self_nd = self.to_ndarray_view::<T>();
+        let other_nd = other.to_ndarray_view::<T>();
 
         let mut stats = CloseStats::new(atol, rtol);
         ndarray::indices_of(&self_nd).into_iter().for_each(|idx| {

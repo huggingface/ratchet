@@ -1,8 +1,6 @@
 use half::{bf16, f16};
-use std::{cmp::max, num::NonZeroU64};
+use std::num::NonZeroU64;
 use wgpu::{BufferAddress, BufferSize};
-
-use crate::{gpu::MIN_STORAGE_BUFFER_SIZE, rvec, RVec};
 
 pub mod gguf;
 mod segments;
@@ -21,18 +19,21 @@ pub enum DType {
     GGUF(gguf::GGUFDType),
 }
 
-impl DType {
-    pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
+impl std::fmt::Display for DType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DType::GGUF(g) => g.segments(numel),
-            _ => {
-                let mut total_bytes = numel * self.size_of();
-                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
-                rvec![BufferSegment::new(0, total_bytes as u64)]
-            }
+            DType::Q8 => write!(f, "Q8"),
+            DType::F16 => write!(f, "F16"),
+            DType::BF16 => write!(f, "BF16"),
+            DType::F32 => write!(f, "F32"),
+            DType::I32 => write!(f, "I32"),
+            DType::U32 => write!(f, "U32"),
+            DType::GGUF(g) => write!(f, "{}", g),
         }
     }
+}
 
+impl DType {
     pub fn to_u32(self) -> u32 {
         match self {
             DType::F32 => 0,
@@ -56,10 +57,11 @@ impl DType {
     }
 
     pub fn is_quantized(self) -> bool {
-        match self {
-            DType::GGUF(_) => true,
-            _ => false,
-        }
+        matches!(self, DType::GGUF(_) | DType::Q8)
+    }
+
+    pub fn is_float(self) -> bool {
+        matches!(self, DType::F16 | DType::BF16 | DType::F32)
     }
 }
 
@@ -98,7 +100,7 @@ impl BufferSegment {
     pub fn new(offset: BufferAddress, size: u64) -> Self {
         Self {
             offset,
-            size: NonZeroU64::new(size).expect("Invalid u64"),
+            size: NonZeroU64::new(size).unwrap(),
         }
     }
 }

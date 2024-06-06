@@ -214,7 +214,7 @@ impl WhisperDecoder {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32"), feature = "pyo3"))]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use hf_hub::api::sync::Api;
     use ndarray::{s, Axis};
@@ -232,7 +232,6 @@ mod tests {
     use crate::whisper::decoder::Config;
     use crate::whisper::{
         decoder::WhisperDecoder,
-        model::Whisper,
         options::{DecodingOptions, DecodingOptionsBuilder},
     };
 

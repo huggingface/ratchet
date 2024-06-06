@@ -2,6 +2,7 @@ mod buffer_allocator;
 mod device;
 mod pools;
 mod uniform;
+mod wgsl;
 mod workload;
 
 #[cfg(feature = "gpu-profiling")]
@@ -11,6 +12,7 @@ pub use buffer_allocator::*;
 pub use device::*;
 pub use pools::*;
 pub use uniform::*;
+pub use wgsl::*;
 pub use workload::*;
 
 #[cfg(feature = "gpu-profiling")]

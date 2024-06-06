@@ -1,4 +1,4 @@
-use crate::{gpu::*, Tensor, TensorId};
+use crate::{gpu::*, MetaOperation, Tensor, TensorId};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use wgpu::{Adapter, Limits};
@@ -16,16 +16,17 @@ pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 /// Ordinal should always be 0.
 #[derive(Clone)]
 pub struct WgpuDevice {
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
     ordinal: u32,
     buffer_allocator: Arc<BufferAllocator>,
     bind_group_pool: Arc<BindGroupPool>,
     bind_group_layout_pool: Arc<BindGroupLayoutPool>,
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
     compute_pipeline_pool: Arc<ComputePipelinePool>,
+    kernel_module_pool: Arc<KernelModulePool>,
     device_limits: DeviceLimits,
     device_features: DeviceFeatures,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
 }
 
 impl std::ops::Deref for WgpuDevice {
@@ -59,6 +60,7 @@ impl WgpuDevice {
 
         #[allow(unused_mut)]
         let mut required_features = wgpu::Features::default();
+        required_features |= wgpu::Features::SHADER_F16;
         #[cfg(feature = "gpu-profiling")]
         {
             required_features |= wgpu::Features::TIMESTAMP_QUERY;
@@ -94,6 +96,7 @@ impl WgpuDevice {
             bind_group_pool: Arc::new(BindGroupPool::new()),
             bind_group_layout_pool: Arc::new(BindGroupLayoutPool::new()),
             pipeline_layout_pool: Arc::new(PipelineLayoutPool::new()),
+            kernel_module_pool: Arc::new(KernelModulePool::new()),
             compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
             device: Arc::new(device),
             device_limits: limits,
@@ -200,6 +203,25 @@ impl WgpuDevice {
         Ok(self.compute_pipeline_pool.get_or_create(desc, self))
     }
 
+    pub fn get_or_create_compute_module<O: MetaOperation + ?Sized>(
+        &self,
+        desc: &KernelModuleDesc,
+        op: &O,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+        device: &WgpuDevice,
+    ) -> KernelModuleHandle {
+        self.kernel_module_pool
+            .get_or_create(desc, op, inplace, dst, workgroup_size, device)
+    }
+
+    pub fn kernel_module_resources(
+        &self,
+    ) -> StaticResourcePoolReadLockAccessor<'_, KernelModuleHandle, wgpu::ShaderModule> {
+        self.kernel_module_pool.resources()
+    }
+
     pub fn bind_group_layout_resources(
         &self,
     ) -> StaticResourcePoolReadLockAccessor<'_, BindGroupLayoutHandle, wgpu::BindGroupLayout> {
@@ -231,6 +253,14 @@ impl WgpuDevice {
     pub fn begin_pass(&self) {
         self.buffer_allocator.begin_pass(0);
     }
+
+    pub fn compute_features(&self) -> &DeviceFeatures {
+        &self.device_features
+    }
+
+    pub fn compute_limits(&self) -> &DeviceLimits {
+        &self.device_limits
+    }
 }
 
 #[derive(Clone)]
@@ -242,25 +272,31 @@ pub struct DeviceLimits {
 
 impl From<wgpu::Limits> for DeviceLimits {
     fn from(limits: wgpu::Limits) -> Self {
+        let wgpu::Limits {
+            max_bind_groups,
+            max_storage_buffer_binding_size,
+            max_compute_invocations_per_workgroup,
+            ..
+        } = limits;
         DeviceLimits {
-            max_bind_groups: limits.max_bind_groups,
-            max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
-            max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
+            max_bind_groups,
+            max_storage_buffer_binding_size,
+            max_compute_invocations_per_workgroup,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct DeviceFeatures {
-    pub SHADER_F16: u64,
-    pub SUBGROUP_COMPUTE: u64
+    pub SHADER_F16: bool,
+    pub SUBGROUP: bool,
 }
 
 impl From<wgpu::Features> for DeviceFeatures {
     fn from(features: wgpu::Features) -> Self {
         DeviceFeatures {
-            SHADER_F16: features.contains(wgpu::Features::SHADER_F16) as u64,
-            SUBGROUP_COMPUTE: features.contains(wgpu::Features::SUBGROUP) as u64
+            SHADER_F16: features.contains(wgpu::Features::SHADER_F16),
+            SUBGROUP: features.contains(wgpu::Features::SUBGROUP),
         }
     }
 }

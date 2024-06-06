@@ -31,36 +31,35 @@ struct Meta {
 var<uniform> metadata: Meta;
 
 @compute @workgroup_size(8, 8, 1)
-fn main( 
-        @builtin(local_invocation_id) local_id: vec3<u32>,
-        @builtin(global_invocation_id) pos: vec3<u32>,
-        @builtin(num_workgroups) groups: vec3<u32>,
+fn main(
+    @builtin(global_invocation_id) pos: vec3<u32>,
+    @builtin(num_workgroups) groups: vec3<u32>,
 ) {
-  if(pos.y >= metadata.seq_len) {
-    return;
-  }
+    if pos.y >= metadata.seq_len {
+        return;
+    }
 
-  let grid = vec3<u32>(groups.x * 8u, groups.y * 8u, groups.z * 1u);
+    let grid = vec3<u32>(groups.x * 8u, groups.y * 8u, groups.z * 1u);
 
-  let out_index_1 = dot(pos, vec3<u32>(metadata.out_strides[2], metadata.out_strides[1], metadata.out_strides[0]));
-  let out_index_2 = out_index_1 + grid.x * metadata.out_strides[2];
+    let out_index_1 = dot(pos, vec3<u32>(metadata.out_strides[2], metadata.out_strides[1], metadata.out_strides[0]));
+    let out_index_2 = out_index_1 + grid.x * metadata.out_strides[2];
 
-  let in_index_1 = dot(pos, vec3<u32>(metadata.in_strides[2], metadata.in_strides[1], metadata.in_strides[0]));
-  let in_index_2 = in_index_1 + grid.x * metadata.in_strides[2];
+    let in_index_1 = dot(pos, vec3<u32>(metadata.in_strides[2], metadata.in_strides[1], metadata.in_strides[0]));
+    let in_index_2 = in_index_1 + grid.x * metadata.in_strides[2];
 
-  let L = metadata.scale * f32(pos.y + metadata.offset);
-  let d = f32(pos.x) / f32(grid.x);
+    let L = metadata.scale * f32(pos.y + metadata.offset);
+    let d = f32(pos.x) / f32(grid.x);
 
-  let theta = L * exp2(-d * metadata.base);
-  let costheta = cos(theta);
-  let sintheta = sin(theta);
+    let theta = L * exp2(-d * metadata.base);
+    let costheta = cos(theta);
+    let sintheta = sin(theta);
 
-  let x1 = in[in_index_1];
-  let x2 = in[in_index_2];
+    let x1 = in[in_index_1];
+    let x2 = in[in_index_2];
 
-  let rx1 = x1 * costheta - x2 * sintheta;
-  let rx2 = x1 * sintheta + x2 * costheta;
+    let rx1 = x1 * costheta - x2 * sintheta;
+    let rx2 = x1 * sintheta + x2 * costheta;
 
-  in[out_index_1] = rx1;
-  in[out_index_2] = rx2;
+    in[out_index_1] = rx1;
+    in[out_index_2] = rx2;
 }
