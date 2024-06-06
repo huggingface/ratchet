@@ -1,8 +1,7 @@
 [package]
-authors = [
-    "Chris Fleetwood <chris@fleetwood.dev>",
-]
 name = "ratchet-macros"
+authors = ["Chris Fleetwood <chris@fleetwood.dev>"]
+version = "0.1.0"
 keywords = []
 edition = "2021"
 readme.workspace = true
