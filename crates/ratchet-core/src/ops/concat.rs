@@ -268,10 +268,10 @@ impl MetaOperation for Concat {
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
-    use half::f16;
+    
 
     use crate::{
-        rvec, shape, test_util::run_py_prg, wgs, Concat, Device, DeviceRequest, MetaOperation,
+        rvec, shape, test_util::run_py_prg, Device, DeviceRequest,
         Tensor,
     };
 
