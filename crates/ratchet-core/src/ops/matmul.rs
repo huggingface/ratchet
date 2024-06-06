@@ -433,14 +433,13 @@ impl MetaOperation for Matmul {
         let bias_key = if self.bias.is_some() { "bias" } else { "" };
 
         let additional = format!(
-            "{}_{}_{}_{}",
-            if a_fit { "a_unchecked" } else { "a_checked" },
-            if b_fit { "b_unchecked" } else { "b_checked" },
-            if out_fit {
-                "out_unchecked"
-            } else {
-                "out_checked"
-            },
+            "{}_{}_{}_{}_{}_{}_{}",
+            if a_fit { "" } else { "a_checked" },
+            if b_fit { "" } else { "b_checked" },
+            if out_fit { "" } else { "out_checked" },
+            if self.trans_lhs { "trans_a" } else { "" },
+            if self.trans_rhs { "trans_b" } else { "" },
+            if self.trans_out { "trans_out" } else { "" },
             bias_key
         );
 
@@ -782,24 +781,45 @@ def matmul(a, b{}):
         Ok(())
     }
 
+    /*
+         *Running sgemm: B=2 M=144 N=48 K=20 has_bias=true transpose=RHS
+    A shape: [2x144x20]
+    B shape: [2x48x20]
+    Bias: Some([48])
+    Ground shape: [2x144x48]
+    RATCHET SGEMM
+    Tensor { id: T33, shape: [2x144x48], dt: F32, op: Const, storage: Some("[-6.192138, 5.2859936, 15.683312, 10.934153, -9.986342, 0.1486624, 2.7134056, 4.9786434, -8.2089205, -0.54307663, -11.632709, 1.3128983, 9.759326, -1.2242645, 2.088686, 2.0799613, 1.219845, -9.854678, 9.500938, 4.369473, -4.144409, 0.84077555, -0.49583006, 0.3056485, -0.26782158, -1.2021586, -0.24937314, -0.0077694342, 1.2242687, -0.9283801, 0.5450683, -0.17495869, -0.81706333, -2.2411058, 0.5305886, -0.6256241, -1.0573441, -2.4417546, 0.5115216, 0.5458218, -0.50746536, -1.6070161, 0.89670783, 0.29370007, -0.5909658, 0.17349091, -0.13022095, 0.45880267, -1.9249877, 3.6802177, -2.3275533, 6.5063677, 2.6182313, 8.986089, 1.8303605, 0.7365761, -0.10881066, -3.256226, 4.3280907, 0.3745324, -0.16945879, 0.44012117, 9.3545265, 4.2577667] ... [-0.81706333, -2.2411058, 0.5305886, -0.6256241, -1.0573441, -2.4417546, 0.5115216, 0.5458218, -0.50746536, -1.6070161, 0.89670783, 0.29370007, -0.5909658, 0.17349091, -0.13022095, 0.45880267, 0.56590044, -1.025188, 0.97912395, 0.5011347, -0.4318299, 0.24531859, -0.4338185, -0.8967798, 3.026456, -0.8987544, -2.186475, 0.5457448, -0.15398388, -2.3198574, 0.18968439, -0.71898377, 0.72424525, -0.7855232, -1.3228257, 0.0014403614, -4.144409, 0.84077555, -0.49583006, 0.3056485, -0.26782158, -1.2021586, -0.24937314, -0.0077694342, 1.2242687, -0.9283801, 0.5450683, -0.17495869, -0.81706333, -2.2411058, 0.5305886, -0.6256241, -1.0573441, -2.4417546, 0.5115216, 0.5458218, -0.50746536, -1.6070161, 0.89670783, 0.29370007, -0.5909658, 0.17349091, -0.13022095, 0.45880267]") }
+
+    PYTORCH FP32:
+    Tensor { id: T28, shape: [2x144x48], dt: F32, op: Const, storage: Some("[2.0746732, -1.5678979, 0.39557886, 4.873418, -5.257111, -6.3939295, 8.211104, 6.1635447, 3.3015025, 0.20391542, 0.17722225, 0.28534043, 1.9187872, 1.7748964, -6.3771772, -1.4675636, 7.4864717, 3.4863303, 0.9503579, -2.802917, -7.1844664, 3.8913846, -8.901279, 0.5297334, 6.483171, -5.097629, 1.2435904, -7.8922114, -3.2591894, 2.5727148, -0.12980556, 1.755307, -0.31242073, -2.7295804, 2.7777462, -3.05021, 2.8549528, -3.4246676, -0.28530437, 0.2476727, -3.6427648, -0.7217546, 1.603257, 2.6147892, 1.109592, -1.7375972, 2.4050972, -0.766258, 2.5675044, 4.0622864, 1.5349252, -0.76998216, 3.5102494, -8.597033, 2.0128114, -7.589532, 10.014074, -5.1309433, -11.969616, 8.625012, 0.32394457, 2.8099582, -6.788409, -1.0087457] ... [-2.9889612, -3.714323, -1.8129258, 4.151071, -4.8124704, -5.3405666, 0.98362005, 0.14711213, -4.696717, 3.4926739, 0.22852325, -7.337511, 1.2199502, 8.830381, -1.1150132, 6.558776, 4.4053016, 0.09638333, -7.4392586, 2.98313, 0.45246473, 0.48678058, 2.6349897, 3.1246035, -0.65857816, 6.773018, -1.9281363, -0.630875, 1.8154215, -6.872533, -3.241759, -1.5071366, -2.0275948, 4.775486, -0.2407763, 6.930494, -9.384127, -0.643037, -6.331457, 3.1488688, 4.353603, 0.7344209, 1.5611992, -6.466379, -0.15513253, 0.49996656, 4.6645308, 3.0692585, 2.4736497, 1.500803, 0.17227167, 2.825548, -4.346708, 1.3864045, -4.4530373, 2.0878115, -4.9559193, -1.8951969, 7.9504848, 3.2946389, -2.9681816, 0.2985428, 2.533373, 4.552261]") }
+         */
+
     #[test]
-    fn debug_sgemm() -> anyhow::Result<()> {
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![2, 128, 126], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![2, 126, 128], cpu_device.clone());
-        let ground = ground_truth(&a, &b, None, false, false, false)?;
+    fn debug_generated_gemm() -> anyhow::Result<()> {
+        let prob = SGEMMProblem {
+            B: 2,
+            M: 144,
+            N: 48,
+            K: 20,
+            has_bias: true,
+            transpose: TransKind::RHS,
+        };
 
+        let SGEMMProblem {
+            B,
+            M,
+            K,
+            N,
+            has_bias,
+            ref transpose,
+        } = prob;
+
+        println!(
+            "Running sgemm: B={} M={} N={} K={} has_bias={} transpose={:?}",
+            B, M, N, K, has_bias, transpose
+        );
         let device = GPU_DEVICE.with(|d| d.clone());
-        let a_gpu = a.to(&device)?;
-        let b_gpu = b.to(&device)?;
-        let c_gpu = a_gpu.gemm(b_gpu, None, false, false, false)?.resolve()?;
-        let ours = c_gpu.to(&Device::CPU)?;
-
-        println!("RATCHET QUANT\n{:?}\n", ours);
-        println!("PYTORCH FP32:\n{:?}", ground);
-
-        ground.all_close(&ours, 1e-4, 1e-4)?;
-        Ok(())
+        run_matmul_trial(&device, prob)
     }
 
     #[test]
@@ -807,19 +827,25 @@ def matmul(a, b{}):
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1, 384, 384], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1, 1500, 384], cpu_device.clone());
-        let bias = Some(Tensor::randn::<f32>(shape![1, 1500], cpu_device.clone()));
+        let a = Tensor::randn::<f32>(shape![2, 222, 252], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 222, 238], cpu_device.clone());
+        let bias = Some(Tensor::randn::<f32>(shape![238], cpu_device.clone()));
 
-        let TRANS_LHS = false;
-        let TRANS_RHS = true;
-        let TRANS_OUT = true;
+        let TRANS_LHS = true;
+        let TRANS_RHS = false;
+        let TRANS_OUT = false;
+        let QUANT = false;
 
-        let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
+        let ground = ground_truth(&a, &b, bias.as_ref(), TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
 
-        let quantizer = Quantizer::new(Quantization::SInt8);
-        let aq = quantizer.sint8_quantize(a);
-        let a_gpu = aq.to(&device)?;
+        let a_gpu = if QUANT {
+            let quantizer = Quantizer::new(Quantization::SInt8);
+            let aq = quantizer.sint8_quantize(a);
+            aq.to(&device)?
+        } else {
+            a.to(&device)?
+        };
+
         let b_gpu = b.to(&device)?;
         let bias_gpu = bias.as_ref().map(|b| b.to(&device)).transpose()?;
         let c_gpu = a_gpu
@@ -830,7 +856,7 @@ def matmul(a, b{}):
         println!("RATCHET\n{:?}\n", ours.to_ndarray_view::<f32>());
         println!("PYTORCH:\n{:?}", ground.to_ndarray_view::<f32>());
 
-        ground.all_close(&ours, 1e1, 1e1)?;
+        ground.all_close(&ours, 1e-3, 1e-3)?;
         Ok(())
     }
 }
