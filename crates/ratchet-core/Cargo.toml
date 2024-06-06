@@ -24,7 +24,7 @@ pathdiff = { workspace = true }
 
 [dependencies]
 ratchet-macros = { path = "../ratchet-macros"}
-inline-wgsl = { git = "ssh://git@github.com/FL33TW00D/inline-wgsl.git", branch = "master" }
+inline-wgsl = { git = "https://github.com/FL33TW00D/inline-wgsl.git", branch = "master" }
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
 half = { workspace = true }
