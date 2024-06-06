@@ -71,8 +71,10 @@ pub struct WgslKernelBuilder {
 
 #[derive(thiserror::Error, Debug)]
 pub enum KernelBuildError {
+    //#[error("Failed to build kernel: {0}")]
+    //BuildError(#[from] wgpu::naga::front::wgsl::ParseError),
     #[error("Failed to build kernel: {0}")]
-    BuildError(#[from] wgpu::naga::front::wgsl::ParseError),
+    BuildError(String),
 }
 
 impl WgslKernelBuilder {

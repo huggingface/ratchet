@@ -146,6 +146,25 @@ impl GEMV {
         let (TILE_X, _) = spec.heuristic.as_workgroup_size();
         let A_FIT = spec.lhs_shape()[1] % TILE_X == 0;
 
+        let readA = if A_FIT {
+            wgsl! {
+                fn readA(batch: i32, row: i32, col: i32) -> f32 {
+                    return A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
+                }
+            }
+        } else {
+            wgsl! {
+                fn readA(batch: i32, row: i32, col: i32) -> f32 {
+                    var val = 0.0;
+                    if (row <= metadata.aShape.y) {
+                        val = A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
+                    }
+                    return val;
+                }
+            }
+        };
+        kernel_builder.write_global(readA);
+
         let workgroup_size_y = workgroup_size.y;
         let main_loop = match self.lhs.dt() {
             DType::GGUF(g) => match g {
@@ -162,20 +181,13 @@ impl GEMV {
             _ => {
                 wgsl! {
                     for (var k = i32(global_invocation_id.y); k < metadata.dimInner; k+='workgroup_size_y) {
-                        sum = fma(A[aIndex + k], X[bOffset + k], sum);
+                        sum = fma(readA(batchA, row, k), X[bOffset + k], sum);
                     }
                 }
             }
         };
 
         kernel_builder.write_main(wgsl! { let row = i32(global_invocation_id.x); });
-        if A_FIT {
-            kernel_builder.write_main(wgsl! {
-                if (row >= metadata.aShape.y) {
-                    return;
-                }
-            });
-        }
 
         kernel_builder.write_main(wgsl! {
             let batch = i32(global_invocation_id.z);

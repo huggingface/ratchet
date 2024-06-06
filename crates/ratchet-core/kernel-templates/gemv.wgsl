@@ -42,6 +42,10 @@ fn unpack4x8snorm_gguf(x: u32) -> vec4<f32> {
     return unpack4x8snorm(x) * 127f;
 }
 
+fn readA(batch: i32, row: i32, col: i32) -> f32 {
+    return A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
+}
+
 var<workgroup> work: array<{{ ELEM_TYPE }}, {{workgroup_size_x * workgroup_size_y / ELEM_SIZE}}>;
 
 @compute @workgroup_size({{workgroup_size_x}},{{workgroup_size_y}},{{workgroup_size_z}})

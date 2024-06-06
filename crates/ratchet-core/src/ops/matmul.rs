@@ -789,9 +789,9 @@ def matmul(a, b{}):
         let _ = env_logger::builder().is_test(true).try_init();
         let prob = SGEMMProblem {
             B: 1,
-            M: 1,
-            K: 160,
-            N: 32,
+            M: 511,
+            K: 511,
+            N: 1,
             has_bias: false,
             transpose: TransKind::None,
         };
