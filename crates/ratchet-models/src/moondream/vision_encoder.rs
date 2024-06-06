@@ -1,13 +1,10 @@
-use std::io::{BufRead, Seek};
-
 use ratchet::{prelude::shape, Device, Tensor};
-use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{LayerNorm, Linear, Module};
 
 use super::mlp::MLP;
 
 #[derive(Debug, derive_new::new)]
-struct Attention {
+pub struct Attention {
     n_heads: usize,
     dim: usize,
     qkv: Linear,
@@ -67,7 +64,7 @@ impl Module for Attention {
 }
 
 #[derive(Debug, derive_new::new)]
-struct VitBlock {
+pub struct VitBlock {
     embed_dim: usize,
     attn: Attention,
     mlp: MLP,
@@ -87,7 +84,7 @@ impl Module for VitBlock {
 }
 
 #[derive(Debug, derive_new::new)]
-struct LinearPatchEmbedding {
+pub struct LinearPatchEmbedding {
     linear: Linear,
 }
 
@@ -122,7 +119,7 @@ impl Module for LinearPatchEmbedding {
 }
 
 #[derive(Debug, derive_new::new)]
-struct VisionTransformer {
+pub struct VisionTransformer {
     patch_embed: LinearPatchEmbedding,
     pos_embed: Tensor,
     blocks: Vec<VitBlock>,
@@ -143,7 +140,8 @@ impl Module for VisionTransformer {
     }
 }
 
-struct VisionProjection {
+#[derive(Debug, derive_new::new)]
+pub struct VisionProjection {
     mlp: MLP,
 }
 
@@ -155,6 +153,7 @@ impl Module for VisionProjection {
     }
 }
 
+#[derive(Debug, derive_new::new)]
 pub struct VisionEncoder {
     projection: VisionProjection,
     transformer: VisionTransformer,
@@ -165,143 +164,5 @@ impl Module for VisionEncoder {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         self.projection.schedule(self.transformer.schedule(input)?)
-    }
-}
-
-impl VisionEncoder {
-    pub fn load<R: BufRead + Seek>(
-        disk_model: &Header,
-        reader: &mut R,
-        device: &Device,
-    ) -> anyhow::Result<Self> {
-        let lt = |name: &str| disk_model.tensor(reader, &name, device);
-        Self::load_inner(disk_model, lt, device)
-    }
-
-    fn load_inner<F>(header: &Header, mut lt: F, device: &Device) -> anyhow::Result<Self>
-    where
-        F: FnMut(&str) -> anyhow::Result<Tensor>,
-    {
-        let projection = VisionProjection {
-            mlp: MLP {
-                fc1: Linear::new(lt("mm.0.weight")?, Some(lt("mm.0.bias")?)),
-                fc2: Linear::new(lt("mm.2.weight")?, Some(lt("mm.2.bias")?)),
-            },
-        };
-
-        let ln_eps = 1e-05;
-        let transformer = VisionTransformer {
-            patch_embed: LinearPatchEmbedding {
-                linear: Linear::new(lt("v.patch_embd.weight")?, Some(lt("v.patch_embd.bias")?)),
-            },
-            pos_embed: lt("v.position_embd.weight")?,
-            blocks: (0..27)
-                .map(|layer| {
-                    let qkvw = lt(&format!("v.blk.{}.attn_qkv.weight", layer)).unwrap();
-                    let qkvb = lt(&format!("v.blk.{}.attn_qkv.bias", layer)).unwrap();
-
-                    let n_heads = 16;
-                    let dim = 1152;
-                    let h_dim = dim / n_heads;
-                    let scale_factor =
-                        Tensor::from_data([1.0 / (h_dim as f32).sqrt()], shape![1], device.clone());
-
-                    VitBlock {
-                        embed_dim: header
-                            .metadata
-                            .get("clip.vision.embedding_length")
-                            .unwrap()
-                            .to_u32()
-                            .unwrap()
-                            .try_into()
-                            .unwrap(),
-                        attn: Attention {
-                            n_heads: n_heads,
-                            dim: dim,
-                            qkv: Linear::new(qkvw, Some(qkvb)),
-                            proj: Linear::new(
-                                lt(&format!("v.blk.{}.attn_out.weight", layer)).unwrap(),
-                                Some(lt(&format!("v.blk.{}.attn_out.bias", layer)).unwrap()),
-                            ),
-                            scale_factor: scale_factor,
-                        },
-                        mlp: MLP {
-                            fc1: Linear::new(
-                                lt(&format!("v.blk.{}.ffn_down.weight", layer)).unwrap(),
-                                Some(lt(&format!("v.blk.{}.ffn_down.bias", layer)).unwrap()),
-                            ),
-                            fc2: Linear::new(
-                                lt(&format!("v.blk.{}.ffn_up.weight", layer)).unwrap(),
-                                Some(lt(&format!("v.blk.{}.ffn_up.bias", layer)).unwrap()),
-                            ),
-                        },
-                        norm1: LayerNorm::new(
-                            lt(&format!("v.blk.{}.ln1.weight", layer)).unwrap(),
-                            Some(lt(&format!("v.blk.{}.ln1.bias", layer)).unwrap()),
-                            ln_eps,
-                        ),
-                        norm2: LayerNorm::new(
-                            lt(&format!("v.blk.{}.ln2.weight", layer)).unwrap(),
-                            Some(lt(&format!("v.blk.{}.ln2.bias", layer)).unwrap()),
-                            ln_eps,
-                        ),
-                    }
-                })
-                .collect::<Vec<_>>(),
-            norm: LayerNorm::new(lt("v.post_ln.weight")?, Some(lt("v.post_ln.bias")?), ln_eps),
-        };
-        Ok(VisionEncoder {
-            projection: projection,
-            transformer: transformer,
-        })
-    }
-}
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests {
-    use hf_hub::api::sync::Api;
-    use ratchet::{prelude::shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
-    use ratchet_loader::gguf;
-    use ratchet_nn::Module;
-
-    use crate::moondream::vision_encoder::VisionEncoder;
-
-    fn ground_truth(tensor: Tensor) -> anyhow::Result<Tensor> {
-        let prg = r#"
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
-
-def ground(*args):
-    tensor = torch.from_numpy(args[0])
-    model_id = "vikhyatk/moondream2"
-    revision = "2024-05-08"
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id, trust_remote_code=True, revision=revision
-    )
-    return model.encode_image(tensor).numpy()
-"#;
-
-        run_py_prg(prg.to_string(), &[&tensor], &[])
-    }
-
-    #[test]
-    fn vision_encoder() {
-        let api = Api::new().unwrap();
-        let model = api.model("tgestson/ratchet-moondream2".to_string());
-        let model_path = model.get("moondream2-mmproj-f16.gguf").unwrap();
-        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let content = gguf::gguf::Header::read(&mut reader).unwrap();
-        let model = VisionEncoder::load(&content, &mut reader, &device).unwrap();
-        let input = Tensor::randn::<f32>(shape![1, 3, 378, 378], device);
-        let ours = model
-            .schedule(input.clone())
-            .unwrap()
-            .resolve()
-            .unwrap()
-            .to(&Device::CPU)
-            .unwrap();
-        let theirs = ground_truth(input.to(&Device::CPU).unwrap()).unwrap();
-        ours.all_close(&theirs, 1e-2, 1e-2).unwrap();
     }
 }

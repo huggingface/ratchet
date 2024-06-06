@@ -65,6 +65,7 @@ pub enum PhiVariants {
 pub enum AvailableModels {
     Whisper(WhisperVariants),
     Phi(PhiVariants),
+    Moondream,
 }
 
 impl AvailableModels {
@@ -75,6 +76,7 @@ impl AvailableModels {
                 PhiVariants::Phi2 => "FL33TW00D-HF/phi2",
                 PhiVariants::Phi3 => "FL33TW00D-HF/phi3",
             },
+            AvailableModels::Moondream => "tgestson/ratchet-moondream",
         };
         id.to_string()
     }
@@ -94,6 +96,7 @@ impl AvailableModels {
                 PhiVariants::Phi2 => "phi2",
                 PhiVariants::Phi3 => "phi3-mini-4k",
             },
+            AvailableModels::Moondream => "moondream",
         };
         match quantization {
             Quantization::Q8_0 => format!("{}_q8_0.gguf", model_stem),

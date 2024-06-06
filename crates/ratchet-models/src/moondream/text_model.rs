@@ -1,7 +1,4 @@
-use std::io::{BufRead, Seek};
-
 use ratchet::{rvec, shape, Device, Tensor};
-use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{
     Embedding, KVCache, KVEntry, LayerNorm, Linear, Module, RotaryEmbedding, RotaryInput,
 };
@@ -164,78 +161,6 @@ impl Module for TextModel {
 }
 
 impl TextModel {
-    pub fn load<R: BufRead + Seek>(
-        header: Header,
-        reader: &mut R,
-        device: &Device,
-    ) -> anyhow::Result<Self> {
-        let embedding = Embedding::new(header.tensor(reader, "token_embd.weight", device)?);
-
-        let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
-        let dim = header.metadata.get("phi2.embedding_length")?.to_u32()?;
-        let n_heads = header.metadata.get("phi2.attention.head_count")?.to_u32()?;
-        let n_kv_heads = header
-            .metadata
-            .get("phi2.attention.head_count_kv")?
-            .to_u32()?;
-        let rope_base = 10000.0f32;
-        let rope_dim = header.metadata.get("phi2.rope.dimension_count")?.to_u32()?;
-        let ln_eps = 1e-05;
-        let hdim = dim as f32 / n_heads as f32;
-        let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());
-
-        let mut lt = |name: String| header.tensor(reader, &name, device).unwrap();
-        let cache_shape = shape![1, 32, 4096, 64];
-
-        Ok(TextModel::new(
-            embedding,
-            (0..n_layers)
-                .map(|i| DecoderLayer {
-                    self_attn: SelfAttention::new(
-                        Linear::new(
-                            lt(format!("blk.{}.attn_qkv.weight", i)),
-                            Some(lt(format!("blk.{}.attn_qkv.bias", i))),
-                        ),
-                        Linear::new(
-                            lt(format!("blk.{}.attn_output.weight", i)),
-                            Some(lt(format!("blk.{}.attn_output.bias", i))),
-                        ),
-                        RotaryEmbedding::new(rope_dim as usize, false, rope_base, 1.0),
-                        n_heads,
-                        softmax_scale.clone(),
-                        n_kv_heads,
-                    ),
-                    ln: LayerNorm::new(
-                        lt(format!("blk.{}.attn_norm.weight", i)),
-                        Some(lt(format!("blk.{}.attn_norm.bias", i))),
-                        ln_eps,
-                    ),
-                    mlp: MLP::new(
-                        Linear::new(
-                            lt(format!("blk.{}.ffn_up.weight", i)),
-                            Some(lt(format!("blk.{}.ffn_up.bias", i))),
-                        ),
-                        Linear::new(
-                            lt(format!("blk.{}.ffn_down.weight", i)),
-                            Some(lt(format!("blk.{}.ffn_down.bias", i))),
-                        ),
-                    ),
-                })
-                .collect(),
-            LayerNorm::new(
-                lt("output_norm.weight".to_owned()),
-                Some(lt("output_norm.bias".to_owned())),
-                ln_eps,
-            ),
-            Linear::new(
-                lt("output.weight".to_owned()),
-                Some(lt("output.bias".to_owned())),
-            ),
-            KVCache::new(n_layers as _, cache_shape, device),
-            device.clone(),
-        ))
-    }
-
     pub fn generate_mask(seq_len: usize, device: &Device) -> anyhow::Result<Tensor> {
         let mask: Vec<_> = (0..seq_len)
             .flat_map(|i| (0..seq_len).map(move |j| if j > i { f32::NEG_INFINITY } else { 0f32 }))
@@ -250,5 +175,8 @@ impl TextModel {
 
     pub fn cache_mut(&mut self) -> &mut KVCache {
         &mut self.kv_cache
+    }
+    pub fn reset_cache(&mut self) {
+        self.kv_cache.reset();
     }
 }
