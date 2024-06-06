@@ -171,22 +171,22 @@ impl KernelKey {
         additional: Option<&str>,
     ) -> Self {
         let mut key = stem.to_string();
-        key.push_str("_");
+        key.push('_');
         for input in inputs {
             key.push_str(&input.dt().to_string());
-            key.push_str("_");
+            key.push('_');
         }
         key.push_str(&output.dt().to_string());
-        key.push_str("_");
+        key.push('_');
         key.push_str(&workgroup_size.as_key());
-        key.push_str("_");
+        key.push('_');
         key.push_str(&inplace.to_string());
-        key.push_str("_");
+        key.push('_');
         if let Some(add) = additional {
             key.push_str(add);
-            key.push_str("_");
+            key.push('_');
         }
-        key.push_str(&kernel_element.as_str());
+        key.push_str(kernel_element.as_str());
         Self(key)
     }
 }
@@ -247,7 +247,7 @@ pub trait MetaOperation: Debug + 'static {
             dst,
             workgroup_size,
             inplace,
-            &kernel_element,
+            kernel_element,
             None,
         )
     }

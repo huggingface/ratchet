@@ -176,7 +176,7 @@ impl MetaOperation for Binary {
             dst,
             workgroup_size,
             inplace,
-            &kernel_element,
+            kernel_element,
             None,
         )
     }

@@ -450,7 +450,7 @@ impl MetaOperation for Matmul {
             dst,
             workgroup_size,
             inplace,
-            &kernel_element,
+            kernel_element,
             Some(&additional),
         )
     }
