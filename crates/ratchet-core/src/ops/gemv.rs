@@ -146,22 +146,44 @@ impl GEMV {
         let (TILE_X, _) = spec.heuristic.as_workgroup_size();
         let A_FIT = spec.lhs_shape()[1] % TILE_X == 0;
 
-        let readA = if A_FIT {
-            wgsl! {
-                fn readA(batch: i32, row: i32, col: i32) -> f32 {
-                    return A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
-                }
-            }
-        } else {
-            wgsl! {
-                fn readA(batch: i32, row: i32, col: i32) -> f32 {
-                    var val = 0.0;
-                    if (row <= metadata.aShape.y) {
-                        val = A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
+        let readA = match (A_FIT, self.lhs.dt()) {
+            (true, DType::F32) => {
+                wgsl! {
+                    fn readA(batch: i32, row: i32, col: i32) -> f32 {
+                        return A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
                     }
-                    return val;
                 }
             }
+            (false, DType::F32) => {
+                wgsl! {
+                    fn readA(batch: i32, row: i32, col: i32) -> f32 {
+                        var val = 0.0;
+                        if (row <= metadata.aShape.y) {
+                            val = A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
+                        }
+                        return val;
+                    }
+                }
+            }
+            (true, DType::GGUF(_)) => {
+                wgsl! {
+                    fn readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
+                        return unpack4x8snorm(A[dot(metadata.aStrides, vec3<i32>(batch, row, col))]) * 127f;
+                    }
+                }
+            }
+            (false, DType::GGUF(_)) => {
+                wgsl! {
+                    fn readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
+                        var val = 0.0;
+                        if (row <= metadata.aShape.y) {
+                            val = unpack4x8snorm(A[dot(metadata.aStrides, vec3<i32>(batch, row, col))]) * 127f;
+                        }
+                        return val;
+                    }
+                }
+            }
+            _ => unimplemented!(),
         };
         kernel_builder.write_global(readA);
 
