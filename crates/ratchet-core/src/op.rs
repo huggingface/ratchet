@@ -289,7 +289,6 @@ pub trait MetaOperation: Debug + 'static {
         kernel_element: &KernelElement,
     ) -> Result<u64, OperationError>;
 
-    //TODO: remove `workgroup_size` from this method
     fn build_kernel(
         &self,
         inplace: bool,

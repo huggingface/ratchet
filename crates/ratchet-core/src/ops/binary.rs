@@ -162,25 +162,6 @@ impl MetaOperation for Binary {
         true
     }
 
-    fn kernel_key(
-        &self,
-        workgroup_size: &WorkgroupSize,
-        inplace: bool,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> KernelKey {
-        let stem = self.kernel_name();
-        KernelKey::new(
-            &stem,
-            &[&self.lhs, &self.rhs],
-            dst,
-            workgroup_size,
-            inplace,
-            kernel_element,
-            None,
-        )
-    }
-
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.lhs, &self.rhs]
     }

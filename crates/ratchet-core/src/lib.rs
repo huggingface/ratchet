@@ -104,7 +104,6 @@ pub mod test_util {
     };
 
     /// It's a bit of a hack, but it's useful for testing.
-    /// T is the type of the tensor you want to return.
     pub fn run_py_prg(
         prg: String,
         tensors: &[&Tensor],

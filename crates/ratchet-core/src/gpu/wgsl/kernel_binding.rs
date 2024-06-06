@@ -13,6 +13,15 @@ pub(crate) enum BindingMode {
     ReadWrite,
 }
 
+impl BindingMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BindingMode::ReadOnly => "read",
+            BindingMode::ReadWrite => "read_write",
+        }
+    }
+}
+
 #[derive(Debug, derive_new::new)]
 pub struct KernelBinding {
     name: Ident,
@@ -50,11 +59,6 @@ impl From<KernelBinding> for wgpu::BindGroupLayoutEntry {
 
 impl RenderFragment for KernelBinding {
     fn render(&self) -> crate::WgslFragment {
-        let mode = match self.mode {
-            BindingMode::ReadOnly => "read",
-            BindingMode::ReadWrite => "read_write",
-        };
-
         let KernelBinding {
             name,
             group,
@@ -62,6 +66,7 @@ impl RenderFragment for KernelBinding {
             accessor,
             ..
         } = self;
+        let mode = self.mode.as_str();
 
         let result = match self.ty {
             BindingType::Storage => wgsl! {

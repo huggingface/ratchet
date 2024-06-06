@@ -14,9 +14,9 @@ use inline_wgsl::wgsl;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource,
-    MetaOperation, OperationError, RVec, Scalar, Shape, Strides, Tensor, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize, Workload,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
+    OperationError, RVec, Scalar, Shape, Strides, Tensor, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
 use glam::UVec4;
 
@@ -106,7 +106,6 @@ impl Reindex {
         kernel_builder.write_main(wgsl! {
             //Convert 4D index into 1D offset
             let src_offset = ndIndexToOffset(src_index, metadata.src_offsets, metadata.src_stride);
-
             //Read from input buffer and write to output buffer
             Y[dst_offset] = X[src_offset];
         });

@@ -5,9 +5,9 @@ use inline_wgsl::wgsl;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount, UNIFORM_ALIGN},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
-    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
+    OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -352,23 +352,5 @@ def permute(t0, t1, t2, t3, t4):
             dim,
         })
         .unwrap();
-    }
-
-    #[test]
-    fn test_render_concat() {
-        let device = GPU_DEVICE.with(|d| d.clone());
-
-        let t0 = Tensor::randn::<f16>(shape![4, 2, 50, 128], device.clone());
-        let t1 = Tensor::randn::<f16>(shape![4, 2, 13, 128], device.clone());
-        let t2 = Tensor::randn::<f16>(shape![4, 2, 77, 128], device.clone());
-        let t3 = Tensor::randn::<f16>(shape![4, 2, 55, 128], device.clone());
-        let t4 = Tensor::randn::<f16>(shape![4, 2, 11, 128], device.clone());
-        let to_concat = rvec![t0, t1, t2, t3, t4];
-
-        let dst = Tensor::zeros::<f16>(&shape![1, 2, 128], &device);
-        let op = Concat::new(to_concat, 2);
-        let wgs = wgs![128, 1, 1];
-        let kern = op.build_kernel(true, &dst, &wgs).unwrap();
-        println!("{}", kern);
     }
 }
