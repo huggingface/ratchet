@@ -9,6 +9,9 @@ use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear, Module, RotaryEmbedding};
 use tokenizers::Tokenizer;
 
+#[cfg(target_arch = "wasm32")]
+use {crate::ratchet_from_gguf_web, crate::TensorMap};
+
 use super::{
     mlp::MLP,
     text_model::{self, DecoderLayer, SelfAttention, TextModel},
@@ -18,9 +21,10 @@ use super::{
     },
 };
 
-struct Moondream {
-    vision_encoder: VisionEncoder,
-    text_model: TextModel,
+#[derive(Debug)]
+pub struct Moondream {
+    pub vision_encoder: VisionEncoder,
+    pub text_model: TextModel,
 }
 
 impl Moondream {
@@ -34,15 +38,15 @@ impl Moondream {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn load_web(header: &Header, mut tensors: TensorMap) -> anyhow::Result<Self> {
+    pub async fn from_web(header: Header, mut tensors: TensorMap) -> anyhow::Result<Self> {
         let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
         let mut lt = |name: &str| {
             let tensor = tensors
                 .remove(name)
-                .ok_or_else(|| anyhow::anyhow!("missing tensor"))?;
-            ratchet_from_gguf_web(tensor, &device)
+                .ok_or_else(|| anyhow::anyhow!("missing tensor"));
+            ratchet_from_gguf_web(tensor.unwrap(), &device).unwrap()
         };
-        Self::load_inner(header, lt, device)
+        Self::load_inner(&header, lt, &device)
     }
 
     fn load_inner<F>(header: &Header, mut lt: F, device: &Device) -> anyhow::Result<Self>
@@ -189,103 +193,22 @@ impl Moondream {
             text_model,
         })
     }
-
-    fn generate(
-        &mut self,
-        image_bytes: &[u8],
-        image_format: ImageFormat,
-        prompt: String,
-        max_tokens: usize,
-        tokenizer: Tokenizer,
-        device: Device,
-    ) -> anyhow::Result<String> {
-        let img = image::load_from_memory_with_format(image_bytes, image_format)
-            .unwrap()
-            .resize_to_fill(378, 378, image::imageops::FilterType::Triangle); // Adjusted to 378x378
-
-        let pixels: Vec<_> = img
-            .to_rgb8()
-            .to_vec()
-            .iter()
-            .map(|&x| (x as f32 / 255.0))
-            .collect();
-
-        let img_tensor = Tensor::from_data(&pixels, shape![378, 378, 3], device.clone())
-            .permute(&[2, 0, 1])?
-            .view(shape![1, 3, 378, 378])?;
-
-        let img_embed = self.vision_encoder.schedule(img_tensor)?.resolve()?;
-
-        let bos_token = self
-            .text_model
-            .embedding
-            .schedule(Tensor::from_data([50256], shape![1], device.clone()))?
-            .view(shape![1, 1, 2048])?;
-
-        let mut tokens = tokenizer
-            .encode(prompt, false)
-            .unwrap()
-            .get_ids()
-            .iter()
-            .map(|&x| x as i32)
-            .collect::<Vec<_>>();
-
-        let mut generated_tokens = vec![];
-        let mut all_tokens = tokens.clone();
-
-        while all_tokens.len() < max_tokens && *tokens.last().unwrap() != 50256 {
-            let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let mut embeds: Tensor;
-            if generated_tokens.len() == 0 {
-                embeds = self.text_model.embedding.schedule(input).unwrap();
-                embeds = Tensor::cat(
-                    vec![bos_token.clone(), img_embed.clone(), embeds.clone()].into(),
-                    1,
-                )
-                .unwrap();
-            } else {
-                embeds = self.text_model.embedding.schedule(input).unwrap();
-            }
-
-            let result = self
-                .text_model
-                .schedule(embeds.clone())
-                .unwrap()
-                .resolve()
-                .unwrap();
-
-            self.text_model.cache_mut().update(embeds.shape()[1]);
-
-            let logits = result.to(&Device::CPU).unwrap();
-            let next_tokens = logits
-                .to_ndarray_view::<f32>()
-                .map_axis(Axis(2), |row| row.argmax_skipnan().unwrap())
-                .iter()
-                .map(|&x| x as i32)
-                .collect::<Vec<_>>();
-            tokens = next_tokens.clone();
-            generated_tokens.extend(next_tokens.clone());
-            all_tokens.extend(next_tokens.clone());
-        }
-
-        let u32_toks = generated_tokens
-            .iter()
-            .map(|&x| x as u32)
-            .collect::<Vec<_>>();
-        Ok(tokenizer.decode(&u32_toks, true).unwrap())
-    }
 }
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use std::fs;
 
+    use anyhow::Ok;
     use hf_hub::api::sync::Api;
     use ratchet::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
     use ratchet_loader::gguf;
     use ratchet_nn::Module;
     use tokenizers::Tokenizer;
 
-    use crate::moondream::{text_model::TextModel, vision_encoder::VisionEncoder};
+    use crate::moondream::{
+        generate::generate, text_model::TextModel, vision_encoder::VisionEncoder,
+    };
 
     use super::Moondream;
 
@@ -304,7 +227,7 @@ def ground(*args):
     return model.encode_image(tensor).numpy()
 "#;
 
-        run_py_prg(prg.to_string(), &[&tensor], &[])
+        run_py_prg(prg.to_string(), &[&tensor], &[], ratchet::DType::F32)
     }
 
     #[test]
@@ -347,18 +270,13 @@ def ground(*args):
         let img_path = model_repo.get("demo.jpg").unwrap();
         let img = fs::read(img_path).unwrap();
 
-        let prompt = "\n\nQuestion: What is happening here?\n\nAnswer: ";
-
-        let result = model
-            .generate(
-                &img,
-                image::ImageFormat::Jpeg,
-                prompt.to_owned(),
-                150,
-                tokenizer,
-                device,
-            )
-            .unwrap();
-        print!("{}", result);
+        generate(
+            &mut model,
+            &img,
+            "What is happening here?".to_owned(),
+            tokenizer,
+            |token| print!("{}", token),
+        )
+        .unwrap();
     }
 }

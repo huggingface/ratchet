@@ -176,7 +176,7 @@ impl TextModel {
     pub fn cache_mut(&mut self) -> &mut KVCache {
         &mut self.kv_cache
     }
-    pub fn reset_cache(&mut self) {
+    pub fn reset(&mut self) {
         self.kv_cache.reset();
     }
 }
