@@ -220,7 +220,7 @@ import torch
 def ground(*args):
     tensor = torch.from_numpy(args[0])
     model_id = "vikhyatk/moondream2"
-    revision = "2024-05-08"
+    revision = "2024-05-20"
     model = AutoModelForCausalLM.from_pretrained(
         model_id, trust_remote_code=True, revision=revision
     )

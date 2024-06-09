@@ -163,6 +163,10 @@ impl Module for VisionEncoder {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        self.projection.schedule(self.transformer.schedule(input)?)
+        let transformed = self.transformer.schedule(input)?;
+        self.projection.schedule(Tensor::cat(
+            vec![transformed.clone(), transformed.clone()].into(),
+            2,
+        )?)
     }
 }
