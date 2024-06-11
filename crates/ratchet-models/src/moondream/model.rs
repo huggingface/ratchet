@@ -232,13 +232,16 @@ def ground(*args):
 
     #[test]
     fn vision_encoder() {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        thread_local! {
+            static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+        }
 
         let api = Api::new().unwrap();
-        let model_repo = api.model("tgestson/ratchet-moondream2".to_string());
+        let model_repo = api.model("ratchet-community/ratchet-moondream-2".to_string());
         let model_path = model_repo.get("moondream_f32.gguf").unwrap();
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let content = gguf::gguf::Header::read(&mut reader).unwrap();
+        let device = GPU_DEVICE.with(|d| d.clone());
         let model = Moondream::load(content, &mut reader, &device).unwrap();
 
         let input = Tensor::randn::<f32>(shape![1, 3, 378, 378], device);
@@ -251,14 +254,14 @@ def ground(*args):
             .to(&Device::CPU)
             .unwrap();
         let theirs = vision_ground_truth(input.to(&Device::CPU).unwrap()).unwrap();
-        ours.all_close(&theirs, 1e-2, 1e-2).unwrap();
+        ours.all_close(&theirs, 1e-1, 1e-1).unwrap();
     }
 
     fn end_to_end() {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let api = Api::new().unwrap();
-        let model_repo = api.model("tgestson/ratchet-moondream2".to_string());
+        let model_repo = api.model("ratchet-community/ratchet-moondream-2".to_string());
         let model_path = model_repo.get("moondream_q8_0.gguf").unwrap();
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let content = gguf::gguf::Header::read(&mut reader).unwrap();

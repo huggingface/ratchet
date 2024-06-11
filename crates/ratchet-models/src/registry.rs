@@ -76,7 +76,7 @@ impl AvailableModels {
                 PhiVariants::Phi2 => "FL33TW00D-HF/phi2",
                 PhiVariants::Phi3 => "FL33TW00D-HF/phi3",
             },
-            AvailableModels::Moondream => "tgestson/ratchet-moondream2",
+            AvailableModels::Moondream => "ratchet-community/ratchet-moondream-2",
         };
         id.to_string()
     }
