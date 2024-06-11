@@ -43,6 +43,16 @@ impl DType {
         }
     }
 
+    pub fn as_wgsl(self) -> &'static str {
+        match self {
+            DType::F32 => "f32",
+            DType::F16 => "f16",
+            DType::I32 => "i32",
+            DType::U32 => "u32",
+            _ => unimplemented!(),
+        }
+    }
+
     /// Returns the size of the type in bytes.
     pub fn size_of(self) -> usize {
         match self {
@@ -147,42 +157,34 @@ map_type!(u32, U32);
 map_half_type!(f16, F16);
 map_half_type!(bf16, BF16);
 
-//Handy trait for WebGPU buffer alignment
-pub trait Align {
-    fn calculate_alignment(&self) -> usize;
-    fn align(&self) -> usize;
-}
+#[cfg(test)]
+use proptest::prelude::*;
 
-impl Align for usize {
-    fn calculate_alignment(&self) -> usize {
-        let remainder = self % 256;
-        if remainder == 0 {
-            0
-        } else {
-            256 - remainder
-        }
-    }
+#[cfg(test)]
+impl Arbitrary for DType {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
 
-    fn align(&self) -> usize {
-        self + &self.calculate_alignment()
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(DType::F32),
+            Just(DType::F16),
+            Just(DType::I32),
+            Just(DType::U32),
+        ]
+        .boxed()
     }
 }
 
-pub trait Padding {
-    fn align_standard(&mut self) -> usize;
-}
-
-impl<T: Clone + Default> Padding for Vec<T> {
-    fn align_standard(&mut self) -> usize {
-        let length = &self.len();
-        let alignment = length.calculate_alignment();
-        if alignment != 0 {
-            let default_value: T = Default::default();
-            let mut padding = vec![default_value; alignment];
-            self.append(&mut padding);
-            alignment
-        } else {
-            0
+#[cfg(test)]
+impl DType {
+    pub fn as_torch(self) -> &'static str {
+        match self {
+            DType::F32 => "torch.float32",
+            DType::F16 => "torch.float16",
+            DType::I32 => "torch.int32",
+            DType::U32 => "torch.uint32",
+            _ => unimplemented!(),
         }
     }
 }

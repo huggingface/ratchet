@@ -16,6 +16,10 @@ pub const QK8_1: usize = 32;
 /// GGUF data types that are supported in Ratchet.
 ///
 /// For actual blocks extracted from GGUF, see `ratchet-loader`.
+#[cfg(test)]
+use test_strategy::Arbitrary;
+
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GGUFDType {
     Q4K(Q4K),
@@ -58,6 +62,7 @@ impl std::fmt::Display for GGUFDType {
     }
 }
 
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
 pub struct Q4K;
 
@@ -83,6 +88,7 @@ impl Bindings for Q4K {
     }
 }
 
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
 pub struct Q6K;
 
@@ -108,6 +114,7 @@ impl Bindings for Q6K {
     }
 }
 
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
 pub struct Q8_0;
 

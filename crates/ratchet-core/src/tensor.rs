@@ -293,6 +293,13 @@ impl Tensor {
     impl_unary_op!(sigmoid, UnaryOp::Sigmoid);
     impl_unary_op!(silu, UnaryOp::Silu);
 
+    pub fn cast(self, dst_dt: DType) -> anyhow::Result<Tensor> {
+        let device = self.device.clone();
+        let cast = Unary::new(self, UnaryOp::Cast(dst_dt));
+        let new_view = cast.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Unary(cast), new_view, device))
+    }
+
     pub fn group_norm(
         self,
         num_groups: usize,

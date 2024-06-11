@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use derive_new::new;
 use encase::ShaderType;
 use half::f16;
@@ -31,32 +33,35 @@ pub enum UnaryOp {
     Neg,
     Silu,
     Sigmoid,
+    Cast(DType),
 }
 
 impl UnaryOp {
-    pub fn kernel_name(&self) -> &'static str {
+    pub fn kernel_name(&self) -> Cow<'static, str> {
         match self {
-            UnaryOp::Gelu => "gelu",
-            UnaryOp::Tanh => "tanh",
-            UnaryOp::Exp => "exp",
-            UnaryOp::Log => "log",
-            UnaryOp::Sin => "sin",
-            UnaryOp::Cos => "cos",
-            UnaryOp::Abs => "abs",
-            UnaryOp::Sqrt => "sqrt",
-            UnaryOp::Relu => "relu",
-            UnaryOp::Floor => "floor",
-            UnaryOp::Ceil => "ceil",
-            UnaryOp::Neg => "neg",
-            UnaryOp::Silu => "silu",
-            UnaryOp::Sigmoid => "sigmoid",
+            UnaryOp::Gelu => "gelu".into(),
+            UnaryOp::Tanh => "tanh".into(),
+            UnaryOp::Exp => "exp".into(),
+            UnaryOp::Log => "log".into(),
+            UnaryOp::Sin => "sin".into(),
+            UnaryOp::Cos => "cos".into(),
+            UnaryOp::Abs => "abs".into(),
+            UnaryOp::Sqrt => "sqrt".into(),
+            UnaryOp::Relu => "relu".into(),
+            UnaryOp::Floor => "floor".into(),
+            UnaryOp::Ceil => "ceil".into(),
+            UnaryOp::Neg => "neg".into(),
+            UnaryOp::Silu => "silu".into(),
+            UnaryOp::Sigmoid => "sigmoid".into(),
+            UnaryOp::Cast(dtype) => format!("cast_to_{}", dtype).into(),
         }
     }
 
-    pub fn kernel_operation(&self) -> &'static str {
+    pub fn kernel_operation(&self) -> Cow<'static, str> {
         match self {
-            UnaryOp::Tanh => "safe_tanh",
-            UnaryOp::Neg => "-",
+            UnaryOp::Tanh => "safe_tanh".into(),
+            UnaryOp::Neg => "-".into(),
+            UnaryOp::Cast(dtype) => dtype.as_wgsl().into(),
             _ => self.kernel_name(),
         }
     }
@@ -362,7 +367,17 @@ def {}(a):
             kn, kn, args,
         );
 
+        let cast_prg = format!(
+            r#"
+import torch
+def cast(a):
+    return torch.from_numpy(a).to({}).numpy()
+"#,
+            a.dt().as_torch()
+        );
+
         let prg = match op {
+            UnaryOp::Cast(_) => cast_prg,
             UnaryOp::Gelu | UnaryOp::Silu | UnaryOp::Sigmoid => func_prg,
             _ => imp_prg,
         };
@@ -402,6 +417,7 @@ def {}(a):
             UnaryOp::Neg => a_gpu.neg()?,
             UnaryOp::Silu => a_gpu.silu()?,
             UnaryOp::Sigmoid => a_gpu.sigmoid()?,
+            UnaryOp::Cast(dtype) => a_gpu.cast(dtype)?,
         }
         .resolve()?;
 
