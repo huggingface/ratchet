@@ -195,7 +195,7 @@ impl Moondream {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "pyo3"))]
 mod tests {
     use std::fs;
 
@@ -231,6 +231,7 @@ def ground(*args):
     }
 
     #[test]
+    #[cfg_attr(feature = "ci", ignore)]
     fn vision_encoder() {
         thread_local! {
             static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
