@@ -210,10 +210,7 @@ pub struct UnaryMeta {
 impl OpGuards for Unary {
     fn check_shapes(&self) {}
 
-    fn check_dtypes(&self) {
-        let a = &self.input;
-        assert!(matches!(a.dt(), crate::DType::F32));
-    }
+    fn check_dtypes(&self) {}
 }
 
 impl Operation for Unary {

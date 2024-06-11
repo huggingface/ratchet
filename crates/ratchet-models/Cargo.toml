@@ -39,6 +39,7 @@ lazy_static = { workspace = true }
 web-time = { workspace = true }
 clap = { workspace = true }
 serde_json.workspace = true
+half.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }  

@@ -145,8 +145,13 @@ impl OpGuards for Conv {
     }
 
     fn check_dtypes(&self) {
-        assert_eq!(self.input.dt(), self.weight.dt());
-        assert_eq!(self.bias.as_ref().map(|t| t.dt()), Some(self.input.dt()));
+        assert!(self.input.dt().is_float());
+        assert!(self.weight.dt().is_float());
+        assert!(self
+            .bias
+            .as_ref()
+            .map(|t| t.dt().is_float())
+            .unwrap_or(true));
     }
 }
 

@@ -26,7 +26,7 @@ pub trait GGUFInterop {
     //Size of the block in bytes
     const TYPE_SIZE: usize = std::mem::size_of::<Self::GGUF_TYPE>();
     //Size of block in bytes for WebGPU (i.e f16 isn't supported, so f32 is used, increasing size)
-    const TYPE_SIZE_WEBGPU: usize;
+    const TYPE_SIZE_F32: usize;
 
     //Given differences between GGUF and Ratchet, we need to "transcode" tensors from the raw GGUF
     //data into a format consumable by Ratchet.
@@ -41,7 +41,7 @@ pub trait GGUFInterop {
 impl GGUFInterop for Q4K {
     type GGUF_TYPE = BlockQ4K;
     const BLCK_NUMEL: usize = QK_K;
-    const TYPE_SIZE_WEBGPU: usize = Self::TYPE_SIZE + 4;
+    const TYPE_SIZE_F32: usize = Self::TYPE_SIZE + 4;
 
     fn transcode(
         data: &[Self::GGUF_TYPE],
@@ -82,7 +82,7 @@ impl GGUFInterop for Q4K {
 impl GGUFInterop for Q6K {
     type GGUF_TYPE = BlockQ6K;
     const BLCK_NUMEL: usize = QK_K;
-    const TYPE_SIZE_WEBGPU: usize = Self::TYPE_SIZE + 2;
+    const TYPE_SIZE_F32: usize = Self::TYPE_SIZE + 2;
 
     fn transcode(
         data: &[Self::GGUF_TYPE],
@@ -123,7 +123,7 @@ impl GGUFInterop for Q6K {
 impl GGUFInterop for Q8_0 {
     type GGUF_TYPE = BlockQ8_0;
     const BLCK_NUMEL: usize = QK8_0;
-    const TYPE_SIZE_WEBGPU: usize = Self::TYPE_SIZE + 2;
+    const TYPE_SIZE_F32: usize = Self::TYPE_SIZE + 2;
 
     fn transcode(
         data: &[Self::GGUF_TYPE],
@@ -131,14 +131,18 @@ impl GGUFInterop for Q8_0 {
         shape: Shape,
         device: &Device,
     ) -> anyhow::Result<Tensor> {
+        let gpu_device = device.try_gpu()?;
         //TODO: these should be uninit
         let mut qs_bytes = Vec::with_capacity(n_blocks * QK8_0);
         let mut ds_bytes = Vec::with_capacity(n_blocks * 4);
 
         for block in data {
-            let block_f32 = block.d.to_f32();
+            if gpu_device.features().SHADER_F16 {
+                ds_bytes.extend_from_slice(&block.d.to_le_bytes());
+            } else {
+                ds_bytes.extend_from_slice(&block.d.to_f32().to_le_bytes());
+            };
             let block_qs = block.qs;
-            ds_bytes.extend_from_slice(&block_f32.to_le_bytes());
             qs_bytes.extend_from_slice(bytemuck::cast_slice(&block_qs));
         }
 
@@ -161,7 +165,7 @@ impl GGUFInterop for Q8_0 {
 impl GGUFInterop for f32 {
     type GGUF_TYPE = f32;
     const BLCK_NUMEL: usize = 1;
-    const TYPE_SIZE_WEBGPU: usize = 4;
+    const TYPE_SIZE_F32: usize = 4;
 
     fn transcode(
         data: &[Self::GGUF_TYPE],
@@ -178,7 +182,7 @@ impl GGUFInterop for f16 {
 
     const BLCK_NUMEL: usize = 1;
 
-    const TYPE_SIZE_WEBGPU: usize = 4;
+    const TYPE_SIZE_F32: usize = 4;
 
     fn transcode(
         data: &[Self::GGUF_TYPE],

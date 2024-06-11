@@ -48,9 +48,7 @@ impl OpGuards for Permute {
         assert!(self.dims.iter().all(|&x| x < 4)); //Only support 4D for now
     }
 
-    fn check_dtypes(&self) {
-        assert!(self.src.dt() == DType::F32);
-    }
+    fn check_dtypes(&self) {}
 }
 
 #[cfg(all(test, feature = "pyo3"))]

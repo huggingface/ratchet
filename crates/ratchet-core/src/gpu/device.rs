@@ -146,6 +146,14 @@ impl WgpuDevice {
             .ok_or(DeviceError::AdapterRequestFailed)?;
         Ok(adapter)
     }
+
+    pub fn features(&self) -> &DeviceFeatures {
+        &self.device_features
+    }
+
+    pub fn limits(&self) -> &DeviceLimits {
+        &self.device_limits
+    }
 }
 
 impl WgpuDevice {
