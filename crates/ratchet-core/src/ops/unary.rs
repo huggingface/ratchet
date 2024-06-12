@@ -33,7 +33,6 @@ pub enum UnaryOp {
     Neg,
     Silu,
     Sigmoid,
-    Cast(DType),
 }
 
 impl UnaryOp {
@@ -53,7 +52,6 @@ impl UnaryOp {
             UnaryOp::Neg => "neg".into(),
             UnaryOp::Silu => "silu".into(),
             UnaryOp::Sigmoid => "sigmoid".into(),
-            UnaryOp::Cast(dtype) => format!("cast_to_{}", dtype).into(),
         }
     }
 
@@ -61,7 +59,6 @@ impl UnaryOp {
         match self {
             UnaryOp::Tanh => "safe_tanh".into(),
             UnaryOp::Neg => "-".into(),
-            UnaryOp::Cast(dtype) => dtype.as_wgsl().into(),
             _ => self.kernel_name(),
         }
     }
@@ -367,17 +364,7 @@ def {}(a):
             kn, kn, args,
         );
 
-        let cast_prg = format!(
-            r#"
-import torch
-def cast(a):
-    return torch.from_numpy(a).to({}).numpy()
-"#,
-            a.dt().as_torch()
-        );
-
         let prg = match op {
-            UnaryOp::Cast(_) => cast_prg,
             UnaryOp::Gelu | UnaryOp::Silu | UnaryOp::Sigmoid => func_prg,
             _ => imp_prg,
         };
@@ -417,7 +404,6 @@ def cast(a):
             UnaryOp::Neg => a_gpu.neg()?,
             UnaryOp::Silu => a_gpu.silu()?,
             UnaryOp::Sigmoid => a_gpu.sigmoid()?,
-            UnaryOp::Cast(dtype) => a_gpu.cast(dtype)?,
         }
         .resolve()?;
 
