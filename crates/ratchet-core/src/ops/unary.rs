@@ -421,14 +421,4 @@ def {}(a):
     fn test_unary(prob: UnaryProblem) {
         run_unary_trial(prob).unwrap();
     }
-
-    #[test]
-    fn test_render_unary() {
-        let device = GPU_DEVICE.with(|d| d.clone());
-        let input = Tensor::randn::<f32>(shape![1, 128], device.clone());
-        let op = Unary::new(input, UnaryOp::Gelu);
-        let dst = Tensor::randn::<f32>(shape![1, 128], device);
-        let kernel = op.build_kernel(true, &dst, &wgs![8, 8, 1]).unwrap();
-        println!("{}", kernel);
-    }
 }

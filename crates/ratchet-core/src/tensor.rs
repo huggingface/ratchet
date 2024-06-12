@@ -294,10 +294,14 @@ impl Tensor {
     impl_unary_op!(silu, UnaryOp::Silu);
 
     pub fn cast(self, dst_dt: DType) -> anyhow::Result<Tensor> {
+        if self.dt() == dst_dt {
+            return Ok(self);
+        }
+
         let device = self.device.clone();
-        let cast = Unary::new(self, UnaryOp::Cast(dst_dt));
+        let cast = Cast::new(self, dst_dt);
         let new_view = cast.compute_view()?;
-        Ok(Tensor::lazy(LazyOp::Unary(cast), new_view, device))
+        Ok(Tensor::lazy(LazyOp::Cast(cast), new_view, device))
     }
 
     pub fn group_norm(
@@ -702,6 +706,7 @@ impl Tensor {
     ) -> Option<CompiledOp> {
         match self.op() {
             LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Cast(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::RoPE(r) => r.compile(self, uniform, device, can_inplace).ok(),
@@ -988,8 +993,18 @@ impl Tensor {
         if self.shape() != other.shape() {
             anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
         }
-        assert!(self.dt() == other.dt());
-        assert!(self.dt() == T::dt());
+        assert!(
+            self.dt() == other.dt(),
+            "DType mismatch {:?} != {:?}",
+            self.dt(),
+            other.dt()
+        );
+        assert!(
+            self.dt() == T::dt(),
+            "DType mismatch {:?} != {:?}",
+            self.dt(),
+            T::dt()
+        );
 
         let self_nd = self.to_ndarray_view::<T>();
         let other_nd = other.to_ndarray_view::<T>();

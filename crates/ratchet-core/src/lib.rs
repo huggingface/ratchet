@@ -131,8 +131,9 @@ pub mod test_util {
             let py_result = prg.getattr(func)?.call1(py_args)?;
             let result: Tensor = match dst_dtype {
                 DType::F32 => py_result.extract::<&PyArrayDyn<f32>>()?.into(),
-                DType::I32 => py_result.extract::<&PyArrayDyn<i32>>()?.into(),
                 DType::F16 => py_result.extract::<&PyArrayDyn<f16>>()?.into(),
+                DType::I32 => py_result.extract::<&PyArrayDyn<i32>>()?.into(),
+                DType::U32 => py_result.extract::<&PyArrayDyn<u32>>()?.into(),
                 _ => unimplemented!(),
             };
             Ok(result)

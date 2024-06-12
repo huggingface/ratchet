@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use derive_new::new;
 use encase::ShaderType;
 use half::f16;
@@ -9,7 +7,7 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
+    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
@@ -51,6 +49,7 @@ impl Cast {
         self.register_bindings::<SP, DP>(&mut kernel_builder, inplace)?;
         kernel_builder.write_metadata::<CastMeta>();
 
+        let n = SP::W;
         kernel_builder.write_main(wgsl! {
             let x_offset = workgroup_id.x * 64u;
             let index = (workgroup_id.y * num_workgroups.x * 64u) + x_offset + local_invocation_index;
@@ -59,8 +58,9 @@ impl Cast {
             }
         });
 
+        let dst_accessor = DP::render_type();
         kernel_builder.write_main(wgsl! {
-            Y[index] = 'func(X[index]);
+            Y[index] = 'dst_accessor(X[index]);
         });
 
         Ok(kernel_builder.build()?)
@@ -80,13 +80,15 @@ impl OpGuards for Cast {
 
 impl Operation for Cast {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        Ok(self.input.storage_view().clone())
+        let shape = self.input.shape().clone();
+        let strides = Strides::from(&shape);
+        Ok(StorageView::new(shape, self.dst_dt, strides))
     }
 }
 
 impl MetaOperation for Cast {
     fn kernel_name(&self) -> String {
-        format!("cast_{}_to_{}", self.input.dt(), self.dst_dt)
+        "cast".to_string()
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -104,10 +106,10 @@ impl MetaOperation for Cast {
         }
     }
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let workgroup_size = wgs![8, 8, 1];
 
-        let numel = self.input.shape().numel();
+        let numel = self.input.shape().numel() / self.kernel_element(dst).as_size();
         let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
         let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
             let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
@@ -167,14 +169,104 @@ impl MetaOperation for Cast {
             (DType::F16, DType::F32, KernelElement::Vec4) => {
                 self.build_cast::<Vec4<f16>, Vec4<f32>>(inplace, dst, workgroup_size)
             }
-            _ => Err(OperationError::CompileError(format!(
-                "Unsupported dtype {:?} or kernel element {:?}",
-                self.input.dt(),
-                kernel_element
-            ))),
+            (DType::U32, DType::F32, KernelElement::Scalar) => {
+                self.build_cast::<Scalar<u32>, Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::U32, DType::F32, KernelElement::Vec2) => {
+                self.build_cast::<Vec2<u32>, Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::U32, DType::F32, KernelElement::Vec4) => {
+                self.build_cast::<Vec4<u32>, Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::I32, DType::F32, KernelElement::Scalar) => {
+                self.build_cast::<Scalar<i32>, Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::I32, DType::F32, KernelElement::Vec2) => {
+                self.build_cast::<Vec2<i32>, Vec2<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::I32, DType::F32, KernelElement::Vec4) => {
+                self.build_cast::<Vec4<i32>, Vec4<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, DType::U32, KernelElement::Scalar) => {
+                self.build_cast::<Scalar<f32>, Scalar<u32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, DType::U32, KernelElement::Vec2) => {
+                self.build_cast::<Vec2<f32>, Vec2<u32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, DType::U32, KernelElement::Vec4) => {
+                self.build_cast::<Vec4<f32>, Vec4<u32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, DType::I32, KernelElement::Scalar) => {
+                self.build_cast::<Scalar<f32>, Scalar<i32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, DType::I32, KernelElement::Vec2) => {
+                self.build_cast::<Vec2<f32>, Vec2<i32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F32, DType::I32, KernelElement::Vec4) => {
+                self.build_cast::<Vec4<f32>, Vec4<i32>>(inplace, dst, workgroup_size)
+            }
+            _ => unimplemented!(),
         }
     }
 }
 
 #[cfg(all(test, feature = "pyo3"))]
-mod tests {}
+mod tests {
+    use half::f16;
+    use test_strategy::{proptest, Arbitrary};
+
+    use crate::{shape, test_util::run_py_prg, DType, Device, DeviceRequest, Tensor};
+
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
+    #[derive(Arbitrary, Debug)]
+    struct CastProblem {
+        dst_dt: DType,
+        #[strategy(1..=2usize)]
+        B: usize,
+        #[strategy(1..=128usize)]
+        M: usize,
+        #[strategy(1..=128usize)]
+        N: usize,
+    }
+
+    fn ground_truth(input: &Tensor, dst_dt: DType) -> anyhow::Result<Tensor> {
+        let prg = format!(
+            r#"
+import torch
+def cast(a):
+    return torch.from_numpy(a).to({}).numpy()
+"#,
+            dst_dt.as_torch()
+        );
+
+        run_py_prg(prg.to_string(), &[input], &[], dst_dt)
+    }
+
+    fn run_cast_trial(prob: CastProblem) -> anyhow::Result<()> {
+        let device = GPU_DEVICE.with(|d| d.clone());
+        let CastProblem { dst_dt, B, M, N } = prob;
+        let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
+        let ground = ground_truth(&input, dst_dt)?;
+
+        let input_gpu = input.to(&device)?;
+        let casted = input_gpu.cast(dst_dt)?.resolve()?;
+
+        let casted_cpu = casted.to(&Device::CPU)?;
+        match dst_dt {
+            DType::F16 => {
+                ground.all_close::<f16>(&casted_cpu, f16::from_f32(1e-4), f16::from_f32(1e-4))?
+            }
+            DType::F32 => ground.all_close::<f32>(&casted_cpu, 1e-4, 1e-4)?,
+            _ => return Ok(()), //all_close doesn't support integers
+        }
+        Ok(())
+    }
+
+    #[proptest(cases = 256)]
+    fn test_type_cast(prob: CastProblem) {
+        run_cast_trial(prob).unwrap();
+    }
+}
