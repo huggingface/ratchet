@@ -2,8 +2,6 @@ mod error;
 pub mod gguf;
 mod k_quants;
 
-use ratchet::gguf::{GGUFDType, Q8_0};
-
 pub const STORAGE_BUFFER_ALIGN: usize = 256;
 
 #[derive(Debug, thiserror::Error)]
@@ -50,7 +48,7 @@ impl From<GgmlDType> for ratchet::DType {
         match val {
             GgmlDType::F32 => ratchet::DType::F32,
             GgmlDType::F16 => ratchet::DType::F16,
-            GgmlDType::Q8_0 => ratchet::DType::GGUF(GGUFDType::Q8_0(Q8_0)),
+            //TODO: disambiguate F and H variants
             _ => unimplemented!(),
         }
     }

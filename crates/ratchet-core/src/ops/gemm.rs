@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec,
-    InvariantError, KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec2,
-    Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec, InvariantError,
+    KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec2, Vec4, WgslFragment,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -100,7 +100,7 @@ impl GEMM {
                     }
                 }
             }
-            DType::GGUF(GGUFDType::Q8_0(_)) => {
+            DType::Q8_0F(_) => {
                 wgsl! {
                     fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
                         return unpack4x8snorm(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]) * 127.0;
@@ -165,7 +165,7 @@ impl GEMM {
             }
         };
 
-        let aAccessor = if matches!(self.lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) {
+        let aAccessor = if matches!(self.lhs.dt(), DType::Q8_0F(_)) {
             Vec4::<f32>::render_type()
         } else {
             accessor.clone()
@@ -253,7 +253,7 @@ impl GEMM {
                 }
                 builder.register_storage("result", BindingMode::ReadWrite, float_arr);
             }
-            DType::GGUF(GGUFDType::Q8_0(_)) => {
+            DType::Q8_0F(_) => {
                 builder.register_storage("A", ro, Array::<Scalar<u32>>::default());
                 builder.register_storage("scale", ro, float_arr);
                 builder.register_storage("B", ro, Array::<Scalar<f32>>::default());
@@ -296,12 +296,9 @@ impl GEMM {
             (DType::F16, KernelElement::Vec4) => {
                 self.build_gemm::<Vec4<f16>>(inplace, dst, workgroup_size, spec)
             }
-            (DType::GGUF(g), _) => match g {
-                crate::gguf::GGUFDType::Q8_0(_) => {
-                    self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
-                }
-                _ => unimplemented!(),
-            },
+            (DType::Q8_0F(_), _) => {
+                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
+            }
             _ => panic!("Unsupported dtype"),
         }
     }
@@ -358,7 +355,7 @@ impl GEMM {
                     }
                 }
             }
-            DType::GGUF(GGUFDType::Q8_0(_)) => {
+            DType::Q8_0F(_) => {
                 let mut inner = wgsl! {
                     let curRow = globalRow + innerRow;
                     let curCol = kStart + i32(local_invocation_id.x) * 4;
@@ -497,7 +494,7 @@ impl GEMM {
             DType::F32 | DType::F16 => {
                 wgsl! { mm_Asub[inputRow][inputCol] = mm_readA(batchA, globalRow + innerRow, kStart + inputCol * 'W); }
             }
-            DType::GGUF(GGUFDType::Q8_0(_)) => {
+            DType::Q8_0F(_) => {
                 wgsl! {
                     let curRow = globalRow + innerRow;
                     let curCol = kStart + inputCol * 'W;

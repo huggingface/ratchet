@@ -1,8 +1,9 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
-    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
-    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId, MIN_STORAGE_BUFFER_SIZE,
+    dtype::Segments, ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device,
+    DeviceStorage, Executable, GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation,
+    OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -633,15 +634,7 @@ impl Tensor {
     /// This is due to our quantization scheme allowing multiple quantized components to be packed
     /// and stored in a single tensor.
     pub(crate) fn segments(&self) -> RVec<BufferSegment> {
-        let numel = self.shape().numel();
-        match self.dt() {
-            DType::GGUF(g) => g.bindings(numel),
-            _ => {
-                let mut total_bytes = numel * self.dt().size_of();
-                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
-                rvec![BufferSegment::new(0, total_bytes as u64)]
-            }
-        }
+        self.dt().segments(self.shape().numel())
     }
 
     /// Converts the tensor into a 1D vector.
@@ -687,7 +680,10 @@ impl Tensor {
             if done.contains(&precursor.id()) {
                 stack.push((cur_t, cur_src + 1));
             } else if pending.contains(&precursor.id()) {
-                panic!("CYCLE");
+                panic!(
+                    "Cycle detected whilst computing topological order: {:?}. Try plotting with feature `plotting`.",
+                    precursor.id()
+                );
             } else {
                 pending.insert(precursor.id());
                 stack.push((cur_t, cur_src));

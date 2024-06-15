@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType, gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec,
-    InvariantError, KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec, InvariantError,
+    KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -103,12 +103,12 @@ impl GEMV {
             (DType::F16, KernelElement::Scalar) => {
                 self.render_gemv::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
             }
-            (DType::GGUF(g), _) => match g {
-                crate::gguf::GGUFDType::Q8_0(_) => {
-                    self.render_gemv::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
-                }
-                _ => unimplemented!(),
-            },
+            (DType::Q8_0F(_), _) => {
+                self.render_gemv::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
+            }
+            (DType::Q8_0H(_), _) => {
+                self.render_gemv::<Vec4<f16>>(inplace, dst, workgroup_size, spec)
+            }
             _ => panic!("Unsupported dtype"),
         }
     }
@@ -165,14 +165,14 @@ impl GEMV {
                     }
                 }
             }
-            (true, DType::GGUF(_)) => {
+            (true, DType::Q8_0F(_)) => {
                 wgsl! {
                     fn readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
                         return unpack4x8snorm(A[dot(metadata.aStrides, vec3<i32>(batch, row, col))]) * 127f;
                     }
                 }
             }
-            (false, DType::GGUF(_)) => {
+            (false, DType::Q8_0H(_)) => {
                 wgsl! {
                     fn readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
                         var val = 0.0;
@@ -189,17 +189,14 @@ impl GEMV {
 
         let workgroup_size_y = workgroup_size.y;
         let main_loop = match self.lhs.dt() {
-            DType::GGUF(g) => match g {
-                GGUFDType::Q8_0(_) => {
-                    wgsl! {
-                        let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
-                        for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+='workgroup_size_y / 4) {
-                            sum = fma(unpack4x8snorm(A[aIndex + k]) * 127f * scale[sIndex + (k/8)], X[k], sum);
-                        }
+            DType::Q8_0F(_) => {
+                wgsl! {
+                    let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
+                    for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+='workgroup_size_y / 4) {
+                        sum = fma(unpack4x8snorm(A[aIndex + k]) * 127f * scale[sIndex + (k/8)], X[k], sum);
                     }
                 }
-                _ => unimplemented!(),
-            },
+            }
             _ => {
                 wgsl! {
                     for (var k = i32(global_invocation_id.y); k < metadata.dimInner; k+='workgroup_size_y) {

@@ -4,7 +4,6 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gguf::GGUFDType,
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
     OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
@@ -23,7 +22,7 @@ impl IndexSelect {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        inplace: bool,
+        _: bool,
     ) -> Result<(), OperationError> {
         let index_arr = Array::<Scalar<i32>>::default();
         match self.input.dt() {
@@ -32,17 +31,23 @@ impl IndexSelect {
                 builder.register_storage("I", BindingMode::ReadOnly, index_arr);
                 builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
             }
-            DType::GGUF(g) => match g {
-                GGUFDType::Q8_0(_) => {
-                    let packed_arr = Array::<Scalar<u32>>::default();
-                    let scale_arr = Array::<Scalar<f32>>::default();
-                    builder.register_storage("E", BindingMode::ReadOnly, packed_arr);
-                    builder.register_storage("S", BindingMode::ReadOnly, scale_arr);
-                    builder.register_storage("I", BindingMode::ReadOnly, index_arr);
-                    builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
-                }
-                _ => unimplemented!(),
-            },
+            DType::Q8_0F(_) => {
+                let packed_arr = Array::<Scalar<u32>>::default();
+                let scale_arr = Array::<Scalar<f32>>::default();
+                builder.register_storage("E", BindingMode::ReadOnly, packed_arr);
+                builder.register_storage("S", BindingMode::ReadOnly, scale_arr);
+                builder.register_storage("I", BindingMode::ReadOnly, index_arr);
+                builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
+            }
+            DType::Q8_0H(_) => {
+                let packed_arr = Array::<Scalar<u32>>::default();
+                let scale_arr = Array::<Scalar<f16>>::default();
+                builder.register_storage("E", BindingMode::ReadOnly, packed_arr);
+                builder.register_storage("S", BindingMode::ReadOnly, scale_arr);
+                builder.register_storage("I", BindingMode::ReadOnly, index_arr);
+                builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
+            }
+
             _ => unimplemented!(),
         }
         builder.register_uniform();
@@ -69,7 +74,7 @@ impl IndexSelect {
         kernel_builder.write_metadata::<IndexSelectMeta>();
 
         //TODO: REFACTOR
-        if matches!(self.input.dt(), DType::GGUF(_)) {
+        if matches!(self.input.dt(), DType::Q8_0F(_)) {
             kernel_builder.write_main(wgsl! {
                 let tid = workgroup_id.x * 64u + local_invocation_index;
                 let right_numel = metadata.right_numel/ 4u;
@@ -160,7 +165,7 @@ impl MetaOperation for IndexSelect {
         let workgroup_size = wgs![8, 8, 1];
         let numel = match self.input.dt() {
             DType::F32 => dst.shape().numel(),
-            DType::GGUF(_) => dst.shape().numel() / 4,
+            DType::Q8_0H(_) | DType::Q8_0F(_) => dst.shape().numel() / 4,
             _ => unimplemented!(),
         };
         let wgcx = WorkgroupCount::div_ceil(numel, 64) as _;
@@ -176,7 +181,7 @@ impl MetaOperation for IndexSelect {
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         match self.input.dt() {
             DType::F32 => Ok(BindGroupLayoutDescriptor::binary()),
-            DType::GGUF(_) => Ok(BindGroupLayoutDescriptor::ternary()),
+            DType::Q8_0H(_) | DType::Q8_0F(_) => Ok(BindGroupLayoutDescriptor::ternary()),
             _ => unimplemented!(),
         }
     }
@@ -229,8 +234,10 @@ impl MetaOperation for IndexSelect {
             (DType::F16, KernelElement::Vec4) => {
                 self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
-            (DType::GGUF(g), _) => {
-                assert!(matches!(g, GGUFDType::Q8_0(_)));
+            (DType::Q8_0H(_), KernelElement::Scalar) => {
+                self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::Q8_0F(_), KernelElement::Scalar) => {
                 self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(

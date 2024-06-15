@@ -3,11 +3,10 @@ use std::cmp::Ordering;
 use encase::ShaderType;
 
 use crate::{
-    gguf::{GGUFDType, Q8_0},
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
     OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
-    WorkgroupSize, Workload, GEMM, GEMV,
+    WorkgroupSize, Workload, GEMM, GEMV, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -252,7 +251,7 @@ impl Matmul {
             panic!("Bias must be a vector: {:?}", bias);
         }
 
-        if matches!(lhs.dt(), DType::GGUF(GGUFDType::Q8_0(_))) && trans_lhs {
+        if lhs.dt().is_quantized() && trans_lhs {
             panic!("Transposed quantized inputs are not supported");
         }
 
@@ -404,7 +403,8 @@ impl OpGuards for Matmul {
         let allowed_pairs = [
             (DType::F32, DType::F32),
             (DType::F16, DType::F16),
-            (DType::GGUF(GGUFDType::Q8_0(Q8_0)), DType::F32),
+            (DType::Q8_0F(Q8_0F::default()), DType::F32),
+            (DType::Q8_0H(Q8_0H::default()), DType::F16),
         ];
         if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
             panic!(
@@ -517,8 +517,10 @@ impl MetaOperation for Matmul {
             (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
             (DType::F16, DType::F16, false) => BindGroupLayoutDescriptor::binary(),
             (DType::F16, DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
-            (DType::GGUF(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
-            (DType::GGUF(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
+            (DType::Q8_0F(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0H(_), DType::F16, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0F(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
+            (DType::Q8_0H(_), DType::F16, true) => BindGroupLayoutDescriptor::nthary(4),
             _ => return Err(InvariantError::UnsupportedDType(RHS.dt()).into()),
         };
         Ok(layout)

@@ -1,34 +1,33 @@
+mod blocks;
+
+pub use blocks::*;
+
 use half::{bf16, f16};
-use std::num::NonZeroU64;
+use std::{cmp::max, num::NonZeroU64};
 use wgpu::{BufferAddress, BufferSize};
 
-pub mod gguf;
-mod segments;
-
-pub use segments::*;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub enum DType {
-    Q8,
     F16,
     BF16,
     #[default]
     F32,
     I32,
     U32,
-    GGUF(gguf::GGUFDType),
+    Q8_0H(Q8_0H), //Equivalent to GGUF Q8_0, with f16
+    Q8_0F(Q8_0F), //Equivalent to GGUF Q8_0, with f32
 }
 
 impl std::fmt::Display for DType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DType::Q8 => write!(f, "Q8"),
             DType::F16 => write!(f, "F16"),
             DType::BF16 => write!(f, "BF16"),
             DType::F32 => write!(f, "F32"),
             DType::I32 => write!(f, "I32"),
             DType::U32 => write!(f, "U32"),
-            DType::GGUF(g) => write!(f, "{}", g),
+            DType::Q8_0H(_) => write!(f, "Q8_0H"),
+            DType::Q8_0F(_) => write!(f, "Q8_0F"),
         }
     }
 }
@@ -38,7 +37,6 @@ impl DType {
         match self {
             DType::F32 => 0,
             DType::F16 => 1,
-            DType::GGUF(g) => g.to_u32(),
             _ => unimplemented!(),
         }
     }
@@ -56,22 +54,33 @@ impl DType {
     /// Returns the size of the type in bytes.
     pub fn size_of(self) -> usize {
         match self {
-            DType::Q8 => 1,
             DType::F16 => 2,
             DType::BF16 => 2,
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
-            DType::GGUF(g) => g.size_of(),
+            _ => unimplemented!(),
         }
     }
 
     pub fn is_quantized(self) -> bool {
-        matches!(self, DType::GGUF(_) | DType::Q8)
+        matches!(self, DType::Q8_0H(_) | DType::Q8_0F(_))
     }
 
     pub fn is_float(self) -> bool {
         matches!(self, DType::F16 | DType::BF16 | DType::F32)
+    }
+
+    pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
+        match self {
+            DType::Q8_0F(q) => q.segments(numel),
+            DType::Q8_0H(q) => q.segments(numel),
+            _ => {
+                let mut total_bytes = numel * self.size_of();
+                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
+                rvec![BufferSegment::new(0, total_bytes as u64)]
+            }
+        }
     }
 }
 
@@ -159,6 +168,8 @@ map_half_type!(bf16, BF16);
 
 #[cfg(test)]
 use proptest::prelude::*;
+
+use crate::{rvec, RVec, MIN_STORAGE_BUFFER_SIZE};
 
 #[cfg(test)]
 impl Arbitrary for DType {

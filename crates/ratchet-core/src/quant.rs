@@ -3,11 +3,7 @@ use num_traits::{AsPrimitive, Float};
 
 use std::fmt::Debug;
 
-use crate::{
-    gguf::{GGUFDType, Q8_0},
-    gpu::STORAGE_BUFFER_ALIGN,
-    DType, Device, Tensor,
-};
+use crate::{gpu::STORAGE_BUFFER_ALIGN, DType, Device, Tensor, Q8_0F};
 
 /// Quantizer
 ///
@@ -27,7 +23,6 @@ impl Quantizer {
     }
 
     /// Quantizes a float 32 tensor into a packed uint32 tensor.
-    /// GGUF Q8_0
     pub fn sint8_quantize(&self, tensor: Tensor) -> Tensor {
         let numel = tensor.shape().numel();
         let pack_size = self.format.pack_size();
@@ -77,7 +72,7 @@ impl Quantizer {
         unsafe {
             Tensor::from_quantized(
                 quantized_matrix,
-                DType::GGUF(GGUFDType::Q8_0(Q8_0)),
+                DType::Q8_0F(Q8_0F::default()),
                 tensor.shape().clone(),
                 Device::CPU,
             )
@@ -85,7 +80,7 @@ impl Quantizer {
     }
 
     pub fn sint8_dequantize(&self, quantized: Tensor) -> Tensor {
-        assert!(matches!(quantized.dt(), DType::GGUF(GGUFDType::Q8_0(_))));
+        assert!(matches!(quantized.dt(), DType::Q8_0F(_)));
         let numel = quantized.shape().numel();
         let original_shape = quantized.shape().clone();
         let aligner = |numel: usize, size_t: usize| -> usize {

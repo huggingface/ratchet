@@ -156,6 +156,7 @@ def slice(a):
 
     #[proptest(cases = 16)]
     fn test_slice(prob: SliceProblem) {
+        let _ = env_logger::builder().is_test(true).try_init();
         run_reindex_trial(prob).unwrap();
     }
 }
