@@ -12,9 +12,16 @@ pub fn transcribe(
     mut decode_options: DecodingOptions,
     callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
+    use ratchet::DType;
+
     let n_mels = model.config.n_mels;
     let runtime = Instant::now();
-    let mel = model.specgen.generate(audio)?.to(&model.device)?;
+    let mel = model
+        .specgen
+        .generate(audio)?
+        .to(&model.device)?
+        .cast(DType::F16)?;
+    println!("MEL: {:#?}", mel);
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
 
     if decode_options.language.is_none() {

@@ -1,3 +1,4 @@
+use half::f16;
 use ratchet::{Device, Shape, Tensor};
 
 #[derive(Clone, Debug)]
@@ -10,8 +11,8 @@ pub struct KVEntry {
 impl KVEntry {
     pub fn allocate(shape: &Shape, device: &Device) -> Self {
         KVEntry {
-            k_cache: Tensor::zeros::<f32>(shape, device),
-            v_cache: Tensor::zeros::<f32>(shape, device),
+            k_cache: Tensor::zeros::<f16>(shape, device),
+            v_cache: Tensor::zeros::<f16>(shape, device),
             entries: 0,
         }
     }

@@ -1,5 +1,7 @@
 use super::config::Config;
 use crate::whisper::residual_block::*;
+use half::f16;
+use num::Zero;
 use ratchet::prelude::*;
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
@@ -126,7 +128,15 @@ impl WhisperDecoder {
 
     fn load_mask(n_ctx: usize, device: &Device) -> Tensor {
         let mask: Vec<_> = (0..n_ctx)
-            .flat_map(|i| (0..n_ctx).map(move |j| if j > i { f32::NEG_INFINITY } else { 0f32 }))
+            .flat_map(|i| {
+                (0..n_ctx).map(move |j| {
+                    if j > i {
+                        f16::NEG_INFINITY
+                    } else {
+                        f16::zero()
+                    }
+                })
+            })
             .collect();
         Tensor::from_data(mask, shape![n_ctx, n_ctx], device.clone())
     }
