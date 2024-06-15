@@ -1,4 +1,6 @@
 use crate::db::*;
+use futures::stream::{self, TryStreamExt};
+use futures::StreamExt;
 use ratchet_hub::{Api, ApiBuilder, RepoType};
 use ratchet_loader::gguf::gguf::{self, Header, TensorInfo};
 use ratchet_models::moondream::{self, Moondream};
@@ -226,60 +228,40 @@ impl Model {
             header.tensor_infos.clone().into_iter().collect();
         tensor_infos.sort_by(|(_, a), (_, b)| b.size_in_bytes().cmp(&a.size_in_bytes()));
 
-        let chunks = Self::chunk_tensor_infos(&tensor_infos, 4);
+        let tensor_stream = futures::stream::iter(tensor_infos);
 
         let mut total_progress = 0.0;
 
-        for chunk in chunks {
-            let futures = chunk.into_iter().map(|(name, ti)| {
-                let range = ti.byte_range(data_offset);
+        tensor_stream
+            .map(|(name, info): (String, TensorInfo)| {
                 let model_id = model_id.clone();
+                let model_key = model_key.clone();
                 async move {
+                    let range = info.byte_range(data_offset);
                     let bytes = model_repo
                         .fetch_range(&model_id, range.start, range.end)
-                        .await?;
-                    Ok((name, bytes))
+                        .await
+                        .unwrap();
+                    let length = bytes.length();
+                    let record =
+                        TensorRecord::new(name.clone().to_string(), model_key.clone(), bytes);
+                    db.put_tensor(record).await.map_err(|e| {
+                        let e: JsError = e.into();
+                        Into::<JsValue>::into(e)
+                    });
+                    length
                 }
-            });
-
-            let results: Vec<Result<_, JsValue>> = futures::future::join_all(futures).await;
-
-            for result in results {
-                let (name, bytes) = result?;
-                let req_progress = (bytes.length() as f64) / (content_len as f64) * 100.0;
+            })
+            .buffer_unordered(6)
+            .map(|num_bytes| {
+                let req_progress = (num_bytes as f64) / (content_len as f64) * 100.0;
                 total_progress += req_progress;
                 let _ = progress.call1(&JsValue::NULL, &total_progress.into());
+            })
+            .collect::<()>()
+            .await;
 
-                let record = TensorRecord::new(name.to_string(), model_key.clone(), bytes);
-                db.put_tensor(record).await.map_err(|e| {
-                    let e: JsError = e.into();
-                    Into::<JsValue>::into(e)
-                })?;
-            }
-        }
         Ok(())
-    }
-
-    fn chunk_tensor_infos(
-        tensor_infos: &[(String, TensorInfo)],
-        chunk_size: usize,
-    ) -> Vec<Vec<(String, TensorInfo)>> {
-        let mut chunks = Vec::new();
-        let mut current_chunk = Vec::new();
-
-        for (name, ti) in tensor_infos {
-            if current_chunk.len() == chunk_size {
-                chunks.push(current_chunk);
-                current_chunk = Vec::new();
-            }
-            current_chunk.push((name.clone(), ti.clone()));
-        }
-
-        if !current_chunk.is_empty() {
-            chunks.push(current_chunk);
-        }
-
-        chunks
     }
 }
 
