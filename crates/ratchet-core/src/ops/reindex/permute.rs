@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use derive_new::new;
 
 use crate::{
-    DType, InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor,
+    InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor,
 };
 
 #[derive(new, Debug, Clone)]

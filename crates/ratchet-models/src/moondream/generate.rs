@@ -1,6 +1,5 @@
 use super::model::Moondream;
 use crate::TokenOutputStream;
-use image::ImageFormat;
 use ndarray::Axis;
 use ndarray_stats::QuantileExt;
 use ratchet::shape;
@@ -38,7 +37,7 @@ pub fn generate(
         .map(|&x| (x as f32 / 255.0))
         .collect();
 
-    let img_tensor = Tensor::from_data(&pixels, shape![378, 378, 3], device.clone())
+    let img_tensor = Tensor::from_data(pixels, shape![378, 378, 3], device.clone())
         .permute(&[2, 0, 1])?
         .view(shape![1, 3, 378, 378])?;
 
@@ -65,7 +64,7 @@ pub fn generate(
     while *tokens.last().unwrap() != 50256 {
         let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
         let mut embeds: Tensor;
-        if generated_tokens.len() == 0 {
+        if generated_tokens.is_empty() {
             embeds = model.text_model.embedding.schedule(input).unwrap();
             embeds = Tensor::cat(
                 vec![bos_token.clone(), img_embed.clone(), embeds.clone()].into(),

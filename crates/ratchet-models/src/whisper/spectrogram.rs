@@ -88,7 +88,7 @@ impl SpectrogramGenerator {
         mel_spec.mapv_inplace(|x| (x.max(max - 8.0) + 4.0) / 4.0);
         let expanded = mel_spec.insert_axis(ndarray::Axis(0));
         //cast to f16
-        let expanded = expanded.mapv(|x| f16::from_f32(x));
+        let expanded = expanded.mapv(f16::from_f32);
         Tensor::from(expanded.into_dyn())
     }
 

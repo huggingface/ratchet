@@ -1,4 +1,4 @@
-use ratchet::{prelude::shape, Device, Tensor};
+use ratchet::{prelude::shape, Tensor};
 use ratchet_nn::{LayerNorm, Linear, Module};
 
 use super::mlp::MLP;

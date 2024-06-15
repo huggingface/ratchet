@@ -3,11 +3,9 @@ use crate::{
     dtype::Segments, ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device,
     DeviceStorage, Executable, GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation,
     OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
-    MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
 use parking_lot::{RwLock, RwLockReadGuard};
-use std::cmp::max;
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
