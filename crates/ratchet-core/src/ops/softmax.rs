@@ -78,7 +78,7 @@ impl Softmax {
         let accessor = P::render_type();
 
         let BLOCK_SIZE = workgroup_size.x.render();
-        let minFloat = P::T::NEG_INF;
+        let minFloat = P::T::MIN;
 
         kernel_builder.write_global(wgsl! {
             var<workgroup> smem: array<'accessor, 'BLOCK_SIZE>;
