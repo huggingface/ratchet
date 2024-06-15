@@ -52,7 +52,7 @@ impl GPUBuffer {
         let inner = device
             .get_or_create_buffer_init(
                 &BufferDescriptor::new(bytes.len() as _, BufferUsages::standard(), false),
-                bytes,
+                bytes.into(),
             )
             .unwrap();
         device.queue().submit(None);

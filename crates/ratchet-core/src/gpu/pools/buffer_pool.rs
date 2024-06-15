@@ -79,17 +79,18 @@ impl BufferPool {
         device: &WgpuDevice,
         immediate: bool,
     ) -> PooledGPUBuffer {
-        println!("Original size: {}", desc.size);
         let size = if (desc.size as usize) < MIN_STORAGE_BUFFER_SIZE {
+            //All buffers must be minimum 16 bytes
             MIN_STORAGE_BUFFER_SIZE as _
         } else {
-            if desc.size % 4 == 0 {
+            //Round all buffers to 4 bytes, as any buffer may be read back to the CPU, which
+            //requires a copy
+            if desc.size % wgpu::COPY_BUFFER_ALIGNMENT == 0 {
                 desc.size
             } else {
-                desc.size + 4 - (desc.size % 4)
+                desc.size + wgpu::COPY_BUFFER_ALIGNMENT - (desc.size % wgpu::COPY_BUFFER_ALIGNMENT)
             }
         };
-        println!("Adjusted size: {}", size);
 
         let descriptor = BufferDescriptor {
             size,

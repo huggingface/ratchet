@@ -1,6 +1,6 @@
 use crate::{gpu::*, MetaOperation, Tensor, TensorId};
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 use wgpu::{Adapter, Limits};
 
 use crate::DeviceError;
@@ -160,7 +160,7 @@ impl WgpuDevice {
     pub fn get_or_create_buffer_init(
         &self,
         desc: &BufferDescriptor,
-        contents: &[u8],
+        contents: Cow<'_, [u8]>,
     ) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self
             .buffer_allocator
