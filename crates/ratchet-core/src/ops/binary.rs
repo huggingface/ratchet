@@ -129,6 +129,8 @@ impl OpGuards for Binary {
     }
 
     fn check_dtypes(&self) {
+        println!("LEFT SIDE DT: {:?}", self.lhs.dt());
+        println!("RIGHT SIDE DT: {:?}", self.rhs.dt());
         assert_eq!(self.lhs.dt(), self.rhs.dt());
     }
 }

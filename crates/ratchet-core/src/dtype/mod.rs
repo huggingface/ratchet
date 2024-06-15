@@ -177,13 +177,7 @@ impl Arbitrary for DType {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            Just(DType::F32),
-            Just(DType::F16),
-            Just(DType::I32),
-            Just(DType::U32),
-        ]
-        .boxed()
+        prop_oneof![Just(DType::F32), Just(DType::F16), Just(DType::I32),].boxed()
     }
 }
 
@@ -194,7 +188,6 @@ impl DType {
             DType::F32 => "torch.float32",
             DType::F16 => "torch.float16",
             DType::I32 => "torch.int32",
-            DType::U32 => "torch.uint32",
             _ => unimplemented!(),
         }
     }

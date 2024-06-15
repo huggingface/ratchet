@@ -491,6 +491,7 @@ impl Header {
             Some(tensor_info) => tensor_info,
             None => anyhow::bail!("cannot find tensor info for {name}"),
         };
+        log::info!("Loading tensor {tensor_info:#?}");
         tensor_info.read(reader, self.tensor_data_offset, device)
     }
 }

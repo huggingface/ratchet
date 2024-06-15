@@ -1,3 +1,5 @@
+use half::f16;
+use num::traits::real::Real;
 use ratchet::{rvec, shape, Tensor};
 use ratchet_nn::{KVEntry, Linear, Module};
 
@@ -14,8 +16,21 @@ pub struct MultiHeadAttention {
 impl MultiHeadAttention {
     pub fn new(q: Linear, k: Linear, v: Linear, o: Linear, n_heads: usize) -> MultiHeadAttention {
         let n_state = q.w.shape()[1];
-        let dk = (n_state / n_heads) as f32;
-        let dk = Tensor::from_data([dk.powf(-0.25)], shape![1], q.w.device().clone());
+        let dk = match q.w.dt() {
+            ratchet::DType::F16 => {
+                let dk = f16::from_f32((n_state / n_heads) as f32);
+                Tensor::from_data(
+                    [dk.powf(f16::from_f32(-0.25))],
+                    shape![1],
+                    q.w.device().clone(),
+                )
+            }
+            ratchet::DType::F32 => {
+                let dk = (n_state / n_heads) as f32;
+                Tensor::from_data([dk.powf(-0.25)], shape![1], q.w.device().clone())
+            }
+            _ => unimplemented!(),
+        };
         MultiHeadAttention {
             q,
             k,

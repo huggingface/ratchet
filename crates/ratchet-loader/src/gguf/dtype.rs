@@ -133,7 +133,20 @@ impl GGUFInterop for f16 {
         shape: Shape,
         device: &Device,
     ) -> anyhow::Result<Tensor> {
-        let f32_data = data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
-        Ok(Tensor::from_data(f32_data, shape, device.clone()))
+        match device {
+            Device::CPU => {
+                log::warn!("Creating CPU tensor from F16 data, may be unsupported");
+                Ok(Tensor::from_data(data, shape, device.clone()))
+            }
+            Device::GPU(gpu) => {
+                if gpu.compute_features().SHADER_F16 {
+                    Ok(Tensor::from_data(data, shape, device.clone()))
+                } else {
+                    log::warn!("Transcoding F16 -> F32 for GPU tensor, as this device does not support SHADER_F16");
+                    let f32_data = data.iter().map(|f| f.to_f32()).collect::<Vec<_>>();
+                    Ok(Tensor::from_data(f32_data, shape, device.clone()))
+                }
+            }
+        }
     }
 }

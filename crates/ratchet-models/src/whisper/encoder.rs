@@ -47,6 +47,7 @@ impl Module for EncoderStem {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let convolved = self.conv2.schedule(self.conv1.schedule(input)?)?;
+        println!("CONVOLVED: {:#?}", convolved);
         convolved.permute(&[0, 2, 1])?.add(self.pos_embed.clone())
     }
 }

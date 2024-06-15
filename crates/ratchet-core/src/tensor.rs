@@ -729,6 +729,12 @@ impl Tensor {
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
 
+        #[cfg(feature = "plotting")]
+        {
+            let last = execution_order.last().unwrap();
+            crate::plot::render_to_file(last, "pre-alloc.svg").unwrap();
+        }
+
         for t in execution_order.iter() {
             log::debug!("Compiling: {:?}", t.op().name());
             assert!(t.device().is_gpu());
@@ -755,7 +761,7 @@ impl Tensor {
         #[cfg(feature = "plotting")]
         {
             let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "allocations.svg").unwrap();
+            crate::plot::render_to_file(last, "alloc.svg").unwrap();
         }
 
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
