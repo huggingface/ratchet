@@ -3,8 +3,9 @@ use super::{
     tokenizer::WhisperTokenizer, transcript::*,
 };
 use crate::whisper::options::{DecodingOptions, Prompt};
+use half::f16;
 use ndarray::{s, Axis};
-use ratchet::{shape, Device, Tensor};
+use ratchet::{shape, Device, Tensor, TensorDType};
 use ratchet_nn::Module;
 
 #[derive(Debug, thiserror::Error)]
@@ -85,6 +86,8 @@ impl DecodingTask {
         audio_ctx: Tensor,
         callback: &Option<impl Fn(StreamedSegment)>,
     ) -> Result<Vec<i32>, DecodeError> {
+        use ratchet::DType;
+
         let mut tokens = self.get_initial_tokens();
         let sliced_vocab_size = self.tokenizer.vocab_size();
         let device = audio_ctx.device().clone();
@@ -98,7 +101,10 @@ impl DecodingTask {
             };
             let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
 
-            let logits = decoder.schedule([audio_ctx.clone(), input_t])?.resolve()?;
+            let logits = decoder
+                .schedule([audio_ctx.clone(), input_t])?
+                .cast(DType::F32)?
+                .resolve()?;
             decoder.cache_mut().update(input.len());
 
             let mut logits = Self::slice_logits(logits.to(&Device::CPU)?, sliced_vocab_size);

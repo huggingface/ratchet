@@ -4,7 +4,7 @@ use std::fmt::{Debug, Display};
 /// Supported data types in WGSL.
 ///
 /// This can be mapped to and from the Ratchet DType.
-pub trait WgslDType: Debug + Display + Default + Copy {
+pub trait WgslDType: Debug + Display + Default + Copy + num_traits::Num + num_traits::Zero {
     const DT: &'static str;
     const MIN: Self;
 

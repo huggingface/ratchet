@@ -9,6 +9,7 @@ use crate::{
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
+use num_traits::Zero;
 
 #[derive(Debug, Clone)]
 pub struct GEMV {
@@ -135,6 +136,8 @@ impl GEMV {
             .unwrap();
         let n = P::W;
         let accessor = P::render_type();
+        let scalar = P::T::DT;
+        let zero = P::T::zero().render();
 
         kernel_builder.write_metadata::<GEMVMeta>();
 
@@ -147,17 +150,17 @@ impl GEMV {
         let A_FIT = spec.lhs_shape()[1] % TILE_X == 0;
 
         let readA = match (A_FIT, self.lhs.dt()) {
-            (true, DType::F32) => {
+            (true, DType::F32) | (true, DType::F16) => {
                 wgsl! {
-                    fn readA(batch: i32, row: i32, col: i32) -> f32 {
+                    fn readA(batch: i32, row: i32, col: i32) -> 'scalar {
                         return A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
                     }
                 }
             }
-            (false, DType::F32) => {
+            (false, DType::F32) | (false, DType::F16) => {
                 wgsl! {
-                    fn readA(batch: i32, row: i32, col: i32) -> f32 {
-                        var val = 0.0;
+                    fn readA(batch: i32, row: i32, col: i32) -> 'scalar {
+                        var val = 'zero;
                         if (row <= metadata.aShape.y) {
                             val = A[dot(metadata.aStrides, vec3<i32>(batch, row, col))];
                         }
@@ -169,17 +172,6 @@ impl GEMV {
                 wgsl! {
                     fn readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
                         return unpack4x8snorm(A[dot(metadata.aStrides, vec3<i32>(batch, row, col))]) * 127f;
-                    }
-                }
-            }
-            (false, DType::Q8_0H(_)) => {
-                wgsl! {
-                    fn readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
-                        var val = 0.0;
-                        if (row <= metadata.aShape.y) {
-                            val = unpack4x8snorm(A[dot(metadata.aStrides, vec3<i32>(batch, row, col))]) * 127f;
-                        }
-                        return val;
                     }
                 }
             }

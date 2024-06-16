@@ -130,7 +130,7 @@ impl Operation for IndexSelect {
         let mut output_shape = input_shape.clone();
         output_shape[self.dim] = indices_shape[0];
         let strides = Strides::from(&output_shape);
-        Ok(StorageView::new(output_shape, DType::F32, strides))
+        Ok(StorageView::new(output_shape, self.input.dt(), strides))
     }
 }
 
@@ -164,7 +164,7 @@ impl MetaOperation for IndexSelect {
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let workgroup_size = wgs![8, 8, 1];
         let numel = match self.input.dt() {
-            DType::F32 => dst.shape().numel(),
+            DType::F32 | DType::F16 => dst.shape().numel(),
             DType::Q8_0H(_) | DType::Q8_0F(_) => dst.shape().numel() / 4,
             _ => unimplemented!(),
         };
@@ -180,7 +180,7 @@ impl MetaOperation for IndexSelect {
         _: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         match self.input.dt() {
-            DType::F32 => Ok(BindGroupLayoutDescriptor::binary()),
+            DType::F32 | DType::F16 => Ok(BindGroupLayoutDescriptor::binary()),
             DType::Q8_0H(_) | DType::Q8_0F(_) => Ok(BindGroupLayoutDescriptor::ternary()),
             _ => unimplemented!(),
         }
