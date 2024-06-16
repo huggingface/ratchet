@@ -2,9 +2,7 @@ use std::collections::HashSet;
 
 use derive_new::new;
 
-use crate::{
-    InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor,
-};
+use crate::{InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor};
 
 #[derive(new, Debug, Clone)]
 pub struct Permute {

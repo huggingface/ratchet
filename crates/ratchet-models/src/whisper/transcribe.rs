@@ -12,7 +12,6 @@ pub fn transcribe(
     mut decode_options: DecodingOptions,
     callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
-    
     use ratchet::DType;
 
     let n_mels = model.config.n_mels;

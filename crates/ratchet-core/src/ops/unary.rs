@@ -328,8 +328,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::{
-        shape, test_util::run_py_prg, Device, DeviceRequest, MetaOperation, Tensor,
-        UnaryOp,
+        shape, test_util::run_py_prg, Device, DeviceRequest, MetaOperation, Tensor, UnaryOp,
     };
 
     #[derive(Arbitrary, Debug)]
