@@ -95,6 +95,7 @@ impl Module for WhisperDecoder {
             tokens,
             offset: self.cache.entries(0),
         })?;
+
         for (block_idx, block) in self.blocks.iter().enumerate() {
             let block_input = ResidualAttentionBlockInputs {
                 x,
@@ -103,6 +104,8 @@ impl Module for WhisperDecoder {
                 cache: Some(self.cache[block_idx].clone()),
             };
             x = block.schedule(block_input)?;
+            let x_dbg = x.clone().resolve()?.to(&Device::CPU)?;
+            println!("Block: {:#?}", x_dbg);
         }
         x = self.ln_post.schedule(x)?;
         let logits = self

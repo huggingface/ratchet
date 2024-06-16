@@ -594,6 +594,7 @@ impl Tensor {
 
     pub fn item<T: TensorDType>(&self) -> T {
         assert!(self.is_scalar());
+        assert!(self.device().is_cpu());
         let storage_guard = self.storage();
         let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
         buffer.to_slice::<T>(self.shape())[0]
