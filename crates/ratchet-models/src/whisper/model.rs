@@ -1,6 +1,4 @@
-use ndarray_stats::MaybeNan;
-use num::FromPrimitive;
-use ratchet::{shape, Device, Tensor, TensorDType};
+use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::Module;
 

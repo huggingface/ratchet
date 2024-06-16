@@ -3,9 +3,8 @@ use super::{
     tokenizer::WhisperTokenizer, transcript::*,
 };
 use crate::whisper::options::{DecodingOptions, Prompt};
-use half::f16;
 use ndarray::{s, Axis};
-use ratchet::{shape, Device, Tensor, TensorDType};
+use ratchet::{shape, Device, Tensor};
 use ratchet_nn::Module;
 
 #[derive(Debug, thiserror::Error)]
