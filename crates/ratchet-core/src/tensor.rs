@@ -537,6 +537,12 @@ impl Tensor {
         Tensor::new(LazyOp::Const, meta, Some(storage), device.clone())
     }
 
+    pub fn has_nan<T: TensorDType + num_traits::Float>(&self) -> bool {
+        assert!(self.device().is_cpu());
+        let self_nd = self.to_ndarray_view::<T>();
+        self_nd.iter().any(|&x| !x.is_finite())
+    }
+
     /// Creates a new tensor from a chunk of data.
     ///
     /// The Tensor is instantly resolved.
@@ -1071,5 +1077,28 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
         } else {
             panic!("Cannot convert numpy array with non-contiguous memory layout to tensor");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use half::f16;
+
+    use crate::{rvec, shape, Device, Tensor};
+
+    #[test]
+    fn has_nan_works() {
+        let device = Device::request_device(crate::DeviceRequest::GPU).unwrap();
+        let rand = Tensor::randn::<f16>(shape![1, 1500, 384], device.clone());
+        let nans = Tensor::from_data(vec![f16::NAN; 1500 * 384], shape![1, 1500, 384], device);
+
+        let bingo = Tensor::cat(rvec![rand, nans], 2)
+            .unwrap()
+            .resolve()
+            .unwrap();
+
+        let result = bingo.to(&Device::CPU).unwrap();
+        println!("RESULT: {:?}", result);
+        assert!(result.has_nan::<f16>());
     }
 }

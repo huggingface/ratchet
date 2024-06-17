@@ -10,6 +10,8 @@ pub struct MLP {
 impl Module for MLP {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        self.l2.schedule(self.l1.schedule(input)?.gelu()?)
+        let input_dt = input.dt();
+        self.l2
+            .schedule(self.l1.schedule(input)?.full()?.gelu()?.cast(input_dt)?)
     }
 }
