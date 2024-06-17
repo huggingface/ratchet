@@ -298,7 +298,7 @@ def ground(options):
         let header = gguf::Header::read(&mut reader).unwrap();
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let audio_ctx = Tensor::from_npy_path::<f32, _>(hs_npy, &device)?;
+        let audio_ctx = Tensor::from_npy::<f32, _>(hs_npy, &device)?;
         let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device)?;
 
         let mut tokens = vec![50258, 50259, 50359];

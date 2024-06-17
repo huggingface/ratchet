@@ -3,6 +3,7 @@ mod blocks;
 pub use blocks::*;
 
 use half::{bf16, f16};
+use npyz::{DType as NpyDType, TypeStr};
 use std::{cmp::max, num::NonZeroU64};
 use wgpu::{BufferAddress, BufferSize};
 
@@ -188,6 +189,18 @@ impl DType {
             DType::F32 => "torch.float32",
             DType::F16 => "torch.float16",
             DType::I32 => "torch.int32",
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl Into<NpyDType> for DType {
+    fn into(self) -> NpyDType {
+        match self {
+            DType::F32 => NpyDType::Plain("<f4".parse::<TypeStr>().unwrap()),
+            DType::F16 => NpyDType::Plain("<f2".parse::<TypeStr>().unwrap()),
+            DType::I32 => NpyDType::Plain("<i4".parse::<TypeStr>().unwrap()),
+            DType::U32 => NpyDType::Plain("<u4".parse::<TypeStr>().unwrap()),
             _ => unimplemented!(),
         }
     }

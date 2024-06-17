@@ -63,7 +63,9 @@ impl Cast {
             Y[index] = 'dst_accessor(X[index]);
         });
 
-        Ok(kernel_builder.build()?)
+        let x = kernel_builder.build()?;
+        println!("{}", x);
+        Ok(x)
     }
 }
 
@@ -91,25 +93,30 @@ impl MetaOperation for Cast {
         "cast".to_string()
     }
 
+    fn supports_inplace(&self) -> bool {
+        false
+    }
+
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
     }
 
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         let numel = self.input.shape().numel();
-        if numel % 4 == 0 {
-            KernelElement::Vec4
-        } else if numel % 2 == 0 {
-            KernelElement::Vec2
-        } else {
-            KernelElement::Scalar
-        }
+        //if numel % 4 == 0 {
+        //    KernelElement::Vec4
+        //} else if numel % 2 == 0 {
+        //    KernelElement::Vec2
+        //} else {
+        //    KernelElement::Scalar
+        //}
+        KernelElement::Scalar
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let workgroup_size = wgs![8, 8, 1];
 
-        let numel = self.input.shape().numel() / self.kernel_element(dst).as_size();
+        let numel = self.input.shape().numel();
         let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
         let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
             let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
@@ -118,10 +125,11 @@ impl MetaOperation for Cast {
             (x_groups, 1)
         };
 
-        Ok(Workload {
+        let workload = Workload {
             workgroup_count: wgc![x_groups as _, y_groups as _, 1],
             workgroup_size,
-        })
+        };
+        Ok(workload)
     }
 
     fn storage_bind_group_layout(
@@ -137,8 +145,7 @@ impl MetaOperation for Cast {
         _: &Tensor,
         _: &KernelElement,
     ) -> Result<u64, OperationError> {
-        let a = &self.input;
-        let numel = a.shape().numel() as u32;
+        let numel = self.input.shape().numel() as u32;
         let meta = CastMeta { numel };
         Ok(uniform.write(&meta)?)
     }

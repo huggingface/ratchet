@@ -5,6 +5,7 @@ use crate::{
     OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
+use npyz::WriterBuilder;
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
@@ -959,7 +960,7 @@ impl<T: TensorDType + Default + num_traits::Float> CloseStats<T> {
 
 #[cfg(feature = "testing")]
 impl Tensor {
-    pub fn from_npy_path<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
+    pub fn from_npy<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
     where
         T: TensorDType + npyz::Deserialize,
         P: AsRef<Path>,
@@ -967,7 +968,35 @@ impl Tensor {
         Self::from_npy_bytes::<T>(&std::fs::read(path)?, device)
     }
 
-    pub fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
+    pub fn to_npy<T, P>(&self, path: P) -> anyhow::Result<()>
+    where
+        T: TensorDType + npyz::Serialize,
+        P: AsRef<Path>,
+    {
+        let mut out_buf = vec![];
+        let shape = self
+            .shape()
+            .to_vec()
+            .iter()
+            .map(|x| *x as u64)
+            .collect::<Vec<_>>();
+        let mut writer = {
+            npyz::WriteOptions::new()
+                .dtype(self.dt().into())
+                .shape(&shape)
+                .writer(&mut out_buf)
+                .begin_nd()?
+        };
+        let ndarray = self.to_ndarray_view::<T>();
+        ndarray.iter().for_each(|x| {
+            writer.push(x).unwrap();
+        });
+        writer.finish()?;
+        std::fs::write(path, out_buf)?;
+        Ok(())
+    }
+
+    fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
         bytes: &[u8],
         device: &Device,
     ) -> anyhow::Result<Tensor> {

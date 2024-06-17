@@ -49,9 +49,10 @@ impl Module for EncoderStem {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let x = input.full()?;
-        let mut convolved = self.conv2.schedule(self.conv1.schedule(x)?)?;
-        convolved = convolved.cast(self.pos_embed.dt())?;
-        convolved.permute(&[0, 2, 1])?.add(self.pos_embed.clone())
+        let convolved = self.conv2.schedule(self.conv1.schedule(x)?)?;
+        convolved
+            .permute(&[0, 2, 1])?
+            .add(self.pos_embed.clone().full()?)
     }
 }
 
@@ -109,6 +110,10 @@ impl Module for WhisperEncoder {
 
         let dbg = x.clone().resolve()?.to(&Device::CPU)?;
         println!("Stem: {:#?}", dbg);
+
+        let dbg_f16 = x.clone().half()?.resolve()?.to(&Device::CPU)?;
+        println!("Stem F16: {:#?}", dbg_f16);
+
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
                 x: x.clone(),
@@ -233,11 +238,11 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
-        let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
+        let input = Tensor::from_npy::<f32, _>(input_npy, &device)?;
 
         let result = encoder.schedule(input)?.full()?.resolve()?;
         let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
+        let ground = Tensor::from_npy::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);
         ground.all_close(&ours, 1e-3, 1e-3)?;
@@ -264,11 +269,11 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
-        let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
+        let input = Tensor::from_npy::<f32, _>(input_npy, &device)?;
 
         let result = encoder.schedule(input)?.full()?.resolve()?;
         let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
+        let ground = Tensor::from_npy::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);
         ground.all_close(&ours, 1e-3, 1e-3)?;
