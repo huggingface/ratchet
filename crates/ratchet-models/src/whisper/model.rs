@@ -39,7 +39,11 @@ impl Whisper {
         reader: &mut R,
         device: Device,
     ) -> anyhow::Result<Self> {
-        let mel_bytes = Self::fetch_resource(&variant, "melfilters.bytes")?;
+        let mel_fname = match variant {
+            WhisperVariants::DistilLargeV3 | WhisperVariants::LargeV3 => "melfilters128.bytes",
+            _ => "melfilters.bytes",
+        };
+        let mel_bytes = Self::fetch_resource(&variant, mel_fname)?;
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
             &mel_bytes,
@@ -257,6 +261,7 @@ mod tests {
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let model_path = model.get("whisper-tiny-f16.gguf").unwrap();
+        let variant = WhisperVariants::Tiny;
         println!("PATH: {:?}", model_path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
@@ -269,8 +274,7 @@ mod tests {
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
-        let mut whisper =
-            Whisper::load(header, WhisperVariants::Tiny, &mut reader, device).unwrap();
+        let mut whisper = Whisper::load(header, variant, &mut reader, device).unwrap();
 
         let empty_cb: Option<fn(StreamedSegment)> = None;
         let transcript = transcribe(&mut whisper, samples, options, empty_cb).unwrap();
