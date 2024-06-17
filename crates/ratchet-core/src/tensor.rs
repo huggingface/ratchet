@@ -303,6 +303,16 @@ impl Tensor {
         Ok(Tensor::lazy(LazyOp::Cast(cast), new_view, device))
     }
 
+    /// Cast a tensor to full precision (IEEE 754 32-bit floating point).
+    pub fn full(self) -> anyhow::Result<Tensor> {
+        self.cast(DType::F32)
+    }
+
+    /// Cast a tensor to half precision (IEEE 754 16-bit floating point).
+    pub fn half(self) -> anyhow::Result<Tensor> {
+        self.cast(DType::F16)
+    }
+
     pub fn group_norm(
         self,
         num_groups: usize,

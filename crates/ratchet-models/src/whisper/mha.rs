@@ -96,6 +96,7 @@ impl MultiHeadAttention {
         let [bs, n_ctx, n_state]: [usize; 3] = q.shape().try_into()?;
         let [k0, k1, _]: [usize; 3] = k.shape().try_into()?;
         let [v0, v1, _]: [usize; 3] = v.shape().try_into()?;
+        let q_dt = q.dt();
 
         let hdim = n_state / self.n_heads;
 
@@ -121,8 +122,9 @@ impl MultiHeadAttention {
             };
             qk = qk.add(prepared_mask)?;
         }
+        qk = qk.full()?;
 
-        let w = qk.softmax(3)?;
+        let w = qk.softmax(3)?.cast(q_dt)?;
         let wv = w
             .matmul(v, false, false)?
             .permute(&[0, 2, 1, 3])?

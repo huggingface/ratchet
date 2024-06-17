@@ -24,10 +24,11 @@ impl Module for ConvBlock {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let input_dt = input.dt();
         input
             .conv1d(
-                self.w.clone(),
-                Some(self.b.clone()),
+                self.w.clone().cast(input_dt)?,
+                Some(self.b.clone().cast(input_dt)?),
                 self.stride,
                 self.padding,
             )?
@@ -209,7 +210,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let model_path = model.get("tiny_f32.gguf").unwrap();
+        let model_path = model.get("whisper-tiny-f16.gguf").unwrap();
         println!("Path: {}", model_path.display());
         let config_path = model.get("config.json").unwrap();
 
@@ -223,9 +224,9 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
-        let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
+        let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?.half()?;
 
-        let result = encoder.schedule(input)?.resolve()?;
+        let result = encoder.schedule(input)?.full()?.resolve()?;
         let ours = result.to(&Device::CPU)?;
         let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);

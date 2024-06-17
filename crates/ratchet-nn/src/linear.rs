@@ -15,8 +15,9 @@ pub struct Linear {
 impl Module for Linear {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        self.w
-            .clone()
-            .gemm(input, self.b.clone(), false, true, true)
+        let input_dt = input.dt();
+        let w = self.w.clone().cast(input_dt)?;
+        let bias = self.b.clone().map(|b| b.cast(input_dt)).transpose()?;
+        w.gemm(input, bias, false, true, true)
     }
 }
