@@ -104,8 +104,6 @@ impl Module for WhisperDecoder {
                 cache: Some(self.cache[block_idx].clone()),
             };
             x = block.schedule(block_input)?;
-            let x_dbg = x.clone().resolve()?.to(&Device::CPU)?;
-            println!("Block: {:#?}", x_dbg);
         }
         x = self.ln_post.schedule(x)?;
         let logits = self
@@ -113,7 +111,8 @@ impl Module for WhisperDecoder {
             .token_embed
             .weight
             .clone()
-            .gemm(x, None, false, true, true)?;
+            .gemm(x, None, false, true, true)?
+            .full()?;
         Ok(logits)
     }
 }
