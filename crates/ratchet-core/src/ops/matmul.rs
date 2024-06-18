@@ -413,6 +413,15 @@ impl OpGuards for Matmul {
                 self.rhs.dt()
             );
         }
+        if let Some(bias) = &self.bias {
+            if bias.dt() != self.rhs.dt() {
+                panic!(
+                    "Failed to validate DTypes: bias {:?}, rhs {:?}",
+                    bias.dt(),
+                    self.rhs.dt()
+                );
+            }
+        }
     }
 }
 

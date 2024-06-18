@@ -214,7 +214,6 @@ impl WhisperDecoder {
         let n_state = config.n_audio_state as _;
 
         let dt = blocks[0].mlp.activation_dt();
-        println!("BLOCK MLP ACTIVATION DT: {:?}", dt);
 
         let mask = match dt {
             DType::F16 => Self::load_mask::<f16>(config.n_text_ctx as _, device),
