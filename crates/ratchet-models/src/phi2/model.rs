@@ -161,7 +161,7 @@ impl Phi2 {
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new(n_layers, shape![1, 32, Self::MAX_CACHE, 80], device),
+            kv_cache: KVCache::new::<f32>(n_layers, shape![1, 32, Self::MAX_CACHE, 80], device),
             device: device.clone(),
         })
     }

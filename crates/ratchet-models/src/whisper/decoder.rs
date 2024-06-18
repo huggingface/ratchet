@@ -2,7 +2,7 @@ use super::config::Config;
 use crate::whisper::residual_block::*;
 use half::f16;
 use num::Zero;
-use ratchet::prelude::*;
+use ratchet::{prelude::*, DType, TensorDType};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
 use std::io::{BufRead, Seek};
@@ -83,6 +83,7 @@ pub struct WhisperDecoder {
     mask: Tensor,
     ln_post: LayerNorm,
     cache: KVCache,
+    #[allow(dead_code)] //Should maintain a handle to the device
     device: Device,
 }
 
@@ -128,16 +129,10 @@ impl WhisperDecoder {
         self.cache.reset();
     }
 
-    fn load_mask(n_ctx: usize, device: &Device) -> Tensor {
+    fn load_mask<T: TensorDType + num::Float>(n_ctx: usize, device: &Device) -> Tensor {
         let mask: Vec<_> = (0..n_ctx)
             .flat_map(|i| {
-                (0..n_ctx).map(move |j| {
-                    if j > i {
-                        f16::NEG_INFINITY
-                    } else {
-                        f16::zero()
-                    }
-                })
+                (0..n_ctx).map(move |j| if j > i { T::neg_infinity() } else { T::zero() })
             })
             .collect();
         Tensor::from_data(mask, shape![n_ctx, n_ctx], device.clone())
@@ -192,7 +187,11 @@ impl WhisperDecoder {
         device: &Device,
     ) -> anyhow::Result<Self> {
         let stem = DecoderStem::load(header, reader, device)?;
-        let (n_layers, n_heads) = (config.n_text_layer, config.n_text_head);
+        let (n_layers, n_heads, dt) = (
+            config.n_text_layer,
+            config.n_text_head,
+            DType::from_torch(&config.dtype),
+        );
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -215,12 +214,26 @@ impl WhisperDecoder {
         };
 
         let n_state = config.n_audio_state as _;
+
+        let mask = match dt {
+            DType::F16 => Self::load_mask::<f16>(config.n_text_ctx as _, device),
+            DType::F32 => Self::load_mask::<f32>(config.n_text_ctx as _, device),
+            _ => unimplemented!(),
+        };
+
+        let cache_shape = shape![1, Self::MAX_CACHE, n_state];
+        let cache = match dt {
+            DType::F16 => KVCache::new::<f16>(n_layers as _, cache_shape, device),
+            DType::F32 => KVCache::new::<f32>(n_layers as _, cache_shape, device),
+            _ => unimplemented!(),
+        };
+
         Ok(Self {
             stem,
             blocks,
-            mask: Self::load_mask(config.n_text_ctx as _, device),
+            mask,
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
-            cache: KVCache::new(n_layers as _, shape![1, Self::MAX_CACHE, n_state], device),
+            cache,
             device: device.clone(),
         })
     }

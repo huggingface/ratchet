@@ -115,7 +115,7 @@ impl Moondream {
                 lt("text_model.lm_head.linear.weight"),
                 Some(lt("text_model.lm_head.linear.bias")),
             ),
-            KVCache::new(n_layers as _, cache_shape, device),
+            KVCache::new::<f32>(n_layers as _, cache_shape, device),
             device.clone(),
         );
 

@@ -92,7 +92,7 @@ impl MetaOperation for Cast {
     }
 
     fn supports_inplace(&self) -> bool {
-        false
+        true
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -101,14 +101,13 @@ impl MetaOperation for Cast {
 
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         let numel = self.input.shape().numel();
-        //if numel % 4 == 0 {
-        //    KernelElement::Vec4
-        //} else if numel % 2 == 0 {
-        //    KernelElement::Vec2
-        //} else {
-        //    KernelElement::Scalar
-        //}
-        KernelElement::Scalar
+        if numel % 4 == 0 {
+            KernelElement::Vec4
+        } else if numel % 2 == 0 {
+            KernelElement::Vec2
+        } else {
+            KernelElement::Scalar
+        }
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
