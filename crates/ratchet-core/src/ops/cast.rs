@@ -280,7 +280,13 @@ def cast(a):
     #[test]
     fn debug_casting() {
         let device = GPU_DEVICE.with(|d| d.clone());
-        let input = Tensor::randn::<f32>(shape![1, 1500, 384], Device::CPU);
+        let input = Tensor::read_npy::<f32, _>(
+            "/Users/fleetwood/Code/ratchet/fixtures/stem.npy",
+            &Device::CPU,
+        )
+        .unwrap();
+
+        println!("INPUT: {:?}", input);
 
         let prg = r#"
 import torch
@@ -291,6 +297,10 @@ def cast(a):
         let ground = run_py_prg(prg.to_string(), &[&input], &[], DType::F32).unwrap();
 
         let input_gpu = input.to(&device).unwrap();
+
+        let casted = input_gpu.clone().half().unwrap().resolve().unwrap();
+        let casted_cpu = casted.to(&Device::CPU).unwrap();
+        println!("CASTED: {:?}", casted_cpu);
 
         let casted = input_gpu
             .cast(DType::F16)

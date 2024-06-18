@@ -110,9 +110,10 @@ impl Module for WhisperEncoder {
 
         let dbg = x.clone().resolve()?.to(&Device::CPU)?;
         println!("Stem: {:#?}", dbg);
+        dbg.write_npy::<f32, _>("stem.npy")?;
 
-        let dbg_f16 = x.clone().half()?.resolve()?.to(&Device::CPU)?;
-        println!("Stem F16: {:#?}", dbg_f16);
+        //let dbg_f16 = x.clone().half()?.resolve()?.to(&Device::CPU)?;
+        //println!("Stem F16: {:#?}", dbg_f16);
 
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
@@ -238,11 +239,11 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
-        let input = Tensor::from_npy::<f32, _>(input_npy, &device)?;
+        let input = Tensor::read_npy::<f32, _>(input_npy, &device)?;
 
         let result = encoder.schedule(input)?.full()?.resolve()?;
         let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::from_npy::<f32, _>(ground_npy, &Device::CPU)?;
+        let ground = Tensor::read_npy::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);
         ground.all_close(&ours, 1e-3, 1e-3)?;
@@ -269,11 +270,11 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
-        let input = Tensor::from_npy::<f32, _>(input_npy, &device)?;
+        let input = Tensor::read_npy::<f32, _>(input_npy, &device)?;
 
         let result = encoder.schedule(input)?.full()?.resolve()?;
         let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::from_npy::<f32, _>(ground_npy, &Device::CPU)?;
+        let ground = Tensor::read_npy::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);
         ground.all_close(&ours, 1e-3, 1e-3)?;

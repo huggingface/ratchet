@@ -960,7 +960,7 @@ impl<T: TensorDType + Default + num_traits::Float> CloseStats<T> {
 
 #[cfg(feature = "testing")]
 impl Tensor {
-    pub fn from_npy<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
+    pub fn read_npy<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
     where
         T: TensorDType + npyz::Deserialize,
         P: AsRef<Path>,
@@ -968,7 +968,7 @@ impl Tensor {
         Self::from_npy_bytes::<T>(&std::fs::read(path)?, device)
     }
 
-    pub fn to_npy<T, P>(&self, path: P) -> anyhow::Result<()>
+    pub fn write_npy<T, P>(&self, path: P) -> anyhow::Result<()>
     where
         T: TensorDType + npyz::Serialize,
         P: AsRef<Path>,
