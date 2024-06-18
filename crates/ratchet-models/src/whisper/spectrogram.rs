@@ -1,4 +1,3 @@
-use half::f16;
 //Adapted from: https://github.com/tanmayb123/OpenAI-Whisper-CoreML
 use ndarray::{Array1, Array2};
 use ndarray_stats::QuantileExt;

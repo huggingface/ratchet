@@ -207,9 +207,9 @@ impl DType {
     }
 }
 
-impl Into<NpyDType> for DType {
-    fn into(self) -> NpyDType {
-        match self {
+impl From<DType> for NpyDType {
+    fn from(val: DType) -> Self {
+        match val {
             DType::F32 => NpyDType::Plain("<f4".parse::<TypeStr>().unwrap()),
             DType::F16 => NpyDType::Plain("<f2".parse::<TypeStr>().unwrap()),
             DType::I32 => NpyDType::Plain("<i4".parse::<TypeStr>().unwrap()),

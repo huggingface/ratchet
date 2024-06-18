@@ -13,8 +13,8 @@ use encase::ShaderType;
 use inline_wgsl::wgsl;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
+    gpu::{BindGroupLayoutDescriptor, CpuUniform},
+    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
     OperationError, RVec, Scalar, Shape, Strides, Tensor, WgslKernelBuilder, WgslPrimitive,
     WorkgroupSize, Workload,
 };
