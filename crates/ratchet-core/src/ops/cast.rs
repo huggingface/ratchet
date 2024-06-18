@@ -196,7 +196,11 @@ impl MetaOperation for Cast {
             (DType::F32, DType::I32, KernelElement::Vec4) => {
                 self.build_cast::<Vec4<f32>, Vec4<i32>>(inplace, dst, workgroup_size)
             }
-            _ => unimplemented!(),
+            _ => unimplemented!(
+                "Cannot cast from {:?} to {:?}",
+                self.input.dt(),
+                self.dst_dt
+            ),
         }
     }
 }

@@ -93,12 +93,12 @@ impl DType {
         }
     }
 
-    pub fn from_torch<S: AsRef<str>>(dtype: &S) -> Self {
+    pub fn from_torch<S: AsRef<str>>(dtype: S) -> Self {
         let dtype = dtype.as_ref();
         match dtype {
-            "torch.float32" => DType::F32,
-            "torch.float16" => DType::F16,
-            "torch.int32" => DType::I32,
+            "torch.float32" | "float32" => DType::F32,
+            "torch.float16" | "float16" => DType::F16,
+            "torch.int32" | "int32" => DType::I32,
             _ => unimplemented!("Unsupported torch dtype: {}", dtype),
         }
     }

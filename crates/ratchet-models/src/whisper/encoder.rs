@@ -1,6 +1,6 @@
 use std::io::{BufRead, Seek};
 
-use ratchet::{Device, Tensor};
+use ratchet::{DType, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{LayerNorm, Module};
 
@@ -47,13 +47,9 @@ impl Module for EncoderStem {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let dst_dt = self.pos_embed.dt();
         //Currently do CONV in FP32 due to precision issues in kernel
         let convolved = self.conv2.schedule(self.conv1.schedule(input.full()?)?)?;
-        convolved
-            .cast(dst_dt)?
-            .permute(&[0, 2, 1])?
-            .add(self.pos_embed.clone())
+        convolved.permute(&[0, 2, 1])?.add(self.pos_embed.clone())
     }
 }
 
@@ -101,13 +97,14 @@ pub struct WhisperEncoder {
     stem: EncoderStem,
     blocks: Vec<ResidualAttentionBlock>,
     ln_post: LayerNorm,
+    activation_dt: DType,
 }
 
 impl Module for WhisperEncoder {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let mut x = self.stem.schedule(input)?;
+        let mut x = self.stem.schedule(input)?.cast(self.activation_dt)?;
 
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
@@ -183,7 +180,10 @@ impl WhisperEncoder {
                 blocks
             })
             .into_iter()
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<ResidualAttentionBlock>, _>>()?;
+
+        let activation_dt = blocks[0].mlp.activation_dt();
+        println!("Activation DT: {:?}", activation_dt);
 
         let mut lt = |name: &str| {
             let key = format!("model.encoder.layer_norm.{}", name);
@@ -194,6 +194,7 @@ impl WhisperEncoder {
             stem,
             blocks,
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
+            activation_dt,
         })
     }
 }

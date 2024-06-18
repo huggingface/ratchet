@@ -7,6 +7,12 @@ pub struct MLP {
     l2: Linear,
 }
 
+impl MLP {
+    pub fn activation_dt(&self) -> ratchet::DType {
+        self.l1.w.dt().dequantized_dt()
+    }
+}
+
 impl Module for MLP {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {

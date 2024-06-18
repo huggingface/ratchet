@@ -68,10 +68,12 @@ impl Module for DecoderStem {
         let num_tokens = tokens.shape()[tokens.rank() - 1];
         let start = offset;
         let end = offset + num_tokens;
-        let sliced = self
+        let mut sliced = self
             .pos_embed
             .clone()
             .slice(&[start..end, 0..self.pos_embed.shape()[1]])?;
+
+        sliced = sliced.cast(self.token_embed.weight.dt().dequantized_dt())?;
         self.token_embed.schedule(tokens)?.add(sliced)
     }
 }
@@ -187,11 +189,7 @@ impl WhisperDecoder {
         device: &Device,
     ) -> anyhow::Result<Self> {
         let stem = DecoderStem::load(header, reader, device)?;
-        let (n_layers, n_heads, dt) = (
-            config.n_text_layer,
-            config.n_text_head,
-            DType::from_torch(&config.dtype),
-        );
+        let (n_layers, n_heads) = (config.n_text_layer, config.n_text_head);
 
         let blocks = (0..n_layers)
             .fold(Vec::with_capacity(n_layers as _), |mut blocks, i| {
@@ -214,6 +212,9 @@ impl WhisperDecoder {
         };
 
         let n_state = config.n_audio_state as _;
+
+        let dt = blocks[0].mlp.activation_dt();
+        println!("BLOCK MLP ACTIVATION DT: {:?}", dt);
 
         let mask = match dt {
             DType::F16 => Self::load_mask::<f16>(config.n_text_ctx as _, device),

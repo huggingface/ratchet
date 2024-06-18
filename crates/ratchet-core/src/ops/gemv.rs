@@ -140,6 +140,7 @@ impl GEMV {
         let zero = P::T::zero().render();
 
         kernel_builder.write_metadata::<GEMVMeta>();
+        kernel_builder.write_unpack(self.lhs.dt());
 
         let work_size = (workgroup_size.x * workgroup_size.y / (n as u32)).render();
         kernel_builder.write_global(wgsl! {
@@ -168,10 +169,10 @@ impl GEMV {
                     }
                 }
             }
-            (true, DType::Q8_0F(_)) => {
+            (true, DType::Q8_0F(_)) | (true, DType::Q8_0H(_)) => {
                 wgsl! {
-                    fn readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
-                        return unpack4x8snorm(A[dot(metadata.aStrides, vec3<i32>(batch, row, col))]) * 127f;
+                    fn readA(batch: i32, row: i32, col: i32) -> vec4<'scalar> {
+                        return unpack(A[dot(metadata.aStrides, vec3<i32>(batch, row, col))]);
                     }
                 }
             }
@@ -181,11 +182,11 @@ impl GEMV {
 
         let workgroup_size_y = workgroup_size.y;
         let main_loop = match self.lhs.dt() {
-            DType::Q8_0F(_) => {
+            DType::Q8_0F(_) | DType::Q8_0H(_) => {
                 wgsl! {
                     let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
                     for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+='workgroup_size_y / 4) {
-                        sum = fma(unpack4x8snorm(A[aIndex + k]) * 127f * scale[sIndex + (k/8)], X[k], sum);
+                        sum = fma(unpack(A[aIndex + k]) * scale[sIndex + (k/8)], X[k], sum);
                     }
                 }
             }
