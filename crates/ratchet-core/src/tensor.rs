@@ -5,6 +5,7 @@ use crate::{
     RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId, MIN_STORAGE_BUFFER_SIZE,
 };
 use derive_new::new;
+use npyz::WriterBuilder;
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::cmp::max;
 use std::collections::HashSet;
@@ -81,9 +82,23 @@ impl Tensor {
     }
 }
 
-impl std::fmt::Debug for Tensor {
+impl std::fmt::Display for Tensor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
+        let (id, op) = (self.id(), self.op());
+        f.debug_struct("Tensor")
+            .field("id", &id)
+            .field("shape", &self.shape())
+            .field("dt", &self.dt())
+            .field("op", &op)
+            .field("storage", &storage_fmt)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for Tensor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), true));
         let (id, op) = (self.id(), self.op());
         f.debug_struct("Tensor")
             .field("id", &id)
@@ -747,7 +762,7 @@ impl Tensor {
         #[cfg(feature = "plotting")]
         {
             let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "allocations.svg").unwrap();
+            crate::plot::render_to_file(last, format!("allocations{:?}.svg", last.id())).unwrap();
         }
 
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
@@ -849,6 +864,7 @@ impl Tensor {
             .as_ref()
             .ok_or(TensorError::TransferError)?
             .try_gpu()?;
+
         let cpu_buf = gpu_buf.to_cpu(&self.device)?;
 
         Ok(Tensor::new(
@@ -930,7 +946,7 @@ impl<T: TensorDType + Default + num_traits::Float> CloseStats<T> {
 
 #[cfg(feature = "testing")]
 impl Tensor {
-    pub fn from_npy_path<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
+    pub fn read_npy<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
     where
         T: TensorDType + npyz::Deserialize,
         P: AsRef<Path>,
@@ -938,7 +954,7 @@ impl Tensor {
         Self::from_npy_bytes::<T>(&std::fs::read(path)?, device)
     }
 
-    pub fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
+    fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
         bytes: &[u8],
         device: &Device,
     ) -> anyhow::Result<Tensor> {
@@ -951,6 +967,34 @@ impl Tensor {
             .into();
         let data = reader.into_vec::<T>()?;
         Ok(Tensor::from_data(data, shape, device.clone()))
+    }
+
+    pub fn write_npy<T, P>(&self, path: P) -> anyhow::Result<()>
+    where
+        T: TensorDType + npyz::Serialize,
+        P: AsRef<Path>,
+    {
+        let mut out_buf = vec![];
+        let shape = self
+            .shape()
+            .to_vec()
+            .iter()
+            .map(|x| *x as u64)
+            .collect::<Vec<_>>();
+        let mut writer = {
+            npyz::WriteOptions::new()
+                .dtype(self.dt().into())
+                .shape(&shape)
+                .writer(&mut out_buf)
+                .begin_nd()?
+        };
+        let ndarray = self.to_ndarray_view::<T>();
+        ndarray.iter().for_each(|x| {
+            writer.push(x).unwrap();
+        });
+        writer.finish()?;
+        std::fs::write(path, out_buf)?;
+        Ok(())
     }
 
     pub fn into_ndarray<T: TensorDType>(self) -> ArrayD<T> {

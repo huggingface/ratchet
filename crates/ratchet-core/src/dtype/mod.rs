@@ -1,4 +1,5 @@
 use half::{bf16, f16};
+use npyz::{DType as NpyDType, TypeStr};
 use std::num::NonZeroU64;
 use wgpu::{BufferAddress, BufferSize};
 
@@ -183,6 +184,18 @@ impl<T: Clone + Default> Padding for Vec<T> {
             alignment
         } else {
             0
+        }
+    }
+}
+
+impl Into<NpyDType> for DType {
+    fn into(self) -> NpyDType {
+        match self {
+            DType::F32 => NpyDType::Plain("<f4".parse::<TypeStr>().unwrap()),
+            DType::F16 => NpyDType::Plain("<f2".parse::<TypeStr>().unwrap()),
+            DType::I32 => NpyDType::Plain("<i4".parse::<TypeStr>().unwrap()),
+            DType::U32 => NpyDType::Plain("<u4".parse::<TypeStr>().unwrap()),
+            _ => unimplemented!(),
         }
     }
 }
