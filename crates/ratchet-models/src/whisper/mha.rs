@@ -108,10 +108,6 @@ impl MultiHeadAttention {
         let k = k.view(ks)?.permute(&[0, 2, 3, 1])?.mul(self.dk.clone())?;
         let v = v.view(vs)?.permute(&[0, 2, 1, 3])?;
 
-        if x_attn {
-            //TODO: static caching
-        }
-
         let mut qk = q.matmul(k, false, false)?;
 
         if let Some(m) = mask {
@@ -126,10 +122,8 @@ impl MultiHeadAttention {
 
         let w = qk.softmax(3)?.cast(q_dt)?;
 
-        let wv = w
-            .matmul(v, false, false)?
-            .permute(&[0, 2, 1, 3])?
-            .view(shape![bs, n_ctx, n_state])?;
+        let s = shape![bs, n_ctx, n_state];
+        let wv = w.matmul(v, false, false)?.permute(&[0, 2, 1, 3])?.view(s)?;
 
         self.o.schedule(wv)
     }

@@ -88,7 +88,7 @@ impl GEMM {
         _: &Tensor,
         builder: &mut WgslKernelBuilder,
     ) -> Result<(), OperationError> {
-        let (A, B, _) = (&self.lhs, &self.rhs, &self.bias);
+        let (A, _, _) = (&self.lhs, &self.rhs, &self.bias);
         let accessor = P::render_type();
         let W = P::W;
 
