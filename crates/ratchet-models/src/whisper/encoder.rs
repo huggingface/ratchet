@@ -49,7 +49,9 @@ impl Module for EncoderStem {
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         //Currently do CONV in FP32 due to precision issues in kernel
         let convolved = self.conv2.schedule(self.conv1.schedule(input.full()?)?)?;
-        convolved.permute(&[0, 2, 1])?.add(self.pos_embed.clone())
+        convolved
+            .permute(&[0, 2, 1])?
+            .add(self.pos_embed.clone().full()?)
     }
 }
 
@@ -183,7 +185,6 @@ impl WhisperEncoder {
             .collect::<Result<Vec<ResidualAttentionBlock>, _>>()?;
 
         let activation_dt = blocks[0].mlp.activation_dt();
-        println!("Activation DT: {:?}", activation_dt);
 
         let mut lt = |name: &str| {
             let key = format!("model.encoder.layer_norm.{}", name);
