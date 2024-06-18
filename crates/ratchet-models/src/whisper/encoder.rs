@@ -145,7 +145,7 @@ impl WhisperEncoder {
                 blocks
             })
             .into_iter()
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<ResidualAttentionBlock>, _>>()?;
 
         let mut lt = |name: &str| {
             let key = format!("model.encoder.layer_norm.{}", name);
@@ -153,10 +153,13 @@ impl WhisperEncoder {
             ratchet_from_gguf_web(wt, device)
         };
 
+        let activation_dt = blocks[0].mlp.activation_dt();
+
         Ok(Self {
             stem,
             blocks,
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
+            activation_dt,
         })
     }
 

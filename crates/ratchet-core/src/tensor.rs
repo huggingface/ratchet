@@ -996,7 +996,7 @@ impl Tensor {
         Ok(())
     }
 
-    fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
+    pub fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
         bytes: &[u8],
         device: &Device,
     ) -> anyhow::Result<Tensor> {
