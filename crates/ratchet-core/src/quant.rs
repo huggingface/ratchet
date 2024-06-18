@@ -31,7 +31,6 @@ impl Quantizer {
         assert!(numel % pack_size == 0 && numel % group_size == 0);
         assert!(tensor.dt() == DType::F32); //TODO: f16, bf16
                                             //TODO: check if tensor is contiguous
-
         let qmatrix_len = numel / pack_size;
         let amatrix_len = numel / group_size;
 

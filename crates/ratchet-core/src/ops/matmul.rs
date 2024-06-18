@@ -413,17 +413,6 @@ impl OpGuards for Matmul {
                 self.rhs.dt()
             );
         }
-
-        if let Some(bias) = &self.bias {
-            if self.lhs.dt() != bias.dt() {
-                panic!(
-                    "Failed to validate DTypes: {:?}, {:?}",
-                    self.lhs.dt(),
-                    bias.dt()
-                );
-            }
-        }
-        assert_eq!(self.lhs.dt(), self.rhs.dt());
     }
 }
 

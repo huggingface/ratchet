@@ -315,6 +315,7 @@ pub trait MetaOperation: Debug + 'static {
 
         let storage_layout = device
             .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
+
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
         let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {

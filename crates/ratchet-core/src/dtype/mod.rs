@@ -60,7 +60,8 @@ impl DType {
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
-            _ => unimplemented!(),
+            DType::Q8_0H(_) => std::mem::size_of::<BlockQ8_0<f16>>(),
+            DType::Q8_0F(_) => std::mem::size_of::<BlockQ8_0<f32>>(),
         }
     }
 
@@ -70,6 +71,14 @@ impl DType {
 
     pub fn is_float(self) -> bool {
         matches!(self, DType::F16 | DType::BF16 | DType::F32)
+    }
+
+    pub fn dequantized_dt(&self) -> DType {
+        match self {
+            DType::Q8_0H(_) => DType::F16,
+            DType::Q8_0F(_) => DType::F32,
+            _ => *self,
+        }
     }
 
     pub fn segments(&self, numel: usize) -> RVec<BufferSegment> {
