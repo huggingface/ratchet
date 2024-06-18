@@ -264,41 +264,4 @@ def cast(a):
     fn test_type_cast(prob: CastProblem) {
         run_cast_trial(prob).unwrap();
     }
-
-    #[test]
-    fn debug_casting() {
-        let device = GPU_DEVICE.with(|d| d.clone());
-        let input = Tensor::read_npy::<f32, _>(
-            "/Users/fleetwood/Code/ratchet/fixtures/stem.npy",
-            &Device::CPU,
-        )
-        .unwrap();
-
-        println!("INPUT: {:?}", input);
-
-        let prg = r#"
-import torch
-def cast(a):
-    return torch.from_numpy(a).to(torch.float16).to(torch.float32).numpy()
-"#;
-
-        let ground = run_py_prg(prg.to_string(), &[&input], &[], DType::F32).unwrap();
-
-        let input_gpu = input.to(&device).unwrap();
-
-        let casted = input_gpu.clone().half().unwrap().resolve().unwrap();
-        let casted_cpu = casted.to(&Device::CPU).unwrap();
-        println!("CASTED: {:?}", casted_cpu);
-
-        let casted = input_gpu
-            .cast(DType::F16)
-            .unwrap()
-            .cast(DType::F32)
-            .unwrap()
-            .resolve()
-            .unwrap();
-
-        let casted_cpu = casted.to(&Device::CPU).unwrap();
-        ground.all_close::<f32>(&casted_cpu, 1e-4, 1e-4).unwrap();
-    }
 }
