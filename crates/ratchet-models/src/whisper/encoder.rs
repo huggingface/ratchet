@@ -1,4 +1,3 @@
-use half::f16;
 use std::io::{BufRead, Seek};
 
 use ratchet::{Device, Tensor};
@@ -48,12 +47,13 @@ impl Module for EncoderStem {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let x = input.full()?;
-        let convolved = self.conv2.schedule(self.conv1.schedule(x)?)?;
+        let dst_dt = self.pos_embed.dt();
+        //Currently do CONV in FP32 due to precision issues in kernel
+        let convolved = self.conv2.schedule(self.conv1.schedule(input.full()?)?)?;
         convolved
+            .cast(dst_dt)?
             .permute(&[0, 2, 1])?
-            .add(self.pos_embed.clone().full()?)?
-            .half()
+            .add(self.pos_embed.clone())
     }
 }
 
@@ -212,42 +212,11 @@ mod tests {
     }
 
     #[test]
-    fn f32_encoder_matches() -> anyhow::Result<()> {
+    fn encoder_matches() -> anyhow::Result<()> {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let model_path = model.get("tiny_f32.gguf").unwrap();
-        println!("Path: {}", model_path.display());
-        let config_path = model.get("config.json").unwrap();
-
-        let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
-        let ground_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
-
-        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
-        let header = gguf::Header::read(&mut reader).unwrap();
-        let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-
-        let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
-        let input = Tensor::read_npy::<f32, _>(input_npy, &device)?;
-
-        let result = encoder.schedule(input)?.full()?.resolve()?;
-        let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::read_npy::<f32, _>(ground_npy, &Device::CPU)?;
-        println!("OURS: {:#?}", ours);
-        println!("Ground: {:#?}", ground);
-        ground.all_close(&ours, 1e-3, 1e-3)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn f16_encoder_matches() -> anyhow::Result<()> {
-        log_init();
-        let api = Api::new().unwrap();
-        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let model_path = model.get("whisper-tiny-f16.gguf").unwrap();
         println!("Path: {}", model_path.display());
         let config_path = model.get("config.json").unwrap();
 

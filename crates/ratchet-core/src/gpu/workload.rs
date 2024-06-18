@@ -1,6 +1,8 @@
 use derive_new::new;
 use inline_wgsl::wgsl;
 
+use crate::KernelElement;
+
 #[derive(Debug, Clone, new, PartialEq, Eq, Hash)]
 pub struct WorkgroupSize {
     pub x: u32,
@@ -95,4 +97,24 @@ impl Default for WorkgroupCount {
 pub struct Workload {
     pub workgroup_size: WorkgroupSize,
     pub workgroup_count: WorkgroupCount,
+}
+
+impl Workload {
+    pub fn std(numel: usize, ke: KernelElement) -> Workload {
+        let workgroup_size = wgs![8, 8, 1];
+
+        let numel = numel / ke.as_size();
+        let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
+        let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
+            let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
+            (WorkgroupCount::MAX_WGS_PER_DIM, y_groups)
+        } else {
+            (x_groups, 1)
+        };
+
+        Workload {
+            workgroup_count: wgc![x_groups as _, y_groups as _, 1],
+            workgroup_size,
+        }
+    }
 }

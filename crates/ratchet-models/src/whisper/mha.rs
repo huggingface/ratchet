@@ -62,7 +62,6 @@ impl Module for MultiHeadAttention {
             cache,
             is_causal,
         } = input;
-        let is_xattn = xa.is_some();
 
         let q = self.q.schedule(x.clone())?;
 
@@ -79,7 +78,7 @@ impl Module for MultiHeadAttention {
             (k, v)
         };
 
-        self.qkv_attention(q, k, v, mask, is_xattn, is_causal)
+        self.qkv_attention(q, k, v, mask, is_causal)
     }
 }
 
@@ -90,7 +89,6 @@ impl MultiHeadAttention {
         k: Tensor,
         v: Tensor,
         mask: Option<Tensor>,
-        x_attn: bool,
         is_causal: bool,
     ) -> anyhow::Result<Tensor> {
         let [bs, n_ctx, n_state]: [usize; 3] = q.shape().try_into()?;
