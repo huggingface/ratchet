@@ -159,7 +159,7 @@ impl MetaOperation for Binary {
     }
 
     fn supports_inplace(&self) -> bool {
-        true
+        false
     }
 
     fn srcs(&self) -> RVec<&Tensor> {

@@ -52,7 +52,8 @@ impl Module for EncoderStem {
         let convolved = self.conv2.schedule(self.conv1.schedule(x)?)?;
         convolved
             .permute(&[0, 2, 1])?
-            .add(self.pos_embed.clone().full()?)
+            .add(self.pos_embed.clone().full()?)?
+            .half()
     }
 }
 
@@ -108,13 +109,6 @@ impl Module for WhisperEncoder {
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.stem.schedule(input)?;
 
-        let dbg = x.clone().resolve()?.to(&Device::CPU)?;
-        println!("Stem: {:#?}", dbg);
-        dbg.write_npy::<f32, _>("stem.npy")?;
-
-        //let dbg_f16 = x.clone().half()?.resolve()?.to(&Device::CPU)?;
-        //println!("Stem F16: {:#?}", dbg_f16);
-
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
                 x: x.clone(),
@@ -123,9 +117,6 @@ impl Module for WhisperEncoder {
                 cache: None,
             };
             x = block.schedule(input)?;
-            let dbg = x.clone().resolve()?.to(&Device::CPU)?;
-            println!("Block: {:#?}", dbg);
-            println!("DBG HAS NAN: {:?}", dbg.has_nan::<f16>());
         }
         self.ln_post.schedule(x)
     }

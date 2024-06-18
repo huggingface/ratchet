@@ -125,6 +125,7 @@ impl MultiHeadAttention {
         qk = qk.full()?;
 
         let w = qk.softmax(3)?.cast(q_dt)?;
+
         let wv = w
             .matmul(v, false, false)?
             .permute(&[0, 2, 1, 3])?

@@ -63,9 +63,7 @@ impl Cast {
             Y[index] = 'dst_accessor(X[index]);
         });
 
-        let x = kernel_builder.build()?;
-        println!("{}", x);
-        Ok(x)
+        Ok(kernel_builder.build()?)
     }
 }
 
