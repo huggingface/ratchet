@@ -73,7 +73,7 @@ impl Module for DecoderStem {
             .clone()
             .slice(&[start..end, 0..self.pos_embed.shape()[1]])?;
 
-        sliced = sliced.cast(self.token_embed.weight.dt().dequantized_dt())?;
+        sliced = sliced.cast(self.token_embed.weight.dt().activation_dt())?;
         self.token_embed.schedule(tokens)?.add(sliced)
     }
 }

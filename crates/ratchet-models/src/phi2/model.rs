@@ -1,13 +1,12 @@
-use std::io::{BufRead, Seek};
-
-use ratchet::{shape, Device, Tensor};
-use ratchet_loader::gguf::gguf::Header;
-use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
-
 use super::{
     attn::{PhiAttnInput, PhiSelfAttention},
     mlp::MLP,
 };
+use half::f16;
+use ratchet::{shape, DType, Device, Tensor};
+use ratchet_loader::gguf::gguf::Header;
+use ratchet_nn::{Embedding, KVCache, KVEntry, LayerNorm, Linear, Module};
+use std::io::{BufRead, Seek};
 
 #[cfg(target_arch = "wasm32")]
 use {crate::ratchet_from_gguf_web, crate::TensorMap};
@@ -136,7 +135,9 @@ impl Phi2 {
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let embedding = Embedding::new(header.tensor(reader, "token_embd.weight", device)?);
+        let token_embedding = header.tensor(reader, "token_embd.weight", device)?;
+        let activation_dt = token_embedding.dt().activation_dt();
+        let embedding = Embedding::new(token_embedding);
 
         let n_layers = header.metadata.get("phi2.block_count").unwrap().to_u32()? as i32;
 
@@ -156,12 +157,19 @@ impl Phi2 {
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
         let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
 
+        let cache_shape = shape![1, 32, Self::MAX_CACHE, 80];
+        let kv_cache = match activation_dt {
+            DType::F16 => KVCache::new::<f16>(n_layers, cache_shape, device),
+            DType::F32 => KVCache::new::<f32>(n_layers, cache_shape, device),
+            _ => unimplemented!(),
+        };
+
         Ok(Self {
             embedding,
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new::<f32>(n_layers, shape![1, 32, Self::MAX_CACHE, 80], device),
+            kv_cache,
             device: device.clone(),
         })
     }

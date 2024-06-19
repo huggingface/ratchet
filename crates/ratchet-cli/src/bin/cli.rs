@@ -141,7 +141,7 @@ fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
     let start_time = std::time::Instant::now();
     while tokens[tokens.len() - 1] != 50256 && loop_cnt < *max_tokens {
         let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-        let result = model.schedule(input)?.resolve()?;
+        let result = model.schedule(input)?.full()?.resolve()?;
         let logits = result.to(&Device::CPU)?;
         model.cache_mut().update(tokens.len());
 

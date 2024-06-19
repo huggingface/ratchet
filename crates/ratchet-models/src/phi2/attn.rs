@@ -1,6 +1,7 @@
 use std::io::{BufRead, Seek};
 
-use ratchet::{prelude::shape, rvec, Device, Tensor};
+use half::f16;
+use ratchet::{prelude::shape, rvec, DType, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{KVEntry, Linear, Module, RotaryEmbedding, RotaryInput};
 
@@ -69,8 +70,9 @@ impl PhiSelfAttention {
             .get("phi2.attention.head_count_kv")
             .unwrap()
             .to_u32()?;
-        //1 / head_dim
-        let softmax_scale = Tensor::from_data([1.0 / 80_f32.sqrt()], shape![1], device.clone());
+
+        let scale_val = 1.0 / 80_f32.sqrt();
+        let softmax_scale = Tensor::from_data([scale_val], shape![1], device.clone());
         //TODO: hardcoded for Phi2, should read from meta
         let base = 10000.0;
         let dim = (0.4 * (2560f64 / 32f64)) as usize;
@@ -135,14 +137,15 @@ impl Module for PhiSelfAttention {
 
         //TODO: can we just use the built in transposed matmul?
         let mut attn_weights = query_states
-            .matmul(key_states.permute(&[0, 1, 3, 2])?, false, false)?
+            .full()?
+            .matmul(key_states.permute(&[0, 1, 3, 2])?.full()?, false, false)?
             .mul(self.softmax_scale.clone())?;
 
         if let Some(m) = mask {
             attn_weights = attn_weights.add(m)?;
         }
 
-        let w = attn_weights.softmax(3)?;
+        let w = attn_weights.softmax(3)?.cast(value_states.dt())?;
         let wv = w
             .matmul(value_states, false, false)?
             .permute(&[0, 2, 1, 3])?;
