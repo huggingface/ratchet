@@ -57,8 +57,8 @@ impl GGUFInterop for Q8_0F {
             qs_bytes.extend_from_slice(bytemuck::cast_slice(&block_qs));
         }
 
-        let _ = ds_bytes.align_standard();
-        let _ = qs_bytes.align_standard();
+        let _ = ds_bytes.pad_to_offset();
+        let _ = qs_bytes.pad_to_offset();
 
         qs_bytes.append(&mut ds_bytes);
         let casted = bytemuck::cast_slice::<u8, u32>(&qs_bytes);
@@ -93,8 +93,8 @@ impl GGUFInterop for Q8_0H {
             qs_bytes.extend_from_slice(bytemuck::cast_slice(&block_qs));
         }
 
-        let _ = ds_bytes.align_standard();
-        let _ = qs_bytes.align_standard();
+        let _ = ds_bytes.pad_to_offset();
+        let _ = qs_bytes.pad_to_offset();
 
         qs_bytes.append(&mut ds_bytes);
         let casted = bytemuck::cast_slice::<u8, u32>(&qs_bytes);

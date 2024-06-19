@@ -64,9 +64,9 @@ where
 {
     fn segments(&self, numel: usize) -> RVec<BufferSegment> {
         let mut offset = 0;
-        let qs_nbytes: u64 = numel.align() as u64;
+        let qs_nbytes: u64 = numel.align_for_offset() as u64;
         let qs_segment = BufferSegment::new(offset, qs_nbytes);
-        let d_nbytes: u64 = ((numel / QK8_0) * std::mem::size_of::<T>()).align() as u64;
+        let d_nbytes: u64 = ((numel / QK8_0) * std::mem::size_of::<T>()).align_for_offset() as u64;
         offset += qs_nbytes;
         let d_segment = BufferSegment::new(offset, d_nbytes);
         rvec![qs_segment, d_segment]

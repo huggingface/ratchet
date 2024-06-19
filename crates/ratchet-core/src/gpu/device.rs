@@ -87,7 +87,9 @@ impl WgpuDevice {
         log::info!("Device: {:?}", device.limits());
 
         let limits = DeviceLimits::from(device.limits());
-        let features = DeviceFeatures::from(device.features());
+        let mut features = DeviceFeatures::from(device.features());
+        log::warn!("Device features: {:?}", features);
+        features.SHADER_F16 = true;
 
         Ok(Self {
             queue: Arc::new(queue),
@@ -294,7 +296,7 @@ impl From<wgpu::Limits> for DeviceLimits {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DeviceFeatures {
     pub SHADER_F16: bool,
     pub SUBGROUP: bool,

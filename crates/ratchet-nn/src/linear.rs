@@ -15,8 +15,6 @@ pub struct Linear {
 impl Module for Linear {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        //cast bias if necessary
-        //
         let b = if let Some(b) = &self.b {
             Some(b.clone().cast(input.dt())?)
         } else {

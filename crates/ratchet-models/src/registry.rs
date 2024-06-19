@@ -100,6 +100,7 @@ impl AvailableModels {
         };
         match quantization {
             Quantization::Q8_0 => format!("{}_q8_0.gguf", model_stem),
+            Quantization::F16 => format!("{}_f16.gguf", model_stem),
             Quantization::F32 => format!("{}_f32.gguf", model_stem),
         }
     }
@@ -110,5 +111,6 @@ impl AvailableModels {
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum Quantization {
     Q8_0,
+    F16,
     F32,
 }

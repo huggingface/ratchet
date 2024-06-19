@@ -128,7 +128,6 @@ pub fn ratchet_from_gguf(
         GgmlDType::F32 => from_raw_data::<f32>(raw_data, size_in_bytes, shape, device),
         GgmlDType::F16 => from_raw_data::<half::f16>(raw_data, size_in_bytes, shape, device),
         GgmlDType::Q8_0 => match device {
-            Device::CPU => from_raw_data::<Q8_0F>(raw_data, size_in_bytes, shape, device),
             Device::GPU(gpu) => {
                 if gpu.compute_features().SHADER_F16 {
                     from_raw_data::<Q8_0H>(raw_data, size_in_bytes, shape, device)
@@ -136,6 +135,7 @@ pub fn ratchet_from_gguf(
                     from_raw_data::<Q8_0F>(raw_data, size_in_bytes, shape, device)
                 }
             }
+            _ => panic!("Loading from GGUF -> Ratchet using CPU device, no way of knowing if F16 is supported"),
         },
         _ => anyhow::bail!("unsupported ggml dtype {ggml_dtype:?}"),
     }

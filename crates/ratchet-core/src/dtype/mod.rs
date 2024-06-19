@@ -87,7 +87,7 @@ impl DType {
             DType::Q8_0H(q) => q.segments(numel),
             _ => {
                 let mut total_bytes = numel * self.size_of();
-                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
+                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE).align_for_copy();
                 rvec![BufferSegment::new(0, total_bytes as u64)]
             }
         }
@@ -192,7 +192,7 @@ map_half_type!(bf16, BF16);
 #[cfg(test)]
 use proptest::prelude::*;
 
-use crate::{rvec, RVec, MIN_STORAGE_BUFFER_SIZE};
+use crate::{rvec, Align, RVec, MIN_STORAGE_BUFFER_SIZE};
 
 #[cfg(test)]
 impl Arbitrary for DType {
