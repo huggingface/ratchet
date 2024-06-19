@@ -128,6 +128,7 @@ impl Whisper {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
+        panic!("DETECT LANGUAGE NOT IMPLEMENTED");
         let audio_ctx = self.encoder.schedule(mel)?.resolve()?;
         let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
 
@@ -168,6 +169,7 @@ impl Whisper {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
+        panic!("DETECT LANGUAGE NOT IMPLEMENTED");
         let audio_ctx = self.encoder.schedule(mel)?.resolve()?;
         let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
 
@@ -255,7 +257,7 @@ mod tests {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-base".to_string());
-        let model_path = model.get("base_f16.gguf").unwrap();
+        let model_path = model.get("base_f32.gguf").unwrap();
         let variant = WhisperVariants::Base;
         println!("PATH: {:?}", model_path.display());
 
@@ -263,7 +265,9 @@ mod tests {
         let audio_path = dataset.get("mm0.wav").unwrap();
         let samples = load_sample(audio_path);
 
-        let options = DecodingOptionsBuilder::new().build();
+        let options = DecodingOptionsBuilder::new()
+            .language("en".to_string())
+            .build();
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let header = gguf::Header::read(&mut reader).unwrap();
 

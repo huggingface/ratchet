@@ -92,7 +92,7 @@ impl DecodingOptionsBuilder {
     pub fn new() -> DecodingOptionsBuilder {
         DecodingOptionsBuilder {
             task: Some(Task::Transcribe),
-            language: None,
+            language: Some(String::from("en")),
             temperature: Some(0.0),
             sample_len: None,
             best_of: None,
