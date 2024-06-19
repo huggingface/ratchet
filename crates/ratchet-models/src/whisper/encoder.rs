@@ -116,7 +116,10 @@ impl Module for WhisperEncoder {
                 cache: None,
             };
             x = block.schedule(input)?;
+            let dbg = x.clone().resolve()?.to(&ratchet::Device::CPU)?;
+            println!("Block: {:#?}", dbg);
         }
+
         self.ln_post.schedule(x)
     }
 }

@@ -135,6 +135,7 @@ impl Whisper {
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU)?;
+        println!("LOGITS: {:?}", cpu_logits);
         let logits = DecodingTask::slice_logits(cpu_logits, self.config.n_vocab);
 
         let device = logits.device().clone();
@@ -253,9 +254,9 @@ mod tests {
     pub fn whisper_end_to_end() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let model_path = model.get("tiny_f32.gguf").unwrap();
-        let variant = WhisperVariants::Tiny;
+        let model = api.model("FL33TW00D-HF/whisper-base".to_string());
+        let model_path = model.get("base_f16.gguf").unwrap();
+        let variant = WhisperVariants::Base;
         println!("PATH: {:?}", model_path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());

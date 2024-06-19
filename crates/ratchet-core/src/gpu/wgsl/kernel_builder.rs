@@ -106,7 +106,9 @@ impl WgslKernelBuilder {
             source.write(binding.render().0.as_str());
         }
         source.write(self.main.0.as_str());
-        log::debug!("Kernel Source: \n{}", source.0);
+        if std::env::var("RATCHET_DUMP_KERNELS").is_ok() {
+            log::warn!("\n{}", source.0);
+        }
         Ok(source.into())
     }
 
