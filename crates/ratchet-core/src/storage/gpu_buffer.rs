@@ -17,7 +17,7 @@ pub struct GPUBuffer {
 }
 
 impl GPUBuffer {
-    const MIN_SIZE: usize = 16;
+    const MIN_SIZE: u64 = 16;
 
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &WgpuDevice) -> Self {
         assert_eq!(data.len(), shape.numel());
@@ -49,19 +49,10 @@ impl GPUBuffer {
     }
 
     pub(crate) fn from_bytes(bytes: &[u8], alignment: usize, device: &WgpuDevice) -> Self {
-        let num_bytes = bytes.len();
-        let mut min_bytes = [0; Self::MIN_SIZE];
-        let bytes = if num_bytes < Self::MIN_SIZE {
-            min_bytes[..num_bytes].copy_from_slice(bytes);
-            &min_bytes
-        } else {
-            bytes
-        };
-
         let inner = device
             .get_or_create_buffer_init(
                 &BufferDescriptor::new(bytes.len() as _, BufferUsages::standard(), false),
-                bytes,
+                bytes.into(),
             )
             .unwrap();
         device.queue().submit(None);

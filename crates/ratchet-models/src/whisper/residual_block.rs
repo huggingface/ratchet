@@ -14,7 +14,7 @@ pub struct ResidualAttentionBlock {
     x_attn_ln: Option<LayerNorm>,
     x_attn: Option<MultiHeadAttention>,
     mlp_ln: LayerNorm,
-    mlp: MLP,
+    pub mlp: MLP,
 }
 
 #[derive(Debug, derive_new::new)]

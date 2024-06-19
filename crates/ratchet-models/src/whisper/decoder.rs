@@ -1,6 +1,8 @@
 use super::config::Config;
 use crate::whisper::residual_block::*;
-use ratchet::prelude::*;
+use half::f16;
+use num::Zero;
+use ratchet::{prelude::*, DType, TensorDType};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};
 use std::io::{BufRead, Seek};
@@ -66,10 +68,12 @@ impl Module for DecoderStem {
         let num_tokens = tokens.shape()[tokens.rank() - 1];
         let start = offset;
         let end = offset + num_tokens;
-        let sliced = self
+        let mut sliced = self
             .pos_embed
             .clone()
             .slice(&[start..end, 0..self.pos_embed.shape()[1]])?;
+
+        sliced = sliced.cast(self.token_embed.weight.dt().dequantized_dt())?;
         self.token_embed.schedule(tokens)?.add(sliced)
     }
 }
@@ -81,6 +85,7 @@ pub struct WhisperDecoder {
     mask: Tensor,
     ln_post: LayerNorm,
     cache: KVCache,
+    #[allow(dead_code)] //Should maintain a handle to the device
     device: Device,
 }
 
@@ -93,6 +98,7 @@ impl Module for WhisperDecoder {
             tokens,
             offset: self.cache.entries(0),
         })?;
+
         for (block_idx, block) in self.blocks.iter().enumerate() {
             let block_input = ResidualAttentionBlockInputs {
                 x,
@@ -108,7 +114,8 @@ impl Module for WhisperDecoder {
             .token_embed
             .weight
             .clone()
-            .gemm(x, None, false, true, true)?;
+            .gemm(x, None, false, true, true)?
+            .full()?;
         Ok(logits)
     }
 }
@@ -124,9 +131,11 @@ impl WhisperDecoder {
         self.cache.reset();
     }
 
-    fn load_mask(n_ctx: usize, device: &Device) -> Tensor {
+    fn load_mask<T: TensorDType + num::Float>(n_ctx: usize, device: &Device) -> Tensor {
         let mask: Vec<_> = (0..n_ctx)
-            .flat_map(|i| (0..n_ctx).map(move |j| if j > i { f32::NEG_INFINITY } else { 0f32 }))
+            .flat_map(|i| {
+                (0..n_ctx).map(move |j| if j > i { T::neg_infinity() } else { T::zero() })
+            })
             .collect();
         Tensor::from_data(mask, shape![n_ctx, n_ctx], device.clone())
     }
@@ -163,12 +172,27 @@ impl WhisperDecoder {
         };
 
         let n_state = config.n_audio_state as _;
+
+        let dt = blocks[0].mlp.activation_dt();
+        let mask = match dt {
+            DType::F16 => Self::load_mask::<f16>(config.n_text_ctx as _, device),
+            DType::F32 => Self::load_mask::<f32>(config.n_text_ctx as _, device),
+            _ => unimplemented!(),
+        };
+
+        let cache_shape = shape![1, Self::MAX_CACHE, n_state];
+        let cache = match dt {
+            DType::F16 => KVCache::new::<f16>(n_layers as _, cache_shape, device),
+            DType::F32 => KVCache::new::<f32>(n_layers as _, cache_shape, device),
+            _ => unimplemented!(),
+        };
+
         Ok(Self {
             stem,
             blocks,
-            mask: Self::load_mask(config.n_text_ctx as _, device),
+            mask,
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
-            cache: KVCache::new(n_layers as _, shape![1, Self::MAX_CACHE, n_state], device),
+            cache,
             device: device.clone(),
         })
     }
@@ -203,12 +227,28 @@ impl WhisperDecoder {
         };
 
         let n_state = config.n_audio_state as _;
+
+        let dt = blocks[0].mlp.activation_dt();
+
+        let mask = match dt {
+            DType::F16 => Self::load_mask::<f16>(config.n_text_ctx as _, device),
+            DType::F32 => Self::load_mask::<f32>(config.n_text_ctx as _, device),
+            _ => unimplemented!(),
+        };
+
+        let cache_shape = shape![1, Self::MAX_CACHE, n_state];
+        let cache = match dt {
+            DType::F16 => KVCache::new::<f16>(n_layers as _, cache_shape, device),
+            DType::F32 => KVCache::new::<f32>(n_layers as _, cache_shape, device),
+            _ => unimplemented!(),
+        };
+
         Ok(Self {
             stem,
             blocks,
-            mask: Self::load_mask(config.n_text_ctx as _, device),
+            mask,
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
-            cache: KVCache::new(n_layers as _, shape![1, Self::MAX_CACHE, n_state], device),
+            cache,
             device: device.clone(),
         })
     }
@@ -286,7 +326,7 @@ def ground(options):
         let header = gguf::Header::read(&mut reader).unwrap();
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let audio_ctx = Tensor::from_npy_path::<f32, _>(hs_npy, &device)?;
+        let audio_ctx = Tensor::read_npy::<f32, _>(hs_npy, &device)?;
         let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device)?;
 
         let mut tokens = vec![50258, 50259, 50359];

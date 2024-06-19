@@ -5,10 +5,10 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2,
-    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    gpu::{BindGroupLayoutDescriptor, CpuUniform},
+    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
+    Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -136,19 +136,8 @@ impl MetaOperation for IndexWrite {
     }
 
     fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
-        let workgroup_size = wgs![8, 8, 1];
         let numel = self.src.shape().numel();
-        let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
-        let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
-            let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
-            (WorkgroupCount::MAX_WGS_PER_DIM, y_groups)
-        } else {
-            (x_groups, 1)
-        };
-        Ok(Workload {
-            workgroup_count: wgc![x_groups as _, y_groups as _, 1],
-            workgroup_size,
-        })
+        Ok(Workload::std(numel, KernelElement::Scalar))
     }
 
     fn storage_bind_group_layout(

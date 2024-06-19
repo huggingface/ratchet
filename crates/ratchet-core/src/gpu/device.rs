@@ -1,6 +1,6 @@
 use crate::{gpu::*, MetaOperation, Tensor, TensorId};
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 use wgpu::{Adapter, Limits};
 
 use crate::DeviceError;
@@ -87,7 +87,9 @@ impl WgpuDevice {
         log::info!("Device: {:?}", device.limits());
 
         let limits = DeviceLimits::from(device.limits());
-        let features = DeviceFeatures::from(device.features());
+        let mut features = DeviceFeatures::from(device.features());
+        log::warn!("Device features: {:?}", features);
+        features.SHADER_F16 = true;
 
         Ok(Self {
             queue: Arc::new(queue),
@@ -146,13 +148,21 @@ impl WgpuDevice {
             .ok_or(DeviceError::AdapterRequestFailed)?;
         Ok(adapter)
     }
+
+    pub fn features(&self) -> &DeviceFeatures {
+        &self.device_features
+    }
+
+    pub fn limits(&self) -> &DeviceLimits {
+        &self.device_limits
+    }
 }
 
 impl WgpuDevice {
     pub fn get_or_create_buffer_init(
         &self,
         desc: &BufferDescriptor,
-        contents: &[u8],
+        contents: Cow<'_, [u8]>,
     ) -> Result<PooledGPUBuffer, DeviceError> {
         Ok(self
             .buffer_allocator
@@ -286,7 +296,7 @@ impl From<wgpu::Limits> for DeviceLimits {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DeviceFeatures {
     pub SHADER_F16: bool,
     pub SUBGROUP: bool,

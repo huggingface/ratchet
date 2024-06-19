@@ -35,7 +35,11 @@ impl LayerNorm {
 impl crate::Module for LayerNorm {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        input.layer_norm(self.weight.clone(), self.bias.clone(), self.eps)
+        let src_dt = input.dt();
+        input
+            .full()?
+            .layer_norm(self.weight.clone(), self.bias.clone(), self.eps)?
+            .cast(src_dt)
     }
 }
 
@@ -57,6 +61,10 @@ impl RMSNorm {
 impl crate::Module for RMSNorm {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        input.rms_norm(self.weight.clone(), self.eps)
+        let src_dt = input.dt();
+        input
+            .full()?
+            .rms_norm(self.weight.clone(), self.eps)?
+            .cast(src_dt)
     }
 }

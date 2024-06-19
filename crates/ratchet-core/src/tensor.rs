@@ -1,12 +1,12 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
-    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
-    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId, MIN_STORAGE_BUFFER_SIZE,
+    dtype::Segments, ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device,
+    DeviceStorage, Executable, GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation,
+    OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
+use npyz::WriterBuilder;
 use parking_lot::{RwLock, RwLockReadGuard};
-use std::cmp::max;
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
@@ -293,6 +293,27 @@ impl Tensor {
     impl_unary_op!(sigmoid, UnaryOp::Sigmoid);
     impl_unary_op!(silu, UnaryOp::Silu);
 
+    pub fn cast(self, dst_dt: DType) -> anyhow::Result<Tensor> {
+        if self.dt() == dst_dt {
+            return Ok(self);
+        }
+
+        let device = self.device.clone();
+        let cast = Cast::new(self, dst_dt);
+        let new_view = cast.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Cast(cast), new_view, device))
+    }
+
+    /// Cast a tensor to full precision (IEEE 754 32-bit floating point).
+    pub fn full(self) -> anyhow::Result<Tensor> {
+        self.cast(DType::F32)
+    }
+
+    /// Cast a tensor to half precision (IEEE 754 16-bit floating point).
+    pub fn half(self) -> anyhow::Result<Tensor> {
+        self.cast(DType::F16)
+    }
+
     pub fn group_norm(
         self,
         num_groups: usize,
@@ -517,6 +538,12 @@ impl Tensor {
         Tensor::new(LazyOp::Const, meta, Some(storage), device.clone())
     }
 
+    pub fn has_nan<T: TensorDType + num_traits::Float>(&self) -> bool {
+        assert!(self.device().is_cpu());
+        let self_nd = self.to_ndarray_view::<T>();
+        self_nd.iter().any(|&x| !x.is_finite())
+    }
+
     /// Creates a new tensor from a chunk of data.
     ///
     /// The Tensor is instantly resolved.
@@ -584,6 +611,7 @@ impl Tensor {
 
     pub fn item<T: TensorDType>(&self) -> T {
         assert!(self.is_scalar());
+        assert!(self.device().is_cpu());
         let storage_guard = self.storage();
         let buffer = storage_guard.as_ref().unwrap().try_cpu().unwrap();
         buffer.to_slice::<T>(self.shape())[0]
@@ -622,15 +650,7 @@ impl Tensor {
     /// This is due to our quantization scheme allowing multiple quantized components to be packed
     /// and stored in a single tensor.
     pub(crate) fn segments(&self) -> RVec<BufferSegment> {
-        let numel = self.shape().numel();
-        match self.dt() {
-            DType::GGUF(g) => g.bindings(numel),
-            _ => {
-                let mut total_bytes = numel * self.dt().size_of();
-                total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE);
-                rvec![BufferSegment::new(0, total_bytes as u64)]
-            }
-        }
+        self.dt().segments(self.shape().numel())
     }
 
     /// Converts the tensor into a 1D vector.
@@ -676,7 +696,10 @@ impl Tensor {
             if done.contains(&precursor.id()) {
                 stack.push((cur_t, cur_src + 1));
             } else if pending.contains(&precursor.id()) {
-                panic!("CYCLE");
+                panic!(
+                    "Cycle detected whilst computing topological order: {:?}. Try plotting with feature `plotting`.",
+                    precursor.id()
+                );
             } else {
                 pending.insert(precursor.id());
                 stack.push((cur_t, cur_src));
@@ -695,6 +718,7 @@ impl Tensor {
     ) -> Option<CompiledOp> {
         match self.op() {
             LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Cast(c) => c.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
             LazyOp::RoPE(r) => r.compile(self, uniform, device, can_inplace).ok(),
@@ -720,6 +744,12 @@ impl Tensor {
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
+
+        #[cfg(feature = "plotting")]
+        {
+            let last = execution_order.last().unwrap();
+            crate::plot::render_to_file(last, "pre-alloc.svg").unwrap();
+        }
 
         for t in execution_order.iter() {
             log::debug!("Compiling: {:?}", t.op().name());
@@ -747,7 +777,7 @@ impl Tensor {
         #[cfg(feature = "plotting")]
         {
             let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "allocations.svg").unwrap();
+            crate::plot::render_to_file(last, "alloc.svg").unwrap();
         }
 
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
@@ -930,12 +960,40 @@ impl<T: TensorDType + Default + num_traits::Float> CloseStats<T> {
 
 #[cfg(feature = "testing")]
 impl Tensor {
-    pub fn from_npy_path<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
+    pub fn read_npy<T, P>(path: P, device: &Device) -> anyhow::Result<Tensor>
     where
         T: TensorDType + npyz::Deserialize,
         P: AsRef<Path>,
     {
         Self::from_npy_bytes::<T>(&std::fs::read(path)?, device)
+    }
+
+    pub fn write_npy<T, P>(&self, path: P) -> anyhow::Result<()>
+    where
+        T: TensorDType + npyz::Serialize,
+        P: AsRef<Path>,
+    {
+        let mut out_buf = vec![];
+        let shape = self
+            .shape()
+            .to_vec()
+            .iter()
+            .map(|x| *x as u64)
+            .collect::<Vec<_>>();
+        let mut writer = {
+            npyz::WriteOptions::new()
+                .dtype(self.dt().into())
+                .shape(&shape)
+                .writer(&mut out_buf)
+                .begin_nd()?
+        };
+        let ndarray = self.to_ndarray_view::<T>();
+        ndarray.iter().for_each(|x| {
+            writer.push(x).unwrap();
+        });
+        writer.finish()?;
+        std::fs::write(path, out_buf)?;
+        Ok(())
     }
 
     pub fn from_npy_bytes<T: TensorDType + npyz::Deserialize>(
@@ -981,8 +1039,18 @@ impl Tensor {
         if self.shape() != other.shape() {
             anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
         }
-        assert!(self.dt() == other.dt());
-        assert!(self.dt() == T::dt());
+        assert!(
+            self.dt() == other.dt(),
+            "DType mismatch {:?} != {:?}",
+            self.dt(),
+            other.dt()
+        );
+        assert!(
+            self.dt() == T::dt(),
+            "DType mismatch {:?} != {:?}",
+            self.dt(),
+            T::dt()
+        );
 
         let self_nd = self.to_ndarray_view::<T>();
         let other_nd = other.to_ndarray_view::<T>();
@@ -1038,5 +1106,28 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
         } else {
             panic!("Cannot convert numpy array with non-contiguous memory layout to tensor");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use half::f16;
+
+    use crate::{rvec, shape, Device, Tensor};
+
+    #[test]
+    fn has_nan_works() {
+        let device = Device::request_device(crate::DeviceRequest::GPU).unwrap();
+        let rand = Tensor::randn::<f16>(shape![1, 1500, 384], device.clone());
+        let nans = Tensor::from_data(vec![f16::NAN; 1500 * 384], shape![1, 1500, 384], device);
+
+        let bingo = Tensor::cat(rvec![rand, nans], 2)
+            .unwrap()
+            .resolve()
+            .unwrap();
+
+        let result = bingo.to(&Device::CPU).unwrap();
+        println!("RESULT: {:?}", result);
+        assert!(result.has_nan::<f16>());
     }
 }

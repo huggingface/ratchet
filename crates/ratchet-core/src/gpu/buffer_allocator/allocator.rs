@@ -8,7 +8,7 @@ use crate::{
 };
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 use wgpu::BufferUsages;
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -54,11 +54,20 @@ impl BufferAllocator {
     pub fn create_buffer_init(
         &self,
         desc: &BufferDescriptor,
-        contents: &[u8],
+        contents: Cow<'_, [u8]>,
         device: &WgpuDevice,
     ) -> PooledGPUBuffer {
+        //cannot write content to a buffer if it is less than 4 bytes
+        let contents = if contents.len() < wgpu::COPY_BUFFER_ALIGNMENT as _ {
+            let mut min_contents = vec![0u8; wgpu::COPY_BUFFER_ALIGNMENT as _];
+            min_contents[..contents.len()].copy_from_slice(contents.as_ref());
+            Cow::Owned(min_contents)
+        } else {
+            contents
+        };
+
         let buf = self.pool.write().get_or_create(desc, device, true);
-        device.queue().write_buffer(&buf.inner, 0, contents);
+        device.queue().write_buffer(&buf.inner, 0, &contents);
         device.queue().submit(None);
         device.poll(wgpu::Maintain::Wait);
         buf

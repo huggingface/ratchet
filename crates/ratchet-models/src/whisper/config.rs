@@ -18,6 +18,8 @@ pub struct Config {
     pub n_text_head: usize,
     #[serde(alias = "decoder_layers")]
     pub n_text_layer: usize,
+    #[serde(alias = "torch_dtype")]
+    pub dtype: String,
     #[serde(default)]
     pub suppress_tokens: Vec<u32>,
 }

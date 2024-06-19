@@ -1,5 +1,6 @@
 mod binary;
 mod cache;
+mod cast;
 mod concat;
 mod conv;
 mod gemm;
@@ -15,6 +16,7 @@ mod unary;
 
 pub use binary::*;
 pub use cache::*;
+pub use cast::*;
 pub use concat::*;
 pub use conv::*;
 pub use gemm::*;

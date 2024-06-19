@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use derive_new::new;
 use encase::ShaderType;
 use half::f16;
@@ -5,10 +7,10 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    gpu::{BindGroupLayoutDescriptor, CpuUniform},
+    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
+    Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[cfg(test)]
@@ -34,29 +36,29 @@ pub enum UnaryOp {
 }
 
 impl UnaryOp {
-    pub fn kernel_name(&self) -> &'static str {
+    pub fn kernel_name(&self) -> Cow<'static, str> {
         match self {
-            UnaryOp::Gelu => "gelu",
-            UnaryOp::Tanh => "tanh",
-            UnaryOp::Exp => "exp",
-            UnaryOp::Log => "log",
-            UnaryOp::Sin => "sin",
-            UnaryOp::Cos => "cos",
-            UnaryOp::Abs => "abs",
-            UnaryOp::Sqrt => "sqrt",
-            UnaryOp::Relu => "relu",
-            UnaryOp::Floor => "floor",
-            UnaryOp::Ceil => "ceil",
-            UnaryOp::Neg => "neg",
-            UnaryOp::Silu => "silu",
-            UnaryOp::Sigmoid => "sigmoid",
+            UnaryOp::Gelu => "gelu".into(),
+            UnaryOp::Tanh => "tanh".into(),
+            UnaryOp::Exp => "exp".into(),
+            UnaryOp::Log => "log".into(),
+            UnaryOp::Sin => "sin".into(),
+            UnaryOp::Cos => "cos".into(),
+            UnaryOp::Abs => "abs".into(),
+            UnaryOp::Sqrt => "sqrt".into(),
+            UnaryOp::Relu => "relu".into(),
+            UnaryOp::Floor => "floor".into(),
+            UnaryOp::Ceil => "ceil".into(),
+            UnaryOp::Neg => "neg".into(),
+            UnaryOp::Silu => "silu".into(),
+            UnaryOp::Sigmoid => "sigmoid".into(),
         }
     }
 
-    pub fn kernel_operation(&self) -> &'static str {
+    pub fn kernel_operation(&self) -> Cow<'static, str> {
         match self {
-            UnaryOp::Tanh => "safe_tanh",
-            UnaryOp::Neg => "-",
+            UnaryOp::Tanh => "safe_tanh".into(),
+            UnaryOp::Neg => "-".into(),
             _ => self.kernel_name(),
         }
     }
@@ -210,10 +212,7 @@ pub struct UnaryMeta {
 impl OpGuards for Unary {
     fn check_shapes(&self) {}
 
-    fn check_dtypes(&self) {
-        let a = &self.input;
-        assert!(matches!(a.dt(), crate::DType::F32));
-    }
+    fn check_dtypes(&self) {}
 }
 
 impl Operation for Unary {
@@ -249,21 +248,7 @@ impl MetaOperation for Unary {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
-        let workgroup_size = wgs![8, 8, 1];
-
-        let numel = dst.shape().numel() / self.kernel_element(dst).as_size();
-        let x_groups = WorkgroupCount::div_ceil(numel as _, workgroup_size.product() as _);
-        let (x_groups, y_groups) = if x_groups > WorkgroupCount::MAX_WGS_PER_DIM {
-            let y_groups = WorkgroupCount::div_ceil(x_groups, WorkgroupCount::MAX_WGS_PER_DIM);
-            (WorkgroupCount::MAX_WGS_PER_DIM, y_groups)
-        } else {
-            (x_groups, 1)
-        };
-
-        Ok(Workload {
-            workgroup_count: wgc![x_groups as _, y_groups as _, 1],
-            workgroup_size,
-        })
+        Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
     }
 
     fn storage_bind_group_layout(
@@ -329,8 +314,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::{
-        shape, test_util::run_py_prg, wgs, Device, DeviceRequest, MetaOperation, Tensor, Unary,
-        UnaryOp,
+        shape, test_util::run_py_prg, Device, DeviceRequest, MetaOperation, Tensor, UnaryOp,
     };
 
     #[derive(Arbitrary, Debug)]
@@ -421,15 +405,5 @@ def {}(a):
     #[proptest(cases = 256)]
     fn test_unary(prob: UnaryProblem) {
         run_unary_trial(prob).unwrap();
-    }
-
-    #[test]
-    fn test_render_unary() {
-        let device = GPU_DEVICE.with(|d| d.clone());
-        let input = Tensor::randn::<f32>(shape![1, 128], device.clone());
-        let op = Unary::new(input, UnaryOp::Gelu);
-        let dst = Tensor::randn::<f32>(shape![1, 128], device);
-        let kernel = op.build_kernel(true, &dst, &wgs![8, 8, 1]).unwrap();
-        println!("{}", kernel);
     }
 }

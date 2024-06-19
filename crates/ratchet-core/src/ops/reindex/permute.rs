@@ -2,9 +2,7 @@ use std::collections::HashSet;
 
 use derive_new::new;
 
-use crate::{
-    DType, InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor,
-};
+use crate::{InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor};
 
 #[derive(new, Debug, Clone)]
 pub struct Permute {
@@ -48,9 +46,7 @@ impl OpGuards for Permute {
         assert!(self.dims.iter().all(|&x| x < 4)); //Only support 4D for now
     }
 
-    fn check_dtypes(&self) {
-        assert!(self.src.dt() == DType::F32);
-    }
+    fn check_dtypes(&self) {}
 }
 
 #[cfg(all(test, feature = "pyo3"))]

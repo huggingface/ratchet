@@ -1,6 +1,6 @@
 use std::io::{BufRead, Seek};
 
-use ratchet::{Device, Tensor};
+use ratchet::{DType, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{LayerNorm, Module};
 
@@ -24,10 +24,11 @@ impl Module for ConvBlock {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
+        let input_dt = input.dt();
         input
             .conv1d(
-                self.w.clone(),
-                Some(self.b.clone()),
+                self.w.clone().cast(input_dt)?,
+                Some(self.b.clone().cast(input_dt)?),
                 self.stride,
                 self.padding,
             )?
@@ -46,8 +47,11 @@ impl Module for EncoderStem {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let convolved = self.conv2.schedule(self.conv1.schedule(input)?)?;
-        convolved.permute(&[0, 2, 1])?.add(self.pos_embed.clone())
+        //Currently do CONV in FP32 due to precision issues in kernel
+        let convolved = self.conv2.schedule(self.conv1.schedule(input.full()?)?)?;
+        convolved
+            .permute(&[0, 2, 1])?
+            .add(self.pos_embed.clone().full()?)
     }
 }
 
@@ -95,13 +99,15 @@ pub struct WhisperEncoder {
     stem: EncoderStem,
     blocks: Vec<ResidualAttentionBlock>,
     ln_post: LayerNorm,
+    activation_dt: DType,
 }
 
 impl Module for WhisperEncoder {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        let mut x = self.stem.schedule(input)?;
+        let mut x = self.stem.schedule(input)?.cast(self.activation_dt)?;
+
         for block in &self.blocks {
             let input = ResidualAttentionBlockInputs {
                 x: x.clone(),
@@ -111,6 +117,7 @@ impl Module for WhisperEncoder {
             };
             x = block.schedule(input)?;
         }
+
         self.ln_post.schedule(x)
     }
 }
@@ -139,7 +146,7 @@ impl WhisperEncoder {
                 blocks
             })
             .into_iter()
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<ResidualAttentionBlock>, _>>()?;
 
         let mut lt = |name: &str| {
             let key = format!("model.encoder.layer_norm.{}", name);
@@ -147,10 +154,13 @@ impl WhisperEncoder {
             ratchet_from_gguf_web(wt, device)
         };
 
+        let activation_dt = blocks[0].mlp.activation_dt();
+
         Ok(Self {
             stem,
             blocks,
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
+            activation_dt,
         })
     }
 
@@ -176,7 +186,9 @@ impl WhisperEncoder {
                 blocks
             })
             .into_iter()
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<ResidualAttentionBlock>, _>>()?;
+
+        let activation_dt = blocks[0].mlp.activation_dt();
 
         let mut lt = |name: &str| {
             let key = format!("model.encoder.layer_norm.{}", name);
@@ -187,6 +199,7 @@ impl WhisperEncoder {
             stem,
             blocks,
             ln_post: LayerNorm::new(lt("weight")?, Some(lt("bias")?), 1e-5),
+            activation_dt,
         })
     }
 }
@@ -223,11 +236,11 @@ mod tests {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
-        let input = Tensor::from_npy_path::<f32, _>(input_npy, &device)?;
+        let input = Tensor::read_npy::<f32, _>(input_npy, &device)?;
 
-        let result = encoder.schedule(input)?.resolve()?;
+        let result = encoder.schedule(input)?.full()?.resolve()?;
         let ours = result.to(&Device::CPU)?;
-        let ground = Tensor::from_npy_path::<f32, _>(ground_npy, &Device::CPU)?;
+        let ground = Tensor::read_npy::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);
         ground.all_close(&ours, 1e-3, 1e-3)?;

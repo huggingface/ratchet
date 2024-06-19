@@ -2,8 +2,8 @@ use inline_wgsl::wgsl;
 use std::fmt::Write;
 
 use crate::{
-    Array, BindingMode, BindingType, DeviceFeatures, KernelBinding, KernelSource, OpMetadata, RVec,
-    Scalar, Vec3, WgslPrimitive, WorkgroupSize,
+    Array, BindingMode, BindingType, DType, DeviceFeatures, KernelBinding, KernelSource,
+    OpMetadata, RVec, Scalar, Vec3, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(Debug)]
@@ -106,7 +106,9 @@ impl WgslKernelBuilder {
             source.write(binding.render().0.as_str());
         }
         source.write(self.main.0.as_str());
-        log::debug!("Kernel Source: \n{}", source.0);
+        if std::env::var("RATCHET_DUMP_KERNELS").is_ok() {
+            log::warn!("\n{}", source.0);
+        }
         Ok(source.into())
     }
 
@@ -205,6 +207,26 @@ impl WgslKernelBuilder {
                 return dot(index, stride);
             }
         });
+    }
+
+    pub(crate) fn write_unpack(&mut self, dtype: DType) {
+        match dtype {
+            DType::Q8_0H(_) => {
+                self.write_global(wgsl! {
+                    fn unpack(value: u32) -> vec4<f16> {
+                        return vec4<f16>(unpack4x8snorm(value) * 127f);
+                    }
+                });
+            }
+            DType::Q8_0F(_) => {
+                self.write_global(wgsl! {
+                    fn unpack(value: u32) -> vec4<f32> {
+                        return unpack4x8snorm(value) * 127f;
+                    }
+                });
+            }
+            _ => {}
+        }
     }
 }
 

@@ -21,6 +21,7 @@ pub enum LazyOp {
     Reindex(Reindex),
     Concat(Concat),
     Norm(NormOp),
+    Cast(Cast),
     // ---- Everything below this line shouldn't exist ----
     RoPE(RoPE),
     Softmax(Softmax),
@@ -35,6 +36,7 @@ impl LazyOp {
     pub fn name(&self) -> String {
         match self {
             LazyOp::Binary(b) => b.kernel_name(),
+            LazyOp::Cast(c) => c.kernel_name(),
             LazyOp::Matmul(m) => m.kernel_name(),
             LazyOp::Softmax(s) => s.kernel_name(),
             LazyOp::Unary(u) => u.kernel_name(),
@@ -54,6 +56,7 @@ impl LazyOp {
     pub fn srcs(&self) -> RVec<&Tensor> {
         match self {
             LazyOp::Binary(b) => b.srcs(),
+            LazyOp::Cast(c) => c.srcs(),
             LazyOp::Matmul(m) => m.srcs(),
             LazyOp::RoPE(r) => r.srcs(),
             LazyOp::Softmax(s) => s.srcs(),
@@ -73,6 +76,7 @@ impl LazyOp {
     pub fn supports_inplace(&self) -> bool {
         match self {
             LazyOp::Binary(b) => b.supports_inplace(),
+            LazyOp::Cast(c) => c.supports_inplace(),
             LazyOp::Matmul(m) => m.supports_inplace(),
             LazyOp::RoPE(r) => r.supports_inplace(),
             LazyOp::Softmax(s) => s.supports_inplace(),
@@ -97,6 +101,7 @@ impl LazyOp {
     pub fn check_invariants(&self) {
         match self {
             LazyOp::Binary(b) => b.check_invariants(),
+            LazyOp::Cast(c) => c.check_invariants(),
             LazyOp::Matmul(m) => m.check_invariants(),
             LazyOp::RoPE(r) => r.check_invariants(),
             LazyOp::Softmax(s) => s.check_invariants(),
@@ -310,6 +315,7 @@ pub trait MetaOperation: Debug + 'static {
 
         let storage_layout = device
             .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
+
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
         let pipeline_layout = device.get_or_create_pipeline_layout(&PipelineLayoutDescriptor {

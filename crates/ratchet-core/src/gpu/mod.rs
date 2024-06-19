@@ -1,3 +1,4 @@
+mod align;
 mod buffer_allocator;
 mod device;
 mod pools;
@@ -8,6 +9,7 @@ mod workload;
 #[cfg(feature = "gpu-profiling")]
 mod profiler;
 
+pub use align::*;
 pub use buffer_allocator::*;
 pub use device::*;
 pub use pools::*;

@@ -111,6 +111,10 @@ impl Shape {
         Shape(self.0[range].to_vec().into())
     }
 
+    pub fn as_slice(&self) -> &[usize] {
+        &self.0
+    }
+
     pub fn multi_broadcast(shapes: &[&Shape]) -> Option<Shape> {
         let max_rank = shapes.iter().map(|shape| shape.rank()).max()?;
         let mut shape: Shape = shape![];

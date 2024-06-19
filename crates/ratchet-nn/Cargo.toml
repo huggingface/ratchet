@@ -12,6 +12,7 @@ pyo3 = ["ratchet/pyo3"]
 anyhow.workspace = true
 derive-new = { workspace = true }
 ratchet = { path = "../ratchet-core" }
+half = {workspace = true}
 
 [dev-dependencies]
 proptest = { workspace = true }

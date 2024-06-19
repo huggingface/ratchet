@@ -199,7 +199,7 @@ impl Phi3 {
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new(n_layers as _, cache_shape, device),
+            kv_cache: KVCache::new::<f32>(n_layers as _, cache_shape, device),
             device: device.clone(),
         })
     }
@@ -257,7 +257,7 @@ impl Phi3 {
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new(n_layers as _, cache_shape, &device),
+            kv_cache: KVCache::new::<f32>(n_layers as _, cache_shape, &device),
             device: device.clone(),
         })
     }

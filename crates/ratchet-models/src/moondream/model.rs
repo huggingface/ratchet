@@ -1,20 +1,16 @@
 use std::io::{BufRead, Seek};
 
 use anyhow::Ok;
-use image::{DynamicImage, ImageFormat};
-use ndarray::Axis;
-use ndarray_stats::QuantileExt;
 use ratchet::{shape, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
-use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear, Module, RotaryEmbedding};
-use tokenizers::Tokenizer;
+use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear, RotaryEmbedding};
 
 #[cfg(target_arch = "wasm32")]
 use {crate::ratchet_from_gguf_web, crate::TensorMap};
 
 use super::{
     mlp::MLP,
-    text_model::{self, DecoderLayer, SelfAttention, TextModel},
+    text_model::{DecoderLayer, SelfAttention, TextModel},
     vision_encoder::{
         Attention, LinearPatchEmbedding, VisionEncoder, VisionProjection, VisionTransformer,
         VitBlock,
@@ -33,8 +29,8 @@ impl Moondream {
         reader: &mut R,
         device: &Device,
     ) -> anyhow::Result<Self> {
-        let mut lt = |name: &str| header.tensor(reader, &name, device).unwrap();
-        Self::load_inner(&header, lt, &device)
+        let lt = |name: &str| header.tensor(reader, name, device).unwrap();
+        Self::load_inner(&header, lt, device)
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -60,7 +56,7 @@ impl Moondream {
         let rope_base = 10000.0f32;
         let rope_dim = 32_u32;
         let ln_eps = 1e-05;
-        let hdim = dim as f32 / n_heads as f32;
+        let hdim = dim / n_heads as f32;
         let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());
         let cache_shape = shape![1, 32, 4096, 64];
 
@@ -119,7 +115,7 @@ impl Moondream {
                 lt("text_model.lm_head.linear.weight"),
                 Some(lt("text_model.lm_head.linear.bias")),
             ),
-            KVCache::new(n_layers as _, cache_shape, device),
+            KVCache::new::<f32>(n_layers as _, cache_shape, device),
             device.clone(),
         );
 

@@ -79,15 +79,25 @@ impl BufferPool {
         device: &WgpuDevice,
         immediate: bool,
     ) -> PooledGPUBuffer {
-        let descriptor = if (desc.size as usize) < MIN_STORAGE_BUFFER_SIZE {
-            BufferDescriptor {
-                size: MIN_STORAGE_BUFFER_SIZE as _,
-                usage: desc.usage,
-                mapped_at_creation: desc.mapped_at_creation,
-            }
+        let size = if (desc.size as usize) < MIN_STORAGE_BUFFER_SIZE {
+            //All buffers must be minimum 16 bytes
+            MIN_STORAGE_BUFFER_SIZE as _
         } else {
-            desc.clone()
+            //Round all buffers to 4 bytes, as any buffer may be read back to the CPU, which
+            //requires a copy
+            if desc.size % wgpu::COPY_BUFFER_ALIGNMENT == 0 {
+                desc.size
+            } else {
+                desc.size + wgpu::COPY_BUFFER_ALIGNMENT - (desc.size % wgpu::COPY_BUFFER_ALIGNMENT)
+            }
         };
+
+        let descriptor = BufferDescriptor {
+            size,
+            usage: desc.usage,
+            mapped_at_creation: desc.mapped_at_creation,
+        };
+
         PooledGPUBuffer(self.inner.get_or_create(&descriptor, |descriptor| {
             let (size, usage, mapped_at_creation) = descriptor.fields();
             let buf = device.create_buffer(&wgpu::BufferDescriptor {

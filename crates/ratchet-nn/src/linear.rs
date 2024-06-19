@@ -15,8 +15,11 @@ pub struct Linear {
 impl Module for Linear {
     type Input = Tensor;
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        self.w
-            .clone()
-            .gemm(input, self.b.clone(), false, true, true)
+        let b = if let Some(b) = &self.b {
+            Some(b.clone().cast(input.dt())?)
+        } else {
+            None
+        };
+        self.w.clone().gemm(input, b, false, true, true)
     }
 }

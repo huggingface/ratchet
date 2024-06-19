@@ -39,7 +39,11 @@ impl Whisper {
         reader: &mut R,
         device: Device,
     ) -> anyhow::Result<Self> {
-        let mel_bytes = Self::fetch_resource(&variant, "melfilters.bytes")?;
+        let mel_fname = match variant {
+            WhisperVariants::DistilLargeV3 | WhisperVariants::LargeV3 => "melfilters128.bytes",
+            _ => "melfilters.bytes",
+        };
+        let mel_bytes = Self::fetch_resource(&variant, mel_fname)?;
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
             &mel_bytes,
@@ -124,13 +128,15 @@ impl Whisper {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
+        panic!("DETECT LANGUAGE NOT IMPLEMENTED");
         let audio_ctx = self.encoder.schedule(mel)?.resolve()?;
         let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
 
-        let logits = self.decoder.schedule([audio_ctx, sot])?.resolve()?;
+        let logits = self.decoder.schedule([audio_ctx, sot])?.full()?.resolve()?;
         self.decoder.reset();
 
         let cpu_logits = logits.to(&Device::CPU)?;
+        println!("LOGITS: {:?}", cpu_logits);
         let logits = DecodingTask::slice_logits(cpu_logits, self.config.n_vocab);
 
         let device = logits.device().clone();
@@ -163,6 +169,7 @@ impl Whisper {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
+        panic!("DETECT LANGUAGE NOT IMPLEMENTED");
         let audio_ctx = self.encoder.schedule(mel)?.resolve()?;
         let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());
 
@@ -251,20 +258,22 @@ mod tests {
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
         let model_path = model.get("tiny_q8_0.gguf").unwrap();
+        let variant = WhisperVariants::Tiny;
         println!("PATH: {:?}", model_path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let audio_path = dataset.get("mm0.wav").unwrap();
         let samples = load_sample(audio_path);
 
-        let options = DecodingOptionsBuilder::new().build();
+        let options = DecodingOptionsBuilder::new()
+            .language("en".to_string())
+            .build();
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let header = gguf::Header::read(&mut reader).unwrap();
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
-        let mut whisper =
-            Whisper::load(header, WhisperVariants::Tiny, &mut reader, device).unwrap();
+        let mut whisper = Whisper::load(header, variant, &mut reader, device).unwrap();
 
         let empty_cb: Option<fn(StreamedSegment)> = None;
         let transcript = transcribe(&mut whisper, samples, options, empty_cb).unwrap();

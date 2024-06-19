@@ -1,3 +1,5 @@
+use half::f16;
+use num::traits::real::Real;
 use ratchet::{rvec, shape, Tensor};
 use ratchet_nn::{KVEntry, Linear, Module};
 
@@ -14,8 +16,21 @@ pub struct MultiHeadAttention {
 impl MultiHeadAttention {
     pub fn new(q: Linear, k: Linear, v: Linear, o: Linear, n_heads: usize) -> MultiHeadAttention {
         let n_state = q.w.shape()[1];
-        let dk = (n_state / n_heads) as f32;
-        let dk = Tensor::from_data([dk.powf(-0.25)], shape![1], q.w.device().clone());
+        let dk = match q.w.dt().dequantized_dt() {
+            ratchet::DType::F16 => {
+                let dk = f16::from_f32((n_state / n_heads) as f32);
+                Tensor::from_data(
+                    [dk.powf(f16::from_f32(-0.25))],
+                    shape![1],
+                    q.w.device().clone(),
+                )
+            }
+            ratchet::DType::F32 => {
+                let dk = (n_state / n_heads) as f32;
+                Tensor::from_data([dk.powf(-0.25)], shape![1], q.w.device().clone())
+            }
+            _ => unimplemented!(),
+        };
         MultiHeadAttention {
             q,
             k,
@@ -47,7 +62,6 @@ impl Module for MultiHeadAttention {
             cache,
             is_causal,
         } = input;
-        let is_xattn = xa.is_some();
 
         let q = self.q.schedule(x.clone())?;
 
@@ -64,7 +78,7 @@ impl Module for MultiHeadAttention {
             (k, v)
         };
 
-        self.qkv_attention(q, k, v, mask, is_xattn, is_causal)
+        self.qkv_attention(q, k, v, mask, is_causal)
     }
 }
 
@@ -75,12 +89,12 @@ impl MultiHeadAttention {
         k: Tensor,
         v: Tensor,
         mask: Option<Tensor>,
-        x_attn: bool,
         is_causal: bool,
     ) -> anyhow::Result<Tensor> {
         let [bs, n_ctx, n_state]: [usize; 3] = q.shape().try_into()?;
         let [k0, k1, _]: [usize; 3] = k.shape().try_into()?;
         let [v0, v1, _]: [usize; 3] = v.shape().try_into()?;
+        let q_dt = q.dt();
 
         let hdim = n_state / self.n_heads;
 
@@ -92,10 +106,6 @@ impl MultiHeadAttention {
         let k = k.view(ks)?.permute(&[0, 2, 3, 1])?.mul(self.dk.clone())?;
         let v = v.view(vs)?.permute(&[0, 2, 1, 3])?;
 
-        if x_attn {
-            //TODO: static caching
-        }
-
         let mut qk = q.matmul(k, false, false)?;
 
         if let Some(m) = mask {
@@ -106,12 +116,12 @@ impl MultiHeadAttention {
             };
             qk = qk.add(prepared_mask)?;
         }
+        qk = qk.full()?;
 
-        let w = qk.softmax(3)?;
-        let wv = w
-            .matmul(v, false, false)?
-            .permute(&[0, 2, 1, 3])?
-            .view(shape![bs, n_ctx, n_state])?;
+        let w = qk.softmax(3)?.cast(q_dt)?;
+
+        let s = shape![bs, n_ctx, n_state];
+        let wv = w.matmul(v, false, false)?.permute(&[0, 2, 1, 3])?.view(s)?;
 
         self.o.schedule(wv)
     }
