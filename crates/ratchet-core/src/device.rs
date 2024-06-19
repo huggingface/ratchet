@@ -1,4 +1,7 @@
-use crate::gpu::{AllocatorError, PoolError, WgpuDevice};
+use crate::{
+    gpu::{AllocatorError, PoolError, WgpuDevice},
+    DType,
+};
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum DeviceError {
@@ -47,6 +50,13 @@ impl Device {
 
     pub fn is_gpu(&self) -> bool {
         matches!(self, Device::GPU(_))
+    }
+
+    pub fn compute_precision(&self) -> DType {
+        match self {
+            Device::CPU => DType::F16,
+            Device::GPU(gpu) => gpu.compute_features().compute_precision(),
+        }
     }
 
     #[cfg(target_arch = "wasm32")]

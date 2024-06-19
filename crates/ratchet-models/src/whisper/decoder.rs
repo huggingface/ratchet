@@ -228,16 +228,14 @@ impl WhisperDecoder {
 
         let n_state = config.n_audio_state as _;
 
-        let dt = blocks[0].mlp.activation_dt();
-
-        let mask = match dt {
+        let mask = match device.compute_precision() {
             DType::F16 => Self::load_mask::<f16>(config.n_text_ctx as _, device),
             DType::F32 => Self::load_mask::<f32>(config.n_text_ctx as _, device),
             _ => unimplemented!(),
         };
 
         let cache_shape = shape![1, Self::MAX_CACHE, n_state];
-        let cache = match dt {
+        let cache = match device.compute_precision() {
             DType::F16 => KVCache::new::<f16>(n_layers as _, cache_shape, device),
             DType::F32 => KVCache::new::<f32>(n_layers as _, cache_shape, device),
             _ => unimplemented!(),

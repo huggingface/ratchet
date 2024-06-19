@@ -1,3 +1,4 @@
+use num_traits::One;
 use std::borrow::Cow;
 
 use derive_new::new;
@@ -7,7 +8,7 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform},
+    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
     rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
     Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder,
     WgslPrimitive, WorkgroupSize, Workload,
@@ -119,10 +120,11 @@ impl Unary {
 
     fn render_sigmoid<P: WgslPrimitive>() -> String {
         let accessor = P::render_type();
+        let one = P::T::one().render();
 
         wgsl! {
             fn sigmoid(val: 'accessor) -> 'accessor {
-                return select(1.0f / (1.0f + exp(-val)), exp(val) / (1.0f + exp(val)), val >= 'accessor(0.));
+                return select('one / ('one + exp(-val)), exp(val) / ('one + exp(val)), val >= 'accessor(0.));
             }
         }
     }
