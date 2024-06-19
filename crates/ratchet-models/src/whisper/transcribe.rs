@@ -56,9 +56,6 @@ pub fn transcribe(
 
         let hs = model.encoder.schedule(mel_segment)?.resolve()?;
 
-        let dbg = hs.clone().to(&ratchet::Device::CPU).unwrap();
-        println!("{:#?}", dbg);
-
         let task = DecodingTask::new(decode_options, tokenizer.clone());
         let decoded = task.run(&mut model.decoder, hs, &callback)?;
         let (segments, advance) = DecodingTask::build_segments(

@@ -256,9 +256,9 @@ mod tests {
     pub fn whisper_end_to_end() {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("FL33TW00D-HF/whisper-base".to_string());
-        let model_path = model.get("base_f32.gguf").unwrap();
-        let variant = WhisperVariants::Base;
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
+        let model_path = model.get("tiny_q8_0.gguf").unwrap();
+        let variant = WhisperVariants::Tiny;
         println!("PATH: {:?}", model_path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
