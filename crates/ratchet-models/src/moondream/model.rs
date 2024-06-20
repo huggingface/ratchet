@@ -1,7 +1,8 @@
 use std::io::{BufRead, Seek};
 
 use anyhow::Ok;
-use ratchet::{shape, Device, Tensor};
+use half::f16;
+use ratchet::{shape, DType, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Linear, RotaryEmbedding};
 
@@ -60,6 +61,12 @@ impl Moondream {
         let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());
         let cache_shape = shape![1, 32, 4096, 64];
 
+        let kv_cache = match device.compute_precision() {
+            DType::F16 => KVCache::new::<f16>(n_layers as _, cache_shape, device),
+            DType::F32 => KVCache::new::<f32>(n_layers as _, cache_shape, device),
+            _ => unimplemented!(),
+        };
+
         let text_model = TextModel::new(
             Embedding::new(lt("text_model.transformer.embd.wte.weight")),
             (0..n_layers)
@@ -115,7 +122,7 @@ impl Moondream {
                 lt("text_model.lm_head.linear.weight"),
                 Some(lt("text_model.lm_head.linear.bias")),
             ),
-            KVCache::new::<f32>(n_layers as _, cache_shape, device),
+            kv_cache,
             device.clone(),
         );
 
@@ -208,6 +215,10 @@ mod tests {
 
     use super::Moondream;
 
+    thread_local! {
+        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
+    }
+
     fn vision_ground_truth(tensor: Tensor) -> anyhow::Result<Tensor> {
         let prg = r#"
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -228,35 +239,30 @@ def ground(*args):
 
     #[test]
     #[cfg_attr(feature = "ci", ignore)]
-    fn vision_encoder() {
-        thread_local! {
-            static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-        }
-
+    fn moondream_encoder() -> anyhow::Result<()> {
+        let device = GPU_DEVICE.with(|d| d.clone());
         let api = Api::new().unwrap();
         let model_repo = api.model("ratchet-community/ratchet-moondream-2".to_string());
         let model_path = model_repo.get("moondream_f32.gguf").unwrap();
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
         let content = gguf::gguf::Header::read(&mut reader).unwrap();
-        let device = GPU_DEVICE.with(|d| d.clone());
         let model = Moondream::load(content, &mut reader, &device).unwrap();
 
         let input = Tensor::randn::<f32>(shape![1, 3, 378, 378], device);
         let ours = model
             .vision_encoder
-            .schedule(input.clone())
-            .unwrap()
-            .resolve()
-            .unwrap()
-            .to(&Device::CPU)
-            .unwrap();
+            .schedule(input.clone())?
+            .resolve()?
+            .to(&Device::CPU)?;
         let theirs = vision_ground_truth(input.to(&Device::CPU).unwrap()).unwrap();
         ours.all_close(&theirs, 1e-1, 1e-1).unwrap();
+        Ok(())
     }
 
-    fn end_to_end() {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
-
+    #[test]
+    #[cfg_attr(feature = "ci", ignore)]
+    fn moondream_end_to_end() {
+        let device = GPU_DEVICE.with(|d| d.clone());
         let api = Api::new().unwrap();
         let model_repo = api.model("ratchet-community/ratchet-moondream-2".to_string());
         let model_path = model_repo.get("moondream_q8_0.gguf").unwrap();

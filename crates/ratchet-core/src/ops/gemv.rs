@@ -252,9 +252,9 @@ impl GEMV {
 
         let finalizer = match P::W {
             4 | 2 => {
-                wgsl! { result[outOffset + row] = 'accessor(dot(work[ii], 'fp32_accessor(1.0)) + f32('bias));}
+                wgsl! { result[outOffset + row] = 'scalar(dot(work[ii], 'fp32_accessor(1.0)) + f32('bias));}
             }
-            1 => wgsl! { result[outOffset + row] = 'accessor(work[ii] + f32('bias)); },
+            1 => wgsl! { result[outOffset + row] = 'scalar(work[ii] + f32('bias)); },
             _ => unimplemented!(),
         };
 

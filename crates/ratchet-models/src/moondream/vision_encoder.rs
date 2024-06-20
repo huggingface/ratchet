@@ -1,4 +1,4 @@
-use ratchet::{prelude::shape, Tensor};
+use ratchet::{prelude::shape, rvec, Tensor};
 use ratchet_nn::{LayerNorm, Linear, Module};
 
 use super::mlp::MLP;
@@ -54,9 +54,10 @@ impl Module for Attention {
 
         // scaled dot-product attention
         let mut attn_weights = q
-            .matmul(k.permute(&[0, 1, 3, 2])?, false, false)?
+            .full()?
+            .matmul(k.permute(&[0, 1, 3, 2])?.full()?, false, false)?
             .mul(self.scale_factor.clone())?;
-        attn_weights = attn_weights.softmax(3)?;
+        attn_weights = attn_weights.softmax(3)?.cast(v.dt())?;
         let mut x = attn_weights.matmul(v, false, false)?;
         x = x.permute(&[0, 2, 1, 3])?.view(shape![b, n, c])?;
         self.proj.schedule(x)
@@ -93,7 +94,7 @@ impl Module for LinearPatchEmbedding {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let [b, c, hp1, wp2]: [usize; 4] = input.shape().try_into()?;
-        let (p1, p2) = (14_usize, 14_usize);
+        let (p1, p2) = (14, 14);
         let (h, w) = (hp1 / p1, wp2 / p2);
         // step 1 - 0, 1, 2, 3, 4, 5
         // step 2 - 0, 2, 1, 3, 4, 5
@@ -165,7 +166,7 @@ impl Module for VisionEncoder {
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let transformed = self.transformer.schedule(input)?;
         self.projection.schedule(Tensor::cat(
-            vec![transformed.clone(), transformed.clone()].into(),
+            rvec![transformed.clone(), transformed.clone()],
             2,
         )?)
     }
