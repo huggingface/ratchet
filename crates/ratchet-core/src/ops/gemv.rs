@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec, InvariantError,
-    KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4, WgslFragment,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, CpuUniform, DType, GEMMSpec,
+    InvariantError, KernelElement, KernelSource, Matmul, MatmulMeta, OperationError, Scalar,
+    Tensor, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -56,11 +56,35 @@ pub struct WorkgroupGEMVMeta {
     dimInner: i32,
 }
 
+impl WorkgroupGEMVMeta {
+    pub(crate) fn write_metadata(
+        uniform: &mut CpuUniform,
+        spec: &GEMMSpec,
+    ) -> Result<u64, OperationError> {
+        MatmulMeta::write_metadata(uniform, spec)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
 pub struct SubgroupGEMVMeta {
     M: i32, //out_vec_size
     N: i32, //in_vec_size
+}
+
+impl SubgroupGEMVMeta {
+    pub(crate) fn write_metadata(
+        uniform: &mut CpuUniform,
+        spec: &GEMMSpec,
+    ) -> Result<u64, OperationError> {
+        let mut M = spec.dim_lhs_outer() as i32;
+        let mut N = spec.dim_rhs_outer() as i32;
+        M = 16384;
+        N = 3072;
+        println!("M: {}, N: {}", M, N);
+
+        Ok(uniform.write(&SubgroupGEMVMeta { M, N })?)
+    }
 }
 
 impl GEMV {
@@ -298,7 +322,7 @@ impl GEMV {
                 BuiltIn::LocalInvocationIndex,
                 BuiltIn::WorkgroupId,
                 BuiltIn::SubgroupSize,
-                BuiltIn::SubgroupId,
+                BuiltIn::SubgroupInvocationId,
             ],
             device.compute_features().clone(),
         );
@@ -307,13 +331,14 @@ impl GEMV {
         self.register_bindings_subgroup::<P>(&mut kernel_builder, inplace)
             .unwrap();
 
-        let work_size = BM * TN * 2;
+        let work_size = BN * TN * 2;
         kernel_builder.write_global(wgsl! {
             var<workgroup> tgpMemory: array<f32, 'work_size>;
         });
 
         kernel_builder.write_main(wgsl! {
-            let simd_gid = local_index / subgroup_size;
+            let simd_gid = local_invocation_index / subgroup_size;
+            let simd_lid = subgroup_invocation_id;
 
             // Threadgroup in_vec cache
             let inVecBlockOffset = i32(simd_lid * 'TN * 2);
@@ -324,7 +349,7 @@ impl GEMV {
             var vCoeff: array<f32, 'TN>;
 
             // Block position
-            var outRow = i32((group_id.x * 'BM + simd_gid) * 'TM);
+            var outRow = i32((workgroup_id.x * 'BM + simd_gid) * 'TM);
 
             // Exit simdgroup if rows out of bound
             if (outRow >= metadata.M) {
@@ -337,8 +362,6 @@ impl GEMV {
             // Advance matrix
             let matOffset = outRow * metadata.N;
         });
-
-        let BNTN = BN * TN;
 
         let main_tgp_load = (0..TN)
             .map(|tn| {
@@ -403,6 +426,7 @@ impl GEMV {
             })
             .collect::<WgslFragment>();
 
+        let BNTN = BN * TN;
         kernel_builder.write_main(wgsl! {
             // Loop over in_vec in blocks of SIMD_SIZE * {{TN}}
             for (var bn = i32(simd_lid * 'TN); bn < i32(metadata.N); bn += 'BNTN) {
@@ -447,7 +471,9 @@ impl GEMV {
             }
         });
 
-        Ok(kernel_builder.build()?)
+        let x = kernel_builder.build()?;
+        println!("{}", x);
+        Ok(x)
     }
 
     fn render_gemv<P: WgslPrimitive>(
@@ -459,8 +485,10 @@ impl GEMV {
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         if device.compute_features().SUBGROUP {
+            println!("Using subgroup gemv");
             self.subgroup_gemv::<P>(inplace, &self.lhs, workgroup_size, spec)
         } else {
+            println!("Using workgroup gemv");
             self.workgroup_gemv::<P>(inplace, &self.lhs, workgroup_size, spec)
         }
     }

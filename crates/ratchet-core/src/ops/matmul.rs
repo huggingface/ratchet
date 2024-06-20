@@ -5,8 +5,8 @@ use encase::ShaderType;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
-    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
-    WorkgroupSize, Workload, GEMM, GEMV, Q8_0F, Q8_0H,
+    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides,
+    SubgroupGEMVMeta, Tensor, WorkgroupGEMVMeta, WorkgroupSize, Workload, GEMM, GEMV, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -370,6 +370,42 @@ pub struct MatmulMeta {
     dimInner: i32,
 }
 
+impl MatmulMeta {
+    pub(crate) fn write_metadata(
+        uniform: &mut CpuUniform,
+        spec: &GEMMSpec,
+    ) -> Result<u64, OperationError> {
+        let mut lhs_shape = spec.lhs_shape.clone();
+        lhs_shape.insert(0, spec.lhs_stack());
+        let aStrides = Strides::from(&lhs_shape);
+
+        let mut rhs_shape = spec.rhs_shape.clone();
+        rhs_shape.insert(0, spec.rhs_stack());
+        let bStrides = Strides::from(&rhs_shape);
+
+        let mut out_shape = spec.out_shape.clone();
+        out_shape.insert(0, spec.stacks());
+        let outStrides = Strides::from(&out_shape);
+
+        let dimAOuter = spec.dim_lhs_outer() as i32;
+        let dimBOuter = spec.dim_rhs_outer() as i32;
+        let dimInner = spec.dim_inner() as i32;
+
+        let meta = MatmulMeta {
+            aShape: lhs_shape.into(),
+            aStrides: aStrides.into(),
+            bShape: rhs_shape.into(),
+            bStrides: bStrides.into(),
+            outShape: out_shape.into(),
+            outStrides: outStrides.into(),
+            dimAOuter,
+            dimBOuter,
+            dimInner,
+        };
+        Ok(uniform.write(&meta)?)
+    }
+}
+
 impl OpMetadata for MatmulMeta {}
 
 impl Operation for Matmul {
@@ -555,35 +591,16 @@ impl MetaOperation for Matmul {
         _: &KernelElement,
     ) -> Result<u64, OperationError> {
         let spec = self.compute_spec(dst);
-
-        let mut lhs_shape = spec.lhs_shape.clone();
-        lhs_shape.insert(0, spec.lhs_stack());
-        let aStrides = Strides::from(&lhs_shape);
-
-        let mut rhs_shape = spec.rhs_shape.clone();
-        rhs_shape.insert(0, spec.rhs_stack());
-        let bStrides = Strides::from(&rhs_shape);
-
-        let mut out_shape = spec.out_shape.clone();
-        out_shape.insert(0, spec.stacks());
-        let outStrides = Strides::from(&out_shape);
-
-        let dimAOuter = spec.dim_lhs_outer() as i32;
-        let dimBOuter = spec.dim_rhs_outer() as i32;
-        let dimInner = spec.dim_inner() as i32;
-
-        let meta = MatmulMeta {
-            aShape: lhs_shape.into(),
-            aStrides: aStrides.into(),
-            bShape: rhs_shape.into(),
-            bStrides: bStrides.into(),
-            outShape: out_shape.into(),
-            outStrides: outStrides.into(),
-            dimAOuter,
-            dimBOuter,
-            dimInner,
-        };
-        Ok(uniform.write(&meta)?)
+        if spec.is_gemv() {
+            let device = dst.device().try_gpu().unwrap();
+            if device.compute_features().SUBGROUP {
+                SubgroupGEMVMeta::write_metadata(uniform, &spec)
+            } else {
+                WorkgroupGEMVMeta::write_metadata(uniform, &spec)
+            }
+        } else {
+            MatmulMeta::write_metadata(uniform, &spec)
+        }
     }
 
     fn build_kernel(
@@ -864,6 +881,42 @@ def matmul(a, b{}):
         let bias_gpu = bias.as_ref().map(|b| b.to(&device)).transpose()?;
         let c_gpu = a_gpu
             .gemm(b_gpu, bias_gpu, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
+            .resolve()?;
+        let ours = c_gpu.to(&Device::CPU)?;
+
+        println!("RATCHET\n{:?}\n", ours.to_ndarray_view::<f32>());
+        println!("PYTORCH:\n{:?}", ground.to_ndarray_view::<f32>());
+
+        ground.all_close(&ours, 1e-3, 1e-3)?;
+        Ok(())
+    }
+
+    #[test]
+    fn debug_gemv() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let device = GPU_DEVICE.with(|d| d.clone());
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![16384, 3072], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![3072, 1], cpu_device.clone());
+
+        let TRANS_LHS = false;
+        let TRANS_RHS = false;
+        let TRANS_OUT = false;
+        let QUANT = false;
+
+        let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
+
+        let a_gpu = if QUANT {
+            let quantizer = Quantizer::new(Quantization::SInt8);
+            let aq = quantizer.sint8_quantize(a);
+            aq.to(&device)?
+        } else {
+            a.to(&device)?
+        };
+
+        let b_gpu = b.to(&device)?;
+        let c_gpu = a_gpu
+            .gemm(b_gpu, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
             .resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
