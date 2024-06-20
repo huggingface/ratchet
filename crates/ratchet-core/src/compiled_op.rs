@@ -15,7 +15,7 @@ pub struct CompiledOp {
     workgroup_count: WorkgroupCount,
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
-    kernel_key: KernelKey,
+    pub kernel_key: KernelKey,
 }
 
 impl CompiledOp {
