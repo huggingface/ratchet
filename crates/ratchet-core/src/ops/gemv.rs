@@ -68,8 +68,8 @@ impl WorkgroupGEMVMeta {
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
 pub struct SubgroupGEMVMeta {
-    M: i32, //out_vec_size
-    N: i32, //in_vec_size
+    OVS: i32, //out_vec_size
+    IVS: i32, //in_vec_size
 }
 
 impl SubgroupGEMVMeta {
@@ -77,13 +77,10 @@ impl SubgroupGEMVMeta {
         uniform: &mut CpuUniform,
         spec: &GEMMSpec,
     ) -> Result<u64, OperationError> {
-        let mut M = spec.dim_lhs_outer() as i32;
-        let mut N = spec.dim_rhs_outer() as i32;
-        M = 16384;
-        N = 3072;
-        println!("M: {}, N: {}", M, N);
-
-        Ok(uniform.write(&SubgroupGEMVMeta { M, N })?)
+        Ok(uniform.write(&SubgroupGEMVMeta {
+            OVS: spec.dim_lhs_outer() as _,
+            IVS: spec.dim_inner() as _,
+        })?)
     }
 }
 
@@ -340,6 +337,12 @@ impl GEMV {
             let simd_gid = local_invocation_index / subgroup_size;
             let simd_lid = subgroup_invocation_id;
 
+
+            let matBatchOffset = i32(workgroup_id.z) * metadata.OVS * metadata.IVS;
+            let inVecBatchOffset = i32(workgroup_id.z) * metadata.IVS;
+            let outVecBatchOffset = i32(workgroup_id.z) * metadata.OVS;
+
+
             // Threadgroup in_vec cache
             let inVecBlockOffset = i32(simd_lid * 'TN * 2);
 
@@ -352,21 +355,21 @@ impl GEMV {
             var outRow = i32((workgroup_id.x * 'BM + simd_gid) * 'TM);
 
             // Exit simdgroup if rows out of bound
-            if (outRow >= metadata.M) {
+            if (outRow >= metadata.OVS) {
                 return;
             }
 
             // Adjust tail simdgroup to ensure in bound reads
-            outRow = select(metadata.M - 'TM, outRow, outRow + 'TM <= metadata.M);
+            outRow = select(metadata.OVS - 'TM, outRow, outRow + 'TM <= metadata.OVS);
 
             // Advance matrix
-            let matOffset = outRow * metadata.N;
+            let matOffset = matBatchOffset + outRow * metadata.IVS;
         });
 
         let main_tgp_load = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    tgpMemory[inVecBlockOffset + 'tn] = inVec[bn + 'tn];
+                    tgpMemory[inVecBlockOffset + 'tn] = inVec[inVecBatchOffset + bn + 'tn];
                 }
                 .into()
             })
@@ -375,7 +378,7 @@ impl GEMV {
         let edge_tgp_load = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    tgpMemory[inVecBlockOffset + 'tn] = select(inVec[bn + 'tn], 0.0, bn + 'tn < metadata.N);
+                    tgpMemory[inVecBlockOffset + 'tn] = select(inVec[inVecBatchOffset + bn + 'tn], 0.0, bn + 'tn < metadata.IVS);
                 }
                 .into()
             })
@@ -393,7 +396,7 @@ impl GEMV {
         let main_inter_load = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    inter['tn] = mat[matOffset + tm * metadata.N + bn + 'tn];
+                    inter['tn] = mat[matOffset + tm * metadata.IVS + bn + 'tn];
                 }
                 .into()
             })
@@ -402,7 +405,7 @@ impl GEMV {
         let edge_inter_load = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    inter['tn] = mat[matOffset + tm * metadata.N + select(metadata.N - 1, bn + 'tn, bn + 'tn < metadata.N)];
+                    inter['tn] = mat[matOffset + tm * metadata.IVS + select(metadata.IVS - 1, bn + 'tn, bn + 'tn < metadata.IVS)];
                 }
                 .into()
             })
@@ -420,7 +423,7 @@ impl GEMV {
         let finalizer = (0..TM)
             .map(|tm| {
                 wgsl! {
-                    outVec[outRow + 'tm] = result['tm];
+                    outVec[outVecBatchOffset + outRow + 'tm] = result['tm];
                 }
                 .into()
             })
@@ -429,13 +432,13 @@ impl GEMV {
         let BNTN = BN * TN;
         kernel_builder.write_main(wgsl! {
             // Loop over in_vec in blocks of SIMD_SIZE * {{TN}}
-            for (var bn = i32(simd_lid * 'TN); bn < i32(metadata.N); bn += 'BNTN) {
+            for (var bn = i32(simd_lid * 'TN); bn < i32(metadata.IVS); bn += 'BNTN) {
                 workgroupBarrier();
 
                 // Prefetch in_vector for threadgroup use
                 if (simd_gid == 0u) {
                     // Main load loop
-                    if (bn + 'TN <= i32(metadata.N)) {
+                    if (bn + 'TN <= i32(metadata.IVS)) {
                         'main_tgp_load
                     } else { // Edgecase
                         'edge_tgp_load
@@ -450,7 +453,7 @@ impl GEMV {
                 // Per thread work loop
                 for (var tm = 0; tm < 'TM; tm++) {
                     // Load for the row
-                    if (bn + 'TN <= metadata.N) {
+                    if (bn + 'TN <= metadata.IVS) {
                         'main_inter_load
                     } else { // Edgecase
                         'edge_inter_load

@@ -474,18 +474,25 @@ impl MetaOperation for Matmul {
         kernel_element: &KernelElement,
     ) -> KernelKey {
         let spec = self.compute_spec(dst);
+        let device = dst.device().try_gpu().unwrap();
         let kernel_stem = if spec.is_gemv() { "gemv" } else { "gemm" };
+        let subgroup = if spec.is_gemv() && device.compute_features().SUBGROUP {
+            "subgroup"
+        } else {
+            ""
+        };
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let bias_key = if self.bias.is_some() { "bias" } else { "" };
 
         let additional = format!(
-            "{}_{}_{}_{}_{}_{}_{}",
+            "{}_{}_{}_{}_{}_{}_{}_{}",
             if a_fit { "" } else { "a_checked" },
             if b_fit { "" } else { "b_checked" },
             if out_fit { "" } else { "out_checked" },
             if self.trans_lhs { "trans_a" } else { "" },
             if self.trans_rhs { "trans_b" } else { "" },
             if self.trans_out { "trans_out" } else { "" },
+            subgroup,
             bias_key
         );
 
@@ -896,8 +903,8 @@ def matmul(a, b{}):
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![16384, 3072], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![3072, 1], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![4, 16384, 3072], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![4, 3072, 1], cpu_device.clone());
 
         let TRANS_LHS = false;
         let TRANS_RHS = false;
