@@ -68,8 +68,8 @@ impl WorkgroupGEMVMeta {
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
 pub struct SubgroupGEMVMeta {
-    OVS: i32, //out_vec_size
-    IVS: i32, //in_vec_size
+    OVL: i32, //out_vec_size
+    IVL: i32, //in_vec_size
 }
 
 impl SubgroupGEMVMeta {
@@ -77,10 +77,15 @@ impl SubgroupGEMVMeta {
         uniform: &mut CpuUniform,
         spec: &GEMMSpec,
     ) -> Result<u64, OperationError> {
-        Ok(uniform.write(&SubgroupGEMVMeta {
-            OVS: spec.dim_lhs_outer() as _,
-            IVS: spec.dim_inner() as _,
-        })?)
+        println!("SPEC: {:#?}", spec);
+
+        let meta = SubgroupGEMVMeta {
+            OVL: spec.dim_lhs_outer() as _,
+            IVL: spec.dim_rhs_outer() as _,
+        };
+        println!("subgroup meta: {:#?}", meta);
+
+        Ok(uniform.write(&meta)?)
     }
 }
 
@@ -122,10 +127,24 @@ impl GEMV {
         builder: &mut WgslKernelBuilder,
         _: bool,
     ) -> Result<(), OperationError> {
+        let A = &self.lhs;
         let float_arr = Array::<P>::default();
-        builder.register_storage("mat", BindingMode::ReadOnly, float_arr);
-        builder.register_storage("inVec", BindingMode::ReadOnly, float_arr);
-        builder.register_storage("outVec", BindingMode::ReadWrite, float_arr);
+
+        if A.dt().is_float() {
+            builder.register_storage("mat", BindingMode::ReadOnly, float_arr);
+            builder.register_storage("inVec", BindingMode::ReadOnly, float_arr);
+            builder.register_storage("outVec", BindingMode::ReadWrite, float_arr);
+        } else if A.dt().is_quantized() {
+            let scalar = Array::<Scalar<P::T>>::default();
+            let u32_arr = Array::<Scalar<u32>>::default();
+            builder.register_storage("mat", BindingMode::ReadOnly, u32_arr);
+            builder.register_storage("scale", BindingMode::ReadOnly, scalar);
+            builder.register_storage("inVec", BindingMode::ReadOnly, scalar);
+            builder.register_storage("outVec", BindingMode::ReadWrite, scalar);
+        } else {
+            return Err(InvariantError::UnsupportedDType(A.dt()).into());
+        }
+
         builder.register_uniform();
         Ok(())
     }
@@ -312,6 +331,10 @@ impl GEMV {
         const BM: usize = 8;
         const BN: usize = 32;
 
+        if matches!(self.lhs.dt(), DType::Q8_0F(_) | DType::Q8_0H(_)) {
+            assert!(TN == 4);
+        }
+
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
@@ -324,6 +347,7 @@ impl GEMV {
             device.compute_features().clone(),
         );
         kernel_builder.write_metadata::<SubgroupGEMVMeta>();
+        kernel_builder.write_unpack(self.lhs.dt());
 
         self.register_bindings_subgroup::<P>(&mut kernel_builder, inplace)
             .unwrap();
@@ -333,37 +357,56 @@ impl GEMV {
             var<workgroup> tgpMemory: array<f32, 'work_size>;
         });
 
+        let dt = P::T::DT;
+        let zero = P::T::zero().render();
+
+        let thread_locals = match self.lhs.dt() {
+            DType::F32 | DType::F16 => {
+                wgsl! {
+                    var result: array<f32, 'TM>;
+                    var inter: array<'dt, 'TN>;
+                    var vCoeff: array<'dt, 'TN>;
+                }
+            }
+            DType::Q8_0F(_) | DType::Q8_0H(_) => {
+                wgsl! {
+                    var result: array<f32, 'TM>;
+                    var inter = vec4<'dt>('zero);
+                    var vCoeff = vec4<'dt>('zero);
+                }
+            }
+            _ => unimplemented!(),
+        };
+
         kernel_builder.write_main(wgsl! {
             let simd_gid = local_invocation_index / subgroup_size;
             let simd_lid = subgroup_invocation_id;
 
 
-            let matBatchOffset = i32(workgroup_id.z) * metadata.OVS * metadata.IVS;
-            let inVecBatchOffset = i32(workgroup_id.z) * metadata.IVS;
-            let outVecBatchOffset = i32(workgroup_id.z) * metadata.OVS;
+            let matBatchOffset = i32(workgroup_id.z) * metadata.OVL * metadata.IVL;
+            let inVecBatchOffset = i32(workgroup_id.z) * metadata.IVL;
+            let outVecBatchOffset = i32(workgroup_id.z) * metadata.OVL;
 
 
             // Threadgroup in_vec cache
             let inVecBlockOffset = i32(simd_lid * 'TN * 2);
 
             // Thread local accumulation results
-            var result: array<f32, 'TM>;
-            var inter: array<f32, 'TN>;
-            var vCoeff: array<f32, 'TN>;
+            'thread_locals
 
             // Block position
             var outRow = i32((workgroup_id.x * 'BM + simd_gid) * 'TM);
 
             // Exit simdgroup if rows out of bound
-            if (outRow >= metadata.OVS) {
+            if (outRow >= metadata.OVL) {
                 return;
             }
 
             // Adjust tail simdgroup to ensure in bound reads
-            outRow = select(metadata.OVS - 'TM, outRow, outRow + 'TM <= metadata.OVS);
+            outRow = select(metadata.OVL - 'TM, outRow, outRow + 'TM <= metadata.OVL);
 
             // Advance matrix
-            let matOffset = matBatchOffset + outRow * metadata.IVS;
+            let matOffset = matBatchOffset + outRow * metadata.IVL;
         });
 
         let main_tgp_load = (0..TN)
@@ -378,7 +421,7 @@ impl GEMV {
         let edge_tgp_load = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    tgpMemory[inVecBlockOffset + 'tn] = select(inVec[inVecBatchOffset + bn + 'tn], 0.0, bn + 'tn < metadata.IVS);
+                    tgpMemory[inVecBlockOffset + 'tn] = select(inVec[inVecBatchOffset + bn + 'tn], 0.0, bn + 'tn < metadata.IVL);
                 }
                 .into()
             })
@@ -396,7 +439,7 @@ impl GEMV {
         let main_inter_load = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    inter['tn] = mat[matOffset + tm * metadata.IVS + bn + 'tn];
+                    inter['tn] = mat[matOffset + tm * metadata.IVL + bn + 'tn];
                 }
                 .into()
             })
@@ -405,7 +448,7 @@ impl GEMV {
         let edge_inter_load = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    inter['tn] = mat[matOffset + tm * metadata.IVS + select(metadata.IVS - 1, bn + 'tn, bn + 'tn < metadata.IVS)];
+                    inter['tn] = mat[matOffset + tm * metadata.IVL + select(metadata.IVL - 1, bn + 'tn, bn + 'tn < metadata.IVL)];
                 }
                 .into()
             })
@@ -429,16 +472,42 @@ impl GEMV {
             })
             .collect::<WgslFragment>();
 
+        let work_loop_inner = match self.lhs.dt() {
+            DType::F32 | DType::F16 => {
+                wgsl! {
+                    // Load for the row
+                    if (bn + 'TN <= metadata.IVL) {
+                        'main_inter_load
+                    } else { // Edgecase
+                        'edge_inter_load
+                    }
+
+                    // Accumulate results
+                    'accumulate
+                }
+            }
+            DType::Q8_0F(_) | DType::Q8_0H(_) => {
+                wgsl! {
+                    let matIdx = matOffset + tm * metadata.IVL + bn;
+                    inter = unpack(mat[matIdx / 4]) * scale[matIdx / 32];
+
+                    // Accumulate results
+                    'accumulate
+                }
+            }
+            _ => unimplemented!(),
+        };
+
         let BNTN = BN * TN;
         kernel_builder.write_main(wgsl! {
             // Loop over in_vec in blocks of SIMD_SIZE * {{TN}}
-            for (var bn = i32(simd_lid * 'TN); bn < i32(metadata.IVS); bn += 'BNTN) {
+            for (var bn = i32(simd_lid * 'TN); bn < i32(metadata.IVL); bn += 'BNTN) {
                 workgroupBarrier();
 
                 // Prefetch in_vector for threadgroup use
                 if (simd_gid == 0u) {
                     // Main load loop
-                    if (bn + 'TN <= i32(metadata.IVS)) {
+                    if (bn + 'TN <= i32(metadata.IVL)) {
                         'main_tgp_load
                     } else { // Edgecase
                         'edge_tgp_load
@@ -452,15 +521,7 @@ impl GEMV {
 
                 // Per thread work loop
                 for (var tm = 0; tm < 'TM; tm++) {
-                    // Load for the row
-                    if (bn + 'TN <= metadata.IVS) {
-                        'main_inter_load
-                    } else { // Edgecase
-                        'edge_inter_load
-                    }
-
-                    // Accumulate results
-                    'accumulate
+                    'work_loop_inner
                 }
             }
 

@@ -168,10 +168,19 @@ impl GEMMSpec {
     }
 
     pub fn dim_lhs_outer(&self) -> usize {
-        self.out_shape[0]
+        if self.trans_out {
+            self.out_shape[1]
+        } else {
+            self.out_shape[0]
+        }
     }
+
     pub fn dim_rhs_outer(&self) -> usize {
-        self.out_shape[1]
+        if self.trans_rhs {
+            self.rhs_shape[1]
+        } else {
+            self.rhs_shape[0]
+        }
     }
 
     pub fn dim_inner(&self) -> usize {
@@ -903,13 +912,13 @@ def matmul(a, b{}):
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![4, 16384, 3072], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![4, 3072, 1], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![1, 1024, 3072], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 1, 3072], cpu_device.clone());
 
         let TRANS_LHS = false;
-        let TRANS_RHS = false;
-        let TRANS_OUT = false;
-        let QUANT = false;
+        let TRANS_RHS = true;
+        let TRANS_OUT = true;
+        let QUANT = true;
 
         let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
 
