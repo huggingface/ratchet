@@ -168,6 +168,13 @@ impl GEMMSpec {
     }
 
     pub fn dim_lhs_outer(&self) -> usize {
+        self.out_shape[0]
+    }
+    pub fn dim_rhs_outer(&self) -> usize {
+        self.out_shape[1]
+    }
+
+    pub fn new_dim_lhs_outer(&self) -> usize {
         if self.trans_out {
             self.out_shape[1]
         } else {
@@ -175,7 +182,7 @@ impl GEMMSpec {
         }
     }
 
-    pub fn dim_rhs_outer(&self) -> usize {
+    pub fn new_dim_rhs_outer(&self) -> usize {
         if self.trans_rhs {
             self.rhs_shape[1]
         } else {
@@ -539,7 +546,11 @@ impl MetaOperation for Matmul {
             if device.compute_features().SUBGROUP {
                 //GEMV subgroup style
                 Ok(Workload {
-                    workgroup_count: wgc![(spec.dim_lhs_outer() / 32) as _, 1, spec.stacks() as _],
+                    workgroup_count: wgc![
+                        (spec.new_dim_lhs_outer() / 32) as _,
+                        1,
+                        spec.stacks() as _
+                    ],
                     workgroup_size: wgs![32, 8, 1],
                 })
             } else {

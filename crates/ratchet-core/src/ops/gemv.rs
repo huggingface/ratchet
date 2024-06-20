@@ -77,13 +77,10 @@ impl SubgroupGEMVMeta {
         uniform: &mut CpuUniform,
         spec: &GEMMSpec,
     ) -> Result<u64, OperationError> {
-        println!("SPEC: {:#?}", spec);
-
         let meta = SubgroupGEMVMeta {
-            OVL: spec.dim_lhs_outer() as _,
-            IVL: spec.dim_rhs_outer() as _,
+            OVL: spec.new_dim_lhs_outer() as _,
+            IVL: spec.new_dim_rhs_outer() as _,
         };
-        println!("subgroup meta: {:#?}", meta);
 
         Ok(uniform.write(&meta)?)
     }
@@ -128,11 +125,15 @@ impl GEMV {
         _: bool,
     ) -> Result<(), OperationError> {
         let A = &self.lhs;
+        let bias = &self.bias;
         let float_arr = Array::<P>::default();
 
         if A.dt().is_float() {
             builder.register_storage("mat", BindingMode::ReadOnly, float_arr);
             builder.register_storage("inVec", BindingMode::ReadOnly, float_arr);
+            if bias.is_some() {
+                builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
+            }
             builder.register_storage("outVec", BindingMode::ReadWrite, float_arr);
         } else if A.dt().is_quantized() {
             let scalar = Array::<Scalar<P::T>>::default();
@@ -140,6 +141,9 @@ impl GEMV {
             builder.register_storage("mat", BindingMode::ReadOnly, u32_arr);
             builder.register_storage("scale", BindingMode::ReadOnly, scalar);
             builder.register_storage("inVec", BindingMode::ReadOnly, scalar);
+            if bias.is_some() {
+                builder.register_storage("bias", BindingMode::ReadOnly, scalar);
+            }
             builder.register_storage("outVec", BindingMode::ReadWrite, scalar);
         } else {
             return Err(InvariantError::UnsupportedDType(A.dt()).into());
@@ -195,7 +199,6 @@ impl GEMV {
         self.register_bindings_workgroup::<P>(&mut kernel_builder, inplace)
             .unwrap();
         let n = P::W;
-        let accessor = P::render_type();
         let fp32_accessor = match n {
             1 => "f32",
             2 => "vec2<f32>",
@@ -360,14 +363,13 @@ impl GEMV {
         self.register_bindings_subgroup::<P>(&mut kernel_builder, inplace)
             .unwrap();
 
+        let dt = P::T::DT;
         let work_size = BN * TN * 2;
         kernel_builder.write_global(wgsl! {
-            var<workgroup> tgpMemory: array<f32, 'work_size>;
+            var<workgroup> tgpMemory: array<'dt, 'work_size>;
         });
 
-        let dt = P::T::DT;
         let zero = P::T::zero().render();
-
         let thread_locals = match self.lhs.dt() {
             DType::F32 | DType::F16 => {
                 wgsl! {
@@ -429,7 +431,7 @@ impl GEMV {
         let edge_tgp_load = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    tgpMemory[inVecBlockOffset + 'tn] = select(inVec[inVecBatchOffset + bn + 'tn], 0.0, bn + 'tn < metadata.IVL);
+                    tgpMemory[inVecBlockOffset + 'tn] = select(inVec[inVecBatchOffset + bn + 'tn], 'dt(0.0), bn + 'tn < metadata.IVL);
                 }
                 .into()
             })
@@ -465,7 +467,7 @@ impl GEMV {
         let accumulate = (0..TN)
             .map(|tn| {
                 wgsl! {
-                    result[tm] = fma(inter['tn], vCoeff['tn], result[tm]);
+                    result[tm] += f32(inter['tn] * vCoeff['tn]);
                 }
                 .into()
             })
@@ -473,10 +475,17 @@ impl GEMV {
 
         let finalizer = (0..TM)
             .map(|tm| {
-                wgsl! {
-                    outVec[outVecBatchOffset + outRow + 'tm] = result['tm];
+                if self.bias.is_some() {
+                    wgsl! {
+                        outVec[outVecBatchOffset + outRow + 'tm] = 'dt(result['tm]) + bias[outRow + 'tm];
+                    }
+                    .into()
+                } else {
+                    wgsl! {
+                        outVec[outVecBatchOffset + outRow + 'tm] = 'dt(result['tm]);
+                    }
+                    .into()
                 }
-                .into()
             })
             .collect::<WgslFragment>();
 
@@ -544,7 +553,7 @@ impl GEMV {
         });
 
         let x = kernel_builder.build()?;
-        println!("{}", x);
+        //println!("{}", x);
         Ok(x)
     }
 
