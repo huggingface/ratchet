@@ -63,8 +63,7 @@ impl PhiSelfAttention {
         let rope_dim = metadata.get("phi3.rope.dimension_count")?.to_u32()?;
 
         let hdim = d_model as f32 / n_heads as f32;
-        let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone())
-            .cast(device.compute_precision())?;
+        let softmax_scale = Tensor::from_data([1.0 / hdim.sqrt()], shape![1], device.clone());
         let rope = RotaryEmbedding::new(rope_dim as _, false, rope_base, 1.0);
         Ok(Self {
             qkv,
@@ -141,8 +140,10 @@ impl Module for PhiSelfAttention {
         };
 
         let mut attn_weights = query_states
-            .matmul(key_states, false, true)?
-            .mul(self.softmax_scale.clone())?;
+            .full()?
+            .matmul(key_states.full()?, false, true)?
+            .mul(self.softmax_scale.clone())?
+            .cast(q_dt)?;
 
         if let Some(m) = mask {
             let attn_dt = attn_weights.dt();
