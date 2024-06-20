@@ -4,8 +4,8 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec, InvariantError,
-    KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize,
+    KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec4, WgslFragment,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -44,7 +44,7 @@ impl From<Matmul> for GEMV {
 
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
-pub struct GEMVMeta {
+pub struct WorkgroupGEMVMeta {
     aShape: IVec3,
     aStrides: IVec3,
     bShape: IVec3,
@@ -56,8 +56,15 @@ pub struct GEMVMeta {
     dimInner: i32,
 }
 
+#[allow(clippy::too_many_arguments)]
+#[derive(Debug, Clone, ShaderType, WgslMetadata)]
+pub struct SubgroupGEMVMeta {
+    M: i32, //out_vec_size
+    N: i32, //in_vec_size
+}
+
 impl GEMV {
-    fn register_bindings<P: WgslPrimitive>(
+    fn register_bindings_workgroup<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
         _: bool,
@@ -89,6 +96,19 @@ impl GEMV {
         Ok(())
     }
 
+    fn register_bindings_subgroup<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        _: bool,
+    ) -> Result<(), OperationError> {
+        let float_arr = Array::<P>::default();
+        builder.register_storage("mat", BindingMode::ReadOnly, float_arr);
+        builder.register_storage("inVec", BindingMode::ReadOnly, float_arr);
+        builder.register_storage("outVec", BindingMode::ReadWrite, float_arr);
+        builder.register_uniform();
+        Ok(())
+    }
+
     pub fn build_kernel(
         &self,
         inplace: bool,
@@ -114,7 +134,7 @@ impl GEMV {
         }
     }
 
-    fn render_gemv<P: WgslPrimitive>(
+    fn workgroup_gemv<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -132,14 +152,14 @@ impl GEMV {
             device.compute_features().clone(),
         );
 
-        self.register_bindings::<P>(&mut kernel_builder, inplace)
+        self.register_bindings_workgroup::<P>(&mut kernel_builder, inplace)
             .unwrap();
         let n = P::W;
         let accessor = P::render_type();
         let scalar = P::T::DT;
         let zero = P::T::zero().render();
 
-        kernel_builder.write_metadata::<GEMVMeta>();
+        kernel_builder.write_metadata::<WorkgroupGEMVMeta>();
         kernel_builder.write_unpack(self.lhs.dt());
 
         let work_size = (workgroup_size.x * workgroup_size.y / (n as u32)).render();
@@ -257,5 +277,191 @@ impl GEMV {
         });
 
         Ok(kernel_builder.build()?)
+    }
+
+    fn subgroup_gemv<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+        spec: GEMMSpec,
+    ) -> Result<KernelSource, OperationError> {
+        const TM: usize = 4;
+        const TN: usize = 4;
+        const BM: usize = 8;
+        const BN: usize = 32;
+
+        let device = self.lhs.device().try_gpu().unwrap();
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::LocalInvocationIndex,
+                BuiltIn::WorkgroupId,
+                BuiltIn::SubgroupSize,
+                BuiltIn::SubgroupId,
+            ],
+            device.compute_features().clone(),
+        );
+        kernel_builder.write_metadata::<SubgroupGEMVMeta>();
+
+        self.register_bindings_subgroup::<P>(&mut kernel_builder, inplace)
+            .unwrap();
+
+        let work_size = BM * TN * 2;
+        kernel_builder.write_global(wgsl! {
+            var<workgroup> tgpMemory: array<f32, 'work_size>;
+        });
+
+        kernel_builder.write_main(wgsl! {
+            let simd_gid = local_index / subgroup_size;
+
+            // Threadgroup in_vec cache
+            let inVecBlockOffset = i32(simd_lid * 'TN * 2);
+
+            // Thread local accumulation results
+            var result: array<f32, 'TM>;
+            var inter: array<f32, 'TN>;
+            var vCoeff: array<f32, 'TN>;
+
+            // Block position
+            var outRow = i32((group_id.x * 'BM + simd_gid) * 'TM);
+
+            // Exit simdgroup if rows out of bound
+            if (outRow >= metadata.M) {
+                return;
+            }
+
+            // Adjust tail simdgroup to ensure in bound reads
+            outRow = select(metadata.M - 'TM, outRow, outRow + 'TM <= metadata.M);
+
+            // Advance matrix
+            let matOffset = outRow * metadata.N;
+        });
+
+        let BNTN = BN * TN;
+
+        let main_tgp_load = (0..TN)
+            .map(|tn| {
+                wgsl! {
+                    tgpMemory[inVecBlockOffset + 'tn] = inVec[bn + 'tn];
+                }
+                .into()
+            })
+            .collect::<WgslFragment>();
+
+        let edge_tgp_load = (0..TN)
+            .map(|tn| {
+                wgsl! {
+                    tgpMemory[inVecBlockOffset + 'tn] = select(inVec[bn + 'tn], 0.0, bn + 'tn < metadata.N);
+                }
+                .into()
+            })
+            .collect::<WgslFragment>();
+
+        let load_rows = (0..TN)
+            .map(|tn| {
+                wgsl! {
+                    vCoeff['tn] = tgpMemory[inVecBlockOffset + 'tn];
+                }
+                .into()
+            })
+            .collect::<WgslFragment>();
+
+        let main_inter_load = (0..TN)
+            .map(|tn| {
+                wgsl! {
+                    inter['tn] = mat[matOffset + tm * metadata.N + bn + 'tn];
+                }
+                .into()
+            })
+            .collect::<WgslFragment>();
+
+        let edge_inter_load = (0..TN)
+            .map(|tn| {
+                wgsl! {
+                    inter['tn] = mat[matOffset + tm * metadata.N + select(metadata.N - 1, bn + 'tn, bn + 'tn < metadata.N)];
+                }
+                .into()
+            })
+            .collect::<WgslFragment>();
+
+        let accumulate = (0..TN)
+            .map(|tn| {
+                wgsl! {
+                    result[tm] = fma(inter['tn], vCoeff['tn], result[tm]);
+                }
+                .into()
+            })
+            .collect::<WgslFragment>();
+
+        let finalizer = (0..TM)
+            .map(|tm| {
+                wgsl! {
+                    outVec[outRow + 'tm] = result['tm];
+                }
+                .into()
+            })
+            .collect::<WgslFragment>();
+
+        kernel_builder.write_main(wgsl! {
+            // Loop over in_vec in blocks of SIMD_SIZE * {{TN}}
+            for (var bn = i32(simd_lid * 'TN); bn < i32(metadata.N); bn += 'BNTN) {
+                workgroupBarrier();
+
+                // Prefetch in_vector for threadgroup use
+                if (simd_gid == 0u) {
+                    // Main load loop
+                    if (bn + 'TN <= i32(metadata.N)) {
+                        'main_tgp_load
+                    } else { // Edgecase
+                        'edge_tgp_load
+                    }
+                }
+
+                workgroupBarrier();
+
+                // Load for all rows
+                'load_rows
+
+                // Per thread work loop
+                for (var tm = 0; tm < 'TM; tm++) {
+                    // Load for the row
+                    if (bn + 'TN <= metadata.N) {
+                        'main_inter_load
+                    } else { // Edgecase
+                        'edge_inter_load
+                    }
+
+                    // Accumulate results
+                    'accumulate
+                }
+            }
+
+            for (var tm = 0; tm < 'TM; tm++) {
+                result[tm] = subgroupAdd(result[tm]);
+            }
+
+            // Write outputs
+            if (simd_lid == 0u) {
+                'finalizer
+            }
+        });
+
+        Ok(kernel_builder.build()?)
+    }
+
+    fn render_gemv<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        _: &Tensor,
+        workgroup_size: &WorkgroupSize,
+        spec: GEMMSpec,
+    ) -> Result<KernelSource, OperationError> {
+        let device = self.lhs.device().try_gpu().unwrap();
+        if device.compute_features().SUBGROUP {
+            self.subgroup_gemv::<P>(inplace, &self.lhs, workgroup_size, spec)
+        } else {
+            self.workgroup_gemv::<P>(inplace, &self.lhs, workgroup_size, spec)
+        }
     }
 }

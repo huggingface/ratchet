@@ -477,18 +477,31 @@ impl MetaOperation for Matmul {
         spec.select_kernel_element()
     }
 
+    //TODO: clean
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let spec = self.compute_spec(dst);
 
         if spec.rhs_shape().is_vector() && !self.trans_lhs {
-            let (TX, TY) = spec.heuristic.as_workgroup_size();
-            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TX);
+            //GEMV
+            let device = self.lhs.device().try_gpu().unwrap();
+            if device.compute_features().SUBGROUP {
+                //GEMV subgroup style
+                Ok(Workload {
+                    workgroup_count: wgc![(spec.dim_lhs_outer() / 32) as _, 1, spec.stacks() as _],
+                    workgroup_size: wgs![32, 8, 1],
+                })
+            } else {
+                //GEMV workgroup style
+                let (TX, TY) = spec.heuristic.as_workgroup_size();
+                let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TX);
 
-            Ok(Workload {
-                workgroup_count: wgc![group_x as _, 1, spec.stacks() as _],
-                workgroup_size: wgs![TX as _, TY as _, 1],
-            })
+                Ok(Workload {
+                    workgroup_count: wgc![group_x as _, 1, spec.stacks() as _],
+                    workgroup_size: wgs![TX as _, TY as _, 1],
+                })
+            }
         } else {
+            //GEMM
             let TILE_DIM = 32;
             let lhs_shape = spec.lhs_shape();
             let rhs_shape = spec.rhs_shape();

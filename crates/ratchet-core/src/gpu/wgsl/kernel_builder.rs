@@ -9,6 +9,16 @@ use crate::{
 #[derive(Debug)]
 pub struct WgslFragment(pub String);
 
+impl FromIterator<WgslFragment> for WgslFragment {
+    fn from_iter<I: IntoIterator<Item = WgslFragment>>(iter: I) -> Self {
+        let mut fragment = WgslFragment::new(512);
+        for i in iter {
+            fragment.write_fragment(i);
+        }
+        fragment
+    }
+}
+
 impl std::fmt::Display for WgslFragment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
