@@ -29,11 +29,12 @@ impl Module for MLP {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<ratchet::Tensor> {
+        let input_dt = input.dt();
         let up_states = self.up_proj.schedule(input)?;
         let [x, y, z]: [usize; 3] = up_states.shape().try_into()?;
         let gate = up_states.clone().slice(&[0..x, 0..y, 0..z / 2])?;
         let up_states = up_states.clone().slice(&[0..x, 0..y, z / 2..z])?;
-        let up_states = up_states.mul(gate.silu()?)?;
+        let up_states = up_states.mul(gate.full()?.silu()?.cast(input_dt)?)?;
         self.down_proj.schedule(up_states)
     }
 }

@@ -215,12 +215,12 @@ impl BufferAllocator {
         let mut shared_objects: Vec<PooledGPUBuffer> = Vec::with_capacity(records.0.len());
 
         for record in records.0.iter() {
+            let record_producer = record.producer.unwrap();
             let mut best_obj = None;
             for obj in shared_objects.iter() {
                 let mut suitable = true;
                 for inner_r in records.0.iter() {
-                    let max_first =
-                        std::cmp::max(record.producer.unwrap(), inner_r.producer.unwrap());
+                    let max_first = std::cmp::max(record_producer, inner_r.producer.unwrap());
                     let min_last = std::cmp::min(record.last_consumer, inner_r.last_consumer);
                     if max_first <= min_last && assignments.get(&inner_r.id.unwrap()) == Some(obj) {
                         suitable = false;

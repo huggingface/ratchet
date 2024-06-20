@@ -196,6 +196,12 @@ impl GEMV {
             .unwrap();
         let n = P::W;
         let accessor = P::render_type();
+        let fp32_accessor = match n {
+            1 => "f32",
+            2 => "vec2<f32>",
+            4 => "vec4<f32>",
+            _ => unimplemented!(),
+        };
         let scalar = P::T::DT;
         let zero = P::T::zero().render();
 
@@ -204,7 +210,7 @@ impl GEMV {
 
         let work_size = (workgroup_size.x * workgroup_size.y / (n as u32)).render();
         kernel_builder.write_global(wgsl! {
-            var<workgroup> work: array<'accessor, 'work_size>;
+            var<workgroup> work: array<'fp32_accessor, 'work_size>;
         });
 
         let (TILE_X, _) = spec.heuristic.as_workgroup_size();
@@ -240,25 +246,6 @@ impl GEMV {
         };
         kernel_builder.write_global(readA);
 
-        let workgroup_size_y = workgroup_size.y;
-        let main_loop = match self.lhs.dt() {
-            DType::Q8_0F(_) | DType::Q8_0H(_) => {
-                wgsl! {
-                    let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
-                    for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+='workgroup_size_y / 4) {
-                        sum = fma(unpack(A[aIndex + k]) * scale[sIndex + (k/8)], X[k], sum);
-                    }
-                }
-            }
-            _ => {
-                wgsl! {
-                    for (var k = i32(global_invocation_id.y); k < metadata.dimInner; k+='workgroup_size_y) {
-                        sum = fma(readA(batchA, row, k), X[bOffset + k], sum);
-                    }
-                }
-            }
-        };
-
         kernel_builder.write_main(wgsl! { let row = i32(global_invocation_id.x); });
 
         kernel_builder.write_main(wgsl! {
@@ -273,8 +260,27 @@ impl GEMV {
             let outOffset = metadata.outStrides.x * batch / 'n;
         });
 
-        kernel_builder.write_main(wgsl! { var sum = 'accessor(0.0); });
+        kernel_builder.write_main(wgsl! { var sum = 'fp32_accessor(0.0); });
         kernel_builder.write_main(wgsl! { let aIndex = aOffset + row * metadata.aStrides.y / 'n; });
+
+        let workgroup_size_y = workgroup_size.y;
+        let main_loop = match self.lhs.dt() {
+            DType::Q8_0F(_) | DType::Q8_0H(_) => {
+                wgsl! {
+                    let sIndex = (aOffset / 4) + row * metadata.aStrides.y / 32;
+                    for (var k = i32(global_invocation_id.y); k < metadata.dimInner / 4; k+='workgroup_size_y / 4) {
+                        sum += 'fp32_accessor(unpack(A[aIndex + k]) * scale[sIndex + (k/8)] * X[k]);
+                    }
+                }
+            }
+            _ => {
+                wgsl! {
+                    for (var k = i32(global_invocation_id.y); k < metadata.dimInner; k+='workgroup_size_y) {
+                        sum += 'fp32_accessor(readA(batchA, row, k) * X[bOffset + k]);
+                    }
+                }
+            }
+        };
 
         kernel_builder.write_main(main_loop);
 
@@ -305,8 +311,10 @@ impl GEMV {
         };
 
         let finalizer = match P::W {
-            4 | 2 => wgsl! { result[outOffset + row] = dot(work[ii], 'accessor(1.0)) + 'bias; },
-            1 => wgsl! { result[outOffset + row] = work[ii] + 'bias; },
+            4 | 2 => {
+                wgsl! { result[outOffset + row] = 'scalar(dot(work[ii], 'fp32_accessor(1.0)) + f32('bias));}
+            }
+            1 => wgsl! { result[outOffset + row] = 'scalar(work[ii] + f32('bias)); },
             _ => unimplemented!(),
         };
 

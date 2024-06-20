@@ -16,6 +16,7 @@ pub fn generate(
     tokenizer: Tokenizer,
     callback: impl Fn(String),
 ) -> anyhow::Result<()> {
+    use ratchet::rvec;
     use web_time::Instant;
     let device = model.text_model.device.clone();
 
@@ -39,7 +40,8 @@ pub fn generate(
 
     let img_tensor = Tensor::from_data(pixels, shape![378, 378, 3], device.clone())
         .permute(&[2, 0, 1])?
-        .view(shape![1, 3, 378, 378])?;
+        .view(shape![1, 3, 378, 378])?
+        .cast(device.compute_precision())?;
 
     let img_embed = model.vision_encoder.schedule(img_tensor)?.resolve()?;
 
@@ -65,22 +67,20 @@ pub fn generate(
         let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
         let mut embeds: Tensor;
         if generated_tokens.is_empty() {
-            embeds = model.text_model.embedding.schedule(input).unwrap();
+            embeds = model.text_model.embedding.schedule(input)?;
             embeds = Tensor::cat(
-                vec![bos_token.clone(), img_embed.clone(), embeds.clone()].into(),
+                rvec![bos_token.clone(), img_embed.clone(), embeds.clone()],
                 1,
-            )
-            .unwrap();
+            )?;
         } else {
             embeds = model.text_model.embedding.schedule(input).unwrap();
         }
 
         let result = model
             .text_model
-            .schedule(embeds.clone())
-            .unwrap()
-            .resolve()
-            .unwrap();
+            .schedule(embeds.clone())?
+            .full()?
+            .resolve()?;
 
         model.text_model.cache_mut().update(embeds.shape()[1]);
 
@@ -177,6 +177,7 @@ pub async fn generate(
         let result = model
             .text_model
             .schedule(embeds.clone())
+            .full()?
             .unwrap()
             .resolve()
             .unwrap();

@@ -16,7 +16,7 @@ pub struct MultiHeadAttention {
 impl MultiHeadAttention {
     pub fn new(q: Linear, k: Linear, v: Linear, o: Linear, n_heads: usize) -> MultiHeadAttention {
         let n_state = q.w.shape()[1];
-        let dk = match q.w.dt().dequantized_dt() {
+        let dk = match q.w.dt().activation_dt() {
             ratchet::DType::F16 => {
                 let dk = f16::from_f32((n_state / n_heads) as f32);
                 Tensor::from_data(

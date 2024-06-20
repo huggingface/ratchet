@@ -1,4 +1,4 @@
-use crate::{gpu::*, MetaOperation, Tensor, TensorId};
+use crate::{gpu::*, DType, MetaOperation, Tensor, TensorId};
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, sync::Arc};
 use wgpu::{Adapter, Limits};
@@ -88,7 +88,11 @@ impl WgpuDevice {
         log::info!("Device: {:?}", device.limits());
 
         let limits = DeviceLimits::from(device.limits());
-        let features = DeviceFeatures::from(device.features());
+        let mut features = DeviceFeatures::from(device.features());
+        if std::env::var("RATCHET_FORCE_F32").is_ok() {
+            log::warn!("Forcing F32 precision");
+            features.SHADER_F16 = false;
+        }
         log::warn!("Device features: {:?}", features);
 
         Ok(Self {
@@ -300,6 +304,16 @@ impl From<wgpu::Limits> for DeviceLimits {
 pub struct DeviceFeatures {
     pub SHADER_F16: bool,
     pub SUBGROUP: bool,
+}
+
+impl DeviceFeatures {
+    pub fn compute_precision(&self) -> DType {
+        if self.SHADER_F16 {
+            DType::F16
+        } else {
+            DType::F32
+        }
+    }
 }
 
 impl From<wgpu::Features> for DeviceFeatures {

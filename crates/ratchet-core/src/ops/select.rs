@@ -137,7 +137,7 @@ impl Operation for IndexSelect {
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(
             output_shape,
-            self.src.dt().dequantized_dt(),
+            self.src.dt().activation_dt(),
             strides,
         ))
     }
