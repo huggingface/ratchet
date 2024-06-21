@@ -1,4 +1,3 @@
 packages:
-  - "ratchet-vite"
   - "examples/ratchet-whisper"
   - "examples/ratchet-phi"
