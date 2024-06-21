@@ -64,10 +64,10 @@ impl DType {
             DType::F32 => 4,
             DType::I32 => 4,
             DType::U32 => 4,
-            DType::Q8_0H(_) => std::mem::size_of::<BlockQ8_0<f16>>(),
-            DType::Q8_0F(_) => std::mem::size_of::<BlockQ8_0<f32>>(),
-            DType::Q4_KH(_) => std::mem::size_of::<BlockQ4_K<f16>>(),
-            DType::Q4_KF(_) => std::mem::size_of::<BlockQ4_K<f32>>(),
+            DType::Q8_0H(_) => std::mem::size_of::<BlockQ8_0H>(),
+            DType::Q8_0F(_) => std::mem::size_of::<BlockQ8_0F>(),
+            DType::Q4_KH(_) => std::mem::size_of::<BlockQ4_KH>(),
+            DType::Q4_KF(_) => std::mem::size_of::<BlockQ4_KF>(),
         }
     }
 
