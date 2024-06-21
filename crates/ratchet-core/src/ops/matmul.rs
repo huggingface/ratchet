@@ -544,10 +544,9 @@ impl MetaOperation for Matmul {
             //GEMV
             let device = self.lhs.device().try_gpu().unwrap();
             if device.compute_features().SUBGROUP {
-                //GEMV subgroup style
                 Ok(Workload {
                     workgroup_count: wgc![
-                        (spec.new_dim_lhs_outer() / 32) as _,
+                        ((spec.new_dim_lhs_outer() / 32) + 1) as _,
                         1,
                         spec.stacks() as _
                     ],
@@ -853,34 +852,6 @@ def matmul(a, b{}):
     }
 
     #[test]
-    fn debug_generated_gemm() -> anyhow::Result<()> {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let prob = SGEMMProblem {
-            B: 1,
-            M: 511,
-            K: 511,
-            N: 1,
-            has_bias: false,
-            transpose: TransKind::None,
-        };
-        let SGEMMProblem {
-            B,
-            M,
-            K,
-            N,
-            has_bias,
-            ref transpose,
-        } = prob;
-
-        println!(
-            "Running sgemm: B={} M={} N={} K={} has_bias={} transpose={:?}",
-            B, M, N, K, has_bias, transpose
-        );
-        let device = GPU_DEVICE.with(|d| d.clone());
-        run_matmul_trial(&device, prob)
-    }
-
-    #[test]
     fn debug_gemm() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
@@ -923,13 +894,13 @@ def matmul(a, b{}):
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![1, 1024, 3072], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1, 1, 3072], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![1, 51865, 384], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 1, 384], cpu_device.clone());
 
         let TRANS_LHS = false;
         let TRANS_RHS = true;
         let TRANS_OUT = true;
-        let QUANT = true;
+        let QUANT = false;
 
         let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
 
