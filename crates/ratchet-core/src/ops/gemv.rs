@@ -566,10 +566,8 @@ impl GEMV {
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         if device.compute_features().SUBGROUP {
-            println!("Using subgroup gemv");
             self.subgroup_gemv::<P>(inplace, &self.lhs, workgroup_size, spec)
         } else {
-            println!("Using workgroup gemv");
             self.workgroup_gemv::<P>(inplace, &self.lhs, workgroup_size, spec)
         }
     }
