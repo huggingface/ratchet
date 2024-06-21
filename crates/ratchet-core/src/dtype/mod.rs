@@ -72,7 +72,10 @@ impl DType {
     }
 
     pub fn is_quantized(self) -> bool {
-        matches!(self, DType::Q8_0H(_) | DType::Q8_0F(_))
+        matches!(
+            self,
+            DType::Q8_0H(_) | DType::Q8_0F(_) | DType::Q4_KH(_) | DType::Q4_KF(_)
+        )
     }
 
     pub fn is_float(self) -> bool {
@@ -84,6 +87,8 @@ impl DType {
         match self {
             DType::Q8_0H(_) => DType::F16,
             DType::Q8_0F(_) => DType::F32,
+            DType::Q4_KH(_) => DType::F16,
+            DType::Q4_KF(_) => DType::F32,
             _ => *self,
         }
     }
@@ -92,6 +97,8 @@ impl DType {
         match self {
             DType::Q8_0F(q) => q.segments(numel),
             DType::Q8_0H(q) => q.segments(numel),
+            DType::Q4_KF(q) => q.segments(numel),
+            DType::Q4_KH(q) => q.segments(numel),
             _ => {
                 let mut total_bytes = numel * self.size_of();
                 total_bytes = max(total_bytes, MIN_STORAGE_BUFFER_SIZE).align_for_copy();

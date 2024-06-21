@@ -49,7 +49,7 @@ pub const QK8_1: usize = 32;
 use test_strategy::Arbitrary;
 
 #[repr(C)]
-struct BlockQ8_0<T> {
+pub struct BlockQ8_0<T> {
     pub(crate) d: T,
     pub(crate) qs: [i8; QK8_0],
 }
@@ -104,7 +104,7 @@ impl Segments for Q8_0H {
 // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/k_quants.h#L82
 // https://github.com/antirez/gguf-tools/blob/main/gguflib.c#L573
 #[repr(C)]
-struct BlockQ4_K<T> {
+pub struct BlockQ4_K<T> {
     pub(crate) d: T,                       //superscale (scales the scales)
     pub(crate) dmin: T,                    //supermin (scales the mins)
     pub(crate) scales: [u8; K_SCALE_SIZE], //12 bytes, 16 6 bit values, 96 bits. (scale, min) values packed in a ****** up way
@@ -143,5 +143,23 @@ where
         let d_nbytes: u64 = (num_blocks * std::mem::size_of::<T>()).align_for_offset() as u64;
         let d_segment = BufferSegment::new(offset, d_nbytes);
         rvec![qs_segment, scales_segment, dmin_segment, d_segment]
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct Q4_KF(Q4_K<f32>);
+
+impl Segments for Q4_KF {
+    fn segments(&self, numel: usize) -> RVec<BufferSegment> {
+        self.0.segments(numel)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct Q4_KH(Q4_K<f16>);
+
+impl Segments for Q4_KH {
+    fn segments(&self, numel: usize) -> RVec<BufferSegment> {
+        self.0.segments(numel)
     }
 }
