@@ -176,11 +176,9 @@ pub async fn generate(
 
         let result = model
             .text_model
-            .schedule(embeds.clone())
+            .schedule(embeds.clone())?
             .full()?
-            .unwrap()
-            .resolve()
-            .unwrap();
+            .resolve()?;
 
         model.text_model.cache_mut().update(embeds.shape()[1]);
 
