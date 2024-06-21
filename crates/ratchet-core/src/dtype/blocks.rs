@@ -1,3 +1,4 @@
+#![allow(non_camel_case_types)]
 /// Ratchet memory layouts.
 ///
 /// We closely follow the memory layout of the original GGUF implementation,
@@ -47,10 +48,16 @@ pub const QK8_1: usize = 32;
 #[cfg(test)]
 use test_strategy::Arbitrary;
 
+#[repr(C)]
 pub struct BlockQ8_0<T> {
     pub(crate) d: T,
     pub(crate) qs: [i8; QK8_0],
 }
+type BlockQ8_0F = BlockQ8_0<f32>;
+type BlockQ8_0H = BlockQ8_0<f16>;
+
+const _: () = assert!(std::mem::size_of::<BlockQ8_0F>() == 36);
+const _: () = assert!(std::mem::size_of::<BlockQ8_0H>() == 34);
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, new)]
@@ -73,9 +80,6 @@ where
     }
 }
 
-type BlockQ8_0F = BlockQ8_0<f32>;
-type BlockQ8_0H = BlockQ8_0<f16>;
-
 //We make these unit types for the sake of type safety.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Q8_0F(Q8_0<f32>);
@@ -94,3 +98,19 @@ impl Segments for Q8_0H {
         self.0.segments(numel)
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+// https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/k_quants.h#L82
+// https://github.com/antirez/gguf-tools/blob/main/gguflib.c#L573
+#[repr(C)]
+pub struct BlockQ4_K<T> {
+    pub(crate) d: T,                       //superscale (scales the scales)
+    pub(crate) dmin: T,                    //supermin (scales the mins)
+    pub(crate) scales: [u8; K_SCALE_SIZE], //12 bytes, 16 6 bit values, 96 bits. (scale, min) values packed in a ****** up way
+    pub(crate) qs: [u8; QK_K / 2],         //128 bytes, 256 4 bit values.
+}
+type BlockQ4_KF = BlockQ4_K<f32>;
+type BlockQ4_KH = BlockQ4_K<f16>;
+
+const _: () = assert!(std::mem::size_of::<BlockQ4_KH>() == 144);
+const _: () = assert!(std::mem::size_of::<BlockQ4_KF>() == 148);

@@ -17,6 +17,8 @@ pub enum DType {
     U32,
     Q8_0H(Q8_0H), //Equivalent to GGUF Q8_0, with f16
     Q8_0F(Q8_0F), //Equivalent to GGUF Q8_0, with f32
+    Q4_KH(Q4_KH), //Equivalent to GGUF Q4_K, with f16
+    Q4_KF(Q4_KF), //Equivalent to GGUF Q4_K, with f32
 }
 
 impl std::fmt::Display for DType {
@@ -29,6 +31,8 @@ impl std::fmt::Display for DType {
             DType::U32 => write!(f, "U32"),
             DType::Q8_0H(_) => write!(f, "Q8_0H"),
             DType::Q8_0F(_) => write!(f, "Q8_0F"),
+            DType::Q4_KH(_) => write!(f, "Q4_KH"),
+            DType::Q4_KF(_) => write!(f, "Q4_KF"),
         }
     }
 }
@@ -62,6 +66,8 @@ impl DType {
             DType::U32 => 4,
             DType::Q8_0H(_) => std::mem::size_of::<BlockQ8_0<f16>>(),
             DType::Q8_0F(_) => std::mem::size_of::<BlockQ8_0<f32>>(),
+            DType::Q4_KH(_) => std::mem::size_of::<BlockQ4_K<f16>>(),
+            DType::Q4_KF(_) => std::mem::size_of::<BlockQ4_K<f32>>(),
         }
     }
 
