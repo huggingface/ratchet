@@ -1,3 +1,9 @@
+mod gemm;
+mod gemv;
+
+pub use gemm::*;
+pub use gemv::*;
+
 use std::cmp::Ordering;
 
 use encase::ShaderType;
@@ -5,8 +11,8 @@ use encase::ShaderType;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
-    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides,
-    SubgroupGEMVMeta, Tensor, WorkgroupGEMVMeta, WorkgroupSize, Workload, GEMM, GEMV, Q8_0F, Q8_0H,
+    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -457,18 +463,22 @@ impl OpGuards for Matmul {
             (DType::F16, DType::F16),
             (DType::Q8_0F(Q8_0F::default()), DType::F32),
             (DType::Q8_0H(Q8_0H::default()), DType::F16),
+            (DType::Q4_KF(Q4_KF::default()), DType::F32),
+            (DType::Q4_KH(Q4_KH::default()), DType::F16),
         ];
+
         if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
             panic!(
-                "Failed to validate DTypes: {:?}, {:?}",
+                "DType mismatch: lhs: {:?}, rhs: {:?}",
                 self.lhs.dt(),
                 self.rhs.dt()
             );
         }
+
         if let Some(bias) = &self.bias {
             if bias.dt() != self.rhs.dt() {
                 panic!(
-                    "Failed to validate DTypes: bias {:?}, rhs {:?}",
+                    "DType mismatch: bias: {:?}, rhs: {:?}",
                     bias.dt(),
                     self.rhs.dt()
                 );
@@ -479,7 +489,7 @@ impl OpGuards for Matmul {
 
 impl MetaOperation for Matmul {
     fn kernel_name(&self) -> String {
-        "GEMM".to_string()
+        "Matmul".to_string()
     }
 
     fn kernel_key(
@@ -593,19 +603,17 @@ impl MetaOperation for Matmul {
 
     fn storage_bind_group_layout(
         &self,
-        _inplace: bool,
+        _: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        let (LHS, RHS, bias) = (&self.lhs, &self.rhs, &self.bias);
-        let layout = match (LHS.dt(), RHS.dt(), bias.is_some()) {
-            (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
-            (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
-            (DType::F16, DType::F16, false) => BindGroupLayoutDescriptor::binary(),
-            (DType::F16, DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
-            (DType::Q8_0F(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
-            (DType::Q8_0H(_), DType::F16, false) => BindGroupLayoutDescriptor::ternary(),
-            (DType::Q8_0F(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
-            (DType::Q8_0H(_), DType::F16, true) => BindGroupLayoutDescriptor::nthary(4),
-            _ => return Err(InvariantError::UnsupportedDType(RHS.dt()).into()),
+        let (LHS, _, bias) = (&self.lhs, &self.rhs, &self.bias);
+        let layout = match (LHS.dt(), bias.is_some()) {
+            (DType::F32 | DType::F16, false) => BindGroupLayoutDescriptor::binary(),
+            (DType::F32 | DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0F(_) | DType::Q8_0H(_), false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0F(_) | DType::Q8_0H(_), true) => BindGroupLayoutDescriptor::nthary(4),
+            (DType::Q4_KF(_) | DType::Q4_KH(_), false) => BindGroupLayoutDescriptor::nthary(5),
+            (DType::Q4_KF(_) | DType::Q4_KH(_), true) => BindGroupLayoutDescriptor::nthary(6),
+            _ => return Err(InvariantError::UnsupportedDType(LHS.dt()).into()),
         };
         Ok(layout)
     }
