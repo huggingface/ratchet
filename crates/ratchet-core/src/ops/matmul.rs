@@ -5,8 +5,8 @@ use encase::ShaderType;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
-    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
-    WorkgroupSize, Workload, GEMM, GEMV, Q8_0F, Q8_0H,
+    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides,
+    SubgroupGEMVMeta, Tensor, WorkgroupGEMVMeta, WorkgroupSize, Workload, GEMM, GEMV, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -172,6 +172,22 @@ impl GEMMSpec {
     }
     pub fn dim_rhs_outer(&self) -> usize {
         self.out_shape[1]
+    }
+
+    pub fn new_dim_lhs_outer(&self) -> usize {
+        if self.trans_out {
+            self.out_shape[1]
+        } else {
+            self.out_shape[0]
+        }
+    }
+
+    pub fn new_dim_rhs_outer(&self) -> usize {
+        if self.trans_rhs {
+            self.rhs_shape[1]
+        } else {
+            self.rhs_shape[0]
+        }
     }
 
     pub fn dim_inner(&self) -> usize {
@@ -370,6 +386,42 @@ pub struct MatmulMeta {
     dimInner: i32,
 }
 
+impl MatmulMeta {
+    pub(crate) fn write_metadata(
+        uniform: &mut CpuUniform,
+        spec: &GEMMSpec,
+    ) -> Result<u64, OperationError> {
+        let mut lhs_shape = spec.lhs_shape.clone();
+        lhs_shape.insert(0, spec.lhs_stack());
+        let aStrides = Strides::from(&lhs_shape);
+
+        let mut rhs_shape = spec.rhs_shape.clone();
+        rhs_shape.insert(0, spec.rhs_stack());
+        let bStrides = Strides::from(&rhs_shape);
+
+        let mut out_shape = spec.out_shape.clone();
+        out_shape.insert(0, spec.stacks());
+        let outStrides = Strides::from(&out_shape);
+
+        let dimAOuter = spec.dim_lhs_outer() as i32;
+        let dimBOuter = spec.dim_rhs_outer() as i32;
+        let dimInner = spec.dim_inner() as i32;
+
+        let meta = MatmulMeta {
+            aShape: lhs_shape.into(),
+            aStrides: aStrides.into(),
+            bShape: rhs_shape.into(),
+            bStrides: bStrides.into(),
+            outShape: out_shape.into(),
+            outStrides: outStrides.into(),
+            dimAOuter,
+            dimBOuter,
+            dimInner,
+        };
+        Ok(uniform.write(&meta)?)
+    }
+}
+
 impl OpMetadata for MatmulMeta {}
 
 impl Operation for Matmul {
@@ -438,18 +490,25 @@ impl MetaOperation for Matmul {
         kernel_element: &KernelElement,
     ) -> KernelKey {
         let spec = self.compute_spec(dst);
+        let device = dst.device().try_gpu().unwrap();
         let kernel_stem = if spec.is_gemv() { "gemv" } else { "gemm" };
+        let subgroup = if spec.is_gemv() && device.compute_features().SUBGROUP {
+            "subgroup"
+        } else {
+            ""
+        };
         let (a_fit, b_fit, out_fit) = spec.tile_fit();
         let bias_key = if self.bias.is_some() { "bias" } else { "" };
 
         let additional = format!(
-            "{}_{}_{}_{}_{}_{}_{}",
+            "{}_{}_{}_{}_{}_{}_{}_{}",
             if a_fit { "" } else { "a_checked" },
             if b_fit { "" } else { "b_checked" },
             if out_fit { "" } else { "out_checked" },
             if self.trans_lhs { "trans_a" } else { "" },
             if self.trans_rhs { "trans_b" } else { "" },
             if self.trans_out { "trans_out" } else { "" },
+            subgroup,
             bias_key
         );
 
@@ -477,18 +536,34 @@ impl MetaOperation for Matmul {
         spec.select_kernel_element()
     }
 
+    //TODO: clean
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let spec = self.compute_spec(dst);
 
         if spec.rhs_shape().is_vector() && !self.trans_lhs {
-            let (TX, TY) = spec.heuristic.as_workgroup_size();
-            let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TX);
+            //GEMV
+            let device = self.lhs.device().try_gpu().unwrap();
+            if device.compute_features().SUBGROUP {
+                Ok(Workload {
+                    workgroup_count: wgc![
+                        ((spec.new_dim_lhs_outer() / 32) + 1) as _,
+                        1,
+                        spec.stacks() as _
+                    ],
+                    workgroup_size: wgs![32, 8, 1],
+                })
+            } else {
+                //GEMV workgroup style
+                let (TX, TY) = spec.heuristic.as_workgroup_size();
+                let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TX);
 
-            Ok(Workload {
-                workgroup_count: wgc![group_x as _, 1, spec.stacks() as _],
-                workgroup_size: wgs![TX as _, TY as _, 1],
-            })
+                Ok(Workload {
+                    workgroup_count: wgc![group_x as _, 1, spec.stacks() as _],
+                    workgroup_size: wgs![TX as _, TY as _, 1],
+                })
+            }
         } else {
+            //GEMM
             let TILE_DIM = 32;
             let lhs_shape = spec.lhs_shape();
             let rhs_shape = spec.rhs_shape();
@@ -542,35 +617,16 @@ impl MetaOperation for Matmul {
         _: &KernelElement,
     ) -> Result<u64, OperationError> {
         let spec = self.compute_spec(dst);
-
-        let mut lhs_shape = spec.lhs_shape.clone();
-        lhs_shape.insert(0, spec.lhs_stack());
-        let aStrides = Strides::from(&lhs_shape);
-
-        let mut rhs_shape = spec.rhs_shape.clone();
-        rhs_shape.insert(0, spec.rhs_stack());
-        let bStrides = Strides::from(&rhs_shape);
-
-        let mut out_shape = spec.out_shape.clone();
-        out_shape.insert(0, spec.stacks());
-        let outStrides = Strides::from(&out_shape);
-
-        let dimAOuter = spec.dim_lhs_outer() as i32;
-        let dimBOuter = spec.dim_rhs_outer() as i32;
-        let dimInner = spec.dim_inner() as i32;
-
-        let meta = MatmulMeta {
-            aShape: lhs_shape.into(),
-            aStrides: aStrides.into(),
-            bShape: rhs_shape.into(),
-            bStrides: bStrides.into(),
-            outShape: out_shape.into(),
-            outStrides: outStrides.into(),
-            dimAOuter,
-            dimBOuter,
-            dimInner,
-        };
-        Ok(uniform.write(&meta)?)
+        if spec.is_gemv() {
+            let device = dst.device().try_gpu().unwrap();
+            if device.compute_features().SUBGROUP {
+                SubgroupGEMVMeta::write_metadata(uniform, &spec)
+            } else {
+                WorkgroupGEMVMeta::write_metadata(uniform, &spec)
+            }
+        } else {
+            MatmulMeta::write_metadata(uniform, &spec)
+        }
     }
 
     fn build_kernel(
@@ -796,34 +852,6 @@ def matmul(a, b{}):
     }
 
     #[test]
-    fn debug_generated_gemm() -> anyhow::Result<()> {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let prob = SGEMMProblem {
-            B: 1,
-            M: 511,
-            K: 511,
-            N: 1,
-            has_bias: false,
-            transpose: TransKind::None,
-        };
-        let SGEMMProblem {
-            B,
-            M,
-            K,
-            N,
-            has_bias,
-            ref transpose,
-        } = prob;
-
-        println!(
-            "Running sgemm: B={} M={} N={} K={} has_bias={} transpose={:?}",
-            B, M, N, K, has_bias, transpose
-        );
-        let device = GPU_DEVICE.with(|d| d.clone());
-        run_matmul_trial(&device, prob)
-    }
-
-    #[test]
     fn debug_gemm() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
@@ -851,6 +879,42 @@ def matmul(a, b{}):
         let bias_gpu = bias.as_ref().map(|b| b.to(&device)).transpose()?;
         let c_gpu = a_gpu
             .gemm(b_gpu, bias_gpu, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
+            .resolve()?;
+        let ours = c_gpu.to(&Device::CPU)?;
+
+        println!("RATCHET\n{:?}\n", ours.to_ndarray_view::<f32>());
+        println!("PYTORCH:\n{:?}", ground.to_ndarray_view::<f32>());
+
+        ground.all_close(&ours, 1e-3, 1e-3)?;
+        Ok(())
+    }
+
+    #[test]
+    fn debug_gemv() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let device = GPU_DEVICE.with(|d| d.clone());
+        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
+        let a = Tensor::randn::<f32>(shape![1, 51865, 384], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![1, 1, 384], cpu_device.clone());
+
+        let TRANS_LHS = false;
+        let TRANS_RHS = true;
+        let TRANS_OUT = true;
+        let QUANT = false;
+
+        let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
+
+        let a_gpu = if QUANT {
+            let quantizer = Quantizer::new(Quantization::SInt8);
+            let aq = quantizer.sint8_quantize(a);
+            aq.to(&device)?
+        } else {
+            a.to(&device)?
+        };
+
+        let b_gpu = b.to(&device)?;
+        let c_gpu = a_gpu
+            .gemm(b_gpu, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
             .resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 

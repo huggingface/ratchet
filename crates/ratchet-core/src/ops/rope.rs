@@ -3,6 +3,7 @@ use encase::ShaderType;
 use half::f16;
 use ratchet_macros::WgslMetadata;
 
+use crate::gpu::dtype::WgslDType;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
@@ -56,6 +57,8 @@ impl RoPE {
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.write_metadata::<RoPEMeta>();
 
+        let dt = P::T::DT;
+
         kernel_builder.write_main(wgsl! {
             if(global_invocation_id.y >= metadata.seq_len) {
               return;
@@ -73,8 +76,8 @@ impl RoPE {
             let d = f32(global_invocation_id.x) / f32(grid.x);
 
             let theta = L * exp2(-d * metadata.base);
-            let costheta = cos(theta);
-            let sintheta = sin(theta);
+            let costheta = 'dt(cos(theta));
+            let sintheta = 'dt(sin(theta));
 
             let x1 = in[in_index_1];
             let x2 = in[in_index_2];
@@ -111,7 +114,7 @@ impl OpGuards for RoPE {
 
     fn check_dtypes(&self) {
         let input = &self.input;
-        assert!(input.dt() == crate::DType::F32);
+        assert!(input.dt().is_float());
     }
 }
 

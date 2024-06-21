@@ -9,6 +9,16 @@ use crate::{
 #[derive(Debug)]
 pub struct WgslFragment(pub String);
 
+impl FromIterator<WgslFragment> for WgslFragment {
+    fn from_iter<I: IntoIterator<Item = WgslFragment>>(iter: I) -> Self {
+        let mut fragment = WgslFragment::new(512);
+        for i in iter {
+            fragment.write_fragment(i);
+        }
+        fragment
+    }
+}
+
 impl std::fmt::Display for WgslFragment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -238,7 +248,7 @@ pub enum BuiltIn {
     LocalInvocationIndex,
     WorkgroupId,
     NumWorkgroups,
-    SubgroupId,
+    SubgroupInvocationId,
     SubgroupSize,
 }
 
@@ -252,9 +262,9 @@ impl BuiltIn {
             | BuiltIn::GlobalInvocationId
             | BuiltIn::WorkgroupId
             | BuiltIn::NumWorkgroups => Vec3::<u32>::render_type(),
-            BuiltIn::LocalInvocationIndex | BuiltIn::SubgroupId | BuiltIn::SubgroupSize => {
-                Scalar::<u32>::render_type()
-            }
+            BuiltIn::LocalInvocationIndex
+            | BuiltIn::SubgroupInvocationId
+            | BuiltIn::SubgroupSize => Scalar::<u32>::render_type(),
         };
         fragment.write(wgsl! { @builtin('var) 'var: 'builtin_type });
         fragment
@@ -268,7 +278,7 @@ impl BuiltIn {
             BuiltIn::LocalInvocationIndex => "local_invocation_index",
             BuiltIn::WorkgroupId => "workgroup_id",
             BuiltIn::NumWorkgroups => "num_workgroups",
-            BuiltIn::SubgroupId => "subgroup_id",
+            BuiltIn::SubgroupInvocationId => "subgroup_invocation_id",
             BuiltIn::SubgroupSize => "subgroup_size",
         }
     }

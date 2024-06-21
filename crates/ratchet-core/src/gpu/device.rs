@@ -1,4 +1,4 @@
-use crate::{gpu::*, MetaOperation, Tensor, TensorId};
+use crate::{gpu::*, DType, MetaOperation, Tensor, TensorId};
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, sync::Arc};
 use wgpu::{Adapter, Limits};
@@ -61,6 +61,7 @@ impl WgpuDevice {
         #[allow(unused_mut)]
         let mut required_features = wgpu::Features::default();
         required_features |= wgpu::Features::SHADER_F16;
+        required_features |= wgpu::Features::SUBGROUP;
         #[cfg(feature = "gpu-profiling")]
         {
             required_features |= wgpu::Features::TIMESTAMP_QUERY;
@@ -88,8 +89,16 @@ impl WgpuDevice {
 
         let limits = DeviceLimits::from(device.limits());
         let mut features = DeviceFeatures::from(device.features());
+        if std::env::var("RATCHET_FORCE_F32").is_ok() {
+            log::warn!("Forcing F32 precision");
+            features.SHADER_F16 = false;
+        }
+        if std::env::var("RATCHET_DISABLE_SUBGROUPS").is_ok() {
+            log::warn!("Disabling subgroup support");
+            features.SUBGROUP = false;
+        }
+
         log::warn!("Device features: {:?}", features);
-        features.SHADER_F16 = true;
 
         Ok(Self {
             queue: Arc::new(queue),
@@ -300,6 +309,16 @@ impl From<wgpu::Limits> for DeviceLimits {
 pub struct DeviceFeatures {
     pub SHADER_F16: bool,
     pub SUBGROUP: bool,
+}
+
+impl DeviceFeatures {
+    pub fn compute_precision(&self) -> DType {
+        if self.SHADER_F16 {
+            DType::F16
+        } else {
+            DType::F32
+        }
+    }
 }
 
 impl From<wgpu::Features> for DeviceFeatures {

@@ -141,15 +141,17 @@ impl BufferAllocator {
     fn determine_tensor_source(source: &Tensor) -> &Tensor {
         let mut true_source = source;
         loop {
-            if true_source.op().srcs().is_empty() {
+            if true_source.op().srcs().is_empty() || !true_source.op().supports_inplace() {
                 //If no sources, we are at the root
+                //Or if the operation doesn't support inplace
                 break;
             }
             //TODO: operations should define their "inplace" source
             //doesn't necessarily have to be the zeroth
             let to_modify = true_source.op().srcs()[0];
-            let multiple_consumers = Arc::strong_count(&to_modify.inner) > 1;
-            if !true_source.op().supports_inplace() || multiple_consumers {
+            if Arc::strong_count(&to_modify.inner) > 1 {
+                //If the source has multiple consumers, we can't inplace
+                //so we break here
                 break;
             }
 
@@ -215,12 +217,12 @@ impl BufferAllocator {
         let mut shared_objects: Vec<PooledGPUBuffer> = Vec::with_capacity(records.0.len());
 
         for record in records.0.iter() {
+            let record_producer = record.producer.unwrap();
             let mut best_obj = None;
             for obj in shared_objects.iter() {
                 let mut suitable = true;
                 for inner_r in records.0.iter() {
-                    let max_first =
-                        std::cmp::max(record.producer.unwrap(), inner_r.producer.unwrap());
+                    let max_first = std::cmp::max(record_producer, inner_r.producer.unwrap());
                     let min_last = std::cmp::min(record.last_consumer, inner_r.last_consumer);
                     if max_first <= min_last && assignments.get(&inner_r.id.unwrap()) == Some(obj) {
                         suitable = false;
@@ -261,7 +263,7 @@ impl BufferAllocator {
             }
         }
 
-        //We use `immediate` = false here,
+        //We use `immediate` = false here in create_buffer
         //and submit the queue after all allocations are done.
         device.queue().submit(None);
         device.poll(wgpu::Maintain::Wait);
@@ -283,21 +285,20 @@ impl BufferAllocator {
         execution_order: &[&Tensor],
         device: &WgpuDevice,
     ) -> Result<FxHashMap<TensorId, PooledGPUBuffer>, DeviceError> {
-        let mut free = Vec::new(); //TODO: switch to BTreeMap
-        let mut assignments = FxHashMap::default();
+        let mut free = Vec::with_capacity(execution_order.len()); //TODO: switch to BTreeMap
+        let mut assignments =
+            FxHashMap::with_capacity_and_hasher(execution_order.len(), Default::default());
         //Assignments already needs all of the constants in it.
-        for t in execution_order.iter().rev() {
-            if t.resolved() {
-                //Consts are immediately resolved
-                let storage_guard = t.storage();
-                let pooled = storage_guard
-                    .as_ref()
-                    .ok_or(AllocatorError::BufferNotFound)?
-                    .try_gpu()?
-                    .inner
-                    .clone();
-                assignments.insert(t.id(), pooled);
-            }
+        for t in execution_order.iter().rev().filter(|t| t.resolved()) {
+            //Consts are immediately resolved
+            let storage_guard = t.storage();
+            let pooled = storage_guard
+                .as_ref()
+                .ok_or(AllocatorError::BufferNotFound)?
+                .try_gpu()?
+                .inner
+                .clone();
+            assignments.insert(t.id(), pooled);
         }
 
         //Allocate intermediates

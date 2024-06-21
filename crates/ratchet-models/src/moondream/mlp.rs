@@ -11,6 +11,8 @@ impl Module for MLP {
     type Input = Tensor;
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
-        self.fc2.schedule(self.fc1.schedule(input)?.gelu()?)
+        let input_dt = input.dt();
+        self.fc2
+            .schedule(self.fc1.schedule(input)?.full()?.gelu()?.cast(input_dt)?)
     }
 }

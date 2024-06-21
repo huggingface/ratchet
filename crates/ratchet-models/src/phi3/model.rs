@@ -1,6 +1,7 @@
 use std::io::{BufRead, Seek};
 
-use ratchet::{shape, Device, Tensor};
+use half::f16;
+use ratchet::{shape, DType, Device, Tensor};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, KVEntry, Linear, Module, RMSNorm};
 
@@ -194,12 +195,18 @@ impl Phi3 {
         let hdim = d_model as f32 / n_heads as f32;
 
         let cache_shape = shape![1, n_layers as _, Self::MAX_CACHE, hdim as _];
+        let kv_cache = match device.compute_precision() {
+            DType::F16 => KVCache::new::<f16>(n_layers as _, cache_shape, device),
+            DType::F32 => KVCache::new::<f32>(n_layers as _, cache_shape, device),
+            _ => unimplemented!(),
+        };
+
         Ok(Self {
             embedding,
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new::<f32>(n_layers as _, cache_shape, device),
+            kv_cache,
             device: device.clone(),
         })
     }
@@ -345,7 +352,7 @@ def ground():
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
-        let MAX_TOKENS = 20;
+        let MAX_TOKENS = 100;
         let prompt = r#"<|user|>
 How to explain Internet for a medieval knight?<|end|>
 <|assistant|>"#;
@@ -363,7 +370,7 @@ How to explain Internet for a medieval knight?<|end|>
 
         while tokens[tokens.len() - 1] != 32007 && generated_cnt < MAX_TOKENS {
             let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let result = model.schedule(input)?.resolve()?;
+            let result = model.schedule(input)?.full()?.resolve()?;
             let logits = result.to(&Device::CPU)?;
             all_logits.push(logits.clone());
             model.cache_mut().update(tokens.len());
@@ -380,6 +387,9 @@ How to explain Internet for a medieval knight?<|end|>
         let elapsed = start.elapsed();
         let u32_toks = all_tokens.iter().map(|&x| x as u32).collect::<Vec<_>>();
 
+        let generated = tokenizer.decode(&u32_toks, true).unwrap();
+        println!("We generated: \n{}\n", generated);
+
         let ground_logits = ground_truth(prompt, MAX_TOKENS)?;
         assert_eq!(all_logits.len(), ground_logits.len());
         let all_equal =
@@ -389,7 +399,7 @@ How to explain Internet for a medieval knight?<|end|>
                 .enumerate()
                 .all(|(i, (their, our))| {
                     print!("Checking: {}", i);
-                    our.all_close(their, 5e-4, 5e-4).is_ok()
+                    our.all_close(their, 1e-1, 1e-1).is_ok()
                 });
 
         println!("All logits equal: {}", all_equal);
