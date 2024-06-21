@@ -140,3 +140,25 @@ impl GgmlDType {
         numel * self.type_size() / self.block_numel()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::gguf::gguf::Header;
+    use half::f16;
+    use ratchet::{shape, Device, DeviceRequest, Tensor};
+
+    #[test]
+    fn test_dequant() -> anyhow::Result<()> {
+        let model_path = "../../fixtures/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
+        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
+        let device = Device::request_device(DeviceRequest::GPU)?;
+        let content = Header::read(&mut reader)?;
+        let t = content.tensor(&mut reader, "blk.0.attn_k.weight", &device)?;
+
+        let rhs = Tensor::randn::<f16>(shape![2048, 64], device);
+        let out = t.matmul(rhs, false, false)?.resolve()?;
+        println!("{:?}", out);
+
+        Ok(())
+    }
+}

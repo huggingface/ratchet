@@ -6,7 +6,7 @@ use super::dtype::GGUFInterop;
 use crate::{error::Result, GgmlDType};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use ratchet::{Device, Shape, Tensor, Q4_KH, Q8_0F, Q8_0H};
+use ratchet::{Device, Shape, Tensor, Q4_KF, Q4_KH, Q8_0F, Q8_0H};
 use std::collections::HashMap;
 use std::ops::Range;
 

@@ -335,7 +335,7 @@ impl GEMM {
             (DType::Q8_0H(_), _) => {
                 self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
             }
-            _ => panic!("Unsupported dtype"),
+            _ => return Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
         }
     }
 

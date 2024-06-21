@@ -932,44 +932,4 @@ def matmul(a, b{}):
         ground.all_close(&ours, 1e-3, 1e-3)?;
         Ok(())
     }
-
-    #[test]
-    fn test_dequant_q4k() -> anyhow::Result<()> {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let device = GPU_DEVICE.with(|d| d.clone());
-        let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-
-        //manifest env dir, fixtures
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let ground_path = format!("{}/fixtures/tiny_llama_q4k.npy", manifest_dir);
-
-        let ground = Tensor::read_npy::<u32, _>(ground_path, &device)?;
-
-        let TRANS_LHS = false;
-        let TRANS_RHS = true;
-        let TRANS_OUT = true;
-        let QUANT = false;
-
-        let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
-
-        let a_gpu = if QUANT {
-            let quantizer = Quantizer::new(Quantization::SInt8);
-            let aq = quantizer.sint8_quantize(a);
-            aq.to(&device)?
-        } else {
-            a.to(&device)?
-        };
-
-        let b_gpu = b.to(&device)?;
-        let c_gpu = a_gpu
-            .gemm(b_gpu, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
-            .resolve()?;
-        let ours = c_gpu.to(&Device::CPU)?;
-
-        println!("RATCHET\n{:?}\n", ours.to_ndarray_view::<f32>());
-        println!("PYTORCH:\n{:?}", ground.to_ndarray_view::<f32>());
-
-        ground.all_close(&ours, 1e-3, 1e-3)?;
-        Ok(())
-    }
 }
