@@ -35,9 +35,9 @@ impl Cache {
         builder: &mut WgslKernelBuilder,
         _: bool,
     ) -> Result<(), OperationError> {
-        builder.register_storage("C", BindingMode::ReadWrite, Array::<vec4<f32>>::default());
-        builder.register_storage("S", BindingMode::ReadOnly, Array::<vec4<f32>>::default());
-        builder.register_storage("D", BindingMode::ReadWrite, Array::<vec4<f32>>::default());
+        builder.register_storage("C", BindingMode::ReadWrite, Array::<P>::default());
+        builder.register_storage("S", BindingMode::ReadOnly, Array::<P>::default());
+        builder.register_storage("D", BindingMode::ReadWrite, Array::<P>::default());
 
         builder.register_uniform();
         Ok(())
@@ -150,10 +150,13 @@ impl MetaOperation for Cache {
         rvec![&self.cache, &self.source]
     }
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
-        let numel = self.input.shape().numel();
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+        let numel = dst.shape().numel();
+
         if numel % 4 == 0 {
             KernelElement::Vec4
+        } else if numel % 2 == 0 {
+            KernelElement::Vec2
         } else {
             KernelElement::Scalar
         }
