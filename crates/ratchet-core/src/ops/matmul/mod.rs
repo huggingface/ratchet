@@ -1,8 +1,10 @@
 mod gemm;
 mod gemv;
+mod quantized;
 
 pub use gemm::*;
 pub use gemv::*;
+pub use quantized::*;
 
 use std::cmp::Ordering;
 
@@ -378,58 +380,6 @@ impl Matmul {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-#[derive(Debug, Clone, ShaderType)]
-pub struct MatmulMeta {
-    aShape: glam::IVec3,
-    aStrides: glam::IVec3,
-    bShape: glam::IVec3,
-    bStrides: glam::IVec3,
-    outShape: glam::IVec3,
-    outStrides: glam::IVec3,
-    dimAOuter: i32,
-    dimBOuter: i32,
-    dimInner: i32,
-}
-
-impl MatmulMeta {
-    pub(crate) fn write_metadata(
-        uniform: &mut CpuUniform,
-        spec: &GEMMSpec,
-    ) -> Result<u64, OperationError> {
-        let mut lhs_shape = spec.lhs_shape.clone();
-        lhs_shape.insert(0, spec.lhs_stack());
-        let aStrides = Strides::from(&lhs_shape);
-
-        let mut rhs_shape = spec.rhs_shape.clone();
-        rhs_shape.insert(0, spec.rhs_stack());
-        let bStrides = Strides::from(&rhs_shape);
-
-        let mut out_shape = spec.out_shape.clone();
-        out_shape.insert(0, spec.stacks());
-        let outStrides = Strides::from(&out_shape);
-
-        let dimAOuter = spec.dim_lhs_outer() as i32;
-        let dimBOuter = spec.dim_rhs_outer() as i32;
-        let dimInner = spec.dim_inner() as i32;
-
-        let meta = MatmulMeta {
-            aShape: lhs_shape.into(),
-            aStrides: aStrides.into(),
-            bShape: rhs_shape.into(),
-            bStrides: bStrides.into(),
-            outShape: out_shape.into(),
-            outStrides: outStrides.into(),
-            dimAOuter,
-            dimBOuter,
-            dimInner,
-        };
-        Ok(uniform.write(&meta)?)
-    }
-}
-
-impl OpMetadata for MatmulMeta {}
-
 impl Operation for Matmul {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let c_shape = Matmul::compute_c_shape(
@@ -633,7 +583,7 @@ impl MetaOperation for Matmul {
                 WorkgroupGEMVMeta::write_metadata(uniform, &spec)
             }
         } else {
-            MatmulMeta::write_metadata(uniform, &spec)
+            GEMMMeta::write_metadata(uniform, &spec)
         }
     }
 
@@ -644,12 +594,22 @@ impl MetaOperation for Matmul {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let spec = self.compute_spec(dst);
-        if spec.is_gemv() {
-            let gemv: GEMV = self.clone().into();
-            gemv.build_kernel(inplace, dst, workgroup_size, spec)
-        } else {
-            let gemm: GEMM = self.clone().into();
-            gemm.build_kernel(inplace, dst, workgroup_size, spec)
+
+        match self.lhs.dt() {
+            DType::F32 | DType::F16 => {
+                if spec.is_gemv() {
+                    let gemv: GEMV = self.clone().into();
+                    gemv.build_kernel(inplace, dst, workgroup_size, spec)
+                } else {
+                    let gemm: GEMM = self.clone().into();
+                    gemm.build_kernel(inplace, dst, workgroup_size, spec)
+                }
+            }
+            DType::Q8_0F(_) | DType::Q8_0H(_) | DType::Q4_KF(_) | DType::Q4_KH(_) => {
+                let quantized: Quantized = self.clone().into();
+                quantized.build_kernel(inplace, dst, workgroup_size, spec)
+            }
+            _ => Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
         }
     }
 }

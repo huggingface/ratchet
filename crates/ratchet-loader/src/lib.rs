@@ -149,6 +149,7 @@ mod tests {
 
     #[test]
     fn test_dequant() -> anyhow::Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
         let model_path = "../../fixtures/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
         let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
         let device = Device::request_device(DeviceRequest::GPU)?;
@@ -157,7 +158,8 @@ mod tests {
 
         let rhs = Tensor::randn::<f16>(shape![2048, 64], device);
         let out = t.matmul(rhs, false, false)?.resolve()?;
-        println!("{:?}", out);
+        let out_cpu = out.to(&Device::CPU)?;
+        println!("{:#?}", out_cpu);
 
         Ok(())
     }

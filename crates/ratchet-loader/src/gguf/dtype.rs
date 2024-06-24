@@ -93,8 +93,8 @@ impl GGUFInterop for Q4_KH {
         //TODO: these should be uninit
         let mut qs_bytes = Vec::with_capacity(n_blocks * QK_K);
         let mut scales_bytes = Vec::with_capacity(n_blocks * K_SCALE_SIZE);
-        let mut dmin_bytes = Vec::with_capacity(n_blocks * 4);
-        let mut d_bytes = Vec::with_capacity(n_blocks * 4);
+        let mut dmin_bytes = Vec::with_capacity(n_blocks * 2);
+        let mut d_bytes = Vec::with_capacity(n_blocks * 2);
 
         for block in data {
             dmin_bytes.extend_from_slice(&block.dmin.to_le_bytes());
