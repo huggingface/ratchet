@@ -120,17 +120,24 @@ impl Quantized {
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
         kernel_builder.write_global(wgsl! {
-           fn get_subblock_scale_min(scales_offset: u32, pair_index: u32) -> vec2<u32> {
+           fn get_subblock_scale_min(so: u32, pair_index: u32) -> vec2<u32> {
+                let lower_half = vec2<u32>(
+                    (scales[so    ] >> (8u * pair_index)) & 63u,
+                    (scales[so + 1u] >> (8u * pair_index)) & 63u
+                );
 
+                let shift = 8u * (pair_index - 4u);
+                let dl = (scales[so + 2u] >> shift & 0xF);
+                let dh = (scales[so] >> (6u + shift)) & 0x3;
+
+                let ml = (scales[so + 2u] >> shift & 0xF0);
+                let mh = (scales[so + 1u] >> (6u + shift)) & 0x3;
+
+                let upper_half = vec2<u32>((dh << 4u) | dl, (mh << 4u) | ml);
 
                 return select(
-                    vec2<u32>(
-                        //Some magic here
-                    ),
-                    vec2<u32>(
-                        (scales[scales_offset     ] >> (8u * pair_index)) & 63u,
-                        (scales[scales_offset + 1u] >> (8u * pair_index)) & 63u,
-                    ),
+                    upper_half,
+                    lower_half,
                     pair_index < 4u
                 );
             }
