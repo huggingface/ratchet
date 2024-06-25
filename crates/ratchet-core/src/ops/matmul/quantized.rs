@@ -119,25 +119,42 @@ impl Quantized {
         &self,
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
+        /* Extract the 16 x 6 bit values scales-mins pairs. The
+         * encoding of those values is odd because of performance
+         * reasons:
+         *
+         *  dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+         *  44000000|55111111|66222222|77333333|44000000|55111111
+         *
+         *  mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+         *  66222222|77333333|44444444|55555555|66666666|77777777
+         *
+         * In the above diagram you can see the 12 bytes and the
+         * scales/mins 6 bits encodings. */
         kernel_builder.write_global(wgsl! {
-           fn get_subblock_scale_min(so: u32, pair_index: u32) -> vec2<u32> {
-                let lower_half = vec2<u32>(
-                    (scales[so    ] >> (8u * pair_index)) & 63u,
-                    (scales[so + 1u] >> (8u * pair_index)) & 63u
+           fn extract_subblock_first_four(so: u32, pair_idx: u32) -> vec2<u32> {
+                return vec2<u32>(
+                    (scales[so    ] >> (8u * pair_idx)) & 63u,
+                    (scales[so + 1u] >> (8u * pair_idx)) & 63u
                 );
+           }
 
-                let shift = 8u * (pair_index - 4u);
+           fn extract_subblock_latter_four(so: u32, pair_idx: u32) -> vec2<u32> {
+                let shift = 8u * (pair_idx - 4u);
                 let dl = (scales[so + 2u] >> shift & 0xF);
                 let dh = (scales[so] >> (6u + shift)) & 0x3;
 
-                let ml = (scales[so + 2u] >> shift & 0xF0);
+                let ml = (scales[so + 2u] >> (shift + 4u) & 0xF);
                 let mh = (scales[so + 1u] >> (6u + shift)) & 0x3;
 
-                let upper_half = vec2<u32>((dh << 4u) | dl, (mh << 4u) | ml);
+                return vec2<u32>((dh << 4u) | dl, (mh << 4u) | ml);
+           }
 
+
+           fn get_subblock_scale_min(so: u32, pair_index: u32) -> vec2<u32> {
                 return select(
-                    upper_half,
-                    lower_half,
+                    extract_subblock_latter_four(so, pair_index),
+                    extract_subblock_first_four(so, pair_index),
                     pair_index < 4u
                 );
             }
