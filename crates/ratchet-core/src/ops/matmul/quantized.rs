@@ -120,16 +120,16 @@ impl Quantized {
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
         kernel_builder.write_global(wgsl! {
-            fn get_subblock_scale_min(scales_offset: u32, pair_index: u32) -> vec2<u32> {
-                let base_idx = scales_offset + (pair_index / 4u);
+           fn get_subblock_scale_min(scales_offset: u32, pair_index: u32) -> vec2<u32> {
+
+
                 return select(
                     vec2<u32>(
-                        scales[base_idx + 1u] & 0xF | (scales[base_idx - 1u] >> 6u) << 4,
-                        scales[base_idx + 1u] >> 4 | (scales[base_idx - 0u] >> 6u) << 4,
+                        //Some magic here
                     ),
                     vec2<u32>(
-                        scales[base_idx + 0u] & 63u,
-                        scales[base_idx + 1u] & 63u,
+                        (scales[scales_offset     ] >> (8u * pair_index)) & 63u,
+                        (scales[scales_offset + 1u] >> (8u * pair_index)) & 63u,
                     ),
                     pair_index < 4u
                 );
@@ -137,29 +137,17 @@ impl Quantized {
         });
 
         kernel_builder.write_main(wgsl! {
-            var scm = get_subblock_scale_min(0u, 0u);
+            var scm = get_subblock_scale_min(0u, 1u);
             var delta = f16(scm.x) * d[0];
             var min = f16(scm.y) * dmin[0];
-
-            //result[0] = f16(extractBits(A[0], 0u, 4u)) * delta - min;
             result[0] = delta;
             result[1] = min;
 
-            scm = get_subblock_scale_min(0u, 3u);
+            scm = get_subblock_scale_min(0u, 7u);
             delta = f16(scm.x) * d[0];
             min = f16(scm.y) * dmin[0];
             result[2] = delta;
             result[3] = min;
-
-            scm = get_subblock_scale_min(0u, 4u);
-            delta = f16(scm.x) * d[0];
-            min = f16(scm.y) * dmin[0];
-
-            result[4] = delta;
-            result[5] = min;
-
-
-
         });
 
         let x = kernel_builder.build()?;
