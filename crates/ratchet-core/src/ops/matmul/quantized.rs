@@ -132,20 +132,27 @@ impl Quantized {
          * In the above diagram you can see the 12 bytes and the
          * scales/mins 6 bits encodings. */
         kernel_builder.write_global(wgsl! {
-           fn extract_subblock_first_four(so: u32, pair_idx: u32) -> vec2<u32> {
-                return vec2<u32>(
-                    (scales[so    ] >> (8u * pair_idx)) & 63u,
-                    (scales[so + 1u] >> (8u * pair_idx)) & 63u
-                );
+           fn extract_subblock_first_four(soffset: u32, pair_idx: u32) -> vec2<u32> {
+                let s0 = scales[soffset]; //first 4 bytes
+                let s1 = scales[soffset + 1u];//bytes 4-7
+                let pair_bit_offset = (8u * pair_idx);
+                return vec2<u32>((s0 >> pair_bit_offset) & 63u, (s1 >> pair_bit_offset) & 63u);
            }
 
-           fn extract_subblock_latter_four(so: u32, pair_idx: u32) -> vec2<u32> {
-                let shift = 8u * (pair_idx - 4u);
-                let dl = (scales[so + 2u] >> shift & 0xF);
-                let dh = (scales[so] >> (6u + shift)) & 0x3;
+           fn extract_subblock_latter_four(soffset: u32, pair_idx: u32) -> vec2<u32> {
+                let s0 = scales[soffset]; //first 4 bytes
+                let s1 = scales[soffset + 1u];//bytes 4-7
+                let s2 = scales[soffset + 2u];//bytes 8-11
 
-                let ml = (scales[so + 2u] >> (shift + 4u) & 0xF);
-                let mh = (scales[so + 1u] >> (6u + shift)) & 0x3;
+                //All of the lower bits are in the last 4 bytes (s2)
+                //2bit values are distributed in 1-7 bytes
+                //[01][011101] == 29
+                let shift = 8u * (pair_idx - 4u);
+                let dl = (s2 >> shift & 0xF); //mask 4 bits
+                let dh = (s0 >> (6u + shift)) & 0x3; //mask 2 bits
+
+                let ml = (s2 >> (shift + 4u) & 0xF);
+                let mh = (s1 >> (6u + shift)) & 0x3;
 
                 return vec2<u32>((dh << 4u) | dl, (mh << 4u) | ml);
            }
