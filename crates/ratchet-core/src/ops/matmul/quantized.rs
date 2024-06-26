@@ -168,17 +168,65 @@ impl Quantized {
         });
 
         kernel_builder.write_main(wgsl! {
-            var scm = get_subblock_scale_min(0u, 1u);
-            var delta = f16(scm.x) * d[0];
-            var min = f16(scm.y) * dmin[0];
-            result[0] = delta;
-            result[1] = min;
+            var scm = get_subblock_scale_min(0u, 0u);
+            var delta = vec4<f16>(f16(scm.x) * d[0]);
+            var min = vec4<f16>(f16(scm.y) * dmin[0]);
 
-            scm = get_subblock_scale_min(0u, 7u);
-            delta = f16(scm.x) * d[0];
-            min = f16(scm.y) * dmin[0];
-            result[2] = delta;
-            result[3] = min;
+            //* We process two blocks per time, because each
+            //* 32 bytes have 64 weights stored like this:
+            //* First 32 weights of the first block are the higher 4
+            //* bits of each byte. Second 32 weights of the second
+            //* block are lower 4 bits of each byte.
+            let packed0 = vec4<u32>(A[0], A[1], A[2], A[3]); // first 16 bytes
+            let packed1 = vec4<u32>(A[4], A[5], A[6], A[7]); // second 16 bytes
+
+            let b_mask: u32 = 0x0F0F0F0Fu;
+            var b_value_lower: vec4<u32> = unpack4xU8(packed0.x & b_mask);
+            var b_value_upper: vec4<u32> = unpack4xU8((packed0.x >> 4) & b_mask);
+
+            var r: array<vec4<f16>, 16>;
+
+            r[0] = fma(vec4<f16>(b_value_lower), delta, -min);
+            b_value_lower = unpack4xU8(packed0.y & b_mask);
+            r[1] = fma(vec4<f16>(b_value_lower), delta, -min);
+            b_value_lower = unpack4xU8(packed0.z & b_mask);
+            r[2] = fma(vec4<f16>(b_value_lower), delta, -min);
+            b_value_lower = unpack4xU8(packed0.w & b_mask);
+            r[3] = fma(vec4<f16>(b_value_lower), delta, -min);
+            b_value_lower = unpack4xU8(packed1.x & b_mask);
+            r[4] = fma(vec4<f16>(b_value_lower), delta, -min);
+            b_value_lower = unpack4xU8(packed1.y & b_mask);
+            r[5] = fma(vec4<f16>(b_value_lower), delta, -min);
+            b_value_lower = unpack4xU8(packed1.z & b_mask);
+            r[6] = fma(vec4<f16>(b_value_lower), delta, -min);
+            b_value_lower = unpack4xU8(packed1.w & b_mask);
+            r[7] = fma(vec4<f16>(b_value_lower), delta, -min);
+
+            scm = get_subblock_scale_min(0u, 1u);
+            delta = vec4<f16>(f16(scm.x) * d[0]);
+            min = vec4<f16>(f16(scm.y) * dmin[0]);
+
+            r[8] = fma(vec4<f16>(b_value_upper), delta, -min);
+            b_value_upper = unpack4xU8((packed0.y >> 4) & b_mask);
+            r[9] = fma(vec4<f16>(b_value_upper), delta, -min);
+            b_value_upper = unpack4xU8((packed0.z >> 4) & b_mask);
+            r[10] = fma(vec4<f16>(b_value_upper), delta, -min);
+            b_value_upper = unpack4xU8((packed0.w >> 4) & b_mask);
+            r[11] = fma(vec4<f16>(b_value_upper), delta, -min);
+            b_value_upper = unpack4xU8((packed1.x >> 4) & b_mask);
+            r[12] = fma(vec4<f16>(b_value_upper), delta, -min);
+            b_value_upper = unpack4xU8((packed1.y >> 4) & b_mask);
+            r[13] = fma(vec4<f16>(b_value_upper), delta, -min);
+            b_value_upper = unpack4xU8((packed1.z >> 4) & b_mask);
+            r[14] = fma(vec4<f16>(b_value_upper), delta, -min);
+            b_value_upper = unpack4xU8((packed1.w >> 4) & b_mask);
+            r[15] = fma(vec4<f16>(b_value_upper), delta, -min);
+
+            for(var i =0; i < 16; i++) {
+                for(var j=0; j < 4; j++) {
+                    result[i * 4 + j] = r[i][j];
+                }
+            }
         });
 
         let x = kernel_builder.build()?;
