@@ -1,4 +1,5 @@
 #![allow(clippy::upper_case_acronyms)]
+pub mod bert;
 pub mod moondream;
 pub mod phi2;
 pub mod phi3;
