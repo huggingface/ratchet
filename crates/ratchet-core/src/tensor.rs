@@ -710,7 +710,7 @@ impl Tensor {
         order
     }
 
-    pub fn compile(
+    pub fn compile_gpu(
         &self,
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
@@ -769,7 +769,7 @@ impl Tensor {
             let to_modify = t.op().srcs()[0];
             let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
 
-            if let Some(compiled_op) = t.compile(&mut uniform, &device, can_inplace) {
+            if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace) {
                 compiled_ops.push(compiled_op);
             } else {
                 log::warn!("No compiled op for {:?}", t.op().name());
