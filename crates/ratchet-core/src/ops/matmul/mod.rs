@@ -544,6 +544,8 @@ impl MetaOperation for Matmul {
             let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
             let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
 
+            println!("WORK GROUP COUNT: {:?}", workgroup_count);
+
             Ok(Workload {
                 workgroup_count,
                 workgroup_size: wgs![8, 8, 1],

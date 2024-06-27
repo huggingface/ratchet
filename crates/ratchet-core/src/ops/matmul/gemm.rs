@@ -370,6 +370,7 @@ impl GEMM {
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
         const ROW_PER_THREAD: usize = 4;
+        const COL_PER_THREAD: usize = 4;
         const TILE_DIM: usize = 32;
 
         let accessor = P::render_type();
@@ -386,7 +387,7 @@ impl GEMM {
             let batchA = batch % metadata.aShape[0];
             let batchB = batch % metadata.bShape[0];
 
-            let tileRow = i32(local_invocation_id.y) * 4;
+            let tileRow = i32(local_invocation_id.y) * 'ROW_PER_THREAD;
             let tileCol = i32(local_invocation_id.x) * 4;
 
             let globalRowStart = i32(workgroup_id.y) * 'T_W;

@@ -61,23 +61,6 @@ impl Quantized {
 
         let ro = BindingMode::ReadOnly;
         match A.dt() {
-            DType::F32 | DType::F16 => {
-                builder.register_storage("A", ro, farr);
-                builder.register_storage("B", ro, farr);
-                if bias.is_some() {
-                    builder.register_storage("bias", BindingMode::ReadOnly, farr);
-                }
-                builder.register_storage("result", BindingMode::ReadWrite, farr);
-            }
-            DType::Q8_0F(_) | DType::Q8_0H(_) => {
-                builder.register_storage("A", ro, scalar_u32);
-                builder.register_storage("scale", ro, farr);
-                builder.register_storage("B", ro, scalar_farr);
-                if bias.is_some() {
-                    builder.register_storage("bias", BindingMode::ReadOnly, farr);
-                }
-                builder.register_storage("result", BindingMode::ReadWrite, farr);
-            }
             DType::Q4_KF(_) | DType::Q4_KH(_) => {
                 builder.register_storage("A", ro, scalar_u32);
                 builder.register_storage("scales", ro, scalar_u32);
@@ -165,6 +148,13 @@ impl Quantized {
                     pair_index < 4u
                 );
             }
+        });
+
+        let TW = 64;
+        let TH = 16;
+        kernel_builder.write_global(wgsl! {
+            var<workgroup> mm_Asub: array<array<f16, 'TW>, 'TH>;
+            var<workgroup> mm_Bsub: array<array<f16, 'TW>, 'TH>;
         });
 
         kernel_builder.write_main(wgsl! {
