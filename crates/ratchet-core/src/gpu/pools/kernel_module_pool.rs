@@ -1,5 +1,5 @@
 use crate::{
-    KernelKey, KernelSource, MetaOperation, OperationError, Tensor, WgpuDevice, WorkgroupSize,
+    GPUOperation, KernelKey, KernelSource, OperationError, Tensor, WgpuDevice, WorkgroupSize,
 };
 
 use super::static_resource_pool::{StaticResourcePool, StaticResourcePoolReadLockAccessor};
@@ -18,7 +18,7 @@ pub struct KernelModuleDesc {
 
 impl KernelModuleDesc {
     #[track_caller]
-    pub fn create_kernel_source<O: MetaOperation + ?Sized>(
+    pub fn create_kernel_source<O: GPUOperation + ?Sized>(
         &self,
         op: &O,
         inplace: bool,
@@ -41,7 +41,7 @@ impl KernelModulePool {
         }
     }
 
-    pub fn get_or_create<O: MetaOperation + ?Sized>(
+    pub fn get_or_create<O: GPUOperation + ?Sized>(
         &self,
         desc: &KernelModuleDesc,
         op: &O,

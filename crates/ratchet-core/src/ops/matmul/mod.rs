@@ -10,9 +10,9 @@ use std::cmp::Ordering;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor, WorkgroupSize,
-    Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+    rvec, wgc, wgs, DType, GPUOperation, InvariantError, KernelElement, KernelKey, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -25,6 +25,15 @@ pub enum GEMVHeuristic {
 }
 
 impl GEMVHeuristic {
+    pub fn new(arows: usize, acols: usize) -> Self {
+        match (arows, acols) {
+            (arows, acols) if arows > acols * 4 => GEMVHeuristic::VeryTall,
+            (arows, acols) if arows > acols * 2 => GEMVHeuristic::Tall,
+            (arows, acols) if acols > arows * 2 => GEMVHeuristic::Fat,
+            _ => GEMVHeuristic::Square,
+        }
+    }
+
     pub fn as_workgroup_size(&self) -> (usize, usize) {
         match self {
             GEMVHeuristic::Fat => (4, 256),
@@ -83,8 +92,6 @@ impl MatmulSpec {
             _ => {}
         };
 
-        let _b_rank = rhs_shape.rank();
-
         let stack_dims = c_shape.rank() - 2;
         let stack_shape = c_shape.slice(0..stack_dims);
 
@@ -114,12 +121,7 @@ impl MatmulSpec {
             stack_shape.numel(),
         );
 
-        let heuristic = match (lhs_shape[0], lhs_shape[1]) {
-            (arows, acols) if arows > acols * 4 => GEMVHeuristic::VeryTall,
-            (arows, acols) if arows > acols * 2 => GEMVHeuristic::Tall,
-            (arows, acols) if acols > arows * 2 => GEMVHeuristic::Fat,
-            _ => GEMVHeuristic::Square,
-        };
+        let heuristic = GEMVHeuristic::new(lhs_shape[0], lhs_shape[1]);
 
         Self {
             lhs_dt: a_dt,
@@ -249,6 +251,12 @@ impl MatmulSpec {
     }
 }
 
+enum MatmulKind {
+    GEMM(GEMM),
+    GEMV(GEMV),
+    Quantized(Quantized),
+}
+
 #[derive(Debug, Clone)]
 pub struct Matmul {
     pub(crate) lhs: Tensor,
@@ -257,6 +265,7 @@ pub struct Matmul {
     pub(crate) trans_lhs: bool,
     pub(crate) trans_rhs: bool,
     pub(crate) trans_out: bool,
+    pub(crate) kind: MatmulKind,
 }
 
 impl Matmul {
@@ -276,13 +285,21 @@ impl Matmul {
             panic!("Transposed quantized inputs are not supported");
         }
 
-        Self {
-            lhs,
-            rhs,
-            bias,
-            trans_lhs,
-            trans_rhs,
-            trans_out,
+        //here we do our Operation Selection
+        match lhs.dt() {
+            DType::F32 | DType::F16 | DType::Q8_0F(_) | DType::Q8_0H(_) => {
+                todo!()
+            }
+            DType::Q4_KF(_) | DType::Q4_KH(_) => Self {
+                lhs,
+                rhs,
+                bias,
+                trans_lhs,
+                trans_rhs,
+                trans_out,
+                kind: MatmulKind::Quantized(Quantized::default()),
+            },
+            _ => panic!("Unsupported DType: {:?}", lhs.dt()),
         }
     }
 
@@ -390,6 +407,14 @@ impl Operation for Matmul {
         let c_strides = Strides::from(&c_shape);
         Ok(StorageView::new(c_shape, self.rhs.dt(), c_strides))
     }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        if let Some(bias) = &self.bias {
+            rvec![&self.lhs, &self.rhs, bias]
+        } else {
+            rvec![&self.lhs, &self.rhs]
+        }
+    }
 }
 
 impl OpGuards for Matmul {
@@ -434,7 +459,7 @@ impl OpGuards for Matmul {
     }
 }
 
-impl MetaOperation for Matmul {
+impl Kernel for Matmul {
     fn kernel_name(&self) -> String {
         "Matmul".to_string()
     }
@@ -480,14 +505,6 @@ impl MetaOperation for Matmul {
         )
     }
 
-    fn srcs(&self) -> RVec<&Tensor> {
-        if let Some(bias) = &self.bias {
-            rvec![&self.lhs, &self.rhs, bias]
-        } else {
-            rvec![&self.lhs, &self.rhs]
-        }
-    }
-
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         let spec = self.compute_spec(dst);
         spec.select_kernel_element()
@@ -520,31 +537,6 @@ impl MetaOperation for Matmul {
                 })
             }
         } else {
-            //GEMM
-            let TILE_DIM = 32;
-            let lhs_shape = spec.lhs_shape();
-            let rhs_shape = spec.rhs_shape();
-
-            let dimA = if self.trans_lhs {
-                lhs_shape[1]
-            } else {
-                lhs_shape[0]
-            };
-
-            let dimB = if self.trans_rhs {
-                rhs_shape[0]
-            } else {
-                rhs_shape[1]
-            };
-
-            let group_x = WorkgroupCount::div_ceil(dimB as _, TILE_DIM);
-            let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
-            let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
-
-            Ok(Workload {
-                workgroup_count,
-                workgroup_size: wgs![8, 8, 1],
-            })
         }
     }
 
@@ -600,7 +592,7 @@ impl MetaOperation for Matmul {
                     gemv.build_kernel(inplace, dst, workgroup_size, spec)
                 } else {
                     let gemm: GEMM = self.clone().into();
-                    gemm.build_kernel(inplace, dst, workgroup_size, spec)
+                    gemm.build_kernel(inplace, dst, workgroup_size)
                 }
             }
             DType::Q4_KF(_) | DType::Q4_KH(_) => {
@@ -611,6 +603,8 @@ impl MetaOperation for Matmul {
         }
     }
 }
+
+impl GPUOperation for Matmul {}
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {

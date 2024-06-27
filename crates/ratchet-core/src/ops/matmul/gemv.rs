@@ -30,6 +30,7 @@ impl From<Matmul> for GEMV {
             trans_lhs,
             trans_rhs,
             trans_out,
+            ..
         } = matmul;
         GEMV {
             lhs,

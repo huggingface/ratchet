@@ -23,7 +23,7 @@ impl Kernel for Concat {
         inplace: bool,
     ) -> Result<(), OperationError> {
         if inplace {
-            return Err(OperationError::InplaceError(self.kernel_name()));
+            return Err(OperationError::InplaceError(self.op_name()));
         }
         let arr = Array::<P>::default();
         for i in 0..self.inputs.len() {

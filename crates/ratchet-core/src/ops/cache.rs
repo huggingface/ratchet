@@ -8,9 +8,9 @@ use wgpu::BindGroupLayoutEntry;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, Kernel, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2,
-    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
+    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 /// # Cache
@@ -36,7 +36,7 @@ impl Kernel for Cache {
         inplace: bool,
     ) -> Result<(), OperationError> {
         if inplace {
-            return Err(OperationError::InplaceError(self.kernel_name()));
+            return Err(OperationError::InplaceError(self.op_name()));
         }
 
         builder.register_storage("C", BindingMode::ReadWrite, Array::<P>::default());
@@ -126,6 +126,10 @@ impl OpGuards for Cache {
 }
 
 impl Operation for Cache {
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.cache, &self.source]
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let mut result_shape = self.cache.shape().clone();
         result_shape[self.dim] = self.offset + self.source.shape()[self.dim];
@@ -136,19 +140,15 @@ impl Operation for Cache {
             result_strides,
         ))
     }
-}
-
-impl MetaOperation for Cache {
-    fn kernel_name(&self) -> String {
-        "cache".to_string()
-    }
 
     fn supports_inplace(&self) -> bool {
         false
     }
+}
 
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.cache, &self.source]
+impl GPUOperation for Cache {
+    fn kernel_name(&self) -> String {
+        "cache".to_string()
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

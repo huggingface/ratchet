@@ -6,9 +6,10 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, Kernel, KernelElement, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
-    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, InvariantError, Kernel, KernelElement,
+    KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
+    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -152,19 +153,19 @@ impl Operation for Binary {
         let ostrides = Strides::from(&broadcasted);
         Ok(StorageView::new(broadcasted, lhs.dt(), ostrides))
     }
-}
 
-impl MetaOperation for Binary {
-    fn kernel_name(&self) -> String {
-        self.op.kernel_name().to_string()
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.lhs, &self.rhs]
     }
 
     fn supports_inplace(&self) -> bool {
         true
     }
+}
 
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.lhs, &self.rhs]
+impl GPUOperation for Binary {
+    fn kernel_name(&self) -> String {
+        self.op.kernel_name().to_string()
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {

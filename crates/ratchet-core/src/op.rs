@@ -3,7 +3,7 @@ use crate::gpu::{
     PoolError, WgpuDevice,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelModuleDesc, RVec,
+    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError, KernelModuleDesc, RVec,
     StorageView, Tensor, WgslFragment, WorkgroupSize, Workload,
 };
 use encase::internal::WriteInto;
@@ -221,56 +221,70 @@ impl std::fmt::Display for KernelSource {
     }
 }
 
-/// # MetaOperation
+/// # Operation Guards - Runtime guards for operation correctness.
 ///
-/// Meta Operation is a family of operations that can be compiled into relatively similar shaders.
-/// Some types may implement both Operation and MetaOperation, if there is no variance
-/// in output shape or invariants between the members of the family.
-pub trait MetaOperation: Debug + 'static {
-    /// Kernel Name
-    fn kernel_name(&self) -> String;
+/// Guards should be implemented for all types that will be a node on the high-level CFG.
+/// It is used to ensure that the operation is valid and that the resultant tensor is correctly
+/// shaped.
+///
+/// The Rust type system is not sufficient to check all invariants at compile time (we need
+/// dependent types). Therefore, we move the checks to runtime.
+///
+/// All of these methods panic, as they're unrecoverable errors.
+pub trait OpGuards {
+    #[track_caller]
+    fn check_shapes(&self);
 
-    /// # Kernel Key
+    #[track_caller]
+    fn check_dtypes(&self);
+
+    // Some operations may have custom invariants to be upheld.
+    // e.g reduction dimension being within rank
+    #[track_caller]
+    fn check_custom(&self) {}
+}
+
+/// # Operation
+///
+/// Operation should be implemented for all types that will be a node on the high-level CFG.
+///
+/// Hardware invariant functions.
+pub trait Operation: OpGuards + Debug + 'static {
+    /// # Check Invariants
     ///
-    /// Construct a unique cache key for a kernel.
-    /// If the key is registered in the compute module pool, the module is reused.
-    ///
-    /// Default implementation is provided, but care must be taken to ensure that the key is
-    /// unique via the `additional` parameter.
-    fn kernel_key(
-        &self,
-        workgroup_size: &WorkgroupSize,
-        inplace: bool,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> KernelKey {
-        KernelKey::new(
-            &self.kernel_name(),
-            &self.srcs(),
-            dst,
-            workgroup_size,
-            inplace,
-            kernel_element,
-            None,
-        )
+    /// All operations have some invariants that must be upheld to ensure correctness.
+    fn check_invariants(&self) {
+        self.check_shapes();
+        self.check_dtypes();
+        self.check_custom();
     }
+    /// # Compute View
+    ///
+    /// Determine the type, shape & strides of the resultant tensor.
+    fn compute_view(&self) -> Result<StorageView, OperationError>;
 
+    /// # Source Tensors
     fn srcs(&self) -> RVec<&Tensor>;
 
+    /// # Supports Inplace
+    ///
+    /// Determine if the operation can be performed in-place.
     fn supports_inplace(&self) -> bool {
         false
     }
+}
 
-    /// # Kernel Element
-    ///
-    /// Determine the largest possible unit data type that can be used (e.g f32, vec2<f32>, vec4<f32>)
-    fn kernel_element(&self, dst: &Tensor) -> KernelElement;
-
-    /// # Calculate Dispatch
-    ///
-    /// Determine required amount of workgroups to execute the operation.
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError>;
-
+/// An GPU implementation of an operation.
+///
+/// Default implementation of compilation is provided.
+///
+/// May defer the actual kernel building to another sub-implementation of GPUOperation, e.g:
+/// Matmul ─┐
+///         ├ GEMM (implements Renderable)
+///         ├ GEMV
+///         ├ QGEMM
+///         └ QGEMV
+pub trait GPUOperation: Operation + Kernel {
     /// # Storage Bind Group Layout
     ///
     /// Determine the layout of the storage bind group.
@@ -279,27 +293,7 @@ pub trait MetaOperation: Debug + 'static {
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError>;
 
-    /// # Metadata
-    ///
-    /// Each kernel has zero or more required metadata fields (e.g shape, strides, etc).
-    /// This is stored in a uniform buffer, for faster access.
-    ///
-    /// The metadata is limited to 256 bytes per kernel.
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<u64, OperationError>;
-
-    fn build_kernel(
-        &self,
-        inplace: bool,
-        dst: &Tensor,
-        workgroup_size: &WorkgroupSize,
-    ) -> Result<KernelSource, OperationError>;
-
-    fn compile_gpu(
+    fn compile(
         &self,
         dst: &Tensor,
         uniform: &mut CpuUniform,
@@ -358,48 +352,4 @@ pub trait MetaOperation: Debug + 'static {
             kernel_src_desc.key,
         ))
     }
-}
-
-/// # Operation Guards - Runtime guards for operation correctness.
-///
-/// Guards should be implemented for all types that will be a node on the high-level CFG.
-/// It is used to ensure that the operation is valid and that the resultant tensor is correctly
-/// shaped.
-///
-/// The Rust type system is not sufficient to check all invariants at compile time (we need
-/// dependent types). Therefore, we move the checks to runtime.
-///
-/// All of these methods panic, as they're unrecoverable errors.
-pub trait OpGuards {
-    #[track_caller]
-    fn check_shapes(&self);
-
-    #[track_caller]
-    fn check_dtypes(&self);
-
-    // Some operations may have custom invariants to be upheld.
-    // e.g reduction dimension being within rank
-    #[track_caller]
-    fn check_custom(&self) {}
-}
-
-/// # Operation
-///
-/// Operation should be implemented for all types that will be a node on the high-level CFG.
-///
-/// An Operation is a member of a family of operations, called a MetaOperation, it may be the only
-/// member.
-pub trait Operation: OpGuards + Debug + 'static {
-    /// # Check Invariants
-    ///
-    /// All operations have some invariants that must be upheld to ensure correctness.
-    fn check_invariants(&self) {
-        self.check_shapes();
-        self.check_dtypes();
-        self.check_custom();
-    }
-    /// # Compute View
-    ///
-    /// Determine the type, shape & strides of the resultant tensor.
-    fn compute_view(&self) -> Result<StorageView, OperationError>;
 }
