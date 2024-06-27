@@ -299,7 +299,7 @@ pub trait MetaOperation: Debug + 'static {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError>;
 
-    fn compile(
+    fn compile_gpu(
         &self,
         dst: &Tensor,
         uniform: &mut CpuUniform,
