@@ -16,6 +16,7 @@ use std::fmt::Debug;
 pub enum LazyOp {
     Const,
     Matmul(Matmul),
+    Conv(Conv),
     Binary(Binary),
     Unary(Unary),
     Reindex(Reindex),
@@ -26,7 +27,6 @@ pub enum LazyOp {
     RoPE(RoPE),
     Softmax(Softmax),
     View(View),             //Should be general class, metadata modification
-    Conv(Conv),             //Really it's a matmul
     Select(IndexSelect),    //Can probably be Reindex
     IndexWrite(IndexWrite), //Above 2 should be merged
     Cache(Cache),           //Should be a general class
@@ -141,6 +141,8 @@ pub enum OperationError {
     UniformError(#[from] encase::internal::Error),
     #[error(transparent)]
     UnknownError(#[from] anyhow::Error),
+    #[error("Cannot inplace operation: {0}")]
+    InplaceError(String),
 }
 
 /// # OpMetadata
@@ -175,24 +177,20 @@ impl KernelKey {
         kernel_element: &KernelElement,
         additional: Option<&str>,
     ) -> Self {
-        let mut key = stem.to_string();
-        key.push('_');
-        for input in inputs {
-            key.push_str(&input.dt().to_string());
-            key.push('_');
-        }
-        key.push_str(&output.dt().to_string());
-        key.push('_');
-        key.push_str(&workgroup_size.as_key());
-        key.push('_');
-        key.push_str(&inplace.to_string());
-        key.push('_');
-        if let Some(add) = additional {
-            key.push_str(add);
-            key.push('_');
-        }
-        key.push_str(kernel_element.as_str());
-        Self(key)
+        let input_dts = inputs.iter().map(|t| t.dt().as_str());
+        let inplace_str = if inplace { "ip" } else { "oop" };
+
+        let key_parts: Vec<Cow<'_, str>> = vec![
+            Cow::Borrowed(stem),
+            Cow::Owned(input_dts.collect::<Vec<_>>().join("_")),
+            Cow::Owned(output.dt().to_string()),
+            Cow::Owned(workgroup_size.as_key()),
+            Cow::Borrowed(inplace_str),
+            Cow::Borrowed(additional.unwrap_or("")),
+            Cow::Borrowed(kernel_element.as_str()),
+        ];
+
+        Self(key_parts.into_iter().collect::<Vec<_>>().join("_"))
     }
 }
 

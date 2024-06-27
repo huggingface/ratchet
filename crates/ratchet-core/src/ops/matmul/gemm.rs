@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, CpuUniform, DType, GEMMSpec,
-    InvariantError, KernelElement, KernelSource, Matmul, OperationError, Scalar, Strides, Tensor,
-    Vec2, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, CpuUniform, DType, InvariantError,
+    KernelElement, KernelSource, Matmul, MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec2,
+    Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -58,7 +58,7 @@ pub struct GEMMMeta {
 impl GEMMMeta {
     pub(crate) fn write_metadata(
         uniform: &mut CpuUniform,
-        spec: &GEMMSpec,
+        spec: &MatmulSpec,
     ) -> Result<u64, OperationError> {
         let mut lhs_shape = spec.lhs_shape.clone();
         lhs_shape.insert(0, spec.lhs_stack());
@@ -165,7 +165,7 @@ impl GEMM {
             DType::Q8_0F(_) | DType::Q8_0H(_) => {
                 builder.write_global(wgsl! {
                     fn getB(d0 : i32, d1 : i32, d2 : i32) -> 'dt {
-                        return f32(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 'W]);
+                        return 'dt(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 'W]);
                     }
                 });
             }
@@ -327,7 +327,7 @@ impl GEMM {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: GEMMSpec,
+        spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = spec.select_kernel_element();
         match (self.lhs.dt(), kernel_element) {
@@ -657,7 +657,7 @@ impl GEMM {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: GEMMSpec,
+        spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(

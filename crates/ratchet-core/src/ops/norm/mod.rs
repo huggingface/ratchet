@@ -52,7 +52,7 @@ impl NormOp {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        inplace: bool,
+        _: bool,
     ) -> Result<(), OperationError> {
         let arr = Array::<P>::default();
         builder.register_storage("X", BindingMode::ReadOnly, arr);

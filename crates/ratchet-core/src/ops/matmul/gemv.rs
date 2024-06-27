@@ -4,8 +4,8 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, CpuUniform, DType, GEMMMeta,
-    GEMMSpec, InvariantError, KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor,
-    Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    InvariantError, KernelElement, KernelSource, Matmul, MatmulSpec, OperationError, Scalar,
+    Tensor, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -59,7 +59,7 @@ pub struct WorkgroupGEMVMeta {
 impl WorkgroupGEMVMeta {
     pub(crate) fn write_metadata(
         uniform: &mut CpuUniform,
-        spec: &GEMMSpec,
+        spec: &MatmulSpec,
     ) -> Result<u64, OperationError> {
         GEMMMeta::write_metadata(uniform, spec)
     }
@@ -75,7 +75,7 @@ pub struct SubgroupGEMVMeta {
 impl SubgroupGEMVMeta {
     pub(crate) fn write_metadata(
         uniform: &mut CpuUniform,
-        spec: &GEMMSpec,
+        spec: &MatmulSpec,
     ) -> Result<u64, OperationError> {
         let meta = SubgroupGEMVMeta {
             OVL: spec.new_dim_lhs_outer() as _,
@@ -158,7 +158,7 @@ impl GEMV {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: GEMMSpec,
+        spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = KernelElement::Scalar;
         match (self.lhs.dt(), kernel_element) {
@@ -183,7 +183,7 @@ impl GEMV {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: GEMMSpec,
+        spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -335,7 +335,7 @@ impl GEMV {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
-        _: GEMMSpec,
+        _: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         const TM: usize = 4;
         const TN: usize = 4;
@@ -562,7 +562,7 @@ impl GEMV {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: GEMMSpec,
+        spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         if device.compute_features().SUBGROUP {

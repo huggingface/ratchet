@@ -17,6 +17,7 @@ pub struct KernelModuleDesc {
 }
 
 impl KernelModuleDesc {
+    #[track_caller]
     pub fn create_kernel_source<O: MetaOperation + ?Sized>(
         &self,
         op: &O,
@@ -52,7 +53,7 @@ impl KernelModulePool {
         self.pool.get_or_create(desc, |desc| {
             let source = desc
                 .create_kernel_source(op, inplace, dst, workgroup_size)
-                .unwrap();
+                .expect("Failed to create kernel source");
 
             let shader_module_desc = wgpu::ShaderModuleDescriptor {
                 label: Some(desc.key.as_str()),

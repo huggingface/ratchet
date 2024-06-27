@@ -5,9 +5,9 @@ use inline_wgsl::wgsl;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, UNIFORM_ALIGN},
-    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, Kernel, KernelElement, KernelSource, MetaOperation,
+    OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -16,12 +16,15 @@ pub struct Concat {
     dim: usize,
 }
 
-impl Concat {
+impl Kernel for Concat {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        _: bool,
+        inplace: bool,
     ) -> Result<(), OperationError> {
+        if inplace {
+            return Err(OperationError::InplaceError(self.kernel_name()));
+        }
         let arr = Array::<P>::default();
         for i in 0..self.inputs.len() {
             builder.register_storage(format!("X{}", i).as_str(), BindingMode::ReadOnly, arr);
@@ -31,22 +34,7 @@ impl Concat {
         Ok(())
     }
 
-    //TODO: bodge, should be connected to the data
-    fn write_metadata(&self, builder: &mut WgslKernelBuilder) {
-        builder.write_global(r#"struct Meta {"#);
-        for i in 0..self.inputs.len() {
-            builder.write_global(format!("x{}_stride: vec4<u32>,", i).as_str());
-        }
-        builder.write_global(r#"dst_stride: vec4<u32>,"#);
-        builder.write_global(r#"dst_numel: u32,"#);
-        for i in 0..self.inputs.len() {
-            builder.write_global(format!("cum{}: u32,", i).as_str());
-        }
-        builder.write_global(r#"dim: u32"#);
-        builder.write_global("}\n");
-    }
-
-    fn build_concat<P: WgslPrimitive>(
+    fn build<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -103,6 +91,23 @@ impl Concat {
         }
 
         Ok(kernel_builder.build()?)
+    }
+}
+
+impl Concat {
+    //TODO: bodge, should be connected to the data
+    fn write_metadata(&self, builder: &mut WgslKernelBuilder) {
+        builder.write_global(r#"struct Meta {"#);
+        for i in 0..self.inputs.len() {
+            builder.write_global(format!("x{}_stride: vec4<u32>,", i).as_str());
+        }
+        builder.write_global(r#"dst_stride: vec4<u32>,"#);
+        builder.write_global(r#"dst_numel: u32,"#);
+        for i in 0..self.inputs.len() {
+            builder.write_global(format!("cum{}: u32,", i).as_str());
+        }
+        builder.write_global(r#"dim: u32"#);
+        builder.write_global("}\n");
     }
 }
 
@@ -226,22 +231,22 @@ impl MetaOperation for Concat {
         let kernel_element = self.kernel_element(dst);
         match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_concat::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_concat::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_concat::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_concat::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_concat::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_concat::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    dtype::Segments, ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device,
-    DeviceStorage, Executable, GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation,
-    OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
+    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
+    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
 use npyz::WriterBuilder;
@@ -736,20 +736,21 @@ impl Tensor {
     }
 
     pub fn resolve(self) -> Result<Tensor, TensorError> {
+        match self.device().clone() {
+            Device::GPU(g) => self.resolve_gpu(g),
+            Device::CPU => unimplemented!("CPU backend is not implemented! Help wanted!"),
+            //Device::NPU => self.resolve_npu(),
+        }
+    }
+
+    fn resolve_gpu(self, device: WgpuDevice) -> Result<Tensor, TensorError> {
         let mut uniform = CpuUniform::new();
-        let device = self.device().try_gpu()?;
         device.begin_pass();
 
         let execution_order = self.execution_order();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
-        let mut allocations = device.allocate_cfg(&execution_order, device)?;
-
-        #[cfg(feature = "plotting")]
-        {
-            let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "pre-alloc.svg").unwrap();
-        }
+        let mut allocations = device.allocate_cfg(&execution_order, &device)?;
 
         for t in execution_order.iter() {
             log::debug!("Compiling: {:?}", t.op().name());
@@ -768,20 +769,15 @@ impl Tensor {
             let to_modify = t.op().srcs()[0];
             let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
 
-            if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
+            if let Some(compiled_op) = t.compile(&mut uniform, &device, can_inplace) {
                 compiled_ops.push(compiled_op);
             } else {
                 log::warn!("No compiled op for {:?}", t.op().name());
             }
         }
-        #[cfg(feature = "plotting")]
-        {
-            let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "alloc.svg").unwrap();
-        }
 
-        let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
-        let index = executable.dispatch_operations(device).unwrap();
+        let executable = Executable::new(compiled_ops, uniform.into_gpu(&device)?);
+        let index = executable.dispatch(&device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(self)
     }

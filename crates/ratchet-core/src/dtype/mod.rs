@@ -24,17 +24,7 @@ pub enum DType {
 
 impl std::fmt::Display for DType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DType::F16 => write!(f, "F16"),
-            DType::BF16 => write!(f, "BF16"),
-            DType::F32 => write!(f, "F32"),
-            DType::I32 => write!(f, "I32"),
-            DType::U32 => write!(f, "U32"),
-            DType::Q8_0H(_) => write!(f, "Q8_0H"),
-            DType::Q8_0F(_) => write!(f, "Q8_0F"),
-            DType::Q4_KH(_) => write!(f, "Q4_KH"),
-            DType::Q4_KF(_) => write!(f, "Q4_KF"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -44,6 +34,20 @@ impl DType {
             DType::F32 => 0,
             DType::F16 => 1,
             _ => unimplemented!(),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DType::F16 => "F16",
+            DType::BF16 => "BF16",
+            DType::F32 => "F32",
+            DType::I32 => "I32",
+            DType::U32 => "U32",
+            DType::Q8_0H(_) => "Q8_0H",
+            DType::Q8_0F(_) => "Q8_0F",
+            DType::Q4_KH(_) => "Q4_KH",
+            DType::Q4_KF(_) => "Q4_KF",
         }
     }
 

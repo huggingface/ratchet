@@ -344,14 +344,4 @@ def softmax(a):
         let problem = SoftmaxProblem { B: 1, M: 2, N: 128 };
         run_softmax_trial(problem);
     }
-
-    #[test]
-    fn test_render_softmax() {
-        let device = GPU_DEVICE.with(|d| d.clone());
-        let a = Tensor::randn::<f16>(shape![1, 2, 128], device.clone());
-        let dst = Tensor::zeros::<f16>(&shape![1, 2, 128], &device);
-        let op = Softmax::new(a, 2);
-        let wgs = wgs![128, 1, 1];
-        let _ = op.build_kernel(true, &dst, &wgs);
-    }
 }

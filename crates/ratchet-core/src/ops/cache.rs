@@ -8,9 +8,9 @@ use wgpu::BindGroupLayoutEntry;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, Kernel, KernelElement, KernelSource, MetaOperation,
+    OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 /// # Cache
@@ -29,12 +29,16 @@ pub struct Cache {
     offset: usize,
 }
 
-impl Cache {
+impl Kernel for Cache {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        _: bool,
+        inplace: bool,
     ) -> Result<(), OperationError> {
+        if inplace {
+            return Err(OperationError::InplaceError(self.kernel_name()));
+        }
+
         builder.register_storage("C", BindingMode::ReadWrite, Array::<P>::default());
         builder.register_storage("S", BindingMode::ReadOnly, Array::<P>::default());
         builder.register_storage("D", BindingMode::ReadWrite, Array::<P>::default());
@@ -43,15 +47,12 @@ impl Cache {
         Ok(())
     }
 
-    fn build_cache<P: WgslPrimitive>(
+    fn build<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
-    ) -> Result<KernelSource, OperationError>
-    where
-        P::T: num_traits::Float,
-    {
+    ) -> Result<KernelSource, OperationError> {
         let device = self.cache.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
@@ -215,22 +216,22 @@ impl MetaOperation for Cache {
         let kernel_element = self.kernel_element(dst);
         match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_cache::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_cache::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_cache::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_cache::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_cache::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_cache::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

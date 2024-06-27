@@ -17,6 +17,7 @@ pub struct Cast {
     dst_dt: DType,
 }
 
+//Kernel cannot implement standard cast as it has multiple type bounds
 impl Cast {
     fn register_bindings<SP: WgslPrimitive, DP: WgslPrimitive>(
         &self,
@@ -130,8 +131,7 @@ impl MetaOperation for Cast {
         _: &KernelElement,
     ) -> Result<u64, OperationError> {
         let numel = self.input.shape().numel() as u32;
-        let meta = CastMeta { numel };
-        Ok(uniform.write(&meta)?)
+        Ok(uniform.write(&CastMeta { numel })?)
     }
 
     fn build_kernel(

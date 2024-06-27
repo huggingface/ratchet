@@ -8,13 +8,11 @@ pub use quantized::*;
 
 use std::cmp::Ordering;
 
-use encase::ShaderType;
-
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
-    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
-    WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+    OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor, WorkgroupSize,
+    Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -37,7 +35,7 @@ impl GEMVHeuristic {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct GEMMSpec {
+pub struct MatmulSpec {
     lhs_dt: DType,
     rhs_dt: DType,
     lhs_shape: Shape,
@@ -50,13 +48,12 @@ pub struct GEMMSpec {
     trans_rhs: bool,
     trans_out: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
-    pub heuristic: GEMVHeuristic, //TODO: split this
+    pub heuristic: GEMVHeuristic,
 }
 
-impl GEMMSpec {
-    //TODO: variable tiles
-    pub const TILE_DIM: usize = 32;
+impl MatmulSpec {
     pub const ROW_PER_THREAD: usize = 4;
+    pub const TILE_DIM: usize = 32;
 
     pub fn new(
         LHS: &Tensor,
@@ -368,8 +365,8 @@ impl Matmul {
         Ok(c_shape_final)
     }
 
-    pub fn compute_spec(&self, dst: &Tensor) -> GEMMSpec {
-        GEMMSpec::new(
+    pub fn compute_spec(&self, dst: &Tensor) -> MatmulSpec {
+        MatmulSpec::new(
             &self.lhs,
             &self.rhs,
             dst,
@@ -544,8 +541,6 @@ impl MetaOperation for Matmul {
             let group_y = WorkgroupCount::div_ceil(dimA, TILE_DIM);
             let workgroup_count = wgc![group_x as _, group_y as _, spec.stacks() as _];
 
-            println!("WORK GROUP COUNT: {:?}", workgroup_count);
-
             Ok(Workload {
                 workgroup_count,
                 workgroup_size: wgs![8, 8, 1],
@@ -558,6 +553,7 @@ impl MetaOperation for Matmul {
         _: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         let (LHS, _, bias) = (&self.lhs, &self.rhs, &self.bias);
+
         let layout = match (LHS.dt(), bias.is_some()) {
             (DType::F32 | DType::F16, false) => BindGroupLayoutDescriptor::binary(),
             (DType::F32 | DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
@@ -598,7 +594,7 @@ impl MetaOperation for Matmul {
         let spec = self.compute_spec(dst);
 
         match self.lhs.dt() {
-            DType::F32 | DType::F16 => {
+            DType::F32 | DType::F16 | DType::Q8_0F(_) | DType::Q8_0H(_) => {
                 if spec.is_gemv() {
                     let gemv: GEMV = self.clone().into();
                     gemv.build_kernel(inplace, dst, workgroup_size, spec)
@@ -607,7 +603,7 @@ impl MetaOperation for Matmul {
                     gemm.build_kernel(inplace, dst, workgroup_size, spec)
                 }
             }
-            DType::Q8_0F(_) | DType::Q8_0H(_) | DType::Q4_KF(_) | DType::Q4_KH(_) => {
+            DType::Q4_KF(_) | DType::Q4_KH(_) => {
                 let quantized: Quantized = self.clone().into();
                 quantized.build_kernel(inplace, dst, workgroup_size, spec)
             }

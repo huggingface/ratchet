@@ -3,8 +3,8 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, GEMMSpec, InvariantError,
-    KernelElement, KernelSource, Matmul, OperationError, Scalar, Tensor, Vec2, Vec4, WgslFragment,
+    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
+    KernelSource, Matmul, MatmulSpec, OperationError, Scalar, Tensor, Vec2, Vec4, WgslFragment,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
@@ -84,7 +84,7 @@ impl Quantized {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: GEMMSpec,
+        spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = spec.select_kernel_element();
         match (self.lhs.dt(), kernel_element) {
@@ -229,7 +229,7 @@ impl Quantized {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: GEMMSpec,
+        spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(

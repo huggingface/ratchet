@@ -6,7 +6,7 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement, KernelSource,
+    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, Kernel, KernelElement, KernelSource,
     MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
     Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
@@ -49,12 +49,25 @@ pub struct Binary {
     op: BinaryOp,
 }
 
-impl Binary {
-    pub fn op(&self) -> &BinaryOp {
-        &self.op
+impl Kernel for Binary {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        if inplace {
+            builder.register_storage("A", BindingMode::ReadWrite, Array::<P>::default());
+            builder.register_storage("B", BindingMode::ReadOnly, Array::<P>::default());
+        } else {
+            builder.register_storage("A", BindingMode::ReadOnly, Array::<P>::default());
+            builder.register_storage("B", BindingMode::ReadOnly, Array::<P>::default());
+            builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
+        }
+        builder.register_uniform();
+        Ok(())
     }
 
-    fn build_binary<P: WgslPrimitive>(
+    fn build<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -96,22 +109,11 @@ impl Binary {
         kernel_builder.write_main(apply);
         Ok(kernel_builder.build()?)
     }
+}
 
-    fn register_bindings<P: WgslPrimitive>(
-        &self,
-        builder: &mut WgslKernelBuilder,
-        inplace: bool,
-    ) -> Result<(), OperationError> {
-        if inplace {
-            builder.register_storage("A", BindingMode::ReadWrite, Array::<P>::default());
-            builder.register_storage("B", BindingMode::ReadOnly, Array::<P>::default());
-        } else {
-            builder.register_storage("A", BindingMode::ReadOnly, Array::<P>::default());
-            builder.register_storage("B", BindingMode::ReadOnly, Array::<P>::default());
-            builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
-        }
-        builder.register_uniform();
-        Ok(())
+impl Binary {
+    pub fn op(&self) -> &BinaryOp {
+        &self.op
     }
 }
 
@@ -212,22 +214,22 @@ impl MetaOperation for Binary {
         let kernel_element = self.kernel_element(dst);
         match (self.lhs.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_binary::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_binary::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_binary::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_binary::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_binary::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_binary::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

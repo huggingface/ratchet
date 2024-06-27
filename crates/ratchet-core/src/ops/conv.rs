@@ -6,7 +6,7 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource,
+    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, DType, Kernel, KernelElement, KernelSource,
     MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
     Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
@@ -22,7 +22,7 @@ pub struct Conv {
     //dilation: usize, TODO: implement dilation
 }
 
-impl Conv {
+impl Kernel for Conv {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -37,8 +37,7 @@ impl Conv {
         Ok(())
     }
 
-    ///TODO: THIS CONV IS STUPID
-    fn build_conv<P: WgslPrimitive>(
+    fn build<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -196,22 +195,22 @@ impl MetaOperation for Conv {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_conv::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_conv::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_conv::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_conv::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_conv::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_conv::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
