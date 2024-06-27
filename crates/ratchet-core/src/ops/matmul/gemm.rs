@@ -3,15 +3,32 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindGroupLayoutDescriptor, BindingMode, BuiltIn,
-    CpuUniform, DType, GPUOperation, InvariantError, Kernel, KernelElement, KernelRender,
-    KernelSource, MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec2, Vec4, WgslFragment,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupCount, WorkgroupSize, Workload,
+    gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindingMode, BuiltIn, CpuUniform, DType,
+    GPUOperation, InvariantError, Kernel, KernelElement, KernelRender, KernelSource, MatmulSpec,
+    OperationError, Scalar, Strides, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupCount, WorkgroupSize, Workload,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
 
-pub struct GEMM;
+use super::MatmulInner;
+
+pub struct GEMM(MatmulInner);
+
+impl GEMM {
+    pub fn new(
+        lhs: Tensor,
+        rhs: Tensor,
+        bias: Option<Tensor>,
+        trans_lhs: bool,
+        trans_rhs: bool,
+        trans_out: bool,
+    ) -> Self {
+        Self(MatmulInner::new(
+            lhs, rhs, bias, trans_lhs, trans_rhs, trans_out,
+        ))
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
@@ -130,10 +147,6 @@ impl KernelRender for GEMM {
 }
 
 impl Kernel for GEMM {
-    fn kernel_name(&self) -> String {
-        "gemm".to_string()
-    }
-
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<crate::Workload, OperationError> {
         //GEMM
         let TILE_DIM = 32;

@@ -11,37 +11,10 @@ use glam::IVec3;
 use inline_wgsl::wgsl;
 use num_traits::Zero;
 
-#[derive(Debug, Clone)]
-pub struct GEMV {
-    lhs: Tensor,
-    rhs: Tensor,
-    bias: Option<Tensor>,
-    trans_lhs: bool,
-    trans_rhs: bool,
-    trans_out: bool,
-}
+use super::MatmulInner;
 
-impl From<Matmul> for GEMV {
-    fn from(matmul: Matmul) -> Self {
-        let Matmul {
-            lhs,
-            rhs,
-            bias,
-            trans_lhs,
-            trans_rhs,
-            trans_out,
-            ..
-        } = matmul;
-        GEMV {
-            lhs,
-            rhs,
-            bias,
-            trans_lhs,
-            trans_rhs,
-            trans_out,
-        }
-    }
-}
+#[derive(Debug, Clone)]
+pub struct GEMV(MatmulInner);
 
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]

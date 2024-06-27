@@ -251,21 +251,20 @@ impl MatmulSpec {
     }
 }
 
-enum MatmulKind {
+pub enum Matmul {
     GEMM(GEMM),
     GEMV(GEMV),
     Quantized(Quantized),
 }
 
-#[derive(Debug, Clone)]
-pub struct Matmul {
+#[derive(derive_new::new)]
+struct MatmulInner {
     pub(crate) lhs: Tensor,
     pub(crate) rhs: Tensor,
     pub(crate) bias: Option<Tensor>,
     pub(crate) trans_lhs: bool,
     pub(crate) trans_rhs: bool,
     pub(crate) trans_out: bool,
-    pub(crate) kind: MatmulKind,
 }
 
 impl Matmul {
@@ -285,21 +284,17 @@ impl Matmul {
             panic!("Transposed quantized inputs are not supported");
         }
 
-        //here we do our Operation Selection
-        match lhs.dt() {
-            DType::F32 | DType::F16 | DType::Q8_0F(_) | DType::Q8_0H(_) => {
-                todo!()
+        let is_gemv = rhs.shape().is_vector() && !trans_lhs;
+        let is_quantized = lhs.dt().is_quantized();
+
+        match (is_gemv, is_quantized) {
+            (true, false) => Self::GEMV(GEMV::new(lhs, rhs, bias, trans_lhs, trans_rhs, trans_out)),
+            (false, false) => {
+                Self::GEMM(GEMM::new(lhs, rhs, bias, trans_lhs, trans_rhs, trans_out))
             }
-            DType::Q4_KF(_) | DType::Q4_KH(_) => Self {
-                lhs,
-                rhs,
-                bias,
-                trans_lhs,
-                trans_rhs,
-                trans_out,
-                kind: MatmulKind::Quantized(Quantized::default()),
-            },
-            _ => panic!("Unsupported DType: {:?}", lhs.dt()),
+            (_, true) => Self::Quantized(Quantized::new(
+                lhs, rhs, bias, trans_lhs, trans_rhs, trans_out,
+            )),
         }
     }
 

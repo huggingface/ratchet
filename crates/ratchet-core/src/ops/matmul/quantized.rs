@@ -3,12 +3,13 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
-    KernelSource, Matmul, MatmulSpec, OperationError, Scalar, Tensor, Vec2, Vec4, WgslFragment,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement, KernelSource, Matmul,
+    MatmulSpec, OperationError, Scalar, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize,
 };
-use glam::IVec3;
 use inline_wgsl::wgsl;
+
+use super::MatmulInner;
 
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
@@ -17,35 +18,7 @@ pub struct QGEMMMeta {
 }
 
 #[derive(Debug, Clone)]
-pub struct Quantized {
-    lhs: Tensor,
-    rhs: Tensor,
-    bias: Option<Tensor>,
-    trans_lhs: bool,
-    trans_rhs: bool,
-    trans_out: bool,
-}
-
-impl From<Matmul> for Quantized {
-    fn from(matmul: Matmul) -> Self {
-        let Matmul {
-            lhs,
-            rhs,
-            bias,
-            trans_lhs,
-            trans_rhs,
-            trans_out,
-        } = matmul;
-        Quantized {
-            lhs,
-            rhs,
-            bias,
-            trans_lhs,
-            trans_rhs,
-            trans_out,
-        }
-    }
-}
+pub struct Quantized(MatmulInner);
 
 impl Quantized {
     fn register_bindings<P: WgslPrimitive>(

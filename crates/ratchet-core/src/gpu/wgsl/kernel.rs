@@ -9,9 +9,6 @@ pub trait Kernel {
     /// Determine required amount of workgroups to execute the operation.
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError>;
 
-    /// Kernel Name
-    fn kernel_name(&self) -> String;
-
     /// # Kernel Key
     ///
     /// Construct a unique cache key for a kernel.
