@@ -4,9 +4,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindingMode, BuiltIn, CpuUniform, DType,
-    GPUOperation, InvariantError, Kernel, KernelElement, KernelRender, KernelSource, MatmulSpec,
-    OperationError, Scalar, Strides, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupCount, WorkgroupSize, Workload,
+    GPUOperation, InvariantError, Kernel, KernelElement, KernelRenderable, KernelSource,
+    MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec2, Vec4, WgslFragment,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupCount, WorkgroupSize, Workload,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -80,7 +80,7 @@ impl GEMMMeta {
     }
 }
 
-impl KernelRender for GEMM {
+impl KernelRenderable for GEMM {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -116,7 +116,7 @@ impl KernelRender for GEMM {
         Ok(())
     }
 
-    fn build<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         dst: &Tensor,

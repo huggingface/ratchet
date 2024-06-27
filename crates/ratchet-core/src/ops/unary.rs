@@ -9,9 +9,10 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    KernelRenderable, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec,
+    Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 
 #[cfg(test)]
@@ -71,14 +72,7 @@ pub struct Unary {
     op: UnaryOp,
 }
 
-impl Unary {
-    const SQRT_2_OVER_PI: f32 = 0.797_884_6;
-    const SCALED_SQRT_2_OVER_PI: f32 = 0.035_677_407;
-
-    pub fn op(&self) -> &UnaryOp {
-        &self.op
-    }
-
+impl KernelRenderable for Unary {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -94,42 +88,7 @@ impl Unary {
         Ok(())
     }
 
-    fn render_gelu<P: WgslPrimitive>() -> String {
-        let accessor = P::render_type();
-        let SQRT_2_OVER_PI = Self::SQRT_2_OVER_PI;
-        let SCALED_SQRT_2_OVER_PI = Self::SCALED_SQRT_2_OVER_PI;
-
-        wgsl! {
-            fn gelu(val: 'accessor) -> 'accessor {
-                let cdf = 'accessor(0.5) + 'accessor(0.5) * safe_tanh(val * ('accessor('SCALED_SQRT_2_OVER_PI)
-                        * (val * val) + 'accessor('SQRT_2_OVER_PI)));
-                return val * cdf;
-            }
-        }
-    }
-
-    fn render_tanh<P: WgslPrimitive>() -> String {
-        let accessor = P::render_type();
-
-        wgsl! {
-            fn safe_tanh(x: 'accessor) -> 'accessor {
-                return select(tanh(x), sign(x), abs(x) >= 'accessor(10.));
-            }
-        }
-    }
-
-    fn render_sigmoid<P: WgslPrimitive>() -> String {
-        let accessor = P::render_type();
-        let one = P::T::one().render();
-
-        wgsl! {
-            fn sigmoid(val: 'accessor) -> 'accessor {
-                return select('one / ('one + exp(-val)), exp(val) / ('one + exp(val)), val >= 'accessor(0.));
-            }
-        }
-    }
-
-    fn build_unary<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -164,18 +123,10 @@ impl Unary {
             }
             UnaryOp::Silu => {
                 kernel_builder.write_global(Unary::render_sigmoid::<P>());
-                kernel_builder.write_global(wgsl! {
-                    fn silu(val: 'accessor) -> 'accessor {
-                        return val * sigmoid(val);
-                    }
-                });
+                kernel_builder.write_global(Unary::render_silu::<P>());
             }
             UnaryOp::Relu => {
-                kernel_builder.write_global(wgsl! {
-                    fn relu(val: 'accessor) -> 'accessor {
-                        return max(val, 'accessor(0.0));
-                    }
-                });
+                kernel_builder.write_global(Unary::render_relu::<P>());
             }
             _ => {}
         };
@@ -206,6 +157,70 @@ impl Unary {
     }
 }
 
+impl Unary {
+    const SQRT_2_OVER_PI: f32 = 0.797_884_6;
+    const SCALED_SQRT_2_OVER_PI: f32 = 0.035_677_407;
+
+    pub fn op(&self) -> &UnaryOp {
+        &self.op
+    }
+
+    fn render_gelu<P: WgslPrimitive>() -> String {
+        let accessor = P::render_type();
+        let SQRT_2_OVER_PI = Self::SQRT_2_OVER_PI;
+        let SCALED_SQRT_2_OVER_PI = Self::SCALED_SQRT_2_OVER_PI;
+
+        wgsl! {
+            fn gelu(val: 'accessor) -> 'accessor {
+                let cdf = 'accessor(0.5) + 'accessor(0.5) * safe_tanh(val * ('accessor('SCALED_SQRT_2_OVER_PI)
+                        * (val * val) + 'accessor('SQRT_2_OVER_PI)));
+                return val * cdf;
+            }
+        }
+    }
+
+    fn render_tanh<P: WgslPrimitive>() -> String {
+        let accessor = P::render_type();
+
+        wgsl! {
+            fn safe_tanh(x: 'accessor) -> 'accessor {
+                return select(tanh(x), sign(x), abs(x) >= 'accessor(10.));
+            }
+        }
+    }
+
+    fn render_relu<P: WgslPrimitive>() -> String {
+        let accessor = P::render_type();
+
+        wgsl! {
+            fn relu(val: 'accessor) -> 'accessor {
+                return max(val, 'accessor(0.0));
+            }
+        }
+    }
+
+    fn render_silu<P: WgslPrimitive>() -> String {
+        let accessor = P::render_type();
+
+        wgsl! {
+            fn silu(val: 'accessor) -> 'accessor {
+                return val * sigmoid(val);
+            }
+        }
+    }
+
+    fn render_sigmoid<P: WgslPrimitive>() -> String {
+        let accessor = P::render_type();
+        let one = P::T::one().render();
+
+        wgsl! {
+            fn sigmoid(val: 'accessor) -> 'accessor {
+                return select('one / ('one + exp(-val)), exp(val) / ('one + exp(val)), val >= 'accessor(0.));
+            }
+        }
+    }
+}
+
 #[derive(Debug, ShaderType, WgslMetadata)]
 pub struct UnaryMeta {
     numel: u32,
@@ -221,12 +236,6 @@ impl Operation for Unary {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         Ok(self.input.storage_view().clone())
     }
-}
-
-impl MetaOperation for Unary {
-    fn kernel_name(&self) -> String {
-        self.op.kernel_name().to_string()
-    }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
@@ -235,7 +244,22 @@ impl MetaOperation for Unary {
     fn supports_inplace(&self) -> bool {
         true
     }
+}
 
+impl GPUOperation for Unary {
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if inplace {
+            Ok(BindGroupLayoutDescriptor::unary_inplace())
+        } else {
+            Ok(BindGroupLayoutDescriptor::unary())
+        }
+    }
+}
+
+impl Kernel for Unary {
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let a_rank = &self.input.shape().rank();
         let N = &self.input.shape()[a_rank - 1];
@@ -253,17 +277,6 @@ impl MetaOperation for Unary {
         Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
     }
 
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if inplace {
-            Ok(BindGroupLayoutDescriptor::unary_inplace())
-        } else {
-            Ok(BindGroupLayoutDescriptor::unary())
-        }
-    }
-
     fn write_metadata(
         &self,
         uniform: &mut CpuUniform,
@@ -272,8 +285,7 @@ impl MetaOperation for Unary {
     ) -> Result<u64, OperationError> {
         let a = &self.input;
         let numel = a.shape().numel() as u32;
-        let meta = UnaryMeta { numel };
-        Ok(uniform.write(&meta)?)
+        Ok(uniform.write(&UnaryMeta { numel })?)
     }
 
     fn build_kernel(
@@ -285,22 +297,22 @@ impl MetaOperation for Unary {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_unary::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_unary::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_unary::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_unary::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_unary::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_unary::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
@@ -310,6 +322,8 @@ impl MetaOperation for Unary {
         }
     }
 }
+
+impl MetaOperation for Unary {}
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {

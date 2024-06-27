@@ -278,13 +278,19 @@ pub trait Operation: OpGuards + Debug + 'static {
 ///
 /// Default implementation of compilation is provided.
 ///
-/// May defer the actual kernel building to another sub-implementation of GPUOperation, e.g:
+/// There is a one-to-many relationship between GPUOperation & Kernel
+/// It should be implemented at least once (e.g Matmul will implement Kernel, but defer the work to
+/// the 4 implementations of GEMM, GEMV, QGEMM, QGEMV)
 /// Matmul ─┐
 ///         ├ GEMM (implements Renderable)
 ///         ├ GEMV
 ///         ├ QGEMM
 ///         └ QGEMV
-pub trait GPUOperation: Operation + Kernel {
+/// Could this be merged with Kernel?
+pub trait GPUOperation: Operation {
+    /// # Kernel Selection
+    /// Enum of all possible kernels that can be used for this operation.
+    type KernelSelection: Kernel;
     /// # Storage Bind Group Layout
     ///
     /// Determine the layout of the storage bind group.

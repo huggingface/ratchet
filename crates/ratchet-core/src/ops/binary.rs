@@ -7,9 +7,9 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
     rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, InvariantError, Kernel, KernelElement,
-    KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
-    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
-    Workload,
+    KernelRenderable, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec,
+    Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -50,7 +50,7 @@ pub struct Binary {
     op: BinaryOp,
 }
 
-impl Kernel for Binary {
+impl KernelRenderable for Binary {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -68,7 +68,7 @@ impl Kernel for Binary {
         Ok(())
     }
 
-    fn build<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -164,10 +164,19 @@ impl Operation for Binary {
 }
 
 impl GPUOperation for Binary {
-    fn kernel_name(&self) -> String {
-        self.op.kernel_name().to_string()
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if inplace {
+            Ok(BindGroupLayoutDescriptor::binary_inplace())
+        } else {
+            Ok(BindGroupLayoutDescriptor::binary())
+        }
     }
+}
 
+impl Kernel for Binary {
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         let numel = dst.shape().numel();
 
@@ -182,17 +191,6 @@ impl GPUOperation for Binary {
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if inplace {
-            Ok(BindGroupLayoutDescriptor::binary_inplace())
-        } else {
-            Ok(BindGroupLayoutDescriptor::binary())
-        }
     }
 
     fn write_metadata(

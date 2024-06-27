@@ -6,9 +6,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
+    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -38,7 +38,7 @@ impl OpGuards for Softmax {
     }
 }
 
-impl Softmax {
+impl KernelRenderable for Softmax {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -52,15 +52,12 @@ impl Softmax {
         Ok(())
     }
 
-    fn build_softmax<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
-    ) -> Result<KernelSource, OperationError>
-    where
-        P::T: num_traits::Float,
-    {
+    ) -> Result<KernelSource, OperationError> {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
@@ -187,12 +184,6 @@ impl Operation for Softmax {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         Ok(self.input.storage_view().clone())
     }
-}
-
-impl MetaOperation for Softmax {
-    fn kernel_name(&self) -> String {
-        "softmax".to_string()
-    }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
@@ -201,7 +192,9 @@ impl MetaOperation for Softmax {
     fn supports_inplace(&self) -> bool {
         true
     }
+}
 
+impl Kernel for Softmax {
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let input = &self.input;
         let N = input.shape()[self.dim] as u32;
@@ -259,16 +252,6 @@ impl MetaOperation for Softmax {
         })
     }
 
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if !inplace {
-            panic!("Only inplace softmax is supported");
-        }
-        Ok(BindGroupLayoutDescriptor::unary_inplace())
-    }
-
     fn write_metadata(
         &self,
         uniform: &mut CpuUniform,
@@ -280,8 +263,19 @@ impl MetaOperation for Softmax {
         let N = input.shape()[self.dim] as u32;
         let ND2 = N / 2;
         let ND4 = N / 4;
-        let meta = SoftmaxMeta { M, N, ND2, ND4 };
-        Ok(uniform.write(&meta)?)
+        Ok(uniform.write(&SoftmaxMeta { M, N, ND2, ND4 })?)
+    }
+}
+
+impl GPUOperation for Softmax {
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if !inplace {
+            panic!("Only inplace softmax is supported");
+        }
+        Ok(BindGroupLayoutDescriptor::unary_inplace())
     }
 }
 
@@ -290,7 +284,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
-    use crate::{shape, wgs, Device, DeviceRequest, MetaOperation, Softmax, Tensor};
+    use crate::{shape, wgs, Device, DeviceRequest, Softmax, Tensor};
     use half::f16;
 
     thread_local! {

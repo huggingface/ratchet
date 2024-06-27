@@ -4,10 +4,7 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount}, rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, KernelElement, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload
 };
 use inline_wgsl::wgsl;
 
@@ -31,23 +28,14 @@ impl IndexSelect {
                 builder.register_storage("I", BindingMode::ReadOnly, index_arr);
                 builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
             }
-            DType::Q8_0F(_) => {
+            DType::Q8_0F(_) | DType::Q8_0H(_) => {
                 let packed_arr = Array::<Scalar<u32>>::default();
-                let scale_arr = Array::<Scalar<f32>>::default();
+                let scale_arr = Array::<Scalar<P::T>>::default();
                 builder.register_storage("E", BindingMode::ReadOnly, packed_arr);
                 builder.register_storage("S", BindingMode::ReadOnly, scale_arr);
                 builder.register_storage("I", BindingMode::ReadOnly, index_arr);
                 builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
             }
-            DType::Q8_0H(_) => {
-                let packed_arr = Array::<Scalar<u32>>::default();
-                let scale_arr = Array::<Scalar<f16>>::default();
-                builder.register_storage("E", BindingMode::ReadOnly, packed_arr);
-                builder.register_storage("S", BindingMode::ReadOnly, scale_arr);
-                builder.register_storage("I", BindingMode::ReadOnly, index_arr);
-                builder.register_storage("Y", BindingMode::ReadWrite, Array::<P>::default());
-            }
-
             _ => unimplemented!(),
         }
 
@@ -141,6 +129,10 @@ impl Operation for IndexSelect {
             strides,
         ))
     }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.src, &self.indices]
+    }
 }
 
 impl OpGuards for IndexSelect {
@@ -157,13 +149,18 @@ impl OpGuards for IndexSelect {
     }
 }
 
+impl GPUOperation for IndexSelect {
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        todo!()
+    \}
+}
+
 impl MetaOperation for IndexSelect {
     fn kernel_name(&self) -> String {
         "index_select".to_string()
-    }
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.src, &self.indices]
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {

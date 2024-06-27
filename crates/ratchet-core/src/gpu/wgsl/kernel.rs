@@ -3,7 +3,7 @@ use crate::{
     WgslPrimitive, WorkgroupSize, Workload,
 };
 
-pub trait Kernel {
+pub trait Kernel: KernelRenderable {
     /// # Calculate Dispatch
     ///
     /// Determine required amount of workgroups to execute the operation.
@@ -60,7 +60,8 @@ pub trait Kernel {
     ) -> Result<KernelSource, OperationError>;
 }
 
-pub trait KernelRender {
+/// This trait is focused on the generation of the kernel source code.
+pub trait KernelRenderable {
     ///Every WGSL must have 1 or more bindings registered
     fn register_bindings<P: WgslPrimitive>(
         &self,
@@ -69,7 +70,7 @@ pub trait KernelRender {
     ) -> Result<(), OperationError>;
 
     ///Generate the kernel source
-    fn build<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         dst: &Tensor,
