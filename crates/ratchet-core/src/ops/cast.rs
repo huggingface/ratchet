@@ -48,7 +48,7 @@ impl Cast {
         );
 
         self.register_bindings::<SP, DP>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<CastMeta>();
+        kernel_builder.render_metadata::<CastMeta>();
 
         let n = SP::W;
         kernel_builder.write_main(wgsl! {

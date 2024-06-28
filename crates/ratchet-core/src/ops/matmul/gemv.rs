@@ -182,7 +182,7 @@ impl GEMV {
         let scalar = P::T::DT;
         let zero = P::T::zero().render();
 
-        kernel_builder.write_metadata::<WorkgroupGEMVMeta>();
+        kernel_builder.render_metadata::<WorkgroupGEMVMeta>();
         kernel_builder.write_unpack(self.lhs.dt());
 
         let work_size = (workgroup_size.x * workgroup_size.y / (n as u32)).render();
@@ -331,7 +331,7 @@ impl GEMV {
             ],
             device.compute_features().clone(),
         );
-        kernel_builder.write_metadata::<SubgroupGEMVMeta>();
+        kernel_builder.render_metadata::<SubgroupGEMVMeta>();
         kernel_builder.write_unpack(self.lhs.dt());
 
         self.register_bindings_subgroup::<P>(&mut kernel_builder, inplace)

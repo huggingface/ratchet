@@ -69,7 +69,7 @@ impl KernelRenderable for Softmax {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<SoftmaxMeta>();
+        kernel_builder.render_metadata::<SoftmaxMeta>();
 
         let dt = P::T::DT;
         let accessor = P::render_type();

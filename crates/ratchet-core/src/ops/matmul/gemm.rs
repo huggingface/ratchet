@@ -134,7 +134,7 @@ impl KernelRenderable for GEMM {
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)
             .unwrap();
-        kernel_builder.write_metadata::<GEMMMeta>();
+        kernel_builder.render_metadata::<GEMMMeta>();
         self.write_indexing::<P>(&mut kernel_builder);
         self.write_getters::<P>(dst, &mut kernel_builder)?;
         self.write_readers_and_writers::<P>(&mut kernel_builder, self.tile_fit())?;

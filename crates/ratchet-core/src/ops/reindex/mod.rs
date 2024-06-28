@@ -58,7 +58,7 @@ impl Reindex {
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         //In future this metadata could be dynamic
-        kernel_builder.write_metadata::<ReindexMeta>();
+        kernel_builder.render_metadata::<ReindexMeta>();
 
         let n = P::W;
 

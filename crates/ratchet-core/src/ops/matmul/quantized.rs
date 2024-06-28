@@ -214,7 +214,7 @@ impl Quantized {
             ],
             device.compute_features().clone(),
         );
-        kernel_builder.write_metadata::<QGEMMMeta>();
+        kernel_builder.render_metadata::<QGEMMMeta>();
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         if spec.is_gemv() {
             todo!()

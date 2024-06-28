@@ -145,17 +145,29 @@ pub enum OperationError {
     InplaceError(String),
 }
 
-/// # OpMetadata
-///
-/// Marker trait for metadata structs that are written into the uniform buffer for each kernel.
-///
-/// Should not be implemented by hand, use the `WgslMetadata` derive macro.
-///
-/// Some kernels may not know their metadata at compile time, so this is not an associated type.
-/// If they do not know their metadata at compile time, they should use [DynamicUniformBuffer] from
-/// encase.
-pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
+pub trait StaticKernelMetadata: Debug + Sized + ShaderType + WriteInto {
     fn render() -> WgslFragment;
+
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
+        uniform.write(self)
+    }
+}
+
+pub trait DynamicKernelMetadata: Debug + Sized {
+    fn render(&self) -> WgslFragment;
+
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError>;
+}
+
+/// # KernelMetadata
+///
+/// There are 2 key things about metadata:
+/// 1. Rendering - producing the WGSL kernel source.
+/// 2. Writing - writing the values into the uniform buffer.
+pub trait KernelMetadata {
+    fn render() -> WgslFragment;
+
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError>;
 }
 
 /// Unique string representing a kernel.
@@ -274,23 +286,23 @@ pub trait Operation: OpGuards + Debug + 'static {
     }
 }
 
-/// An GPU implementation of an operation.
+/// An (Web)-GPU implementation of an operation.
 ///
-/// Default implementation of compilation is provided.
-///
-/// There is a one-to-many relationship between GPUOperation & Kernel
-/// It should be implemented at least once (e.g Matmul will implement Kernel, but defer the work to
-/// the 4 implementations of GEMM, GEMV, QGEMM, QGEMV)
-/// Matmul ─┐
-///         ├ GEMM (implements Renderable)
+/// Has an associated kernel enum, which enumerates all possible kernels that can be used for this
+/// operation.
+/// Binary -> Standard (1:1 mapping)
+/// Matmul ─┐          (1:N mapping)
+///         ├ GEMM
 ///         ├ GEMV
 ///         ├ QGEMM
 ///         └ QGEMV
-/// Could this be merged with Kernel?
 pub trait GPUOperation: Operation {
     /// # Kernel Selection
-    /// Enum of all possible kernels that can be used for this operation.
-    type KernelSelection: Kernel;
+    /// Enumeration of all possible kernels that can be used for this operation.
+    type KernelEnum: Kernel;
+
+    fn select_kernel(self) -> Self::KernelEnum;
+
     /// # Storage Bind Group Layout
     ///
     /// Determine the layout of the storage bind group.
@@ -306,13 +318,16 @@ pub trait GPUOperation: Operation {
         device: &WgpuDevice,
         can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
-        let kernel_element = self.kernel_element(dst);
-        let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
+        let kernel = self.select_kernel();
 
-        let workload = self.calculate_dispatch(dst)?;
+        let kernel_element = kernel.kernel_element(dst);
+        let metadata = kernel.metadata(dst, &kernel_element)?;
+        let offset = metadata.write(uniform)?;
+
+        let workload = kernel.calculate_dispatch(dst)?;
 
         let storage_layout = device
-            .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
+            .get_or_create_bind_group_layout(&kernel.storage_bind_group_layout(can_inplace)?)?;
 
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;

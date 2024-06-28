@@ -4,7 +4,10 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount}, rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, KernelElement, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload
+    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, KernelElement, KernelSource,
+    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -60,7 +63,7 @@ impl IndexSelect {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<IndexSelectMeta>();
+        kernel_builder.render_metadata::<IndexSelectMeta>();
 
         //TODO: REFACTOR
         match self.src.dt() {
@@ -155,7 +158,7 @@ impl GPUOperation for IndexSelect {
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         todo!()
-    \}
+    }
 }
 
 impl MetaOperation for IndexSelect {

@@ -7,9 +7,9 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
     rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, InvariantError, Kernel, KernelElement,
-    KernelRenderable, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec,
-    Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupSize, Workload,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
+    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -86,7 +86,7 @@ impl KernelRenderable for Binary {
         );
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<BinaryMeta>();
+        kernel_builder.render_metadata::<BinaryMeta>();
 
         let N = (P::W as u32).render();
 
@@ -164,6 +164,12 @@ impl Operation for Binary {
 }
 
 impl GPUOperation for Binary {
+    type KernelEnum = BinaryKernels;
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        BinaryKernels::Standard(self)
+    }
+
     fn storage_bind_group_layout(
         &self,
         inplace: bool,
@@ -176,7 +182,13 @@ impl GPUOperation for Binary {
     }
 }
 
-impl Kernel for Binary {
+pub enum BinaryKernels {
+    Standard(Binary),
+}
+
+impl Kernel for BinaryKernels {
+    type Metadata = BinaryMeta;
+
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         let numel = dst.shape().numel();
 
@@ -193,12 +205,7 @@ impl Kernel for Binary {
         Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
     }
 
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _kernel_element: &KernelElement,
-    ) -> Result<u64, OperationError> {
+    fn write_metadata(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
         let numel = dst.shape().numel() as _;
         let meta = BinaryMeta { numel };
         Ok(uniform.write(&meta)?)
@@ -213,22 +220,22 @@ impl Kernel for Binary {
         let kernel_element = self.kernel_element(dst);
         match (self.lhs.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

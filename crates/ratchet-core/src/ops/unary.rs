@@ -106,7 +106,7 @@ impl KernelRenderable for Unary {
         );
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<UnaryMeta>();
+        kernel_builder.render_metadata::<UnaryMeta>();
 
         let accessor = P::render_type();
         //Write global functions

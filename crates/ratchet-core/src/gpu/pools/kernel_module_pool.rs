@@ -5,8 +5,6 @@ use crate::{
 use super::static_resource_pool::{StaticResourcePool, StaticResourcePoolReadLockAccessor};
 use std::hash::Hash;
 
-// ---
-
 slotmap::new_key_type! { pub struct KernelModuleHandle; }
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]

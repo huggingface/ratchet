@@ -55,7 +55,7 @@ impl RoPE {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<RoPEMeta>();
+        kernel_builder.render_metadata::<RoPEMeta>();
 
         let dt = P::T::DT;
 

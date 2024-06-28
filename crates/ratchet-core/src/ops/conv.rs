@@ -54,7 +54,7 @@ impl Kernel for Conv {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<ConvMeta>();
+        kernel_builder.render_metadata::<ConvMeta>();
 
         let dt = P::T::DT;
         kernel_builder.write_global(wgsl! {
