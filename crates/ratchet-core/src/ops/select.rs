@@ -4,7 +4,7 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
     OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
@@ -60,6 +60,7 @@ impl IndexSelect {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: IndexSelectMeta,
     ) -> Result<KernelSource, OperationError> {
         let device = self.src.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -70,9 +71,9 @@ impl IndexSelect {
                 BuiltIn::WorkgroupId,
             ],
             device.compute_features().clone(),
+            metadata,
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<IndexSelectMeta>();
 
         //TODO: REFACTOR
         match self.src.dt() {
@@ -158,6 +159,8 @@ impl OpGuards for IndexSelect {
 }
 
 impl MetaOperation for IndexSelect {
+    type KernelMetadata = IndexSelectMeta;
+
     fn kernel_name(&self) -> String {
         "index_select".to_string()
     }
@@ -195,24 +198,18 @@ impl MetaOperation for IndexSelect {
         }
     }
 
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
+    fn metadata(&self, dst: &Tensor, kernel_element: &KernelElement) -> Self::KernelMetadata {
         let dst_numel = dst.shape().numel() as u32;
         let right_numel = self.src.shape()[(self.dim + 1)..].iter().product::<usize>() as u32;
         let ids_numel = self.indices.shape().numel() as u32;
         let src_dim_numel = self.src.shape()[self.dim] as u32;
 
-        let meta = IndexSelectMeta {
+        IndexSelectMeta {
             dst_numel,
             right_numel,
             ids_numel,
             src_dim_numel,
-        };
-        Ok(uniform.write(&meta)?)
+        }
     }
 
     fn build_kernel(
@@ -220,32 +217,33 @@ impl MetaOperation for IndexSelect {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (self.src.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_index_select::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_index_select::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_index_select::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_index_select::<Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_index_select::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_index_select::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_index_select::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_index_select::<Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::Q8_0H(_), KernelElement::Scalar) => {
-                self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::Q8_0F(_), KernelElement::Scalar) => {
-                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

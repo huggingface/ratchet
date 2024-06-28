@@ -36,6 +36,7 @@ impl IndexWrite {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: IndexWriteMeta,
     ) -> Result<KernelSource, OperationError> {
         let device = self.src.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -46,9 +47,9 @@ impl IndexWrite {
                 BuiltIn::WorkgroupId,
             ],
             device.compute_features().clone(),
+            metadata,
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<IndexWriteMeta>();
         kernel_builder.write_index_to_offset();
 
         kernel_builder.write_main(wgsl! {
@@ -85,6 +86,8 @@ impl Operation for IndexWrite {
 }
 
 impl MetaOperation for IndexWrite {
+    type KernelMetadata = IndexWriteMeta;
+
     fn kernel_name(&self) -> String {
         "index_write".to_string()
     }
@@ -106,26 +109,27 @@ impl MetaOperation for IndexWrite {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (self.src.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_index_write::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_index_write::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_index_write::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_index_write::<Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_index_write::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_index_write::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_index_write::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_index_write::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_index_write::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_index_write::<Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_index_write::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_index_write::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
@@ -150,12 +154,7 @@ impl MetaOperation for IndexWrite {
         Ok(BindGroupLayoutDescriptor::binary_inplace())
     }
 
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
+    fn metadata(&self, dst: &Tensor, kernel_element: &KernelElement) -> Self::KernelMetadata {
         let padder = |mut shape: Shape| {
             shape.left_pad_to(1, 4);
             let strides = Strides::from(&shape);
@@ -170,12 +169,11 @@ impl MetaOperation for IndexWrite {
             start[i + offset] = s as u32;
         }
 
-        let meta = IndexWriteMeta {
+        IndexWriteMeta {
             dst_strides: glam::UVec4::from(&dst_strides),
             src_numel: src_shape.numel() as u32,
             write_start: start.into(),
-        };
-        Ok(uniform.write(&meta)?)
+        }
     }
 }
 

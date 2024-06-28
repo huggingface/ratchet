@@ -4,10 +4,10 @@ use half::f16;
 use inline_wgsl::wgsl;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, UNIFORM_ALIGN},
-    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    gpu::BindGroupLayoutDescriptor, rvec, Array, BindingMode, BuiltIn, DType, DynKernelMetadata,
+    KernelElement, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar,
+    Shape, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -51,6 +51,7 @@ impl Concat {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: DynKernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let device = self.inputs[0].device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -61,6 +62,7 @@ impl Concat {
                 BuiltIn::WorkgroupId,
             ],
             device.compute_features().clone(),
+            metadata,
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.write_offset_to_index();
@@ -148,6 +150,8 @@ impl OpGuards for Concat {
 }
 
 impl MetaOperation for Concat {
+    type KernelMetadata = DynKernelMetadata;
+
     fn kernel_name(&self) -> String {
         "concat".to_string()
     }
@@ -171,12 +175,7 @@ impl MetaOperation for Concat {
         Ok(BindGroupLayoutDescriptor::nthary(self.inputs.len()))
     }
 
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Self::KernelMetadata {
         let original_rank = self.inputs[0].rank();
         let promotion = 4 - original_rank;
         let input_shapes: Vec<Shape> = self
@@ -188,8 +187,8 @@ impl MetaOperation for Concat {
         let promoted_dim = self.dim + promotion;
         let dst_shape = Shape::promote(dst.shape().clone(), 4);
         let dst_strides = Strides::from(&dst_shape);
-        //YOU MUST WRITE THIS BEFORE STARTING
-        uniform.write_struct_end()?;
+
+        let mut dyn_meta = DynKernelMetadata::new();
 
         let cumsum = input_shapes
             .iter()
@@ -200,21 +199,19 @@ impl MetaOperation for Concat {
             })
             .collect::<Vec<u32>>();
 
-        for strides in input_strides.iter() {
-            let _ = uniform.write_struct_member(&UVec4::from(strides));
+        for (si, strides) in input_strides.iter().enumerate() {
+            dyn_meta.add_field(format!("x{}_stride", si), UVec4::from(strides));
         }
 
-        let _ = uniform.write_struct_member(&UVec4::from(&dst_strides));
-        let _ = uniform.write_struct_member(&(dst_shape.numel() as u32));
+        dyn_meta.add_field("dst_stride", UVec4::from(&dst_strides));
+        dyn_meta.add_field("dst_numel", dst_shape.numel() as u32);
 
-        for &c in cumsum.iter() {
-            let _ = uniform.write_struct_member(&c)?;
+        for (ci, c) in cumsum.iter().enumerate() {
+            dyn_meta.add_field(format!("cum{}", ci), *c);
         }
 
-        let _ = uniform.write_struct_member(&(promoted_dim as u32));
-        //This seems strange, but `write_struct_end` returns the ROUNDED UP offset of the struct
-        //with standard `.write()` it returns the offset where the struct writing started
-        Ok(uniform.write_struct_end()? - UNIFORM_ALIGN as u64)
+        dyn_meta.add_field("dim", promoted_dim as u32);
+        dyn_meta
     }
 
     fn build_kernel(
@@ -222,26 +219,27 @@ impl MetaOperation for Concat {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_concat::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_concat::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_concat::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_concat::<Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_concat::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_concat::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_concat::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_concat::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_concat::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_concat::<Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_concat::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_concat::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

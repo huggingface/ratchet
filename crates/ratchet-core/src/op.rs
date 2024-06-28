@@ -4,10 +4,11 @@ use crate::gpu::{
 };
 use crate::{
     ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelModuleDesc, RVec,
-    StorageView, Tensor, WgslFragment, WorkgroupSize, Workload,
+    StorageView, Tensor, WgslFragment, WorkgroupSize, Workload, UNIFORM_ALIGN,
 };
 use encase::internal::WriteInto;
 use encase::ShaderType;
+use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -143,17 +144,85 @@ pub enum OperationError {
     UnknownError(#[from] anyhow::Error),
 }
 
-/// # OpMetadata
-///
-/// Marker trait for metadata structs that are written into the uniform buffer for each kernel.
-///
-/// Some kernels may not know their metadata at compile time, so this is not an associated type.
-/// If they do not know their metadata at compile time, they should use [DynamicUniformBuffer] from
-/// encase.
-pub trait OpMetadata: Debug + Sized + ShaderType + WriteInto {
-    fn render() -> WgslFragment {
-        todo!()
+//Every field must be : ShaderType + WriteInto
+#[derive(Debug)]
+pub enum DynMetaField {
+    Vec4U32(glam::UVec4),
+    U32(u32),
+}
+
+impl DynMetaField {
+    fn render(&self) -> String {
+        match self {
+            DynMetaField::Vec4U32(_) => format!("vec4<u32>"),
+            DynMetaField::U32(_) => format!("u32"),
+        }
     }
+}
+
+impl From<glam::UVec4> for DynMetaField {
+    fn from(value: glam::UVec4) -> Self {
+        Self::Vec4U32(value)
+    }
+}
+
+impl From<u32> for DynMetaField {
+    fn from(value: u32) -> Self {
+        Self::U32(value)
+    }
+}
+
+#[derive(Debug)]
+pub struct DynKernelMetadata {
+    //Can't use a trait object here, ShaderType has assoc type
+    fields: FxHashMap<String, DynMetaField>,
+}
+
+impl DynKernelMetadata {
+    pub fn new() -> Self {
+        Self {
+            fields: FxHashMap::default(),
+        }
+    }
+
+    pub fn add_field(&mut self, name: impl ToString, value: impl Into<DynMetaField>) {
+        self.fields.insert(name.to_string(), value.into());
+    }
+}
+
+impl KernelMetadata for DynKernelMetadata {
+    fn render(&self) -> crate::WgslFragment {
+        let mut fragment = WgslFragment::new(512);
+        fragment.write(r#"struct Meta {"#);
+        for (name, field) in self.fields.iter() {
+            fragment.write(format!("{}: {}", name, field.render()));
+        }
+        fragment.write("}\n");
+        fragment
+    }
+
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
+        uniform.write_struct_end();
+        for f in self.fields.values() {
+            let _ = match f {
+                DynMetaField::Vec4U32(v) => uniform.write_struct_member(v)?,
+                DynMetaField::U32(u) => uniform.write_struct_member(u)?,
+            };
+        }
+        Ok(uniform.write_struct_end()? - UNIFORM_ALIGN as u64)
+    }
+}
+
+pub trait StaticKernelMetadata: Debug + Sized + ShaderType + WriteInto {
+    fn write_static(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
+        Ok(uniform.write(self)?)
+    }
+}
+
+pub trait KernelMetadata {
+    fn render(&self) -> WgslFragment;
+
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError>;
 }
 
 /// Unique string representing a kernel.
@@ -229,8 +298,12 @@ impl std::fmt::Display for KernelSource {
 /// Some types may implement both Operation and MetaOperation, if there is no variance
 /// in output shape or invariants between the members of the family.
 pub trait MetaOperation: Debug + 'static {
+    type KernelMetadata: KernelMetadata;
+
     /// Kernel Name
     fn kernel_name(&self) -> String;
+
+    fn metadata(&self, dst: &Tensor, kernel_element: &KernelElement) -> Self::KernelMetadata;
 
     /// # Kernel Key
     ///
@@ -281,24 +354,12 @@ pub trait MetaOperation: Debug + 'static {
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError>;
 
-    /// # Metadata
-    ///
-    /// Each kernel has zero or more required metadata fields (e.g shape, strides, etc).
-    /// This is stored in a uniform buffer, for faster access.
-    ///
-    /// The metadata is limited to 256 bytes per kernel.
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<u64, OperationError>;
-
     fn build_kernel(
         &self,
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError>;
 
     fn compile(
@@ -309,7 +370,9 @@ pub trait MetaOperation: Debug + 'static {
         can_inplace: bool,
     ) -> Result<CompiledOp, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
+
+        let metadata = self.metadata(dst, &kernel_element);
+        let offset = metadata.write(uniform)? as usize;
 
         let workload = self.calculate_dispatch(dst)?;
 

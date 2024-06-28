@@ -40,6 +40,7 @@ impl RoPE {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: RoPEMeta,
     ) -> Result<KernelSource, OperationError>
     where
         P::T: num_traits::Float,
@@ -53,9 +54,9 @@ impl RoPE {
                 BuiltIn::NumWorkgroups,
             ],
             device.compute_features().clone(),
+            metadata,
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<RoPEMeta>();
 
         let dt = P::T::DT;
 
@@ -125,6 +126,8 @@ impl Operation for RoPE {
 }
 
 impl MetaOperation for RoPE {
+    type KernelMetadata = RoPEMeta;
+
     fn kernel_name(&self) -> String {
         "rope".to_string()
     }
@@ -175,12 +178,7 @@ impl MetaOperation for RoPE {
         panic!("RoPE does not support out-of-place operation");
     }
 
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Self::KernelMetadata {
         let mut input_shape = self.input.shape().clone();
         let SL = input_shape[2];
         let mut out_shape = dst.shape().clone();
@@ -188,15 +186,14 @@ impl MetaOperation for RoPE {
         out_shape.remove(0);
         let in_strides = Strides::from(&input_shape);
         let out_strides = Strides::from(&out_shape);
-        let meta = RoPEMeta::new(
+        RoPEMeta::new(
             (&in_strides).into(),
             (&out_strides).into(),
             SL as u32,
             self.offset as u32,
             self.base,
             1.0,
-        );
-        Ok(uniform.write(&meta)?)
+        )
     }
 
     fn build_kernel(
@@ -204,26 +201,27 @@ impl MetaOperation for RoPE {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_rope::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_rope::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_rope::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_rope::<Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_rope::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_rope::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_rope::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_rope::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_rope::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_rope::<Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_rope::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_rope::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

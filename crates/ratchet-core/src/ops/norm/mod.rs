@@ -6,7 +6,7 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
+    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
     OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
@@ -102,6 +102,7 @@ impl NormOp {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: NormMeta,
     ) -> Result<KernelSource, OperationError>
     where
         P::T: num_traits::Float,
@@ -115,9 +116,9 @@ impl NormOp {
                 BuiltIn::WorkgroupId,
             ],
             device.compute_features().clone(),
+            metadata,
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<NormMeta>();
 
         let reduction_len = match P::W {
             1 => "metadata.N",
@@ -211,6 +212,8 @@ pub struct NormMeta {
 }
 
 impl MetaOperation for NormOp {
+    type KernelMetadata = NormMeta;
+
     fn kernel_name(&self) -> String {
         match self {
             NormOp::LayerNorm(_) => "layernorm".to_string(),
@@ -258,26 +261,27 @@ impl MetaOperation for NormOp {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_norm::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_norm::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_norm::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_norm::<Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_norm::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_norm::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_norm::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_norm::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_norm::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_norm::<Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_norm::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_norm::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
@@ -329,12 +333,7 @@ impl MetaOperation for NormOp {
         }
     }
 
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
+    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Self::KernelMetadata {
         let input = self.srcs()[0];
         let rank = input.rank();
         match self {
@@ -343,8 +342,7 @@ impl MetaOperation for NormOp {
                 let N = input.shape()[rank - 1] as u32;
                 let ND2 = N / 2;
                 let ND4 = N / 4;
-                let meta = NormMeta::new(M, N, ND2, ND4, n.eps);
-                Ok(uniform.write(&meta)?)
+                NormMeta::new(M, N, ND2, ND4, n.eps)
             }
             NormOp::GroupNorm(GroupNorm {
                 norm: Norm { eps, .. },
@@ -356,8 +354,7 @@ impl MetaOperation for NormOp {
                 let N = (channels / *num_groups as u32) * img_size;
                 let ND2 = N / 2;
                 let ND4 = N / 4;
-                let meta = NormMeta::new(M, N, ND2, ND4, *eps);
-                Ok(uniform.write(&meta)?)
+                NormMeta::new(M, N, ND2, ND4, *eps)
             }
         }
     }
