@@ -6,6 +6,7 @@ use crate::{
     InvariantError, OpGuards, Operation, OperationError, RVec, StorageView, Strides, Tensor,
 };
 
+#[derive(Debug, derive_new::new)]
 pub struct PermuteMeta {
     src_shape: glam::UVec4,
     dst_shape: glam::UVec4,
@@ -13,9 +14,7 @@ pub struct PermuteMeta {
     dst_stride: glam::UVec4,
     src_numel: u32,
     dst_numel: u32,
-    //"Optional" fields below (if not present, they are set to 0) this is dumb
     perm: glam::UVec4,
-    src_offsets: glam::UVec4,
 }
 
 #[derive(new, Debug, Clone)]

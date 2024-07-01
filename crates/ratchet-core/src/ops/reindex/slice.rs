@@ -5,7 +5,7 @@ use crate::{prelude::*, OpGuards, OperationError, StorageView, Strides};
 use crate::{Operation, RVec};
 use std::ops::Range;
 
-#[derive(Debug, WgslMetadata, ShaderType)]
+#[derive(Debug, WgslMetadata, ShaderType, derive_new::new)]
 pub struct SliceMeta {
     src_shape: glam::UVec4,
     dst_shape: glam::UVec4,

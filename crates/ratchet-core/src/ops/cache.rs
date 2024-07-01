@@ -7,11 +7,11 @@ use ratchet_macros::WgslMetadata;
 use wgpu::BindGroupLayoutEntry;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform},
+    gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt},
     rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
-    KernelRenderable, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec,
-    Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupSize, Workload,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
+    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 
 /// # Cache

@@ -3,9 +3,8 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement, KernelSource, Matmul,
-    MatmulSpec, OperationError, Scalar, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize,
+    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelSource, MatmulSpec,
+    OperationError, Scalar, Tensor, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use inline_wgsl::wgsl;
 
@@ -58,13 +57,13 @@ impl Quantized {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let kernel_element = spec.select_kernel_element();
+        let kernel_element = self.spec.select_kernel_element();
         match (self.lhs.dt(), kernel_element) {
             (DType::Q4_KF(_), _) => {
-                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
+                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, self.spec)
             }
             (DType::Q4_KH(_), _) => {
-                self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
+                self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size, self.spec)
             }
             _ => return Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
         }
@@ -213,7 +212,7 @@ impl Quantized {
             ],
             device.compute_features().clone(),
         );
-        kernel_builder.render_metadata::<QGEMMMeta>();
+        kernel_builder.render_metadata::<QuantizedMeta>();
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         if spec.is_gemv() {
             todo!()

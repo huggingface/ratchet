@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
     ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
-    GPUBuffer, InvariantError, LazyOp, MetaOperation, Operation, OperationError, RVec,
-    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    GPUBuffer, InvariantError, LazyOp, Operation, OperationError, RVec, RawCPUBuffer, Shape,
+    Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
 use npyz::WriterBuilder;

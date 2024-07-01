@@ -1,6 +1,18 @@
 use derive_new::new;
+use encase::ShaderType;
+use ratchet_macros::WgslMetadata;
 
 use crate::{rvec, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor};
+
+#[derive(Debug, WgslMetadata, ShaderType, derive_new::new)]
+pub struct BroadcastMeta {
+    src_shape: glam::UVec4,
+    dst_shape: glam::UVec4,
+    src_stride: glam::UVec4,
+    dst_stride: glam::UVec4,
+    src_numel: u32,
+    dst_numel: u32,
+}
 
 #[derive(new, Debug, Clone)]
 pub struct Broadcast {

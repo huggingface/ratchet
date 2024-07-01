@@ -3,15 +3,15 @@ mod permute;
 mod slice;
 
 pub use broadcast::Broadcast;
+use broadcast::BroadcastMeta;
 use half::f16;
 pub use permute::Permute;
 use permute::PermuteMeta;
-use ratchet_macros::WgslMetadata;
 pub use slice::Slice;
 
 use derive_new::new;
-use encase::ShaderType;
 use inline_wgsl::wgsl;
+use slice::SliceMeta;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
@@ -173,17 +173,14 @@ impl Kernel for ReindexKernels {
         let src_shape = UVec4::from(&src_shape);
         let dst_shape = UVec4::from(&dst_shape);
 
-        //TODO: move this to the inner ops
-        //TODO: this is incredibly bad
-        let permute = match &self {
+        match self {
             Reindex::Permute(p) => {
-                let dims = p.promote();
-                let vdims = dims.iter().map(|&d| d as u32).collect::<Vec<_>>();
-                vdims.try_into().unwrap()
+                let permute = p.promote();
+                let perm = UVec4::from(permute);
+                Ok(ReindexMeta::Permute(PermuteMeta::new(
+                    src_shape, dst_shape, src_stride, dst_stride, src_numel, dst_numel, perm,
+                )))
             }
-            _ => [0, 0, 0, 0],
-        };
-        let src_offsets = match &self {
             Reindex::Slice(s) => {
                 let starts = s.indices().iter().map(|i| i.start).collect::<Vec<_>>();
                 let mut offsets = [0; 4];
@@ -191,22 +188,21 @@ impl Kernel for ReindexKernels {
                 for (i, &start) in starts.iter().enumerate() {
                     offsets[i + offset] = start as u32;
                 }
-                offsets
+                let src_offsets = UVec4::from(offsets);
+                Ok(ReindexMeta::Slice(SliceMeta::new(
+                    src_shape,
+                    dst_shape,
+                    src_stride,
+                    dst_stride,
+                    src_numel,
+                    dst_numel,
+                    src_offsets,
+                )))
             }
-            _ => [0, 0, 0, 0],
-        };
-        let perm = glam::UVec4::from(permute);
-        let src_offsets = glam::UVec4::from(src_offsets);
-        let meta = ReindexMeta {
-            src_shape,
-            dst_shape,
-            src_stride,
-            dst_stride,
-            src_numel,
-            dst_numel,
-            perm,
-            src_offsets,
-        };
+            Reindex::Broadcast(b) => Ok(ReindexMeta::Broadcast(BroadcastMeta::new(
+                src_shape, dst_shape, src_stride, dst_stride, src_numel, dst_numel,
+            ))),
+        }
     }
 }
 
