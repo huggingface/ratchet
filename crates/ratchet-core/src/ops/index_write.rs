@@ -6,9 +6,10 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
+    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -18,7 +19,62 @@ pub struct IndexWrite {
     write_start: RVec<usize>,
 }
 
-impl IndexWrite {
+impl IndexWrite {}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
+pub struct IndexWriteMeta {
+    dst_strides: glam::UVec4,
+    src_numel: u32,
+    write_start: glam::UVec4,
+}
+
+impl OpGuards for IndexWrite {
+    fn check_shapes(&self) {}
+
+    fn check_dtypes(&self) {}
+}
+
+impl Operation for IndexWrite {
+    fn name(&self) -> &'static str {
+        "IndexWrite"
+    }
+
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        Ok(self.dst.storage_view().clone())
+    }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.dst, &self.src]
+    }
+
+    fn supports_inplace(&self) -> bool {
+        true
+    }
+}
+
+impl GPUOperation for IndexWrite {
+    type KernelEnum = IndexWriteKernels;
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        IndexWriteKernels::Standard(self)
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if !inplace {
+            panic!("IndexWrite only supports inplace operation");
+        }
+        Ok(BindGroupLayoutDescriptor::binary_inplace())
+    }
+}
+
+pub enum IndexWriteKernels {
+    Standard(IndexWrite),
+}
+
+impl KernelRenderable for IndexWriteKernels {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -31,13 +87,13 @@ impl IndexWrite {
         Ok(())
     }
 
-    fn build_index_write<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.src.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -48,7 +104,7 @@ impl IndexWrite {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<IndexWriteMeta>();
+        kernel_builder.render_metadata::<IndexWriteMeta>();
         kernel_builder.write_index_to_offset();
 
         kernel_builder.write_main(wgsl! {
@@ -65,39 +121,45 @@ impl IndexWrite {
     }
 }
 
-#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
-pub struct IndexWriteMeta {
-    dst_strides: glam::UVec4,
-    src_numel: u32,
-    write_start: glam::UVec4,
-}
+impl Kernel for IndexWriteKernels {
+    type Metadata = IndexWriteMeta;
 
-impl OpGuards for IndexWrite {
-    fn check_shapes(&self) {}
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
+        let inner = match self {
+            IndexWriteKernels::Standard(inner) => inner,
+        };
+        let padder = |mut shape: Shape| {
+            shape.left_pad_to(1, 4);
+            let strides = Strides::from(&shape);
+            (shape, strides)
+        };
+        let (_, dst_strides) = padder(dst.shape().clone());
+        let (src_shape, _) = padder(inner.src.shape().clone());
 
-    fn check_dtypes(&self) {}
-}
+        let mut start = [0u32; 4];
+        let offset = 4 - inner.write_start.len();
+        for (i, &s) in inner.write_start.iter().enumerate() {
+            start[i + offset] = s as u32;
+        }
 
-impl Operation for IndexWrite {
-    fn compute_view(&self) -> Result<StorageView, OperationError> {
-        Ok(self.dst.storage_view().clone())
-    }
-}
-
-impl MetaOperation for IndexWrite {
-    fn kernel_name(&self) -> String {
-        "index_write".to_string()
-    }
-
-    fn supports_inplace(&self) -> bool {
-        true
-    }
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.dst, &self.src]
+        Ok(IndexWriteMeta {
+            dst_strides: glam::UVec4::from(&dst_strides),
+            src_numel: src_shape.numel() as u32,
+            write_start: start.into(),
+        })
     }
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
+    fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
+        let inner = match self {
+            IndexWriteKernels::Standard(inner) => inner,
+        };
+        Ok(Workload::std(
+            inner.src.shape().numel(),
+            KernelElement::Scalar,
+        ))
+    }
+
+    fn kernel_element(&self, _: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }
 
@@ -108,74 +170,34 @@ impl MetaOperation for IndexWrite {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        match (self.src.dt(), &kernel_element) {
+        let inner = match self {
+            IndexWriteKernels::Standard(inner) => inner,
+        };
+        match (inner.src.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_index_write::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_index_write::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_index_write::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_index_write::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_index_write::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_index_write::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
-                self.src.dt(),
+                inner.src.dt(),
                 kernel_element
             ))),
         }
-    }
-
-    fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
-        let numel = self.src.shape().numel();
-        Ok(Workload::std(numel, KernelElement::Scalar))
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if !inplace {
-            panic!("IndexWrite only supports inplace operation");
-        }
-        Ok(BindGroupLayoutDescriptor::binary_inplace())
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let padder = |mut shape: Shape| {
-            shape.left_pad_to(1, 4);
-            let strides = Strides::from(&shape);
-            (shape, strides)
-        };
-        let (_, dst_strides) = padder(self.dst.shape().clone());
-        let (src_shape, _) = padder(self.src.shape().clone());
-
-        let mut start = [0u32; 4];
-        let offset = 4 - self.write_start.len();
-        for (i, &s) in self.write_start.iter().enumerate() {
-            start[i + offset] = s as u32;
-        }
-
-        let meta = IndexWriteMeta {
-            dst_strides: glam::UVec4::from(&dst_strides),
-            src_numel: src_shape.numel() as u32,
-            write_start: start.into(),
-        };
-        Ok(uniform.write(&meta)?)
     }
 }
 

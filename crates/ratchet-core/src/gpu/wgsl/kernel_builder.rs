@@ -2,8 +2,8 @@ use inline_wgsl::wgsl;
 use std::fmt::Write;
 
 use crate::{
-    Array, BindingMode, BindingType, DType, DeviceFeatures, KernelBinding, KernelSource,
-    OpMetadata, RVec, Scalar, Vec3, WgslPrimitive, WorkgroupSize,
+    Array, BindingMode, BindingType, DType, DeviceFeatures, KernelBinding, KernelMetadata,
+    KernelSource, RVec, Scalar, Vec3, WgslPrimitive, WorkgroupSize,
 };
 
 #[derive(Debug)]
@@ -146,8 +146,8 @@ impl WgslKernelBuilder {
     // This method cannot be put on the constructor of the struct
     // This is because some operations don't create their metadata struct
     // until runtime
-    pub fn write_metadata<M: OpMetadata>(&mut self) {
-        self.write_global(M::render());
+    pub fn render_metadata<M: KernelMetadata>(&mut self) {
+        self.write_global(M::render_meta());
     }
 
     fn register_binding(
