@@ -1,16 +1,22 @@
+use crate::gpu::dtype::WgslDType;
+use crate::gpu::WgslPrimitive;
 use crate::{
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
     KernelRenderable, KernelSource, MatmulSpec, OperationError, Scalar, Tensor, Vec4, WgslFragment,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    WgslKernelBuilder, WorkgroupSize, Workload,
 };
 use encase::ShaderType;
 use half::f16;
 use inline_wgsl::wgsl;
+use num_traits::Zero;
 use ratchet_macros::WgslMetadata;
 
 use crate::Kernel;
 
 pub struct SubgroupGEMV {
+    lhs: Tensor,
+    rhs: Tensor,
+    bias: Option<Tensor>,
     spec: MatmulSpec,
 }
 
@@ -24,7 +30,7 @@ impl KernelRenderable for SubgroupGEMV {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        inplace: bool,
+        _: bool,
     ) -> Result<(), OperationError> {
         let A = &self.lhs;
         let bias = &self.bias;
@@ -84,7 +90,7 @@ impl KernelRenderable for SubgroupGEMV {
         kernel_builder.render_metadata::<SubgroupGEMVMeta>();
         kernel_builder.write_unpack(self.lhs.dt());
 
-        self.register_bindings_subgroup::<P>(&mut kernel_builder, inplace)
+        self.register_bindings::<P>(&mut kernel_builder, inplace)
             .unwrap();
 
         let dt = P::T::DT;
@@ -285,21 +291,14 @@ impl KernelRenderable for SubgroupGEMV {
 impl Kernel for SubgroupGEMV {
     type Metadata = SubgroupGEMVMeta;
 
-    fn metadata(
-        &self,
-        dst: &crate::Tensor,
-        kernel_element: &crate::KernelElement,
-    ) -> Result<Self::Metadata, crate::OperationError> {
+    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         Ok(SubgroupGEMVMeta {
             OVL: self.spec.new_dim_lhs_outer() as _,
             IVL: self.spec.new_dim_rhs_outer() as _,
         })
     }
 
-    fn calculate_dispatch(
-        &self,
-        dst: &crate::Tensor,
-    ) -> Result<crate::Workload, crate::OperationError> {
+    fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
         let tile_size = 32;
         Ok(Workload {
             workgroup_count: wgc![
@@ -307,11 +306,11 @@ impl Kernel for SubgroupGEMV {
                 1,
                 self.spec.stacks() as _
             ],
-            workgroup_size: wgs![tile_size, 8, 1],
+            workgroup_size: wgs![tile_size as _, 8, 1],
         })
     }
 
-    fn kernel_element(&self, dst: &crate::Tensor) -> crate::KernelElement {
+    fn kernel_element(&self, _: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }
 
@@ -322,20 +321,15 @@ impl Kernel for SubgroupGEMV {
         workgroup_size: &crate::WorkgroupSize,
     ) -> Result<crate::KernelSource, crate::OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let spec = self.compute_spec();
         match (self.lhs.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.render_gemv::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.render_gemv::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
-            (DType::Q8_0F(_), _) => {
-                self.render_gemv::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
-            }
-            (DType::Q8_0H(_), _) => {
-                self.render_gemv::<Vec4<f16>>(inplace, dst, workgroup_size, spec)
-            }
+            (DType::Q8_0F(_), _) => self.render::<Vec4<f32>>(inplace, dst, workgroup_size),
+            (DType::Q8_0H(_), _) => self.render::<Vec4<f16>>(inplace, dst, workgroup_size),
             _ => panic!("Unsupported dtype"),
         }
     }

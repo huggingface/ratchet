@@ -9,7 +9,7 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement, KernelKey,
     KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
     Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
@@ -347,14 +347,10 @@ impl Kernel for UnaryKernels {
         }
     }
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
-        let a = &self.input;
-        let numel = a.shape().numel() as u32;
-        Ok(UnaryMeta { numel })
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
+        Ok(UnaryMeta {
+            numel: dst.shape().numel() as u32,
+        })
     }
 
     fn kernel_key(
@@ -363,10 +359,13 @@ impl Kernel for UnaryKernels {
         inplace: bool,
         dst: &Tensor,
         kernel_element: &KernelElement,
-    ) -> crate::KernelKey {
-        crate::KernelKey::new(
-            &self.kernel_name(),
-            &self.srcs(),
+    ) -> KernelKey {
+        let inner = match self {
+            UnaryKernels::Standard(inner) => inner,
+        };
+        KernelKey::new(
+            &inner.name(),
+            &inner.srcs(),
             dst,
             workgroup_size,
             inplace,

@@ -5,7 +5,7 @@ use ratchet_macros::WgslMetadata;
 
 use crate::gpu::dtype::WgslDType;
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, OpGuards,
     Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
@@ -70,7 +70,7 @@ impl GPUOperation for RoPE {
     type KernelEnum = RoPEKernels;
 
     fn select_kernel(self) -> Self::KernelEnum {
-        todo!()
+        RoPEKernels::Standard(self)
     }
 
     fn storage_bind_group_layout(
@@ -106,10 +106,10 @@ impl KernelRenderable for RoPEKernels {
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.input.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -166,7 +166,10 @@ impl Kernel for RoPEKernels {
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> Result<Self::Metadata, OperationError> {
-        let mut input_shape = self.input.shape().clone();
+        let inner = match self {
+            RoPEKernels::Standard(op) => op,
+        };
+        let mut input_shape = inner.input.shape().clone();
         let SL = input_shape[2];
         let mut out_shape = dst.shape().clone();
         input_shape.remove(0);
@@ -177,8 +180,8 @@ impl Kernel for RoPEKernels {
             (&in_strides).into(),
             (&out_strides).into(),
             SL as u32,
-            self.offset as u32,
-            self.base,
+            inner.offset as u32,
+            inner.base,
             1.0,
         ))
     }
@@ -193,13 +196,15 @@ impl Kernel for RoPEKernels {
         const WGSZ: usize = 1;
         let workgroup_size = wgs![WGSX as _, WGSY as _, WGSZ as _];
 
-        let input = &self.input;
-        let [_, _, SL, HD]: [usize; 4] = input.shape().try_into()?;
+        let inner = match self {
+            RoPEKernels::Standard(op) => op,
+        };
+        let [_, _, SL, HD]: [usize; 4] = inner.input.shape().try_into()?;
         let mat_size = SL * HD;
 
-        let total_x = self.dim / 2; //solve pairs
+        let total_x = inner.dim / 2; //solve pairs
         let total_y = SL;
-        let total_z = input.shape().numel() / mat_size;
+        let total_z = inner.input.shape().numel() / mat_size;
 
         let wgcx = WorkgroupCount::div_ceil(total_x, WGSX) as u32;
         let wgcy = WorkgroupCount::div_ceil(total_y, WGSY) as u32;
@@ -218,7 +223,10 @@ impl Kernel for RoPEKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        match (self.input.dt(), &kernel_element) {
+        let inner = match self {
+            RoPEKernels::Standard(op) => op,
+        };
+        match (inner.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
                 self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
@@ -239,7 +247,7 @@ impl Kernel for RoPEKernels {
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
-                self.input.dt(),
+                inner.input.dt(),
                 kernel_element
             ))),
         }

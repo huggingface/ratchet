@@ -143,6 +143,8 @@ pub enum OperationError {
     UnknownError(#[from] anyhow::Error),
     #[error("Cannot inplace operation: {0}")]
     InplaceError(String),
+    #[error(transparent)]
+    DeviceError(#[from] crate::DeviceError),
 }
 
 /// Unique string representing a kernel.
