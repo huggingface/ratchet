@@ -49,6 +49,10 @@ impl OpGuards for NormOp {
 }
 
 impl Operation for NormOp {
+    fn name(&self) -> &'static str {
+        "Norm"
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let input = match self {
             NormOp::LayerNorm(Norm { input, .. }) | NormOp::RMSNorm(Norm { input, .. }) => input,

@@ -107,7 +107,6 @@ impl KernelRenderable for Unary {
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.render_metadata::<UnaryMeta>();
 
-        let accessor = P::render_type();
         //Write global functions
         match self.op {
             UnaryOp::Gelu => {
@@ -232,6 +231,25 @@ impl OpGuards for Unary {
 }
 
 impl Operation for Unary {
+    fn name(&self) -> &'static str {
+        match self.op {
+            UnaryOp::Gelu => "Gelu",
+            UnaryOp::Tanh => "Tanh",
+            UnaryOp::Exp => "Exp",
+            UnaryOp::Log => "Log",
+            UnaryOp::Sin => "Sin",
+            UnaryOp::Cos => "Cos",
+            UnaryOp::Abs => "Abs",
+            UnaryOp::Sqrt => "Sqrt",
+            UnaryOp::Relu => "Relu",
+            UnaryOp::Floor => "Floor",
+            UnaryOp::Ceil => "Ceil",
+            UnaryOp::Neg => "Neg",
+            UnaryOp::Silu => "Silu",
+            UnaryOp::Sigmoid => "Sigmoid",
+        }
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         Ok(self.input.storage_view().clone())
     }
@@ -272,8 +290,12 @@ impl Kernel for UnaryKernels {
     type Metadata = UnaryMeta;
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
-        let a_rank = &self.input.shape().rank();
-        let N = &self.input.shape()[a_rank - 1];
+        let inner = match self {
+            UnaryKernels::Standard(inner) => inner,
+        };
+
+        let a_rank = &inner.input.shape().rank();
+        let N = &inner.input.shape()[a_rank - 1];
 
         if N % 4 == 0 {
             KernelElement::Vec4
@@ -295,28 +317,31 @@ impl Kernel for UnaryKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        match (self.input.dt(), &kernel_element) {
+        let inner = match self {
+            UnaryKernels::Standard(inner) => inner,
+        };
+        match (inner.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
-                self.input.dt(),
+                inner.input.dt(),
                 kernel_element
             ))),
         }

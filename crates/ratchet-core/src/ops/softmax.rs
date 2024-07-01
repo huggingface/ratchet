@@ -182,6 +182,10 @@ impl KernelRenderable for Softmax {
 }
 
 impl Operation for Softmax {
+    fn name(&self) -> &'static str {
+        "Softmax"
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         Ok(self.input.storage_view().clone())
     }

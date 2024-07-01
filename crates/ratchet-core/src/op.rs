@@ -35,19 +35,19 @@ pub enum LazyOp {
 impl LazyOp {
     pub fn name(&self) -> String {
         match self {
-            LazyOp::Binary(b) => b.op_name(),
-            LazyOp::Cast(c) => c.op_name(),
-            LazyOp::Matmul(m) => m.op_name(),
-            LazyOp::Softmax(s) => s.op_name(),
-            LazyOp::Unary(u) => u.op_name(),
-            LazyOp::Reindex(r) => r.op_name(),
-            LazyOp::Concat(c) => c.op_name(),
-            LazyOp::Norm(n) => n.op_name(),
-            LazyOp::Conv(c) => c.op_name(),
-            LazyOp::Select(s) => s.op_name(),
-            LazyOp::IndexWrite(iw) => iw.op_name(),
-            LazyOp::RoPE(r) => r.op_name(),
-            LazyOp::Cache(c) => c.op_name(),
+            LazyOp::Binary(b) => b.name(),
+            LazyOp::Cast(c) => c.name(),
+            LazyOp::Matmul(m) => m.name(),
+            LazyOp::Softmax(s) => s.name(),
+            LazyOp::Unary(u) => u.name(),
+            LazyOp::Reindex(r) => r.name(),
+            LazyOp::Concat(c) => c.name(),
+            LazyOp::Norm(n) => n.name(),
+            LazyOp::Conv(c) => c.name(),
+            LazyOp::Select(s) => s.name(),
+            LazyOp::IndexWrite(iw) => iw.name(),
+            LazyOp::RoPE(r) => r.name(),
+            LazyOp::Cache(c) => c.name(),
             LazyOp::View(_) => "View".to_string(),
             LazyOp::Const => "Const".to_string(),
         }
@@ -237,6 +237,9 @@ pub trait OpGuards {
 ///
 /// Hardware invariant functions.
 pub trait Operation: OpGuards + Debug + 'static {
+    /// # Operation Name
+    pub fn name(&self) -> &'static str;
+
     /// # Check Invariants
     ///
     /// All operations have some invariants that must be upheld to ensure correctness.

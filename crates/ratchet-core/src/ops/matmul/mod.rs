@@ -366,6 +366,10 @@ impl Matmul {
 }
 
 impl Operation for Matmul {
+    fn name() -> &'static str {
+        "Matmul"
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let c_shape = Matmul::compute_c_shape(
             &self.lhs,

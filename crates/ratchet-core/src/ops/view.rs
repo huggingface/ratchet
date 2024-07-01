@@ -23,6 +23,10 @@ impl OpGuards for View {
 }
 
 impl Operation for View {
+    fn name() -> &'static str {
+        "View"
+    }
+
     fn compute_view(&self) -> Result<StorageView, crate::OperationError> {
         let strides = Strides::from(&self.shape);
         Ok(StorageView::new(self.shape.clone(), self.src.dt(), strides))

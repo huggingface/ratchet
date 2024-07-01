@@ -4,10 +4,10 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
+    gpu::{BindGroupLayoutDescriptor, WorkgroupCount},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
-    KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
-    Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
+    Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -18,7 +18,78 @@ pub struct IndexSelect {
     dim: usize,
 }
 
-impl IndexSelect {
+impl IndexSelect {}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
+pub struct IndexSelectMeta {
+    dst_numel: u32,
+    right_numel: u32,
+    ids_numel: u32,
+    src_dim_numel: u32,
+}
+
+impl Operation for IndexSelect {
+    fn name(&self) -> &'static str {
+        "IndexSelect"
+    }
+
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        let (input, indices) = (&self.src, &self.indices);
+        let (indices_shape, input_shape) = (indices.shape(), input.shape());
+
+        let mut output_shape = input_shape.clone();
+        output_shape[self.dim] = indices_shape[0];
+        let strides = Strides::from(&output_shape);
+        Ok(StorageView::new(
+            output_shape,
+            self.src.dt().activation_dt(),
+            strides,
+        ))
+    }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.src, &self.indices]
+    }
+}
+
+impl OpGuards for IndexSelect {
+    fn check_shapes(&self) {
+        let (input, indices) = (&self.src, &self.indices);
+        assert_eq!(input.rank(), 2);
+        assert_eq!(indices.rank(), 1);
+    }
+
+    fn check_dtypes(&self) {
+        let indices = &self.indices;
+        //TODO: support others
+        assert_eq!(indices.dt(), DType::I32);
+    }
+}
+
+pub enum IndexSelectKernels {
+    Standard(IndexSelect),
+}
+
+impl GPUOperation for IndexSelect {
+    type KernelEnum = IndexSelectKernels;
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        IndexSelectKernels::Standard(self)
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        _: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        match self.src.dt() {
+            DType::F32 | DType::F16 => Ok(BindGroupLayoutDescriptor::binary()),
+            DType::Q8_0H(_) | DType::Q8_0F(_) => Ok(BindGroupLayoutDescriptor::ternary()),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl KernelRenderable for IndexSelect {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -46,7 +117,7 @@ impl IndexSelect {
         Ok(())
     }
 
-    fn build_index_select<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -110,83 +181,20 @@ impl IndexSelect {
     }
 }
 
-#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
-pub struct IndexSelectMeta {
-    dst_numel: u32,
-    right_numel: u32,
-    ids_numel: u32,
-    src_dim_numel: u32,
-}
-
-impl Operation for IndexSelect {
-    fn compute_view(&self) -> Result<StorageView, OperationError> {
-        let (input, indices) = (&self.src, &self.indices);
-        let (indices_shape, input_shape) = (indices.shape(), input.shape());
-
-        let mut output_shape = input_shape.clone();
-        output_shape[self.dim] = indices_shape[0];
-        let strides = Strides::from(&output_shape);
-        Ok(StorageView::new(
-            output_shape,
-            self.src.dt().activation_dt(),
-            strides,
-        ))
-    }
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.src, &self.indices]
-    }
-}
-
-impl OpGuards for IndexSelect {
-    fn check_shapes(&self) {
-        let (input, indices) = (&self.src, &self.indices);
-        assert_eq!(input.rank(), 2);
-        assert_eq!(indices.rank(), 1);
-    }
-
-    fn check_dtypes(&self) {
-        let indices = &self.indices;
-        //TODO: support others
-        assert_eq!(indices.dt(), DType::I32);
-    }
-}
-
-pub enum IndexSelectKernels {
-    Standard(IndexSelect),
-}
-
-impl GPUOperation for IndexSelect {
-    type KernelEnum = IndexSelectKernels;
-
-    fn select_kernel(self) -> Self::KernelEnum {
-        IndexSelectKernels::Standard(self)
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        match self.src.dt() {
-            DType::F32 | DType::F16 => Ok(BindGroupLayoutDescriptor::binary()),
-            DType::Q8_0H(_) | DType::Q8_0F(_) => Ok(BindGroupLayoutDescriptor::ternary()),
-            _ => unimplemented!(),
-        }
-    }
-}
-
 impl Kernel for IndexSelectKernels {
     type Metadata = IndexSelectMeta;
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
+        let inner = match self {
+            IndexSelectKernels::Standard(inner) => inner,
+        };
+
         let dst_numel = dst.shape().numel() as u32;
-        let right_numel = self.src.shape()[(self.dim + 1)..].iter().product::<usize>() as u32;
-        let ids_numel = self.indices.shape().numel() as u32;
-        let src_dim_numel = self.src.shape()[self.dim] as u32;
+        let right_numel = inner.src.shape()[(inner.dim + 1)..]
+            .iter()
+            .product::<usize>() as u32;
+        let ids_numel = inner.indices.shape().numel() as u32;
+        let src_dim_numel = inner.src.shape()[inner.dim] as u32;
 
         Ok(IndexSelectMeta {
             dst_numel,
@@ -198,7 +206,10 @@ impl Kernel for IndexSelectKernels {
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let workgroup_size = wgs![8, 8, 1];
-        let numel = match self.src.dt() {
+        let inner = match self {
+            IndexSelectKernels::Standard(inner) => inner,
+        };
+        let numel = match inner.src.dt() {
             DType::F32 | DType::F16 => dst.shape().numel(),
             DType::Q8_0H(_) | DType::Q8_0F(_) => dst.shape().numel() / 4,
             _ => unimplemented!(),
@@ -210,7 +221,7 @@ impl Kernel for IndexSelectKernels {
         })
     }
 
-    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+    fn kernel_element(&self, _: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }
 
@@ -221,34 +232,37 @@ impl Kernel for IndexSelectKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        match (self.src.dt(), &kernel_element) {
+        let inner = match self {
+            IndexSelectKernels::Standard(inner) => inner,
+        };
+        match (inner.src.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_index_select::<Scalar<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_index_select::<Vec2<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_index_select::<Scalar<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_index_select::<Vec2<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             (DType::Q8_0H(_), KernelElement::Scalar) => {
-                self.build_index_select::<Vec4<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             (DType::Q8_0F(_), KernelElement::Scalar) => {
-                self.build_index_select::<Vec4<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
-                self.src.dt(),
+                inner.src.dt(),
                 kernel_element
             ))),
         }

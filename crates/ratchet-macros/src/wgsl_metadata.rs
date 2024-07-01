@@ -43,7 +43,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
     });
 
     let expanded = quote! (
-        impl crate::StaticKernelMetadata for #struct_name {}
+        use crate::StaticKernelMetadata;
+        impl StaticKernelMetadata for #struct_name {}
 
         impl crate::KernelMetadata for #struct_name {
             fn render_meta(&self) -> crate::WgslFragment {

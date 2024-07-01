@@ -49,6 +49,10 @@ impl OpGuards for RoPE {
 }
 
 impl Operation for RoPE {
+    fn name(&self) -> &'static str {
+        "RoPE"
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         Ok(self.input.storage_view().clone())
     }

@@ -323,9 +323,9 @@ impl Tensor {
     ) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
         let group_norm = GroupNorm::new(Norm::new(self, weight, bias, eps), num_groups);
-        let new_view = group_norm.compute_view()?;
-        let op = LazyOp::Norm(NormOp::GroupNorm(group_norm));
-        Ok(Tensor::lazy(op, new_view, device))
+        let norm_op = NormOp::GroupNorm(group_norm);
+        let new_view = norm_op.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Norm(norm_op), new_view, device))
     }
 
     pub fn layer_norm(
@@ -336,17 +336,17 @@ impl Tensor {
     ) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
         let layer_norm = Norm::new(self, weight, bias, eps);
-        let new_view = layer_norm.compute_view()?;
-        let op = LazyOp::Norm(NormOp::LayerNorm(layer_norm));
-        Ok(Tensor::lazy(op, new_view, device))
+        let op = NormOp::LayerNorm(layer_norm);
+        let new_view = op.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Norm(op), new_view, device))
     }
 
     pub fn rms_norm(self, weight: Tensor, eps: f32) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
         let rms = Norm::new(self, weight, None, eps);
-        let new_view = rms.compute_view()?;
-        let op = LazyOp::Norm(NormOp::RMSNorm(rms));
-        Ok(Tensor::lazy(op, new_view, device))
+        let op = NormOp::RMSNorm(rms);
+        let new_view = op.compute_view()?;
+        Ok(Tensor::lazy(LazyOp::Norm(op), new_view, device))
     }
 
     pub fn conv1d(
