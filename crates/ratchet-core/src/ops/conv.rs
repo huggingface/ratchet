@@ -155,6 +155,10 @@ impl OpGuards for Conv {
 }
 
 impl Operation for Conv {
+    fn name(&self) -> &'static str {
+        "Conv"
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let input_t = &self.input;
         let weight_t = &self.weight;
@@ -184,19 +188,18 @@ pub enum ConvKernels {
 impl Kernel for ConvKernels {
     type Metadata = ConvMeta;
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
-        let [_N, Cin, Lin]: [usize; 3] = self.input.shape().try_into()?;
-        let [_Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
+        let inner = match self {
+            ConvKernels::Threebythree(i) => i,
+        };
+        let [_N, Cin, Lin]: [usize; 3] = inner.input.shape().try_into()?;
+        let [_Cout, _, KS]: [usize; 3] = inner.weight.shape().try_into()?;
         let [_, _, Lout]: [usize; 3] = dst.shape().try_into()?;
         let F_numel = Cin * KS;
         let Fperthread = WorkgroupCount::div_ceil(F_numel, 256);
         Ok(ConvMeta::new(
-            self.stride as _,
-            self.padding as _,
+            inner.stride as _,
+            inner.padding as _,
             Cin as _,
             Lin as _,
             KS as _,
@@ -206,14 +209,17 @@ impl Kernel for ConvKernels {
         ))
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+    fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
         let workgroup_size = wgs![256, 1, 1];
+        let inner = match self {
+            ConvKernels::Threebythree(i) => i,
+        };
 
-        let input = &self.input;
+        let input = &inner.input;
         let [_N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
-        let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
+        let [Cout, _, KS]: [usize; 3] = inner.weight.shape().try_into()?;
         let _F_numel = Cin * KS;
-        let padded_strided_Lin = (Lin + 2 * self.padding) / self.stride;
+        let padded_strided_Lin = (Lin + 2 * inner.padding) / inner.stride;
         let wgcx = WorkgroupCount::div_ceil(padded_strided_Lin, workgroup_size.product() as _);
         Ok(Workload {
             workgroup_count: wgc![wgcx as _, Cout as _, 1],
@@ -221,7 +227,7 @@ impl Kernel for ConvKernels {
         })
     }
 
-    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+    fn kernel_element(&self, _: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }
 
@@ -232,28 +238,31 @@ impl Kernel for ConvKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        match (self.input.dt(), &kernel_element) {
+        let inner = match self {
+            ConvKernels::Threebythree(i) => i,
+        };
+        match (inner.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build::<Scalar<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build::<Vec2<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build::<Vec4<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build::<Scalar<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build::<Vec2<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build::<Vec4<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
-                self.input.dt(),
+                inner.input.dt(),
                 kernel_element
             ))),
         }
