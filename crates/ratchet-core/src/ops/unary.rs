@@ -10,8 +10,8 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
     rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize, Workload,
+    Operation, OperationError, RVec, Scalar, StaticKernelMetadata, StorageView, Tensor, Vec2, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[cfg(test)]
@@ -134,6 +134,7 @@ impl Unary {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: UnaryMeta,
     ) -> Result<KernelSource, OperationError> {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -144,10 +145,10 @@ impl Unary {
                 BuiltIn::NumWorkgroups
             ],
             device.compute_features().clone(),
+            metadata,
         );
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<UnaryMeta>();
 
         let accessor = P::render_type();
         //Write global functions
@@ -224,6 +225,8 @@ impl Operation for Unary {
 }
 
 impl MetaOperation for Unary {
+    type KernelMetadata = UnaryMeta;
+
     fn kernel_name(&self) -> String {
         self.op.kernel_name().to_string()
     }
@@ -281,26 +284,27 @@ impl MetaOperation for Unary {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: UnaryMeta,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_unary::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_unary::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_unary::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_unary::<Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_unary::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_unary::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_unary::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_unary::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_unary::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_unary::<Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_unary::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_unary::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

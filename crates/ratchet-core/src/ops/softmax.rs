@@ -57,6 +57,7 @@ impl Softmax {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: SoftmaxMeta,
     ) -> Result<KernelSource, OperationError>
     where
         P::T: num_traits::Float,
@@ -70,9 +71,9 @@ impl Softmax {
                 BuiltIn::WorkgroupId,
             ],
             device.compute_features().clone(),
+            metadata,
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<SoftmaxMeta>();
 
         let dt = P::T::DT;
         let accessor = P::render_type();
@@ -190,6 +191,8 @@ impl Operation for Softmax {
 }
 
 impl MetaOperation for Softmax {
+    type KernelMetadata = SoftmaxMeta;
+
     fn kernel_name(&self) -> String {
         "softmax".to_string()
     }
@@ -219,26 +222,27 @@ impl MetaOperation for Softmax {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: SoftmaxMeta,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_softmax::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_softmax::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_softmax::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_softmax::<Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_softmax::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_softmax::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_softmax::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_softmax::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_softmax::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_softmax::<Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_softmax::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_softmax::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

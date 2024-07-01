@@ -63,7 +63,7 @@ impl Cache {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<CacheMeta>();
+        kernel_builder.render_metadata::<CacheMeta>();
         kernel_builder.write_offset_to_index();
         kernel_builder.write_index_to_offset();
 

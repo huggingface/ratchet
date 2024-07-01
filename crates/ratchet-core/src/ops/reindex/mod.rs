@@ -45,6 +45,7 @@ impl Reindex {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: ReindexMeta,
     ) -> Result<KernelSource, OperationError> {
         let device = dst.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -55,10 +56,9 @@ impl Reindex {
                 BuiltIn::NumWorkgroups,
             ],
             device.compute_features().clone(),
+            metadata,
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        //In future this metadata could be dynamic
-        kernel_builder.write_metadata::<ReindexMeta>();
 
         let n = P::W;
 
@@ -127,6 +127,8 @@ pub struct ReindexMeta {
 }
 
 impl MetaOperation for Reindex {
+    type KernelMetadata = ReindexMeta;
+
     fn kernel_name(&self) -> String {
         match self {
             Reindex::Permute(_) => "permute".to_string(),
@@ -158,13 +160,7 @@ impl MetaOperation for Reindex {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        //This is gross
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Self::KernelMetadata {
         let srcs = self.srcs();
         let src = srcs.first().unwrap();
         let src_shape = Shape::promote(src.shape().clone(), 4);
@@ -206,7 +202,7 @@ impl MetaOperation for Reindex {
         };
         let perm = glam::UVec4::from(permute);
         let src_offsets = glam::UVec4::from(src_offsets);
-        let meta = ReindexMeta {
+        ReindexMeta {
             src_shape,
             dst_shape,
             src_stride,
@@ -215,8 +211,7 @@ impl MetaOperation for Reindex {
             dst_numel,
             perm,
             src_offsets,
-        };
-        Ok(uniform.write(&meta)?)
+        }
     }
 
     fn build_kernel(
@@ -224,14 +219,15 @@ impl MetaOperation for Reindex {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_reindex::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_reindex::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_reindex::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_reindex::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

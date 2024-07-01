@@ -6,9 +6,10 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
-    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement, KernelMetadata,
+    KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
+    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -59,6 +60,7 @@ impl Binary {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        m: BinaryMeta,
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -69,10 +71,10 @@ impl Binary {
                 BuiltIn::NumWorkgroups
             ],
             device.compute_features().clone(),
+            m,
         );
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<BinaryMeta>();
 
         let N = (P::W as u32).render();
 
@@ -153,6 +155,8 @@ impl Operation for Binary {
 }
 
 impl MetaOperation for Binary {
+    type KernelMetadata = BinaryMeta;
+
     fn kernel_name(&self) -> String {
         self.op.kernel_name().to_string()
     }
@@ -208,26 +212,27 @@ impl MetaOperation for Binary {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (self.lhs.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_binary::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_binary::<Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_binary::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_binary::<Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_binary::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_binary::<Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_binary::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_binary::<Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_binary::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_binary::<Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_binary::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_binary::<Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

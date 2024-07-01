@@ -5,10 +5,9 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    gpu::BindGroupLayoutDescriptor, rvec, Array, BindingMode, BuiltIn, DType, KernelElement,
+    KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
+    Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -34,6 +33,7 @@ impl Cast {
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: CastMeta,
     ) -> Result<KernelSource, OperationError> {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -44,10 +44,10 @@ impl Cast {
                 BuiltIn::NumWorkgroups
             ],
             device.compute_features().clone(),
+            metadata,
         );
 
         self.register_bindings::<SP, DP>(&mut kernel_builder, inplace)?;
-        kernel_builder.write_metadata::<CastMeta>();
 
         let n = SP::W;
         kernel_builder.write_main(wgsl! {
@@ -87,6 +87,8 @@ impl Operation for Cast {
 }
 
 impl MetaOperation for Cast {
+    type KernelMetadata = CastMeta;
+
     fn kernel_name(&self) -> String {
         "cast".to_string()
     }
@@ -123,15 +125,9 @@ impl MetaOperation for Cast {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
+    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Self::KernelMetadata {
         let numel = self.input.shape().numel() as u32;
-        let meta = CastMeta { numel };
-        Ok(uniform.write(&meta)?)
+        CastMeta { numel }
     }
 
     fn build_kernel(
@@ -139,62 +135,63 @@ impl MetaOperation for Cast {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
+        metadata: Self::KernelMetadata,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), self.dst_dt, &kernel_element) {
             (DType::F32, DType::F16, KernelElement::Scalar) => {
-                self.build_cast::<Scalar<f32>, Scalar<f16>>(inplace, dst, workgroup_size)
+                self.build_cast::<Scalar<f32>, Scalar<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, DType::F16, KernelElement::Vec2) => {
-                self.build_cast::<Vec2<f32>, Vec2<f16>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec2<f32>, Vec2<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, DType::F16, KernelElement::Vec4) => {
-                self.build_cast::<Vec4<f32>, Vec4<f16>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec4<f32>, Vec4<f16>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, DType::F32, KernelElement::Scalar) => {
-                self.build_cast::<Scalar<f16>, Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Scalar<f16>, Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, DType::F32, KernelElement::Vec2) => {
-                self.build_cast::<Vec2<f16>, Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec2<f16>, Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F16, DType::F32, KernelElement::Vec4) => {
-                self.build_cast::<Vec4<f16>, Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec4<f16>, Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::U32, DType::F32, KernelElement::Scalar) => {
-                self.build_cast::<Scalar<u32>, Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Scalar<u32>, Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::U32, DType::F32, KernelElement::Vec2) => {
-                self.build_cast::<Vec2<u32>, Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec2<u32>, Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::U32, DType::F32, KernelElement::Vec4) => {
-                self.build_cast::<Vec4<u32>, Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec4<u32>, Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::I32, DType::F32, KernelElement::Scalar) => {
-                self.build_cast::<Scalar<i32>, Scalar<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Scalar<i32>, Scalar<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::I32, DType::F32, KernelElement::Vec2) => {
-                self.build_cast::<Vec2<i32>, Vec2<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec2<i32>, Vec2<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::I32, DType::F32, KernelElement::Vec4) => {
-                self.build_cast::<Vec4<i32>, Vec4<f32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec4<i32>, Vec4<f32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, DType::U32, KernelElement::Scalar) => {
-                self.build_cast::<Scalar<f32>, Scalar<u32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Scalar<f32>, Scalar<u32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, DType::U32, KernelElement::Vec2) => {
-                self.build_cast::<Vec2<f32>, Vec2<u32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec2<f32>, Vec2<u32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, DType::U32, KernelElement::Vec4) => {
-                self.build_cast::<Vec4<f32>, Vec4<u32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec4<f32>, Vec4<u32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, DType::I32, KernelElement::Scalar) => {
-                self.build_cast::<Scalar<f32>, Scalar<i32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Scalar<f32>, Scalar<i32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, DType::I32, KernelElement::Vec2) => {
-                self.build_cast::<Vec2<f32>, Vec2<i32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec2<f32>, Vec2<i32>>(inplace, dst, workgroup_size, metadata)
             }
             (DType::F32, DType::I32, KernelElement::Vec4) => {
-                self.build_cast::<Vec4<f32>, Vec4<i32>>(inplace, dst, workgroup_size)
+                self.build_cast::<Vec4<f32>, Vec4<i32>>(inplace, dst, workgroup_size, metadata)
             }
             _ => unimplemented!(
                 "Cannot cast from {:?} to {:?}",

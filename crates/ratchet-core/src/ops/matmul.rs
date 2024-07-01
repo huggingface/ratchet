@@ -1,11 +1,12 @@
 use std::cmp::Ordering;
 
 use encase::ShaderType;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelSource, MetaOperation,
-    OpGuards, OpMetadata, Operation, OperationError, RVec, Shape, StorageView, Strides,
+    rvec, wgc, wgs, DType, InvariantError, KernelElement, KernelKey, KernelMetadata, KernelSource,
+    MetaOperation, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides,
     SubgroupGEMVMeta, Tensor, WorkgroupGEMVMeta, WorkgroupSize, Workload, GEMM, GEMV, Q8_0F, Q8_0H,
 };
 
@@ -373,7 +374,7 @@ impl Matmul {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[derive(Debug, Clone, ShaderType)]
+#[derive(Debug, Clone, ShaderType, WgslMetadata)]
 pub struct MatmulMeta {
     aShape: glam::IVec3,
     aStrides: glam::IVec3,
@@ -391,38 +392,8 @@ impl MatmulMeta {
         uniform: &mut CpuUniform,
         spec: &GEMMSpec,
     ) -> Result<u64, OperationError> {
-        let mut lhs_shape = spec.lhs_shape.clone();
-        lhs_shape.insert(0, spec.lhs_stack());
-        let aStrides = Strides::from(&lhs_shape);
-
-        let mut rhs_shape = spec.rhs_shape.clone();
-        rhs_shape.insert(0, spec.rhs_stack());
-        let bStrides = Strides::from(&rhs_shape);
-
-        let mut out_shape = spec.out_shape.clone();
-        out_shape.insert(0, spec.stacks());
-        let outStrides = Strides::from(&out_shape);
-
-        let dimAOuter = spec.dim_lhs_outer() as i32;
-        let dimBOuter = spec.dim_rhs_outer() as i32;
-        let dimInner = spec.dim_inner() as i32;
-
-        let meta = MatmulMeta {
-            aShape: lhs_shape.into(),
-            aStrides: aStrides.into(),
-            bShape: rhs_shape.into(),
-            bStrides: bStrides.into(),
-            outShape: out_shape.into(),
-            outStrides: outStrides.into(),
-            dimAOuter,
-            dimBOuter,
-            dimInner,
-        };
-        Ok(uniform.write(&meta)?)
     }
 }
-
-impl OpMetadata for MatmulMeta {}
 
 impl Operation for Matmul {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
@@ -478,6 +449,8 @@ impl OpGuards for Matmul {
 }
 
 impl MetaOperation for Matmul {
+    type KernelMetadata = MatmulMeta;
+
     fn kernel_name(&self) -> String {
         "GEMM".to_string()
     }
@@ -626,6 +599,36 @@ impl MetaOperation for Matmul {
             }
         } else {
             MatmulMeta::write_metadata(uniform, &spec)
+        }
+    }
+
+    fn metadata(&self, dst: &Tensor, kernel_element: &KernelElement) -> Self::KernelMetadata {
+        let mut lhs_shape = spec.lhs_shape.clone();
+        lhs_shape.insert(0, spec.lhs_stack());
+        let aStrides = Strides::from(&lhs_shape);
+
+        let mut rhs_shape = spec.rhs_shape.clone();
+        rhs_shape.insert(0, spec.rhs_stack());
+        let bStrides = Strides::from(&rhs_shape);
+
+        let mut out_shape = spec.out_shape.clone();
+        out_shape.insert(0, spec.stacks());
+        let outStrides = Strides::from(&out_shape);
+
+        let dimAOuter = spec.dim_lhs_outer() as i32;
+        let dimBOuter = spec.dim_rhs_outer() as i32;
+        let dimInner = spec.dim_inner() as i32;
+
+        let meta = MatmulMeta {
+            aShape: lhs_shape.into(),
+            aStrides: aStrides.into(),
+            bShape: rhs_shape.into(),
+            bStrides: bStrides.into(),
+            outShape: out_shape.into(),
+            outStrides: outStrides.into(),
+            dimAOuter,
+            dimBOuter,
+            dimInner,
         }
     }
 
