@@ -35,19 +35,19 @@ pub enum LazyOp {
 impl LazyOp {
     pub fn name(&self) -> String {
         match self {
-            LazyOp::Binary(b) => b.kernel_name(),
-            LazyOp::Cast(c) => c.kernel_name(),
-            LazyOp::Matmul(m) => m.kernel_name(),
-            LazyOp::Softmax(s) => s.kernel_name(),
-            LazyOp::Unary(u) => u.kernel_name(),
-            LazyOp::Reindex(r) => r.kernel_name(),
-            LazyOp::Concat(c) => c.kernel_name(),
-            LazyOp::Norm(n) => n.kernel_name(),
-            LazyOp::Conv(c) => c.kernel_name(),
-            LazyOp::Select(s) => s.kernel_name(),
-            LazyOp::IndexWrite(iw) => iw.kernel_name(),
-            LazyOp::RoPE(r) => r.kernel_name(),
-            LazyOp::Cache(c) => c.kernel_name(),
+            LazyOp::Binary(b) => b.op_name(),
+            LazyOp::Cast(c) => c.op_name(),
+            LazyOp::Matmul(m) => m.op_name(),
+            LazyOp::Softmax(s) => s.op_name(),
+            LazyOp::Unary(u) => u.op_name(),
+            LazyOp::Reindex(r) => r.op_name(),
+            LazyOp::Concat(c) => c.op_name(),
+            LazyOp::Norm(n) => n.op_name(),
+            LazyOp::Conv(c) => c.op_name(),
+            LazyOp::Select(s) => s.op_name(),
+            LazyOp::IndexWrite(iw) => iw.op_name(),
+            LazyOp::RoPE(r) => r.op_name(),
+            LazyOp::Cache(c) => c.op_name(),
             LazyOp::View(_) => "View".to_string(),
             LazyOp::Const => "Const".to_string(),
         }
@@ -286,7 +286,7 @@ pub trait GPUOperation: Operation {
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError>;
 
-    fn compile(
+    fn compile_gpu(
         &self,
         dst: &Tensor,
         uniform: &mut CpuUniform,

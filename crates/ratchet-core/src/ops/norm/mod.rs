@@ -6,10 +6,10 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
+    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
-    KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2,
-    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StaticKernelMetadata,
+    StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use derive_new::new;
 use inline_wgsl::wgsl;
@@ -21,23 +21,40 @@ pub struct Norm {
     pub(crate) bias: Option<Tensor>,
     pub(crate) eps: f32,
 }
-impl OpGuards for Norm {
+
+impl OpGuards for NormOp {
     fn check_shapes(&self) {
-        assert!(self.input.rank() >= 2);
+        let input = match self {
+            NormOp::LayerNorm(Norm { input, .. }) | NormOp::RMSNorm(Norm { input, .. }) => input,
+            NormOp::GroupNorm(GroupNorm { norm, .. }) => &norm.input,
+        };
+        assert!(input.rank() >= 2);
     }
 
     fn check_dtypes(&self) {
-        self.input.dt().is_float();
-        self.scale.dt().is_float();
-        if self.bias.is_some() {
-            self.bias.as_ref().unwrap().dt().is_float();
+        let (input, scale, bias) = match self {
+            NormOp::LayerNorm(Norm {
+                input, scale, bias, ..
+            }) => (input, scale, bias),
+            NormOp::RMSNorm(Norm { input, scale, .. }) => (input, scale, &None),
+            NormOp::GroupNorm(GroupNorm { norm, .. }) => (&norm.input, &norm.scale, &norm.bias),
+        };
+
+        input.dt().is_float();
+        scale.dt().is_float();
+        if bias.is_some() {
+            bias.as_ref().unwrap().dt().is_float();
         }
     }
 }
 
-impl Operation for Norm {
+impl Operation for NormOp {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        Ok(self.input.storage_view().clone())
+        let input = match self {
+            NormOp::LayerNorm(Norm { input, .. }) | NormOp::RMSNorm(Norm { input, .. }) => input,
+            NormOp::GroupNorm(GroupNorm { norm, .. }) => &norm.input,
+        };
+        Ok(input.storage_view().clone())
     }
 
     fn srcs(&self) -> RVec<&Tensor> {

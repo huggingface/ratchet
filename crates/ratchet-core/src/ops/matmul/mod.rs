@@ -253,7 +253,7 @@ impl MatmulSpec {
     }
 }
 
-#[derive(derive_new::new, Debug)]
+#[derive(derive_new::new, Debug, Clone)]
 pub struct Matmul {
     pub(crate) lhs: Tensor,
     pub(crate) rhs: Tensor,
