@@ -1,6 +1,20 @@
+use encase::ShaderType;
+use ratchet_macros::WgslMetadata;
+
 use crate::{prelude::*, OpGuards, OperationError, StorageView, Strides};
 use crate::{Operation, RVec};
 use std::ops::Range;
+
+#[derive(Debug, WgslMetadata, ShaderType)]
+pub struct SliceMeta {
+    src_shape: glam::UVec4,
+    dst_shape: glam::UVec4,
+    src_stride: glam::UVec4,
+    dst_stride: glam::UVec4,
+    src_numel: u32,
+    dst_numel: u32,
+    src_offsets: glam::UVec4,
+}
 
 /// # Slice
 ///

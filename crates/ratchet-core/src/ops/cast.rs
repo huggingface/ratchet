@@ -6,8 +6,8 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement, KernelSource,
+    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
@@ -85,24 +85,56 @@ impl Operation for Cast {
         let strides = Strides::from(&shape);
         Ok(StorageView::new(shape, self.dst_dt, strides))
     }
-}
-
-impl MetaOperation for Cast {
-    fn kernel_name(&self) -> String {
-        "cast".to_string()
-    }
-
-    fn supports_inplace(&self) -> bool {
-        //Really annoying that this can't be inplace
-        //Buffer binding stops this from being possible
-        false
-    }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input]
     }
 
-    fn kernel_element(&self, _: &Tensor) -> KernelElement {
+    fn supports_inplace(&self) -> bool {
+        //CANNOT BE DONE INPLACE
+        false
+    }
+}
+
+pub enum CastKernels {
+    Standard(Cast),
+}
+
+impl GPUOperation for Cast {
+    type KernelEnum = CastKernels;
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        CastKernels::Standard(self)
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if inplace {
+            panic!("Cast cannot be done in place on GPU");
+        }
+        Ok(BindGroupLayoutDescriptor::unary())
+    }
+}
+
+impl Kernel for CastKernels {
+    type Metadata = CastMeta;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let numel = self.input.shape().numel() as u32;
+        Ok(CastMeta { numel })
+    }
+
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         let numel = self.input.shape().numel();
         if numel % 4 == 0 {
             KernelElement::Vec4
@@ -111,27 +143,6 @@ impl MetaOperation for Cast {
         } else {
             KernelElement::Scalar
         }
-    }
-
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
-        Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        _: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        Ok(BindGroupLayoutDescriptor::unary())
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let numel = self.input.shape().numel() as u32;
-        Ok(uniform.write(&CastMeta { numel })?)
     }
 
     fn build_kernel(

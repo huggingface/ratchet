@@ -156,7 +156,6 @@ impl Kernel for ReindexKernels {
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> Result<Self::Metadata, OperationError> {
-        //This is gross
         let srcs = self.srcs();
         let src = srcs.first().unwrap();
         let src_shape = Shape::promote(src.shape().clone(), 4);
