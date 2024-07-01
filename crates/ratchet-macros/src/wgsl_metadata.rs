@@ -58,7 +58,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 fragment
             }
 
-            fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
+            fn write(&self, uniform: &mut crate::CpuUniform) -> Result<u64, crate::OperationError> {
                 self.write_static(uniform)
             }
         }

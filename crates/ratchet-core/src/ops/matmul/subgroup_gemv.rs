@@ -1,9 +1,18 @@
+use crate::{
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
+    KernelRenderable, KernelSource, MatmulSpec, OperationError, Scalar, Tensor, Vec4, WgslFragment,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+};
 use encase::ShaderType;
+use half::f16;
+use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::Kernel;
 
-pub struct SubgroupGEMV {}
+pub struct SubgroupGEMV {
+    spec: MatmulSpec,
+}
 
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
 pub struct SubgroupGEMVMeta {
@@ -11,45 +20,46 @@ pub struct SubgroupGEMVMeta {
     IVL: i32, //in_vec_size
 }
 
-impl Kernel for SubgroupGEMV {
-    type Metadata;
-
-    fn metadata(
+impl KernelRenderable for SubgroupGEMV {
+    fn register_bindings<P: WgslPrimitive>(
         &self,
-        dst: &crate::Tensor,
-        kernel_element: &crate::KernelElement,
-    ) -> Result<Self::Metadata, crate::OperationError> {
-        todo!()
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        let A = &self.lhs;
+        let bias = &self.bias;
+        let float_arr = Array::<P>::default();
+
+        if A.dt().is_float() {
+            builder.register_storage("mat", BindingMode::ReadOnly, float_arr);
+            builder.register_storage("inVec", BindingMode::ReadOnly, float_arr);
+            if bias.is_some() {
+                builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
+            }
+            builder.register_storage("outVec", BindingMode::ReadWrite, float_arr);
+        } else if A.dt().is_quantized() {
+            let scalar = Array::<Scalar<P::T>>::default();
+            let u32_arr = Array::<Scalar<u32>>::default();
+            builder.register_storage("mat", BindingMode::ReadOnly, u32_arr);
+            builder.register_storage("scale", BindingMode::ReadOnly, scalar);
+            builder.register_storage("inVec", BindingMode::ReadOnly, scalar);
+            if bias.is_some() {
+                builder.register_storage("bias", BindingMode::ReadOnly, scalar);
+            }
+            builder.register_storage("outVec", BindingMode::ReadWrite, scalar);
+        } else {
+            return Err(InvariantError::UnsupportedDType(A.dt()).into());
+        }
+
+        builder.register_uniform();
+        Ok(())
     }
 
-    fn calculate_dispatch(
-        &self,
-        dst: &crate::Tensor,
-    ) -> Result<crate::Workload, crate::OperationError> {
-        todo!()
-    }
-
-    fn kernel_element(&self, dst: &crate::Tensor) -> crate::KernelElement {
-        todo!()
-    }
-
-    fn build_kernel(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        dst: &crate::Tensor,
-        workgroup_size: &crate::WorkgroupSize,
-    ) -> Result<crate::KernelSource, crate::OperationError> {
-        todo!()
-    }
-}
-
-impl SubgroupGEMV {
-    fn subgroup_gemv<P: WgslPrimitive>(
-        &self,
-        inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-        _: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         const TM: usize = 4;
         const TN: usize = 4;
@@ -269,5 +279,64 @@ impl SubgroupGEMV {
         let x = kernel_builder.build()?;
         //println!("{}", x);
         Ok(x)
+    }
+}
+
+impl Kernel for SubgroupGEMV {
+    type Metadata = SubgroupGEMVMeta;
+
+    fn metadata(
+        &self,
+        dst: &crate::Tensor,
+        kernel_element: &crate::KernelElement,
+    ) -> Result<Self::Metadata, crate::OperationError> {
+        Ok(SubgroupGEMVMeta {
+            OVL: self.spec.new_dim_lhs_outer() as _,
+            IVL: self.spec.new_dim_rhs_outer() as _,
+        })
+    }
+
+    fn calculate_dispatch(
+        &self,
+        dst: &crate::Tensor,
+    ) -> Result<crate::Workload, crate::OperationError> {
+        let tile_size = 32;
+        Ok(Workload {
+            workgroup_count: wgc![
+                ((self.spec.new_dim_lhs_outer() / tile_size) + 1) as _,
+                1,
+                self.spec.stacks() as _
+            ],
+            workgroup_size: wgs![tile_size, 8, 1],
+        })
+    }
+
+    fn kernel_element(&self, dst: &crate::Tensor) -> crate::KernelElement {
+        KernelElement::Scalar
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &crate::Tensor,
+        workgroup_size: &crate::WorkgroupSize,
+    ) -> Result<crate::KernelSource, crate::OperationError> {
+        let kernel_element = self.kernel_element(dst);
+        let spec = self.compute_spec();
+        match (self.lhs.dt(), kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.render_gemv::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.render_gemv::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
+            }
+            (DType::Q8_0F(_), _) => {
+                self.render_gemv::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
+            }
+            (DType::Q8_0H(_), _) => {
+                self.render_gemv::<Vec4<f16>>(inplace, dst, workgroup_size, spec)
+            }
+            _ => panic!("Unsupported dtype"),
+        }
     }
 }

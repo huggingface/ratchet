@@ -61,33 +61,6 @@ impl GEMV {
         builder: &mut WgslKernelBuilder,
         _: bool,
     ) -> Result<(), OperationError> {
-        let A = &self.lhs;
-        let bias = &self.bias;
-        let float_arr = Array::<P>::default();
-
-        if A.dt().is_float() {
-            builder.register_storage("mat", BindingMode::ReadOnly, float_arr);
-            builder.register_storage("inVec", BindingMode::ReadOnly, float_arr);
-            if bias.is_some() {
-                builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
-            }
-            builder.register_storage("outVec", BindingMode::ReadWrite, float_arr);
-        } else if A.dt().is_quantized() {
-            let scalar = Array::<Scalar<P::T>>::default();
-            let u32_arr = Array::<Scalar<u32>>::default();
-            builder.register_storage("mat", BindingMode::ReadOnly, u32_arr);
-            builder.register_storage("scale", BindingMode::ReadOnly, scalar);
-            builder.register_storage("inVec", BindingMode::ReadOnly, scalar);
-            if bias.is_some() {
-                builder.register_storage("bias", BindingMode::ReadOnly, scalar);
-            }
-            builder.register_storage("outVec", BindingMode::ReadWrite, scalar);
-        } else {
-            return Err(InvariantError::UnsupportedDType(A.dt()).into());
-        }
-
-        builder.register_uniform();
-        Ok(())
     }
 
     pub fn build_kernel(
@@ -97,22 +70,6 @@ impl GEMV {
         workgroup_size: &WorkgroupSize,
         spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
-        let kernel_element = KernelElement::Scalar;
-        match (self.lhs.dt(), kernel_element) {
-            (DType::F32, KernelElement::Scalar) => {
-                self.render_gemv::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
-            }
-            (DType::F16, KernelElement::Scalar) => {
-                self.render_gemv::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
-            }
-            (DType::Q8_0F(_), _) => {
-                self.render_gemv::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
-            }
-            (DType::Q8_0H(_), _) => {
-                self.render_gemv::<Vec4<f16>>(inplace, dst, workgroup_size, spec)
-            }
-            _ => panic!("Unsupported dtype"),
-        }
     }
 
     fn render_gemv<P: WgslPrimitive>(
