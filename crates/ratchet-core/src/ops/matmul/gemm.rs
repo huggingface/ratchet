@@ -11,23 +11,16 @@ use crate::{
 use glam::IVec3;
 use inline_wgsl::wgsl;
 
-use super::MatmulInner;
-
-pub struct GEMM(MatmulInner);
-
-impl GEMM {
-    pub fn new(
-        lhs: Tensor,
-        rhs: Tensor,
-        bias: Option<Tensor>,
-        trans_lhs: bool,
-        trans_rhs: bool,
-        trans_out: bool,
-    ) -> Self {
-        Self(MatmulInner::new(
-            lhs, rhs, bias, trans_lhs, trans_rhs, trans_out,
-        ))
-    }
+pub struct GEMM {
+    aShape: IVec3,
+    aStrides: IVec3,
+    bShape: IVec3,
+    bStrides: IVec3,
+    outShape: IVec3,
+    outStrides: IVec3,
+    dimAOuter: i32,
+    dimBOuter: i32,
+    dimInner: i32,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -42,42 +35,6 @@ pub struct GEMMMeta {
     dimAOuter: i32,
     dimBOuter: i32,
     dimInner: i32,
-}
-
-impl GEMMMeta {
-    pub(crate) fn write_metadata(
-        uniform: &mut CpuUniform,
-        spec: &MatmulSpec,
-    ) -> Result<u64, OperationError> {
-        let mut lhs_shape = spec.lhs_shape.clone();
-        lhs_shape.insert(0, spec.lhs_stack());
-        let aStrides = Strides::from(&lhs_shape);
-
-        let mut rhs_shape = spec.rhs_shape.clone();
-        rhs_shape.insert(0, spec.rhs_stack());
-        let bStrides = Strides::from(&rhs_shape);
-
-        let mut out_shape = spec.out_shape.clone();
-        out_shape.insert(0, spec.stacks());
-        let outStrides = Strides::from(&out_shape);
-
-        let dimAOuter = spec.dim_lhs_outer() as i32;
-        let dimBOuter = spec.dim_rhs_outer() as i32;
-        let dimInner = spec.dim_inner() as i32;
-
-        let meta = GEMMMeta {
-            aShape: lhs_shape.into(),
-            aStrides: aStrides.into(),
-            bShape: rhs_shape.into(),
-            bStrides: bStrides.into(),
-            outShape: out_shape.into(),
-            outStrides: outStrides.into(),
-            dimAOuter,
-            dimBOuter,
-            dimInner,
-        };
-        Ok(uniform.write(&meta)?)
-    }
 }
 
 impl KernelRenderable for GEMM {
@@ -147,6 +104,43 @@ impl KernelRenderable for GEMM {
 }
 
 impl Kernel for GEMM {
+    type Metadata = GEMMMeta;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let spec = self.compute_spec();
+        let mut lhs_shape = spec.lhs_shape.clone();
+        lhs_shape.insert(0, spec.lhs_stack());
+        let aStrides = Strides::from(&lhs_shape);
+
+        let mut rhs_shape = spec.rhs_shape.clone();
+        rhs_shape.insert(0, spec.rhs_stack());
+        let bStrides = Strides::from(&rhs_shape);
+
+        let mut out_shape = spec.out_shape.clone();
+        out_shape.insert(0, spec.stacks());
+        let outStrides = Strides::from(&out_shape);
+
+        let dimAOuter = spec.dim_lhs_outer() as i32;
+        let dimBOuter = spec.dim_rhs_outer() as i32;
+        let dimInner = spec.dim_inner() as i32;
+
+        Ok(GEMMMeta {
+            aShape: lhs_shape.into(),
+            aStrides: aStrides.into(),
+            bShape: rhs_shape.into(),
+            bStrides: bStrides.into(),
+            outShape: out_shape.into(),
+            outStrides: outStrides.into(),
+            dimAOuter,
+            dimBOuter,
+            dimInner,
+        })
+    }
+
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<crate::Workload, OperationError> {
         //GEMM
         let TILE_DIM = 32;
@@ -217,15 +211,6 @@ impl Kernel for GEMM {
             }
             _ => return Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
         }
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        GEMMMeta::write_metadata(uniform, &self.spec)
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {

@@ -8,9 +8,10 @@ use wgpu::BindGroupLayoutEntry;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides,
-    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    KernelRenderable, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec,
+    Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
 
 /// # Cache
@@ -29,7 +30,7 @@ pub struct Cache {
     offset: usize,
 }
 
-impl Kernel for Cache {
+impl KernelRenderable for Cache {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -47,7 +48,7 @@ impl Kernel for Cache {
         Ok(())
     }
 
-    fn build<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -147,16 +148,10 @@ impl Operation for Cache {
 }
 
 impl GPUOperation for Cache {
-    fn kernel_name(&self) -> String {
-        "cache".to_string()
-    }
+    type KernelEnum = CacheKernels;
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
-        KernelElement::Scalar
-    }
-
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
-        Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
+    fn select_kernel(self) -> Self::KernelEnum {
+        CacheKernels::Standard(self)
     }
 
     fn storage_bind_group_layout(
@@ -171,13 +166,20 @@ impl GPUOperation for Cache {
             ],
         })
     }
+}
 
-    fn write_metadata(
+pub enum CacheKernels {
+    Standard(Cache),
+}
+
+impl Kernel for CacheKernels {
+    type Metadata = CacheMeta;
+
+    fn metadata(
         &self,
-        uniform: &mut CpuUniform,
         dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
         let original_rank = self.cache.rank();
         let promotion = 4 - original_rank;
         let promoted_dim = self.dim + promotion;
@@ -194,7 +196,7 @@ impl GPUOperation for Cache {
         let cum0 = self.offset as u32;
         let cum1 = cum0 + source_shape[promoted_dim] as u32;
 
-        let meta = CacheMeta {
+        Ok(CacheMeta {
             cache_stride: UVec4::from(&cache_strides),
             src_stride: UVec4::from(&source_strides),
             dst_stride: UVec4::from(&dst_strides),
@@ -202,9 +204,15 @@ impl GPUOperation for Cache {
             cum0,
             cum1,
             dim: promoted_dim as u32,
-        };
+        })
+    }
 
-        Ok(uniform.write(&meta)?)
+    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
+        KernelElement::Scalar
+    }
+
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
     }
 
     fn build_kernel(

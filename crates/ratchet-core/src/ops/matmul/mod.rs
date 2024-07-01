@@ -1,18 +1,22 @@
 mod gemm;
 mod gemv;
 mod quantized;
+mod subgroup_gemv;
+mod workgroup_gemv;
 
 pub use gemm::*;
 pub use gemv::*;
 pub use quantized::*;
+pub use subgroup_gemv::*;
+pub use workgroup_gemv::*;
 
 use std::cmp::Ordering;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, DType, GPUOperation, InvariantError, KernelElement, KernelKey, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
-    WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+    rvec, wgc, wgs, DType, GPUOperation, InvariantError, Kernel, KernelElement, KernelKey,
+    KernelMetadata, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Shape,
+    StorageView, Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -251,14 +255,8 @@ impl MatmulSpec {
     }
 }
 
-pub enum Matmul {
-    GEMM(GEMM),
-    GEMV(GEMV),
-    Quantized(Quantized),
-}
-
-#[derive(derive_new::new)]
-struct MatmulInner {
+#[derive(derive_new::new, Debug)]
+pub struct Matmul {
     pub(crate) lhs: Tensor,
     pub(crate) rhs: Tensor,
     pub(crate) bias: Option<Tensor>,
@@ -276,26 +274,6 @@ impl Matmul {
         trans_rhs: bool,
         trans_out: bool,
     ) -> Self {
-        if !bias.as_ref().map_or(true, |b| b.shape().is_vector()) {
-            panic!("Bias must be a vector: {:?}", bias);
-        }
-
-        if lhs.dt().is_quantized() && trans_lhs {
-            panic!("Transposed quantized inputs are not supported");
-        }
-
-        let is_gemv = rhs.shape().is_vector() && !trans_lhs;
-        let is_quantized = lhs.dt().is_quantized();
-
-        match (is_gemv, is_quantized) {
-            (true, false) => Self::GEMV(GEMV::new(lhs, rhs, bias, trans_lhs, trans_rhs, trans_out)),
-            (false, false) => {
-                Self::GEMM(GEMM::new(lhs, rhs, bias, trans_lhs, trans_rhs, trans_out))
-            }
-            (_, true) => Self::Quantized(Quantized::new(
-                lhs, rhs, bias, trans_lhs, trans_rhs, trans_out,
-            )),
-        }
     }
 
     pub fn compute_c_shape(
@@ -454,9 +432,42 @@ impl OpGuards for Matmul {
     }
 }
 
+/// Encapsulate all metadata structs for underlying kernels
+pub enum MatmulMeta {
+    GEMMMeta(GEMMMeta),
+    SubgroupGEMVMeta(SubgroupGEMVMeta),
+    WorkgroupGEMVMeta(WorkgroupGEMVMeta),
+    Quantized(QuantizedMeta),
+}
+
+impl KernelMetadata for MatmulMeta {
+    fn render_meta(&self) -> crate::WgslFragment {
+        match self {
+            MatmulMeta::GEMMMeta(meta) => meta.render_meta(),
+            MatmulMeta::SubgroupGEMVMeta(meta) => meta.render_meta(),
+            MatmulMeta::WorkgroupGEMVMeta(meta) => meta.render_meta(),
+            MatmulMeta::Quantized(meta) => meta.render_meta(),
+        }
+    }
+
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
+        match self {
+            MatmulMeta::GEMMMeta(meta) => meta.write(uniform),
+            MatmulMeta::SubgroupGEMVMeta(meta) => meta.write(uniform),
+            MatmulMeta::WorkgroupGEMVMeta(meta) => meta.write(uniform),
+            MatmulMeta::Quantized(meta) => meta.write(uniform),
+        }
+    }
+}
+
 impl Kernel for Matmul {
-    fn kernel_name(&self) -> String {
-        "Matmul".to_string()
+    type Metadata = MatmulMeta;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
     }
 
     fn kernel_key(
@@ -535,43 +546,6 @@ impl Kernel for Matmul {
         }
     }
 
-    fn storage_bind_group_layout(
-        &self,
-        _: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        let (LHS, _, bias) = (&self.lhs, &self.rhs, &self.bias);
-
-        let layout = match (LHS.dt(), bias.is_some()) {
-            (DType::F32 | DType::F16, false) => BindGroupLayoutDescriptor::binary(),
-            (DType::F32 | DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
-            (DType::Q8_0F(_) | DType::Q8_0H(_), false) => BindGroupLayoutDescriptor::ternary(),
-            (DType::Q8_0F(_) | DType::Q8_0H(_), true) => BindGroupLayoutDescriptor::nthary(4),
-            (DType::Q4_KF(_) | DType::Q4_KH(_), false) => BindGroupLayoutDescriptor::nthary(5),
-            (DType::Q4_KF(_) | DType::Q4_KH(_), true) => BindGroupLayoutDescriptor::nthary(6),
-            _ => return Err(InvariantError::UnsupportedDType(LHS.dt()).into()),
-        };
-        Ok(layout)
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let spec = self.compute_spec(dst);
-        if spec.is_gemv() {
-            let device = dst.device().try_gpu().unwrap();
-            if device.compute_features().SUBGROUP {
-                SubgroupGEMVMeta::write_metadata(uniform, &spec)
-            } else {
-                WorkgroupGEMVMeta::write_metadata(uniform, &spec)
-            }
-        } else {
-            GEMMMeta::write_metadata(uniform, &spec)
-        }
-    }
-
     fn build_kernel(
         &self,
         inplace: bool,
@@ -599,7 +573,51 @@ impl Kernel for Matmul {
     }
 }
 
-impl GPUOperation for Matmul {}
+pub enum MatmulKernels {
+    GEMM(GEMM),
+    SubgroupGEMV(SubgroupGEMV),
+    WorkgroupGEMV(WorkgroupGEMV),
+    Quantized(Quantized),
+}
+
+impl Kernel for MatmulKernels {}
+
+impl GPUOperation for Matmul {
+    type KernelEnum = MatmulKernels;
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        if !self.bias.as_ref().map_or(true, |b| b.shape().is_vector()) {
+            panic!("Bias must be a vector: {:?}", self.bias);
+        }
+
+        if self.lhs.dt().is_quantized() && self.trans_lhs {
+            panic!("Transposed quantized inputs are not supported");
+        }
+
+        let is_gemv = self.rhs.shape().is_vector() && !self.trans_lhs;
+        let is_quantized = self.lhs.dt().is_quantized();
+        let supports_subgroup = self
+            .lhs
+            .device()
+            .try_gpu()
+            .unwrap()
+            .compute_features()
+            .SUBGROUP;
+
+        match (is_gemv, is_quantized, supports_subgroup) {
+            (true, false, true) => {
+                MatmulKernels::SubgroupGEMV(SubgroupGEMV::new(self.lhs, self.rhs, self.bias))
+            }
+        }
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        todo!()
+    }
+}
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {

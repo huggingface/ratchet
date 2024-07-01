@@ -6,9 +6,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation, OpGuards,
-    Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement, KernelSource,
+    OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -82,22 +82,75 @@ impl Operation for IndexWrite {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         Ok(self.dst.storage_view().clone())
     }
-}
-
-impl MetaOperation for IndexWrite {
-    fn kernel_name(&self) -> String {
-        "index_write".to_string()
-    }
-
-    fn supports_inplace(&self) -> bool {
-        true
-    }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.dst, &self.src]
     }
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
+    fn supports_inplace(&self) -> bool {
+        true
+    }
+}
+
+impl GPUOperation for IndexWrite {
+    type KernelEnum = IndexWriteKernels;
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        IndexWriteKernels::Standard(self)
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if !inplace {
+            panic!("IndexWrite only supports inplace operation");
+        }
+        Ok(BindGroupLayoutDescriptor::binary_inplace())
+    }
+}
+
+pub enum IndexWriteKernels {
+    Standard(IndexWrite),
+}
+
+impl Kernel for IndexWriteKernels {
+    type Metadata = IndexWriteMeta;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let padder = |mut shape: Shape| {
+            shape.left_pad_to(1, 4);
+            let strides = Strides::from(&shape);
+            (shape, strides)
+        };
+        let (_, dst_strides) = padder(self.dst.shape().clone());
+        let (src_shape, _) = padder(self.src.shape().clone());
+
+        let mut start = [0u32; 4];
+        let offset = 4 - self.write_start.len();
+        for (i, &s) in self.write_start.iter().enumerate() {
+            start[i + offset] = s as u32;
+        }
+
+        Ok(IndexWriteMeta {
+            dst_strides: glam::UVec4::from(&dst_strides),
+            src_numel: src_shape.numel() as u32,
+            write_start: start.into(),
+        })
+    }
+
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        Ok(Workload::std(
+            self.src.shape().numel(),
+            KernelElement::Scalar,
+        ))
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }
 
@@ -133,49 +186,6 @@ impl MetaOperation for IndexWrite {
                 kernel_element
             ))),
         }
-    }
-
-    fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
-        let numel = self.src.shape().numel();
-        Ok(Workload::std(numel, KernelElement::Scalar))
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if !inplace {
-            panic!("IndexWrite only supports inplace operation");
-        }
-        Ok(BindGroupLayoutDescriptor::binary_inplace())
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let padder = |mut shape: Shape| {
-            shape.left_pad_to(1, 4);
-            let strides = Strides::from(&shape);
-            (shape, strides)
-        };
-        let (_, dst_strides) = padder(self.dst.shape().clone());
-        let (src_shape, _) = padder(self.src.shape().clone());
-
-        let mut start = [0u32; 4];
-        let offset = 4 - self.write_start.len();
-        for (i, &s) in self.write_start.iter().enumerate() {
-            start[i + offset] = s as u32;
-        }
-
-        let meta = IndexWriteMeta {
-            dst_strides: glam::UVec4::from(&dst_strides),
-            src_numel: src_shape.numel() as u32,
-            write_start: start.into(),
-        };
-        Ok(uniform.write(&meta)?)
     }
 }
 

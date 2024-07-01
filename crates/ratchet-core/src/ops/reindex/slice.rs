@@ -44,6 +44,10 @@ impl Operation for Slice {
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, self.src.dt(), strides))
     }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.src]
+    }
 }
 
 #[cfg(all(test, feature = "pyo3"))]

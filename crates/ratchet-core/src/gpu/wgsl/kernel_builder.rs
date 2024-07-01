@@ -147,7 +147,7 @@ impl WgslKernelBuilder {
     // This is because some operations don't create their metadata struct
     // until runtime
     pub fn render_metadata<M: KernelMetadata>(&mut self) {
-        self.write_global(M::render());
+        self.write_global(M::render_meta());
     }
 
     fn register_binding(

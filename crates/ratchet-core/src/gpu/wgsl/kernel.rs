@@ -1,34 +1,103 @@
 use rustc_hash::FxHashMap;
+use std::fmt::Debug;
 
 use crate::{
-    CpuUniform, DynamicKernelMetadata, KernelElement, KernelKey, KernelMetadata, KernelSource,
-    OperationError, Tensor, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
-    Workload,
+    CpuUniform, KernelElement, KernelKey, KernelSource, OperationError, Tensor, WgslFragment,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload, UNIFORM_ALIGN,
 };
 
+use encase::{internal::WriteInto, ShaderType};
+
+//Every field must be : ShaderType + WriteInto
 #[derive(Debug)]
 pub enum DynMetaField {
-    Vec4U32(String),
-    U32(String),
+    Vec4U32(glam::UVec4),
+    U32(u32),
+}
+
+impl DynMetaField {
+    fn render(&self) -> String {
+        match self {
+            DynMetaField::Vec4U32(_) => format!("vec4<u32>"),
+            DynMetaField::U32(_) => format!("u32"),
+        }
+    }
+}
+
+impl From<glam::UVec4> for DynMetaField {
+    fn from(value: glam::UVec4) -> Self {
+        Self::Vec4U32(value)
+    }
+}
+
+impl From<u32> for DynMetaField {
+    fn from(value: u32) -> Self {
+        Self::U32(value)
+    }
 }
 
 #[derive(Debug)]
-pub struct DynMetadata {
+pub struct DynKernelMetadata {
+    //Can't use a trait object here, ShaderType has assoc type
     fields: FxHashMap<String, DynMetaField>,
 }
 
-impl DynamicKernelMetadata for DynMetadata {
-    fn render(&self) -> crate::WgslFragment {
-        let mut fragment = WgslFragment::new(512);
-        fragment.push(r#"struct Meta {"#);
-        for (name, field) in self.fields.iter() {
-            fragment.push(format!("{}: {}", name, field.render()));
+impl DynKernelMetadata {
+    pub fn new() -> Self {
+        Self {
+            fields: FxHashMap::default(),
         }
-        fragment.push("}\n");
+    }
+
+    pub fn add_field(&mut self, name: impl ToString, value: impl Into<DynMetaField>) {
+        self.fields.insert(name.to_string(), value.into());
+    }
+}
+
+impl KernelMetadata for DynKernelMetadata {
+    fn render_meta(&self) -> crate::WgslFragment {
+        let mut fragment = WgslFragment::new(512);
+        fragment.write(r#"struct Meta {"#);
+        for (name, field) in self.fields.iter() {
+            fragment.write(format!("{}: {}", name, field.render()));
+        }
+        fragment.write("}\n");
         fragment
     }
 
-    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {}
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
+        uniform.write_struct_end();
+        for f in self.fields.values() {
+            let _ = match f {
+                DynMetaField::Vec4U32(v) => uniform.write_struct_member(v)?,
+                DynMetaField::U32(u) => uniform.write_struct_member(u)?,
+            };
+        }
+        Ok(uniform.write_struct_end()? - UNIFORM_ALIGN as u64)
+    }
+}
+
+pub trait StaticKernelMetadata: Debug + Sized + ShaderType + WriteInto {
+    fn write_static(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
+        uniform.write(self)
+    }
+}
+
+pub trait DynamicKernelMetadata: Debug + Sized {
+    fn render(&self) -> WgslFragment;
+
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError>;
+}
+
+/// # KernelMetadata
+///
+/// There are 2 key things about metadata:
+/// 1. Rendering - producing the WGSL kernel source.
+/// 2. Writing - writing the values into the uniform buffer.
+pub trait KernelMetadata {
+    fn render_meta(&self) -> WgslFragment;
+
+    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError>;
 }
 
 pub trait Kernel {
@@ -55,9 +124,7 @@ pub trait Kernel {
         &self,
         dst: &Tensor,
         kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
-        todo!()
-    }
+    ) -> Result<Self::Metadata, OperationError>;
 
     /// # Calculate Dispatch
     ///
@@ -105,13 +172,16 @@ pub trait Kernel {
 /// This trait is focused on the generation of the kernel source code.
 pub trait KernelRenderable {
     ///Every WGSL must have 1 or more bindings registered
+    ///
+    ///This method writes the GPU source of the bindings to the kernel builder.
+    ///This will be called within `build()`
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
         inplace: bool,
     ) -> Result<(), OperationError>;
 
-    ///Generate the kernel source
+    ///Generate the full kernel source
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,

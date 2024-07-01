@@ -5,9 +5,10 @@ use inline_wgsl::wgsl;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, UNIFORM_ALIGN},
-    rvec, Array, BindingMode, BuiltIn, DType, Kernel, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, Shape, StorageView, Strides, Tensor, Vec2,
-    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, DynMetadata, Kernel, KernelElement, KernelRenderable,
+    KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
+    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -16,7 +17,7 @@ pub struct Concat {
     dim: usize,
 }
 
-impl Kernel for Concat {
+impl KernelRenderable for Concat {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -34,7 +35,7 @@ impl Kernel for Concat {
         Ok(())
     }
 
-    fn build<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -120,6 +121,10 @@ impl Operation for Concat {
         let output_strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, first.dt(), output_strides))
     }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        self.inputs.iter().collect()
+    }
 }
 
 impl OpGuards for Concat {
@@ -152,13 +157,42 @@ impl OpGuards for Concat {
     }
 }
 
+pub enum ConcatKernels {
+    Standard(Concat),
+}
+
+impl Kernel for ConcatKernels {
+    type Metadata = DynMetadata;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        todo!()
+    }
+
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        todo!()
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+        todo!()
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        todo!()
+    }
+}
+
 impl MetaOperation for Concat {
     fn kernel_name(&self) -> String {
         "concat".to_string()
-    }
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        self.inputs.iter().collect()
     }
 
     fn kernel_element(&self, _: &Tensor) -> KernelElement {

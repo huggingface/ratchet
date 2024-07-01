@@ -46,7 +46,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         impl crate::StaticKernelMetadata for #struct_name {}
 
         impl crate::KernelMetadata for #struct_name {
-            fn render() -> crate::WgslFragment {
+            fn render_meta(&self) -> crate::WgslFragment {
                 let mut fragment = crate::WgslFragment::new(512);
                 fragment.write("struct Meta {\n");
                 #(

@@ -7,9 +7,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Tensor, Vec2,
+    Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use derive_new::new;
 use inline_wgsl::wgsl;
@@ -38,6 +38,27 @@ impl OpGuards for Norm {
 impl Operation for Norm {
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         Ok(self.input.storage_view().clone())
+    }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        match self {
+            NormOp::LayerNorm(Norm {
+                input, scale, bias, ..
+            }) => match bias {
+                Some(bias) => rvec![input, scale, bias],
+                None => rvec![input, scale],
+            },
+            NormOp::RMSNorm(Norm { input, scale, .. }) => rvec![input, scale],
+            NormOp::GroupNorm(GroupNorm {
+                norm: Norm {
+                    input, scale, bias, ..
+                },
+                ..
+            }) => match bias {
+                Some(bias) => rvec![input, scale, bias],
+                None => rvec![input, scale],
+            },
+        }
     }
 }
 
@@ -210,37 +231,70 @@ pub struct NormMeta {
     eps: f32,
 }
 
-impl MetaOperation for NormOp {
-    fn kernel_name(&self) -> String {
-        match self {
-            NormOp::LayerNorm(_) => "layernorm".to_string(),
-            NormOp::RMSNorm(_) => "rmsnorm".to_string(),
-            NormOp::GroupNorm(_) => "groupnorm".to_string(),
-        }
-    }
+pub enum NormKernels {
+    Standard(Norm),
+}
 
-    fn srcs(&self) -> RVec<&Tensor> {
-        match self {
-            NormOp::LayerNorm(Norm {
-                input, scale, bias, ..
-            }) => match bias {
-                Some(bias) => rvec![input, scale, bias],
-                None => rvec![input, scale],
-            },
-            NormOp::RMSNorm(Norm { input, scale, .. }) => rvec![input, scale],
+impl Kernel for NormKernels {
+    type Metadata = NormMeta;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let input = self.srcs()[0];
+        let rank = input.rank();
+        let meta = match self {
+            NormOp::RMSNorm(n) | NormOp::LayerNorm(n) => {
+                let M = input.shape()[rank - 2] as u32;
+                let N = input.shape()[rank - 1] as u32;
+                let ND2 = N / 2;
+                let ND4 = N / 4;
+                NormMeta::new(M, N, ND2, ND4, n.eps)
+            }
             NormOp::GroupNorm(GroupNorm {
-                norm: Norm {
-                    input, scale, bias, ..
-                },
-                ..
-            }) => match bias {
-                Some(bias) => rvec![input, scale, bias],
-                None => rvec![input, scale],
-            },
-        }
+                norm: Norm { eps, .. },
+                num_groups,
+            }) => {
+                let img_size = input.shape()[rank - 1] as u32;
+                let channels = input.shape()[1] as u32;
+                let M = *num_groups as u32;
+                let N = (channels / *num_groups as u32) * img_size;
+                let ND2 = N / 2;
+                let ND4 = N / 4;
+                NormMeta::new(M, N, ND2, ND4, *eps)
+            }
+        };
+        Ok(meta)
     }
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_count = match self {
+            NormOp::LayerNorm(_) | NormOp::RMSNorm(_) => {
+                let input = self.srcs()[0];
+                let rank = input.rank();
+
+                let M = input.shape()[rank - 2] as u32;
+                let stacks = input.shape().slice(0..rank - 2).numel();
+                wgc![M as _, stacks as _, 1]
+            }
+            NormOp::GroupNorm(GroupNorm { num_groups, .. }) => {
+                let input = self.srcs()[0];
+                let rank = input.rank();
+                let M = *num_groups;
+                let stacks = input.shape().slice(0..rank - 2).numel();
+                wgc![M as _, stacks as _, 1]
+            }
+        };
+
+        Ok(Workload {
+            workgroup_count,
+            workgroup_size: wgs![128, 1, 1],
+        })
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         let input = self.srcs()[0];
         let rank = input.rank();
         let N = input.shape()[rank - 1] as u32;
@@ -286,30 +340,16 @@ impl MetaOperation for NormOp {
             ))),
         }
     }
+}
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {
-        let workgroup_count = match self {
-            NormOp::LayerNorm(_) | NormOp::RMSNorm(_) => {
-                let input = self.srcs()[0];
-                let rank = input.rank();
+impl GPUOperation for Norm {
+    type KernelEnum = NormKernels;
 
-                let M = input.shape()[rank - 2] as u32;
-                let stacks = input.shape().slice(0..rank - 2).numel();
-                wgc![M as _, stacks as _, 1]
-            }
-            NormOp::GroupNorm(GroupNorm { num_groups, .. }) => {
-                let input = self.srcs()[0];
-                let rank = input.rank();
-                let M = *num_groups;
-                let stacks = input.shape().slice(0..rank - 2).numel();
-                wgc![M as _, stacks as _, 1]
-            }
-        };
-
-        Ok(Workload {
-            workgroup_count,
-            workgroup_size: wgs![128, 1, 1],
-        })
+    fn select_kernel(self) -> Self::KernelEnum {
+        match self {
+            NormOp::LayerNorm(n) | NormOp::RMSNorm(n) => NormKernels::Standard(n),
+            NormOp::GroupNorm(g) => NormKernels::Standard(g.norm),
+        }
     }
 
     fn storage_bind_group_layout(
@@ -326,39 +366,6 @@ impl MetaOperation for NormOp {
                 Some(_) => Ok(BindGroupLayoutDescriptor::ternary()),
                 None => Ok(BindGroupLayoutDescriptor::binary()),
             },
-        }
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let input = self.srcs()[0];
-        let rank = input.rank();
-        match self {
-            NormOp::RMSNorm(n) | NormOp::LayerNorm(n) => {
-                let M = input.shape()[rank - 2] as u32;
-                let N = input.shape()[rank - 1] as u32;
-                let ND2 = N / 2;
-                let ND4 = N / 4;
-                let meta = NormMeta::new(M, N, ND2, ND4, n.eps);
-                Ok(uniform.write(&meta)?)
-            }
-            NormOp::GroupNorm(GroupNorm {
-                norm: Norm { eps, .. },
-                num_groups,
-            }) => {
-                let img_size = input.shape()[rank - 1] as u32;
-                let channels = input.shape()[1] as u32;
-                let M = *num_groups as u32;
-                let N = (channels / *num_groups as u32) * img_size;
-                let ND2 = N / 2;
-                let ND4 = N / 4;
-                let meta = NormMeta::new(M, N, ND2, ND4, *eps);
-                Ok(uniform.write(&meta)?)
-            }
         }
     }
 }

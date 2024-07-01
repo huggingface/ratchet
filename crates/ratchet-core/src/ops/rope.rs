@@ -6,10 +6,11 @@ use ratchet_macros::WgslMetadata;
 use crate::gpu::dtype::WgslDType;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, MetaOperation,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, KernelElement, KernelSource, OpGuards,
+    Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
     WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
+use crate::{GPUOperation, Kernel, KernelRenderable};
 use inline_wgsl::wgsl;
 
 #[derive(new, Debug, Clone)]
@@ -20,7 +21,70 @@ pub struct RoPE {
     offset: usize,
 }
 
-impl RoPE {
+impl RoPE {}
+
+#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
+pub struct RoPEMeta {
+    in_strides: glam::UVec3,
+    out_strides: glam::UVec3,
+    seq_len: u32,
+    offset: u32,
+    base: f32,
+    scale: f32,
+}
+
+impl OpGuards for RoPE {
+    fn check_shapes(&self) {
+        let input = &self.input;
+        //TODO: overly restrictive
+        assert!(input.rank() == 4);
+        assert!(input.shape()[3] >= self.dim);
+        assert!(self.dim % 8 == 0);
+    }
+
+    fn check_dtypes(&self) {
+        let input = &self.input;
+        assert!(input.dt().is_float());
+    }
+}
+
+impl Operation for RoPE {
+    fn compute_view(&self) -> Result<StorageView, OperationError> {
+        Ok(self.input.storage_view().clone())
+    }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        rvec![&self.input]
+    }
+
+    fn supports_inplace(&self) -> bool {
+        true
+    }
+}
+
+impl GPUOperation for RoPE {
+    type KernelEnum = RoPEKernels;
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        todo!()
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if inplace {
+            return Ok(BindGroupLayoutDescriptor::unary_inplace());
+        }
+        panic!("RoPE does not support out-of-place operation");
+    }
+}
+
+pub enum RoPEKernels {
+    Standard(RoPE),
+}
+
+impl KernelRenderable for RoPEKernels {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -35,15 +99,12 @@ impl RoPE {
         Ok(())
     }
 
-    fn build_rope<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
         workgroup_size: &WorkgroupSize,
-    ) -> Result<KernelSource, OperationError>
-    where
-        P::T: num_traits::Float,
-    {
+    ) -> Result<KernelSource, OperationError> {
         let device = self.input.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
@@ -93,48 +154,29 @@ impl RoPE {
     }
 }
 
-#[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
-pub struct RoPEMeta {
-    in_strides: glam::UVec3,
-    out_strides: glam::UVec3,
-    seq_len: u32,
-    offset: u32,
-    base: f32,
-    scale: f32,
-}
+impl Kernel for RoPEKernels {
+    type Metadata = RoPEMeta;
 
-impl OpGuards for RoPE {
-    fn check_shapes(&self) {
-        let input = &self.input;
-        //TODO: overly restrictive
-        assert!(input.rank() == 4);
-        assert!(input.shape()[3] >= self.dim);
-        assert!(self.dim % 8 == 0);
-    }
-
-    fn check_dtypes(&self) {
-        let input = &self.input;
-        assert!(input.dt().is_float());
-    }
-}
-
-impl Operation for RoPE {
-    fn compute_view(&self) -> Result<StorageView, OperationError> {
-        Ok(self.input.storage_view().clone())
-    }
-}
-
-impl MetaOperation for RoPE {
-    fn kernel_name(&self) -> String {
-        "rope".to_string()
-    }
-
-    fn supports_inplace(&self) -> bool {
-        true
-    }
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        rvec![&self.input]
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let mut input_shape = self.input.shape().clone();
+        let SL = input_shape[2];
+        let mut out_shape = dst.shape().clone();
+        input_shape.remove(0);
+        out_shape.remove(0);
+        let in_strides = Strides::from(&input_shape);
+        let out_strides = Strides::from(&out_shape);
+        Ok(RoPEMeta::new(
+            (&in_strides).into(),
+            (&out_strides).into(),
+            SL as u32,
+            self.offset as u32,
+            self.base,
+            1.0,
+        ))
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
@@ -165,40 +207,6 @@ impl MetaOperation for RoPE {
         })
     }
 
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if inplace {
-            return Ok(BindGroupLayoutDescriptor::unary_inplace());
-        }
-        panic!("RoPE does not support out-of-place operation");
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let mut input_shape = self.input.shape().clone();
-        let SL = input_shape[2];
-        let mut out_shape = dst.shape().clone();
-        input_shape.remove(0);
-        out_shape.remove(0);
-        let in_strides = Strides::from(&input_shape);
-        let out_strides = Strides::from(&out_shape);
-        let meta = RoPEMeta::new(
-            (&in_strides).into(),
-            (&out_strides).into(),
-            SL as u32,
-            self.offset as u32,
-            self.base,
-            1.0,
-        );
-        Ok(uniform.write(&meta)?)
-    }
-
     fn build_kernel(
         &self,
         inplace: bool,
@@ -208,22 +216,22 @@ impl MetaOperation for RoPE {
         let kernel_element = self.kernel_element(dst);
         match (self.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_rope::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_rope::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_rope::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_rope::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_rope::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_rope::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

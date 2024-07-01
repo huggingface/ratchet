@@ -145,29 +145,6 @@ pub enum OperationError {
     InplaceError(String),
 }
 
-pub trait StaticKernelMetadata: Debug + Sized + ShaderType + WriteInto {
-    fn write_static(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
-        uniform.write(self)
-    }
-}
-
-pub trait DynamicKernelMetadata: Debug + Sized {
-    fn render(&self) -> WgslFragment;
-
-    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError>;
-}
-
-/// # KernelMetadata
-///
-/// There are 2 key things about metadata:
-/// 1. Rendering - producing the WGSL kernel source.
-/// 2. Writing - writing the values into the uniform buffer.
-pub trait KernelMetadata {
-    fn render() -> WgslFragment;
-
-    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError>;
-}
-
 /// Unique string representing a kernel.
 /// If the key is registered in the compute pipeline pool, the pipeline is reused.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

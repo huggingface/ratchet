@@ -2,7 +2,21 @@ use std::collections::HashSet;
 
 use derive_new::new;
 
-use crate::{InvariantError, OpGuards, Operation, OperationError, StorageView, Strides, Tensor};
+use crate::{
+    InvariantError, OpGuards, Operation, OperationError, RVec, StorageView, Strides, Tensor,
+};
+
+pub struct PermuteMeta {
+    src_shape: glam::UVec4,
+    dst_shape: glam::UVec4,
+    src_stride: glam::UVec4,
+    dst_stride: glam::UVec4,
+    src_numel: u32,
+    dst_numel: u32,
+    //"Optional" fields below (if not present, they are set to 0) this is dumb
+    perm: glam::UVec4,
+    src_offsets: glam::UVec4,
+}
 
 #[derive(new, Debug, Clone)]
 pub struct Permute {
@@ -37,6 +51,10 @@ impl Operation for Permute {
         }
         let strides = Strides::from(&output_shape);
         Ok(StorageView::new(output_shape, self.src.dt(), strides))
+    }
+
+    fn srcs(&self) -> RVec<&Tensor> {
+        vec![&self.src]
     }
 }
 
