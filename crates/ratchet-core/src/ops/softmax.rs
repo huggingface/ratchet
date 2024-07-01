@@ -194,7 +194,9 @@ impl Operation for Softmax {
     }
 }
 
-impl Kernel for Softmax {
+impl Kernel for SoftmaxKernels {
+    type Metadata = SoftmaxMeta;
+
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let input = &self.input;
         let N = input.shape()[self.dim] as u32;
@@ -252,22 +254,27 @@ impl Kernel for Softmax {
         })
     }
 
-    fn write_metadata(
+    fn metadata(
         &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
         let input = &self.input;
         let M = input.shape()[self.dim - 1] as u32;
         let N = input.shape()[self.dim] as u32;
         let ND2 = N / 2;
         let ND4 = N / 4;
-        Ok(uniform.write(&SoftmaxMeta { M, N, ND2, ND4 })?)
+        Ok(SoftmaxMeta { M, N, ND2, ND4 })
     }
 }
 
+pub enum SoftmaxKernels {
+    Standard(Softmax),
+}
+
 impl GPUOperation for Softmax {
+    type KernelEnum = SoftmaxKernels;
+
     fn storage_bind_group_layout(
         &self,
         inplace: bool,
@@ -276,6 +283,10 @@ impl GPUOperation for Softmax {
             panic!("Only inplace softmax is supported");
         }
         Ok(BindGroupLayoutDescriptor::unary_inplace())
+    }
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        todo!()
     }
 }
 

@@ -205,12 +205,6 @@ impl Kernel for BinaryKernels {
         Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
     }
 
-    fn write_metadata(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
-        let numel = dst.shape().numel() as _;
-        let meta = BinaryMeta { numel };
-        Ok(uniform.write(&meta)?)
-    }
-
     fn build_kernel(
         &self,
         inplace: bool,

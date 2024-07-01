@@ -5,9 +5,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, KernelElement, KernelSource,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
+    Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -152,22 +152,48 @@ impl OpGuards for IndexSelect {
     }
 }
 
+pub enum IndexSelectKernels {
+    Standard(IndexSelect),
+}
+
 impl GPUOperation for IndexSelect {
+    type KernelEnum = IndexSelectKernels;
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        IndexSelectKernels::Standard(self)
+    }
+
     fn storage_bind_group_layout(
         &self,
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        todo!()
+        match self.src.dt() {
+            DType::F32 | DType::F16 => Ok(BindGroupLayoutDescriptor::binary()),
+            DType::Q8_0H(_) | DType::Q8_0F(_) => Ok(BindGroupLayoutDescriptor::ternary()),
+            _ => unimplemented!(),
+        }
     }
 }
 
-impl MetaOperation for IndexSelect {
-    fn kernel_name(&self) -> String {
-        "index_select".to_string()
-    }
+impl Kernel for IndexSelectKernels {
+    type Metadata = IndexSelectMeta;
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
-        KernelElement::Scalar
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let dst_numel = dst.shape().numel() as u32;
+        let right_numel = self.src.shape()[(self.dim + 1)..].iter().product::<usize>() as u32;
+        let ids_numel = self.indices.shape().numel() as u32;
+        let src_dim_numel = self.src.shape()[self.dim] as u32;
+
+        Ok(IndexSelectMeta {
+            dst_numel,
+            right_numel,
+            ids_numel,
+            src_dim_numel,
+        })
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
@@ -184,35 +210,8 @@ impl MetaOperation for IndexSelect {
         })
     }
 
-    fn storage_bind_group_layout(
-        &self,
-        _: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        match self.src.dt() {
-            DType::F32 | DType::F16 => Ok(BindGroupLayoutDescriptor::binary()),
-            DType::Q8_0H(_) | DType::Q8_0F(_) => Ok(BindGroupLayoutDescriptor::ternary()),
-            _ => unimplemented!(),
-        }
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let dst_numel = dst.shape().numel() as u32;
-        let right_numel = self.src.shape()[(self.dim + 1)..].iter().product::<usize>() as u32;
-        let ids_numel = self.indices.shape().numel() as u32;
-        let src_dim_numel = self.src.shape()[self.dim] as u32;
-
-        let meta = IndexSelectMeta {
-            dst_numel,
-            right_numel,
-            ids_numel,
-            src_dim_numel,
-        };
-        Ok(uniform.write(&meta)?)
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+        KernelElement::Scalar
     }
 
     fn build_kernel(

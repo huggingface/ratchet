@@ -10,9 +10,8 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
     rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
-    KernelRenderable, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec,
-    Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
-    Workload,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
+    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[cfg(test)]
@@ -246,7 +245,13 @@ impl Operation for Unary {
     }
 }
 
+pub enum UnaryKernels {
+    Standard(Unary),
+}
+
 impl GPUOperation for Unary {
+    type KernelEnum = UnaryKernels;
+
     fn storage_bind_group_layout(
         &self,
         inplace: bool,
@@ -257,9 +262,15 @@ impl GPUOperation for Unary {
             Ok(BindGroupLayoutDescriptor::unary())
         }
     }
+
+    fn select_kernel(self) -> Self::KernelEnum {
+        UnaryKernels::Standard(self)
+    }
 }
 
-impl Kernel for Unary {
+impl Kernel for UnaryKernels {
+    type Metadata = UnaryMeta;
+
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let a_rank = &self.input.shape().rank();
         let N = &self.input.shape()[a_rank - 1];
@@ -275,17 +286,6 @@ impl Kernel for Unary {
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        _: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let a = &self.input;
-        let numel = a.shape().numel() as u32;
-        Ok(uniform.write(&UnaryMeta { numel })?)
     }
 
     fn build_kernel(
@@ -321,9 +321,35 @@ impl Kernel for Unary {
             ))),
         }
     }
-}
 
-impl MetaOperation for Unary {}
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let a = &self.input;
+        let numel = a.shape().numel() as u32;
+        Ok(UnaryMeta { numel })
+    }
+
+    fn kernel_key(
+        &self,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> crate::KernelKey {
+        crate::KernelKey::new(
+            &self.kernel_name(),
+            &self.srcs(),
+            dst,
+            workgroup_size,
+            inplace,
+            kernel_element,
+            None,
+        )
+    }
+}
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {

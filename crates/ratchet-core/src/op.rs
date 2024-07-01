@@ -146,9 +146,7 @@ pub enum OperationError {
 }
 
 pub trait StaticKernelMetadata: Debug + Sized + ShaderType + WriteInto {
-    fn render() -> WgslFragment;
-
-    fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
+    fn write_static(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
         uniform.write(self)
     }
 }
