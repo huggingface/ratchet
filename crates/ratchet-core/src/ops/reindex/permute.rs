@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 
 use derive_new::new;
+use encase::ShaderType;
+use ratchet_macros::WgslMetadata;
 
 use crate::{
-    InvariantError, OpGuards, Operation, OperationError, RVec, StorageView, Strides, Tensor,
+    rvec, InvariantError, OpGuards, Operation, OperationError, RVec, StorageView, Strides, Tensor,
 };
 
-#[derive(Debug, derive_new::new)]
+#[derive(Debug, derive_new::new, WgslMetadata, ShaderType)]
 pub struct PermuteMeta {
     src_shape: glam::UVec4,
     dst_shape: glam::UVec4,
@@ -37,6 +39,10 @@ impl Permute {
 }
 
 impl Operation for Permute {
+    fn name(&self) -> &'static str {
+        "Permute"
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let input_shape = self.src.shape();
         let dup_set: HashSet<usize> = HashSet::from_iter(self.dims.iter().cloned());
@@ -53,7 +59,7 @@ impl Operation for Permute {
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
-        vec![&self.src]
+        rvec![&self.src]
     }
 }
 
