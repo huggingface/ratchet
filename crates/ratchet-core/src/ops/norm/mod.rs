@@ -8,8 +8,8 @@ use ratchet_macros::WgslMetadata;
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
-    KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StaticKernelMetadata,
-    StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
+    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use derive_new::new;
 use inline_wgsl::wgsl;
@@ -90,7 +90,7 @@ pub enum NormOp {
     GroupNorm(GroupNorm),
 }
 
-impl NormOp {
+impl KernelRenderable for NormOp {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -108,46 +108,12 @@ impl NormOp {
         Ok(())
     }
 
-    fn compute_mu<P: WgslPrimitive>(
-        kernel_builder: &mut WgslKernelBuilder,
-        accessor: String,
-        reduction_len: &str,
-        workgroup_size: &WorkgroupSize,
-    ) {
-        let BLOCK_SIZE = workgroup_size.x.render();
-        let dt = P::T::DT;
-        kernel_builder.write_main(wgsl! {
-            for (var i: u32 = local_invocation_id.x; i < 'reduction_len; i += 'BLOCK_SIZE) {
-                threadSum += X[anchor + i];
-            }
-            workgroupBarrier();
-            smem[local_invocation_id.x] = threadSum;
-            workgroupBarrier();
-        });
-
-        let steps = (workgroup_size.x - 1).ilog2();
-        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
-            let v = i.render();
-            kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
-        }
-
-        let mu = match P::W {
-            1 => wgsl! { let mu = smem[0] / 'dt(metadata.N); },
-            2 | 4 => wgsl! {let mu = dot(smem[0], 'accessor(1.)) / 'dt(metadata.N); },
-            _ => unreachable!(),
-        };
-        kernel_builder.write_main(mu);
-    }
-
-    fn build_norm<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-    ) -> Result<KernelSource, OperationError>
-    where
-        P::T: num_traits::Float,
-    {
+    ) -> Result<KernelSource, OperationError> {
         let device = dst.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
@@ -243,6 +209,39 @@ impl NormOp {
     }
 }
 
+impl NormOp {
+    fn compute_mu<P: WgslPrimitive>(
+        kernel_builder: &mut WgslKernelBuilder,
+        accessor: String,
+        reduction_len: &str,
+        workgroup_size: &WorkgroupSize,
+    ) {
+        let BLOCK_SIZE = workgroup_size.x.render();
+        let dt = P::T::DT;
+        kernel_builder.write_main(wgsl! {
+            for (var i: u32 = local_invocation_id.x; i < 'reduction_len; i += 'BLOCK_SIZE) {
+                threadSum += X[anchor + i];
+            }
+            workgroupBarrier();
+            smem[local_invocation_id.x] = threadSum;
+            workgroupBarrier();
+        });
+
+        let steps = (workgroup_size.x - 1).ilog2();
+        for i in (0..=steps).rev().map(|x| 2u32.pow(x)) {
+            let v = i.render();
+            kernel_builder.write_main(wgsl! { block_sum(local_invocation_id.x, 'v); });
+        }
+
+        let mu = match P::W {
+            1 => wgsl! { let mu = smem[0] / 'dt(metadata.N); },
+            2 | 4 => wgsl! {let mu = dot(smem[0], 'accessor(1.)) / 'dt(metadata.N); },
+            _ => unreachable!(),
+        };
+        kernel_builder.write_main(mu);
+    }
+}
+
 #[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct NormMeta {
     M: u32,
@@ -253,20 +252,19 @@ pub struct NormMeta {
 }
 
 pub enum NormKernels {
-    Standard(Norm),
+    Standard(NormOp),
 }
 
 impl Kernel for NormKernels {
     type Metadata = NormMeta;
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
-        let input = self.srcs()[0];
+    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
+        let inner = match self {
+            NormKernels::Standard(n) => n,
+        };
+        let input = inner.srcs()[0];
         let rank = input.rank();
-        let meta = match self {
+        let meta = match inner {
             NormOp::RMSNorm(n) | NormOp::LayerNorm(n) => {
                 let M = input.shape()[rank - 2] as u32;
                 let N = input.shape()[rank - 1] as u32;
@@ -290,21 +288,22 @@ impl Kernel for NormKernels {
         Ok(meta)
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
-        let workgroup_count = match self {
-            NormOp::LayerNorm(_) | NormOp::RMSNorm(_) => {
-                let input = self.srcs()[0];
-                let rank = input.rank();
+    fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
+        let inner = match self {
+            NormKernels::Standard(n) => n,
+        };
 
+        let input = inner.srcs()[0];
+        let rank = input.rank();
+        let stacks = input.shape().slice(0..rank - 2).numel();
+
+        let workgroup_count = match inner {
+            NormOp::LayerNorm(_) | NormOp::RMSNorm(_) => {
                 let M = input.shape()[rank - 2] as u32;
-                let stacks = input.shape().slice(0..rank - 2).numel();
                 wgc![M as _, stacks as _, 1]
             }
             NormOp::GroupNorm(GroupNorm { num_groups, .. }) => {
-                let input = self.srcs()[0];
-                let rank = input.rank();
                 let M = *num_groups;
-                let stacks = input.shape().slice(0..rank - 2).numel();
                 wgc![M as _, stacks as _, 1]
             }
         };
@@ -316,9 +315,8 @@ impl Kernel for NormKernels {
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
-        let input = self.srcs()[0];
-        let rank = input.rank();
-        let N = input.shape()[rank - 1] as u32;
+        let rank = dst.rank();
+        let N = dst.shape()[rank - 1] as u32;
         if N % 4 == 0 {
             KernelElement::Vec4
         } else if N % 2 == 0 {
@@ -334,25 +332,28 @@ impl Kernel for NormKernels {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
+        let inner = match self {
+            NormKernels::Standard(n) => n,
+        };
         let kernel_element = self.kernel_element(dst);
         match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_norm::<Scalar<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_norm::<Vec2<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_norm::<Vec4<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_norm::<Scalar<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_norm::<Vec2<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_norm::<Vec4<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
@@ -363,14 +364,11 @@ impl Kernel for NormKernels {
     }
 }
 
-impl GPUOperation for Norm {
+impl GPUOperation for NormOp {
     type KernelEnum = NormKernels;
 
     fn select_kernel(self) -> Self::KernelEnum {
-        match self {
-            NormOp::LayerNorm(n) | NormOp::RMSNorm(n) => NormKernels::Standard(n),
-            NormOp::GroupNorm(g) => NormKernels::Standard(g.norm),
-        }
+        NormKernels::Standard(self)
     }
 
     fn storage_bind_group_layout(
