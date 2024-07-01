@@ -5,10 +5,10 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, DType, Kernel, KernelElement, KernelSource,
-    MetaOperation, OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor,
-    Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, WorkgroupCount},
+    rvec, shape, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
+    Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -22,7 +22,7 @@ pub struct Conv {
     //dilation: usize, TODO: implement dilation
 }
 
-impl Kernel for Conv {
+impl KernelRenderable for Conv {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -37,7 +37,7 @@ impl Kernel for Conv {
         Ok(())
     }
 
-    fn build<P: WgslPrimitive>(
+    fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
         _: &Tensor,
@@ -171,18 +171,57 @@ impl Operation for Conv {
         let out_strides = Strides::from(&out_shape);
         Ok(StorageView::new(out_shape, input_t.dt(), out_strides))
     }
-}
-
-impl MetaOperation for Conv {
-    fn kernel_name(&self) -> String {
-        "conv".to_string()
-    }
 
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.input, &self.weight, self.bias.as_ref().unwrap()]
     }
+}
 
-    fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
+pub enum ConvKernels {
+    Threebythree(Conv),
+}
+
+impl Kernel for ConvKernels {
+    type Metadata = ConvMeta;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let [_N, Cin, Lin]: [usize; 3] = self.input.shape().try_into()?;
+        let [_Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
+        let [_, _, Lout]: [usize; 3] = dst.shape().try_into()?;
+        let F_numel = Cin * KS;
+        let Fperthread = WorkgroupCount::div_ceil(F_numel, 256);
+        Ok(ConvMeta::new(
+            self.stride as _,
+            self.padding as _,
+            Cin as _,
+            Lin as _,
+            KS as _,
+            F_numel as _,
+            Lout as _,
+            Fperthread as _,
+        ))
+    }
+
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        let workgroup_size = wgs![256, 1, 1];
+
+        let input = &self.input;
+        let [_N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
+        let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
+        let _F_numel = Cin * KS;
+        let padded_strided_Lin = (Lin + 2 * self.padding) / self.stride;
+        let wgcx = WorkgroupCount::div_ceil(padded_strided_Lin, workgroup_size.product() as _);
+        Ok(Workload {
+            workgroup_count: wgc![wgcx as _, Cout as _, 1],
+            workgroup_size,
+        })
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }
 
@@ -219,20 +258,13 @@ impl MetaOperation for Conv {
             ))),
         }
     }
+}
 
-    fn calculate_dispatch(&self, _dst: &Tensor) -> Result<Workload, OperationError> {
-        let workgroup_size = wgs![256, 1, 1];
+impl GPUOperation for Conv {
+    type KernelEnum = ConvKernels;
 
-        let input = &self.input;
-        let [_N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
-        let [Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
-        let _F_numel = Cin * KS;
-        let padded_strided_Lin = (Lin + 2 * self.padding) / self.stride;
-        let wgcx = WorkgroupCount::div_ceil(padded_strided_Lin, workgroup_size.product() as _);
-        Ok(Workload {
-            workgroup_count: wgc![wgcx as _, Cout as _, 1],
-            workgroup_size,
-        })
+    fn select_kernel(self) -> Self::KernelEnum {
+        ConvKernels::Threebythree(self)
     }
 
     fn storage_bind_group_layout(
@@ -240,31 +272,6 @@ impl MetaOperation for Conv {
         _: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
         Ok(BindGroupLayoutDescriptor::ternary())
-    }
-
-    fn write_metadata(
-        &self,
-        uniform: &mut CpuUniform,
-        dst: &Tensor,
-        _: &KernelElement,
-    ) -> Result<u64, OperationError> {
-        let [_N, Cin, Lin]: [usize; 3] = self.input.shape().try_into()?;
-        let [_Cout, _, KS]: [usize; 3] = self.weight.shape().try_into()?;
-        let [_, _, Lout]: [usize; 3] = dst.shape().try_into()?;
-        let F_numel = Cin * KS;
-        let Fperthread = WorkgroupCount::div_ceil(F_numel, 256);
-        let meta = ConvMeta::new(
-            self.stride as _,
-            self.padding as _,
-            Cin as _,
-            Lin as _,
-            KS as _,
-            F_numel as _,
-            Lout as _,
-            Fperthread as _,
-        );
-
-        Ok(uniform.write(&meta)?)
     }
 }
 

@@ -9,16 +9,16 @@ use crate::{
 };
 use inline_wgsl::wgsl;
 
-use super::MatmulInner;
-
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
-pub struct QGEMMMeta {
+pub struct QuantizedMeta {
     dummy: u32,
 }
 
 #[derive(Debug, Clone)]
-pub struct Quantized(MatmulInner);
+pub struct Quantized {
+    spec: MatmulSpec,
+}
 
 impl Quantized {
     fn register_bindings<P: WgslPrimitive>(
@@ -57,7 +57,6 @@ impl Quantized {
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = spec.select_kernel_element();
         match (self.lhs.dt(), kernel_element) {
@@ -71,7 +70,7 @@ impl Quantized {
         }
     }
 
-    fn build_qgemm<P: WgslPrimitive>(
+    fn build_quantized<P: WgslPrimitive>(
         &self,
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {

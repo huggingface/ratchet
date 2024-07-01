@@ -189,6 +189,17 @@ pub enum BinaryKernels {
 impl Kernel for BinaryKernels {
     type Metadata = BinaryMeta;
 
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let numel = dst.shape().numel() as _;
+        let meta = BinaryMeta { numel };
+
+        Ok(meta)
+    }
+
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
         let numel = dst.shape().numel();
 

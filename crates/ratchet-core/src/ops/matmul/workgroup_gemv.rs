@@ -2,9 +2,9 @@ use encase::ShaderType;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, BuiltIn, CpuUniform, DType, InvariantError, Kernel, KernelElement,
-    KernelSource, Matmul, MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec4, WgslFragment,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, CpuUniform, DType, InvariantError,
+    Kernel, KernelElement, KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError,
+    Scalar, Strides, Tensor, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -24,15 +24,104 @@ pub struct WorkgroupGEMVMeta {
     dimInner: i32,
 }
 
-pub struct WorkgroupGEMV {}
+pub struct WorkgroupGEMV {
+    spec: MatmulSpec,
+}
 
-impl WorkgroupGEMV {
-    fn workgroup_gemv<P: WgslPrimitive>(
+impl Kernel for WorkgroupGEMV {
+    type Metadata = WorkgroupGEMVMeta;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let spec = self.compute_spec();
+        let mut lhs_shape = spec.lhs_shape.clone();
+        lhs_shape.insert(0, spec.lhs_stack());
+        let aStrides = Strides::from(&lhs_shape);
+
+        let mut rhs_shape = spec.rhs_shape.clone();
+        rhs_shape.insert(0, spec.rhs_stack());
+        let bStrides = Strides::from(&rhs_shape);
+
+        let mut out_shape = spec.out_shape.clone();
+        out_shape.insert(0, spec.stacks());
+        let outStrides = Strides::from(&out_shape);
+
+        let dimAOuter = spec.dim_lhs_outer() as i32;
+        let dimBOuter = spec.dim_rhs_outer() as i32;
+        let dimInner = spec.dim_inner() as i32;
+
+        Ok(WorkgroupGEMVMeta {
+            aShape: lhs_shape.into(),
+            aStrides: aStrides.into(),
+            bShape: rhs_shape.into(),
+            bStrides: bStrides.into(),
+            outShape: out_shape.into(),
+            outStrides: outStrides.into(),
+            dimAOuter,
+            dimBOuter,
+            dimInner,
+        })
+    }
+
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<crate::Workload, OperationError> {
+        todo!()
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+        todo!()
+    }
+
+    fn build_kernel(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
-        spec: MatmulSpec,
+    ) -> Result<KernelSource, OperationError> {
+        todo!()
+    }
+}
+
+impl KernelRenderable for WorkgroupGEMV {
+    fn register_bindings<P: WgslPrimitive>(
+        &self,
+        builder: &mut WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        let (A, _, bias) = (&self.lhs, &self.rhs, &self.bias);
+
+        if A.dt().is_float() {
+            let float_arr = Array::<P>::default();
+            builder.register_storage("A", BindingMode::ReadOnly, float_arr);
+            builder.register_storage("X", BindingMode::ReadOnly, float_arr);
+            if bias.is_some() {
+                builder.register_storage("bias", BindingMode::ReadOnly, float_arr);
+            }
+            builder.register_storage("result", BindingMode::ReadWrite, float_arr);
+        } else if A.dt().is_quantized() {
+            let scalar = Array::<Scalar<P::T>>::default();
+            builder.register_storage("A", BindingMode::ReadOnly, Array::<Scalar<u32>>::default());
+            builder.register_storage("scale", BindingMode::ReadOnly, scalar);
+            builder.register_storage("X", BindingMode::ReadOnly, Array::<Vec4<P::T>>::default());
+            if bias.is_some() {
+                builder.register_storage("bias", BindingMode::ReadOnly, scalar);
+            }
+            builder.register_storage("result", BindingMode::ReadWrite, scalar);
+        } else {
+            return Err(InvariantError::UnsupportedDType(A.dt()).into());
+        }
+
+        builder.register_uniform();
+        Ok(())
+    }
+
+    fn render<P: WgslPrimitive>(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
@@ -177,61 +266,5 @@ impl WorkgroupGEMV {
         });
 
         Ok(kernel_builder.build()?)
-    }
-}
-
-impl Kernel for WorkgroupGEMV {
-    type Metadata = WorkgroupGEMVMeta;
-
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
-        let spec = self.compute_spec();
-        let mut lhs_shape = spec.lhs_shape.clone();
-        lhs_shape.insert(0, spec.lhs_stack());
-        let aStrides = Strides::from(&lhs_shape);
-
-        let mut rhs_shape = spec.rhs_shape.clone();
-        rhs_shape.insert(0, spec.rhs_stack());
-        let bStrides = Strides::from(&rhs_shape);
-
-        let mut out_shape = spec.out_shape.clone();
-        out_shape.insert(0, spec.stacks());
-        let outStrides = Strides::from(&out_shape);
-
-        let dimAOuter = spec.dim_lhs_outer() as i32;
-        let dimBOuter = spec.dim_rhs_outer() as i32;
-        let dimInner = spec.dim_inner() as i32;
-
-        Ok(WorkgroupGEMVMeta {
-            aShape: lhs_shape.into(),
-            aStrides: aStrides.into(),
-            bShape: rhs_shape.into(),
-            bStrides: bStrides.into(),
-            outShape: out_shape.into(),
-            outStrides: outStrides.into(),
-            dimAOuter,
-            dimBOuter,
-            dimInner,
-        })
-    }
-
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<crate::Workload, OperationError> {
-        todo!()
-    }
-
-    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
-        todo!()
-    }
-
-    fn build_kernel(
-        &self,
-        inplace: bool,
-        dst: &Tensor,
-        workgroup_size: &WorkgroupSize,
-    ) -> Result<KernelSource, OperationError> {
-        todo!()
     }
 }

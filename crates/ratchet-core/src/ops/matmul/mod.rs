@@ -1,11 +1,9 @@
 mod gemm;
-mod gemv;
 mod quantized;
 mod subgroup_gemv;
 mod workgroup_gemv;
 
 pub use gemm::*;
-pub use gemv::*;
 pub use quantized::*;
 pub use subgroup_gemv::*;
 pub use workgroup_gemv::*;
@@ -15,8 +13,8 @@ use std::cmp::Ordering;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, DType, GPUOperation, InvariantError, Kernel, KernelElement, KernelKey,
-    KernelMetadata, KernelSource, MetaOperation, OpGuards, Operation, OperationError, RVec, Shape,
-    StorageView, Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+    KernelMetadata, KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView,
+    Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -580,7 +578,67 @@ pub enum MatmulKernels {
     Quantized(Quantized),
 }
 
-impl Kernel for MatmulKernels {}
+/// Defer down to kernel level
+impl Kernel for MatmulKernels {
+    type Metadata = MatmulMeta;
+
+    fn metadata(
+        &self,
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        let inner = match self {
+            MatmulKernels::GEMM(kernel) => {
+                MatmulMeta::GEMMMeta(kernel.metadata(dst, kernel_element))
+            }
+            MatmulKernels::SubgroupGEMV(kernel) => {
+                MatmulMeta::SubgroupGEMVMeta(kernel.metadata(dst, kernel_element))
+            }
+            MatmulKernels::WorkgroupGEMV(kernel) => {
+                MatmulMeta::WorkgroupGEMVMeta(kernel.metadata(dst, kernel_element))
+            }
+            MatmulKernels::Quantized(kernel) => {
+                MatmulMeta::Quantized(kernel.metadata(dst, kernel_element))
+            }
+        };
+    }
+
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
+        match self {
+            MatmulKernels::GEMM(kernel) => kernel.calculate_dispatch(dst),
+            MatmulKernels::SubgroupGEMV(kernel) => kernel.calculate_dispatch(dst),
+            MatmulKernels::WorkgroupGEMV(kernel) => kernel.calculate_dispatch(dst),
+            MatmulKernels::Quantized(kernel) => kernel.calculate_dispatch(dst),
+        }
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+        match self {
+            MatmulKernels::GEMM(kernel) => kernel.kernel_element(dst),
+            MatmulKernels::SubgroupGEMV(kernel) => kernel.kernel_element(dst),
+            MatmulKernels::WorkgroupGEMV(kernel) => kernel.kernel_element(dst),
+            MatmulKernels::Quantized(kernel) => kernel.kernel_element(dst),
+        }
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        match self {
+            MatmulKernels::GEMM(kernel) => kernel.build_kernel(inplace, dst, workgroup_size),
+            MatmulKernels::SubgroupGEMV(kernel) => {
+                kernel.build_kernel(inplace, dst, workgroup_size)
+            }
+            MatmulKernels::WorkgroupGEMV(kernel) => {
+                kernel.build_kernel(inplace, dst, workgroup_size)
+            }
+            MatmulKernels::Quantized(kernel) => kernel.build_kernel(inplace, dst, workgroup_size),
+        }
+    }
+}
 
 impl GPUOperation for Matmul {
     type KernelEnum = MatmulKernels;
@@ -608,6 +666,7 @@ impl GPUOperation for Matmul {
             (true, false, true) => {
                 MatmulKernels::SubgroupGEMV(SubgroupGEMV::new(self.lhs, self.rhs, self.bias))
             }
+            _ => todo!(),
         }
     }
 
