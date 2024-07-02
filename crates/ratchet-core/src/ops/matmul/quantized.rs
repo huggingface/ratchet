@@ -202,7 +202,7 @@ impl Quantized {
         workgroup_size: &WorkgroupSize,
         spec: MatmulSpec,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.lhs.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -212,12 +212,12 @@ impl Quantized {
             ],
             device.compute_features().clone(),
         );
-        kernel_builder.render_metadata::<QuantizedMeta>();
+        //kernel_builder.render_metadata::<QuantizedMeta>();
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         if spec.is_gemv() {
             todo!()
         } else {
-            self.build_qgemm::<P>(kernel_builder)
+            todo!()
         }
     }
 }

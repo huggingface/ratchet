@@ -37,7 +37,7 @@ impl KernelRenderable for CacheKernels {
         inplace: bool,
     ) -> Result<(), OperationError> {
         if inplace {
-            return Err(OperationError::InplaceError(self.name().to_string()));
+            return Err(OperationError::InplaceError(self.kernel_name().to_string()));
         }
 
         builder.register_storage("C", BindingMode::ReadWrite, Array::<P>::default());
@@ -51,10 +51,10 @@ impl KernelRenderable for CacheKernels {
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.cache.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -65,7 +65,8 @@ impl KernelRenderable for CacheKernels {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.render_metadata::<CacheMeta>();
+
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
         kernel_builder.write_offset_to_index();
         kernel_builder.write_index_to_offset();
 
@@ -179,11 +180,13 @@ pub enum CacheKernels {
 impl Kernel for CacheKernels {
     type Metadata = CacheMeta;
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
+    fn kernel_name(&self) -> String {
+        match self {
+            CacheKernels::Standard(_) => "cache".to_string(),
+        }
+    }
+
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let inner = match self {
             CacheKernels::Standard(inner) => inner,
         };

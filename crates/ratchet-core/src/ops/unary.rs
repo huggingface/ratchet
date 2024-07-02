@@ -105,7 +105,7 @@ impl KernelRenderable for UnaryKernels {
         );
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.render_metadata::<UnaryMeta>();
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
         let inner = match self {
             UnaryKernels::Standard(inner) => inner,

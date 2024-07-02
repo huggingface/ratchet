@@ -125,7 +125,7 @@ impl KernelRenderable for NormOp {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.render_metadata::<NormMeta>();
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
         let reduction_len = match P::W {
             1 => "metadata.N",

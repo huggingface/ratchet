@@ -86,7 +86,7 @@ impl KernelRenderable for BinaryKernels {
         );
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.render_metadata::<BinaryMeta>();
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
         let N = (P::W as u32).render();
 

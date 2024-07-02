@@ -62,7 +62,7 @@ impl KernelRenderable for ReindexKernels {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.render_metadata::<ReindexMeta>();
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
         let n = P::W;
 

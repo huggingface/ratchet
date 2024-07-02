@@ -63,7 +63,7 @@ impl KernelRenderable for CastKernels {
         );
 
         self.register_bindings::<SP>(&mut kernel_builder, inplace)?;
-        kernel_builder.render_metadata::<CastMeta>();
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
         let n = SP::W;
         kernel_builder.write_main(wgsl! {

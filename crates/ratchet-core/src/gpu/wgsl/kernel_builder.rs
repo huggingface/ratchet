@@ -146,8 +146,8 @@ impl WgslKernelBuilder {
     // This method cannot be put on the constructor of the struct
     // This is because some operations don't create their metadata struct
     // until runtime
-    pub fn render_metadata<M: KernelMetadata>(&mut self) {
-        self.write_global(M::render_meta());
+    pub fn render_metadata<M: KernelMetadata>(&mut self, m: &M) {
+        self.write_global(m.render_meta());
     }
 
     fn register_binding(

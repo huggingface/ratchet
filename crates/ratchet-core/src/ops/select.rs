@@ -89,14 +89,17 @@ impl GPUOperation for IndexSelect {
     }
 }
 
-impl KernelRenderable for IndexSelect {
+impl KernelRenderable for IndexSelectKernels {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
         _: bool,
     ) -> Result<(), OperationError> {
         let index_arr = Array::<Scalar<i32>>::default();
-        match self.src.dt() {
+        let inner = match self {
+            IndexSelectKernels::Standard(inner) => inner,
+        };
+        match inner.src.dt() {
             DType::F16 | DType::F32 => {
                 builder.register_storage("E", BindingMode::ReadOnly, Array::<P>::default());
                 builder.register_storage("I", BindingMode::ReadOnly, index_arr);
@@ -120,10 +123,10 @@ impl KernelRenderable for IndexSelect {
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.src.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -134,12 +137,15 @@ impl KernelRenderable for IndexSelect {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.render_metadata::<IndexSelectMeta>();
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
+        let inner = match self {
+            IndexSelectKernels::Standard(inner) => inner,
+        };
         //TODO: REFACTOR
-        match self.src.dt() {
+        match inner.src.dt() {
             DType::Q8_0H(_) | DType::Q8_0F(_) => {
-                kernel_builder.write_unpack(self.src.dt());
+                kernel_builder.write_unpack(inner.src.dt());
 
                 kernel_builder.write_main(wgsl! {
                     let tid = workgroup_id.x * 64u + local_invocation_index;
@@ -183,6 +189,12 @@ impl KernelRenderable for IndexSelect {
 
 impl Kernel for IndexSelectKernels {
     type Metadata = IndexSelectMeta;
+
+    fn kernel_name(&self) -> String {
+        match self {
+            IndexSelectKernels::Standard(_) => "index_select".to_string(),
+        }
+    }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let inner = match self {
@@ -237,28 +249,28 @@ impl Kernel for IndexSelectKernels {
         };
         match (inner.src.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             (DType::Q8_0H(_), KernelElement::Scalar) => {
-                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             (DType::Q8_0F(_), KernelElement::Scalar) => {
-                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

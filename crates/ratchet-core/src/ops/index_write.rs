@@ -103,7 +103,8 @@ impl KernelRenderable for IndexWriteKernels {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        kernel_builder.render_metadata::<IndexWriteMeta>();
+
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
         kernel_builder.write_index_to_offset();
 
         kernel_builder.write_main(wgsl! {
