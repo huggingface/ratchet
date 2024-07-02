@@ -27,6 +27,21 @@ impl Default for BufferAllocator {
     }
 }
 
+impl Drop for BufferAllocator {
+    fn drop(&mut self) {
+        // Explicitly drop the inner pool
+        let _ =
+            parking_lot::lock_api::RwLockWriteGuard::<'_, parking_lot::RawRwLock, BufferPool>::map(
+                self.pool.write(),
+                |pool| {
+                    // Clear the pool's contents
+                    let _ = pool.all_resources();
+                    pool
+                },
+            );
+    }
+}
+
 impl BufferAllocator {
     pub fn new() -> Self {
         Self {

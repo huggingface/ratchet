@@ -60,6 +60,19 @@ pub(super) struct DynamicResourcePool<Handle: Key, Desc: Debug, Res> {
     total_resource_size_in_bytes: AtomicU64,
 }
 
+impl<Handle, Desc, Res> Drop for DynamicResourcePool<Handle, Desc, Res>
+where
+    Handle: Key,
+    Desc: Debug,
+{
+    fn drop(&mut self) {
+        let mut state = self.state.write();
+        for (_, resource) in state.all_resources.drain() {
+            log::debug!("Dropping resource {:?}", resource.descriptor);
+        }
+    }
+}
+
 /// We cannot #derive(Default) as that would require Handle/Desc/Res to implement Default too.
 impl<Handle: Key, Desc, Res> Default for DynamicResourcePool<Handle, Desc, Res>
 where
