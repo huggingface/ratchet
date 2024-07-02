@@ -4,12 +4,15 @@ use half::f16;
 use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
+use crate::WgslVec;
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement, KernelSource,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    gpu::BindGroupLayoutDescriptor, rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel,
+    KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
+    Scalar, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
+
+use crate::gpu::dtype::WgslDType;
 
 #[derive(new, Debug, Clone)]
 pub struct Cast {
@@ -18,25 +21,29 @@ pub struct Cast {
 }
 
 //Kernel cannot implement standard cast as it has multiple type bounds
-impl Cast {
-    fn register_bindings<SP: WgslPrimitive, DP: WgslPrimitive>(
+impl KernelRenderable for CastKernels {
+    fn register_bindings<SP: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
         _: bool,
     ) -> Result<(), OperationError> {
+        let inner = match self {
+            CastKernels::Standard(s) => s,
+        };
+
         builder.register_storage("X", BindingMode::ReadOnly, Array::<SP>::default());
         builder.register_storage("Y", BindingMode::ReadWrite, Array::<DP>::default());
         builder.register_uniform();
         Ok(())
     }
 
-    fn build_cast<SP: WgslPrimitive, DP: WgslPrimitive>(
+    fn render<SP: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.input.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -47,7 +54,7 @@ impl Cast {
             device.compute_features().clone(),
         );
 
-        self.register_bindings::<SP, DP>(&mut kernel_builder, inplace)?;
+        self.register_bindings::<SP>(&mut kernel_builder, inplace)?;
         kernel_builder.render_metadata::<CastMeta>();
 
         let n = SP::W;
@@ -59,7 +66,17 @@ impl Cast {
             }
         });
 
-        let dst_accessor = DP::render_type();
+        let inner = match self {
+            CastKernels::Standard(s) => s,
+        };
+
+        //Bit of a hack
+        let dst_accessor = match n {
+            1 => inner.dst_dt.as_wgsl().to_string(),
+            2 | 4 => format!("vec{}<{}>", n, inner.dst_dt.as_wgsl()),
+            _ => unimplemented!(),
+        };
+
         kernel_builder.write_main(wgsl! {
             Y[index] = 'dst_accessor(X[index]);
         });
@@ -120,6 +137,12 @@ impl GPUOperation for Cast {
 
 impl Kernel for CastKernels {
     type Metadata = CastMeta;
+
+    fn kernel_name(&self) -> String {
+        match self {
+            CastKernels::Standard(_) => "cast".to_string(),
+        }
+    }
 
     fn metadata(
         &self,

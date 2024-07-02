@@ -37,7 +37,7 @@ impl KernelRenderable for Cache {
         inplace: bool,
     ) -> Result<(), OperationError> {
         if inplace {
-            return Err(OperationError::InplaceError(self.op_name()));
+            return Err(OperationError::InplaceError(self.name().to_string()));
         }
 
         builder.register_storage("C", BindingMode::ReadWrite, Array::<P>::default());
@@ -127,6 +127,10 @@ impl OpGuards for Cache {
 }
 
 impl Operation for Cache {
+    fn name(&self) -> &'static str {
+        "Cache"
+    }
+
     fn srcs(&self) -> RVec<&Tensor> {
         rvec![&self.cache, &self.source]
     }
@@ -180,20 +184,24 @@ impl Kernel for CacheKernels {
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> Result<Self::Metadata, OperationError> {
-        let original_rank = self.cache.rank();
-        let promotion = 4 - original_rank;
-        let promoted_dim = self.dim + promotion;
+        let inner = match self {
+            CacheKernels::Standard(inner) => inner,
+        };
 
-        let cache_shape = Shape::promote(self.cache.shape().clone(), 4);
+        let original_rank = inner.cache.rank();
+        let promotion = 4 - original_rank;
+        let promoted_dim = inner.dim + promotion;
+
+        let cache_shape = Shape::promote(inner.cache.shape().clone(), 4);
         let cache_strides = Strides::from(&cache_shape);
 
-        let source_shape = Shape::promote(self.source.shape().clone(), 4);
+        let source_shape = Shape::promote(inner.source.shape().clone(), 4);
         let source_strides = Strides::from(&source_shape);
 
         let dst_shape = Shape::promote(dst.shape().clone(), 4);
         let dst_strides = Strides::from(&dst_shape);
 
-        let cum0 = self.offset as u32;
+        let cum0 = inner.offset as u32;
         let cum1 = cum0 + source_shape[promoted_dim] as u32;
 
         Ok(CacheMeta {
@@ -222,24 +230,27 @@ impl Kernel for CacheKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
+        let inner = match self {
+            CacheKernels::Standard(inner) => inner,
+        };
         match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build::<Scalar<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build::<Vec2<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build::<Vec4<f32>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build::<Scalar<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build::<Vec2<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build::<Vec4<f16>>(inplace, dst, workgroup_size)
+                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

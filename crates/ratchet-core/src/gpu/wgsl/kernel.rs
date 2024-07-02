@@ -79,7 +79,7 @@ impl KernelMetadata for DynKernelMetadata {
 
 pub trait StaticKernelMetadata: Debug + Sized + ShaderType + WriteInto {
     fn write_static(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
-        uniform.write(self)
+        Ok(uniform.write(self)?)
     }
 }
 
@@ -100,7 +100,7 @@ pub trait KernelMetadata {
     fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError>;
 }
 
-pub trait Kernel {
+pub trait Kernel: KernelRenderable {
     /// # Metadata
     ///
     /// Each kernel has zero or more required metadata fields (e.g shape, strides, etc).
@@ -119,6 +119,8 @@ pub trait Kernel {
     /// 2. Dynamic Metadata - the structure is not known at compile time, so the author must
     ///   implement both `render` and `write_metadata`.
     type Metadata: KernelMetadata + 'static;
+
+    fn kernel_name(&self) -> String;
 
     fn metadata(
         &self,
@@ -142,12 +144,13 @@ pub trait Kernel {
         &self,
         workgroup_size: &WorkgroupSize,
         inplace: bool,
+        srcs: &[&Tensor],
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> KernelKey {
         KernelKey::new(
             &self.kernel_name(),
-            &self.srcs(),
+            srcs,
             dst,
             workgroup_size,
             inplace,

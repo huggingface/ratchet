@@ -8,7 +8,7 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor, CpuUniform},
+    gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
     rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement, KernelKey,
     KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
     Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
@@ -71,7 +71,7 @@ pub struct Unary {
     op: UnaryOp,
 }
 
-impl KernelRenderable for Unary {
+impl KernelRenderable for UnaryKernels {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -90,10 +90,10 @@ impl KernelRenderable for Unary {
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.input.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -107,8 +107,12 @@ impl KernelRenderable for Unary {
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.render_metadata::<UnaryMeta>();
 
+        let inner = match self {
+            UnaryKernels::Standard(inner) => inner,
+        };
+
         //Write global functions
-        match self.op {
+        match inner.op {
             UnaryOp::Gelu => {
                 kernel_builder.write_global(Unary::render_tanh::<P>());
                 kernel_builder.write_global(Unary::render_gelu::<P>());
@@ -139,7 +143,7 @@ impl KernelRenderable for Unary {
             }
         });
 
-        let func = self.op.kernel_operation();
+        let func = inner.op.kernel_operation();
         if inplace {
             kernel_builder.write_main(wgsl! {
                 let val = X[index];
@@ -289,6 +293,12 @@ impl GPUOperation for Unary {
 impl Kernel for UnaryKernels {
     type Metadata = UnaryMeta;
 
+    fn kernel_name(&self) -> String {
+        match self {
+            UnaryKernels::Standard(inner) => inner.op.kernel_name().into_owned(),
+        }
+    }
+
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let inner = match self {
             UnaryKernels::Standard(inner) => inner,
@@ -317,31 +327,28 @@ impl Kernel for UnaryKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let inner = match self {
-            UnaryKernels::Standard(inner) => inner,
-        };
-        match (inner.input.dt(), &kernel_element) {
+        match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
-                inner.input.dt(),
+                dst.dt(),
                 kernel_element
             ))),
         }
@@ -357,15 +364,13 @@ impl Kernel for UnaryKernels {
         &self,
         workgroup_size: &WorkgroupSize,
         inplace: bool,
+        srcs: &[&Tensor],
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> KernelKey {
-        let inner = match self {
-            UnaryKernels::Standard(inner) => inner,
-        };
         KernelKey::new(
-            &inner.name(),
-            &inner.srcs(),
+            &self.kernel_name(),
+            srcs,
             dst,
             workgroup_size,
             inplace,
@@ -379,9 +384,7 @@ impl Kernel for UnaryKernels {
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 
-    use crate::{
-        shape, test_util::run_py_prg, Device, DeviceRequest, MetaOperation, Tensor, UnaryOp,
-    };
+    use crate::{shape, test_util::run_py_prg, Device, DeviceRequest, Tensor, UnaryOp};
 
     #[derive(Arbitrary, Debug)]
     struct UnaryProblem {
