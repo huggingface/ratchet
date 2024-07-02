@@ -278,7 +278,7 @@ impl Kernel for ConvKernels {
 impl GPUOperation for Conv {
     type KernelEnum = ConvKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         ConvKernels::Threebythree(self)
     }
 

@@ -382,7 +382,7 @@ impl Kernel for NormKernels {
 impl GPUOperation for NormOp {
     type KernelEnum = NormKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         NormKernels::Standard(self)
     }
 

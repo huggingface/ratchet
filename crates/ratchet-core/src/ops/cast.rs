@@ -132,7 +132,7 @@ pub enum CastKernels {
 impl GPUOperation for Cast {
     type KernelEnum = CastKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         CastKernels::Standard(self)
     }
 

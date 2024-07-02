@@ -178,7 +178,7 @@ impl Operation for Binary {
 impl GPUOperation for Binary {
     type KernelEnum = BinaryKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         BinaryKernels::Standard(self)
     }
 

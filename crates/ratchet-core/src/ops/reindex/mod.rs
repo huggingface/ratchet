@@ -299,7 +299,7 @@ impl GPUOperation for Reindex {
         Ok(BindGroupLayoutDescriptor::unary())
     }
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         ReindexKernels::Standard(self)
     }
 }

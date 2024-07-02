@@ -252,7 +252,7 @@ impl Kernel for ConcatKernels {
 impl GPUOperation for Concat {
     type KernelEnum = ConcatKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         ConcatKernels::Standard(self)
     }
 

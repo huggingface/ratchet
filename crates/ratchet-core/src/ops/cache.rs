@@ -155,7 +155,7 @@ impl Operation for Cache {
 impl GPUOperation for Cache {
     type KernelEnum = CacheKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         CacheKernels::Standard(self)
     }
 

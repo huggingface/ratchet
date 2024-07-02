@@ -73,7 +73,7 @@ pub enum IndexSelectKernels {
 impl GPUOperation for IndexSelect {
     type KernelEnum = IndexSelectKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         IndexSelectKernels::Standard(self)
     }
 

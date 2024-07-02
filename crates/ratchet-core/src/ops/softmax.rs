@@ -300,7 +300,7 @@ impl GPUOperation for Softmax {
         Ok(BindGroupLayoutDescriptor::unary_inplace())
     }
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         todo!()
     }
 }
