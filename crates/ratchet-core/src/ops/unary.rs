@@ -355,25 +355,6 @@ impl Kernel for UnaryKernels {
             numel: dst.shape().numel() as u32,
         })
     }
-
-    fn kernel_key(
-        &self,
-        workgroup_size: &WorkgroupSize,
-        inplace: bool,
-        srcs: &[&Tensor],
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> KernelKey {
-        KernelKey::new(
-            &self.kernel_name(),
-            srcs,
-            dst,
-            workgroup_size,
-            inplace,
-            kernel_element,
-            None,
-        )
-    }
 }
 
 #[cfg(all(test, feature = "pyo3"))]

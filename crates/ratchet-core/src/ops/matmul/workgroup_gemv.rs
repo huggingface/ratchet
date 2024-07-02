@@ -4,9 +4,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindGroupLayoutDescriptor, BindingMode, BuiltIn,
-    DType, InvariantError, Kernel, KernelElement, KernelRenderable, KernelSource, Matmul,
-    MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec4, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupCount, WorkgroupSize, Workload,
+    DType, InvariantError, Kernel, KernelElement, KernelKey, KernelRenderable, KernelSource,
+    Matmul, MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec4, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupCount, WorkgroupSize, Workload,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -64,6 +64,39 @@ impl Kernel for WorkgroupGEMV {
 
     fn kernel_name(&self) -> String {
         "workgroup_gemv".to_string()
+    }
+
+    fn kernel_key(
+        &self,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        srcs: &[&Tensor],
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> KernelKey {
+        let (a_fit, b_fit, out_fit) = self.spec.tile_fit();
+        let bias_key = if self.bias.is_some() { "bias" } else { "" };
+
+        let additional = format!(
+            "{}_{}_{}_{}_{}_{}_{}",
+            if a_fit { "" } else { "a_checked" },
+            if b_fit { "" } else { "b_checked" },
+            if out_fit { "" } else { "out_checked" },
+            if self.trans_lhs { "trans_a" } else { "" },
+            if self.trans_rhs { "trans_b" } else { "" },
+            if self.trans_out { "trans_out" } else { "" },
+            bias_key
+        );
+
+        KernelKey::new(
+            &self.kernel_name(),
+            &srcs,
+            dst,
+            workgroup_size,
+            inplace,
+            kernel_element,
+            Some(&additional),
+        )
     }
 
     fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {

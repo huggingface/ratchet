@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, DType, GPUOperation, Kernel, KernelElement, KernelMetadata, KernelRenderable,
+    rvec, DType, GPUOperation, Kernel, KernelElement, KernelKey, KernelMetadata, KernelRenderable,
     KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
     WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
@@ -491,6 +491,30 @@ impl KernelRenderable for MatmulKernels {
 impl Kernel for MatmulKernels {
     type Metadata = MatmulMeta;
 
+    fn kernel_key(
+        &self,
+        workgroup_size: &WorkgroupSize,
+        inplace: bool,
+        srcs: &[&Tensor],
+        dst: &Tensor,
+        kernel_element: &KernelElement,
+    ) -> KernelKey {
+        match self {
+            MatmulKernels::GEMM(kernel) => {
+                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
+            }
+            MatmulKernels::SubgroupGEMV(kernel) => {
+                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
+            }
+            MatmulKernels::WorkgroupGEMV(kernel) => {
+                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
+            }
+            MatmulKernels::Quantized(kernel) => {
+                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
+            }
+        }
+    }
+
     fn kernel_name(&self) -> String {
         match self {
             MatmulKernels::GEMM(kernel) => kernel.kernel_name(),
@@ -761,6 +785,7 @@ def matmul(a, b{}):
         } else {
             None
         };
+
         println!("LHS shape: {:?}", lhs_shape);
         println!("RHS shape: {:?}", rhs_shape);
         println!("Bias: {:?}", bias.as_ref().map(|b| b.shape()));
@@ -812,11 +837,11 @@ def matmul(a, b{}):
         let _ = env_logger::builder().is_test(true).try_init();
         let device = GPU_DEVICE.with(|d| d.clone());
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![2, 222, 252], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![1, 222, 238], cpu_device.clone());
-        let bias = Some(Tensor::randn::<f32>(shape![238], cpu_device.clone()));
+        let a = Tensor::randn::<f32>(shape![2, 175, 241], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![2, 241, 182], cpu_device.clone());
+        let bias = Some(Tensor::randn::<f32>(shape![182], cpu_device.clone()));
 
-        let TRANS_LHS = true;
+        let TRANS_LHS = false;
         let TRANS_RHS = false;
         let TRANS_OUT = false;
         let QUANT = false;
