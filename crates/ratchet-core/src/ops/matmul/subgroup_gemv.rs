@@ -343,7 +343,7 @@ impl Kernel for SubgroupGEMV {
 
         KernelKey::new(
             &self.kernel_name(),
-            &srcs,
+            srcs,
             dst,
             workgroup_size,
             inplace,

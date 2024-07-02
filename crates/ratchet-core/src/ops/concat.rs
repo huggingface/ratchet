@@ -158,9 +158,7 @@ impl Kernel for ConcatKernels {
         &self,
         _: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        let inner = match self {
-            ConcatKernels::Standard(inner) => inner,
-        };
+        let ConcatKernels::Standard(inner) = self;
         Ok(BindGroupLayoutDescriptor::nthary(inner.inputs.len()))
     }
 

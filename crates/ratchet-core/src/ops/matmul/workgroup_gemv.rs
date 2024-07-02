@@ -90,7 +90,7 @@ impl Kernel for WorkgroupGEMV {
 
         KernelKey::new(
             &self.kernel_name(),
-            &srcs,
+            srcs,
             dst,
             workgroup_size,
             inplace,
