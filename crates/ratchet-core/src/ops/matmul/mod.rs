@@ -632,7 +632,7 @@ impl Kernel for MatmulKernels {
 impl GPUOperation for Matmul {
     type KernelEnum = MatmulKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
+    fn select_kernel(&self) -> Self::KernelEnum {
         if !self.bias.as_ref().map_or(true, |b| b.shape().is_vector()) {
             panic!("Bias must be a vector: {:?}", self.bias);
         }
@@ -652,9 +652,12 @@ impl GPUOperation for Matmul {
             .SUBGROUP;
 
         match (is_gemv, is_quantized, supports_subgroup) {
-            (true, false, true) => {
-                MatmulKernels::SubgroupGEMV(SubgroupGEMV::new(self.lhs, self.rhs, self.bias))
-            }
+            (true, false, true) => MatmulKernels::SubgroupGEMV(SubgroupGEMV::new(
+                self.lhs,
+                self.rhs,
+                self.bias,
+                self.compute_spec(dst),
+            )),
             _ => todo!(),
         }
     }

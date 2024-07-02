@@ -2,9 +2,9 @@ use encase::ShaderType;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, CpuUniform, DType, InvariantError,
-    Kernel, KernelElement, KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError,
-    Scalar, Strides, Tensor, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, Kernel,
+    KernelElement, KernelRenderable, KernelSource, MatmulSpec, OperationError, Scalar, Strides,
+    Tensor, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -25,18 +25,24 @@ pub struct WorkgroupGEMVMeta {
 }
 
 pub struct WorkgroupGEMV {
+    lhs: Tensor,
+    rhs: Tensor,
+    bias: Option<Tensor>,
+    trans_lhs: bool,
+    trans_rhs: bool,
+    trans_out: bool,
     spec: MatmulSpec,
 }
 
 impl Kernel for WorkgroupGEMV {
     type Metadata = WorkgroupGEMVMeta;
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
-        let spec = self.compute_spec();
+    fn kernel_name(&self) -> String {
+        "workgroup_gemv".to_string()
+    }
+
+    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
+        let spec = &self.spec;
         let mut lhs_shape = spec.lhs_shape.clone();
         lhs_shape.insert(0, spec.lhs_stack());
         let aStrides = Strides::from(&lhs_shape);
@@ -88,7 +94,7 @@ impl KernelRenderable for WorkgroupGEMV {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        inplace: bool,
+        _: bool,
     ) -> Result<(), OperationError> {
         let (A, _, bias) = (&self.lhs, &self.rhs, &self.bias);
 
@@ -134,8 +140,7 @@ impl KernelRenderable for WorkgroupGEMV {
             device.compute_features().clone(),
         );
 
-        self.register_bindings_workgroup::<P>(&mut kernel_builder, inplace)
-            .unwrap();
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         let n = P::W;
         let fp32_accessor = match n {
             1 => "f32",
@@ -146,7 +151,7 @@ impl KernelRenderable for WorkgroupGEMV {
         let scalar = P::T::DT;
         let zero = P::T::zero().render();
 
-        kernel_builder.render_metadata::<WorkgroupGEMVMeta>();
+        //kernel_builder.render_metadata::<WorkgroupGEMVMeta>();
         kernel_builder.write_unpack(self.lhs.dt());
 
         let work_size = (workgroup_size.x * workgroup_size.y / (n as u32)).render();
@@ -154,8 +159,8 @@ impl KernelRenderable for WorkgroupGEMV {
             var<workgroup> work: array<'fp32_accessor, 'work_size>;
         });
 
-        let (TILE_X, _) = spec.heuristic.as_workgroup_size();
-        let A_FIT = spec.lhs_shape()[1] % TILE_X == 0;
+        let (TILE_X, _) = self.spec.heuristic.as_workgroup_size();
+        let A_FIT = self.spec.lhs_shape()[1] % TILE_X == 0;
 
         let readA = match (A_FIT, self.lhs.dt()) {
             (true, DType::F32) | (true, DType::F16) => {

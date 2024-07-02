@@ -13,6 +13,7 @@ use ratchet_macros::WgslMetadata;
 
 use crate::Kernel;
 
+#[derive(derive_new::new)]
 pub struct SubgroupGEMV {
     lhs: Tensor,
     rhs: Tensor,
@@ -64,7 +65,7 @@ impl KernelRenderable for SubgroupGEMV {
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        dst: &Tensor,
+        _: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         const TM: usize = 4;
@@ -87,7 +88,7 @@ impl KernelRenderable for SubgroupGEMV {
             ],
             device.compute_features().clone(),
         );
-        kernel_builder.render_metadata::<SubgroupGEMVMeta>();
+        //kernel_builder.render_metadata::<SubgroupGEMVMeta>();
         kernel_builder.write_unpack(self.lhs.dt());
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)
@@ -122,11 +123,9 @@ impl KernelRenderable for SubgroupGEMV {
             let simd_gid = local_invocation_index / subgroup_size;
             let simd_lid = subgroup_invocation_id;
 
-
             let matBatchOffset = i32(workgroup_id.z) * metadata.OVL * metadata.IVL;
             let inVecBatchOffset = i32(workgroup_id.z) * metadata.IVL;
             let outVecBatchOffset = i32(workgroup_id.z) * metadata.OVL;
-
 
             // Threadgroup in_vec cache
             let inVecBlockOffset = i32(simd_lid * 'TN * 2);
@@ -290,6 +289,10 @@ impl KernelRenderable for SubgroupGEMV {
 
 impl Kernel for SubgroupGEMV {
     type Metadata = SubgroupGEMVMeta;
+
+    fn kernel_name(&self) -> String {
+        "subgroup_gemv".to_string()
+    }
 
     fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         Ok(SubgroupGEMVMeta {
