@@ -3,11 +3,9 @@ use crate::gpu::{
     PoolError, WgpuDevice,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError, KernelModuleDesc, RVec,
-    StorageView, Tensor, WgslFragment, WorkgroupSize, Workload,
+    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError, KernelMetadata,
+    KernelModuleDesc, RVec, StorageView, Tensor, WgslFragment, WorkgroupSize,
 };
-use encase::internal::WriteInto;
-use encase::ShaderType;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -33,7 +31,7 @@ pub enum LazyOp {
 }
 
 impl LazyOp {
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &str {
         match self {
             LazyOp::Binary(b) => b.name(),
             LazyOp::Cast(c) => c.name(),
@@ -48,8 +46,8 @@ impl LazyOp {
             LazyOp::IndexWrite(iw) => iw.name(),
             LazyOp::RoPE(r) => r.name(),
             LazyOp::Cache(c) => c.name(),
-            LazyOp::View(_) => "View".to_string(),
-            LazyOp::Const => "Const".to_string(),
+            LazyOp::View(v) => v.name(),
+            LazyOp::Const => "Const",
         }
     }
 
@@ -112,11 +110,7 @@ impl LazyOp {
                 Reindex::Broadcast(b) => b.check_invariants(),
             },
             LazyOp::Concat(c) => c.check_invariants(),
-            LazyOp::Norm(n) => match n {
-                NormOp::LayerNorm(l) => l.check_invariants(),
-                NormOp::RMSNorm(r) => r.check_invariants(),
-                NormOp::GroupNorm(g) => g.check_invariants(),
-            },
+            LazyOp::Norm(n) => n.check_invariants(),
             LazyOp::Conv(c) => c.check_invariants(),
             LazyOp::Select(s) => s.check_invariants(),
             LazyOp::IndexWrite(iw) => iw.check_invariants(),
@@ -240,7 +234,7 @@ pub trait OpGuards {
 /// Hardware invariant functions.
 pub trait Operation: OpGuards + Debug + 'static {
     /// # Operation Name
-    pub fn name(&self) -> &'static str;
+    fn name(&self) -> &'static str;
 
     /// # Check Invariants
     ///
@@ -307,7 +301,7 @@ pub trait GPUOperation: Operation {
         let workload = kernel.calculate_dispatch(dst)?;
 
         let storage_layout = device
-            .get_or_create_bind_group_layout(&kernel.storage_bind_group_layout(can_inplace)?)?;
+            .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
 
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;
@@ -315,7 +309,13 @@ pub trait GPUOperation: Operation {
             entries: rvec![storage_layout, uniform_layout],
         })?;
 
-        let key = self.kernel_key(&workload.workgroup_size, can_inplace, dst, &kernel_element);
+        let key = kernel.kernel_key(
+            &workload.workgroup_size,
+            can_inplace,
+            &self.srcs(),
+            dst,
+            &kernel_element,
+        );
         log::debug!("Kernel key: {}", key);
 
         let kernel_src_desc = KernelModuleDesc { key };
