@@ -125,6 +125,12 @@ impl KernelRenderable for ReindexKernels {
 impl Kernel for ReindexKernels {
     type Metadata = ReindexMeta;
 
+    fn kernel_name(&self) -> String {
+        match self {
+            ReindexKernels::Standard(reindex) => reindex.name().to_string(),
+        }
+    }
+
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         KernelElement::Scalar
     }

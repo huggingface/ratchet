@@ -105,7 +105,7 @@ impl OpGuards for Cast {
 }
 
 impl Operation for Cast {
-    pub fn name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Cast"
     }
 

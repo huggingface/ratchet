@@ -322,7 +322,7 @@ pub trait GPUOperation: Operation {
 
         let kernel_module = device.get_or_create_compute_module(
             &kernel_src_desc,
-            self,
+            &kernel,
             can_inplace,
             dst,
             &workload.workgroup_size,

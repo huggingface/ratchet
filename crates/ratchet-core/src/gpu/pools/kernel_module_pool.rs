@@ -1,5 +1,6 @@
 use crate::{
-    GPUOperation, KernelKey, KernelSource, OperationError, Tensor, WgpuDevice, WorkgroupSize,
+    GPUOperation, Kernel, KernelKey, KernelSource, OperationError, Tensor, WgpuDevice,
+    WorkgroupSize,
 };
 
 use super::static_resource_pool::{StaticResourcePool, StaticResourcePoolReadLockAccessor};
@@ -16,7 +17,7 @@ pub struct KernelModuleDesc {
 
 impl KernelModuleDesc {
     #[track_caller]
-    pub fn create_kernel_source<O: GPUOperation + ?Sized>(
+    pub fn create_kernel_source<O: Kernel + ?Sized>(
         &self,
         op: &O,
         inplace: bool,
@@ -39,10 +40,10 @@ impl KernelModulePool {
         }
     }
 
-    pub fn get_or_create<O: GPUOperation + ?Sized>(
+    pub fn get_or_create<K: Kernel + ?Sized>(
         &self,
         desc: &KernelModuleDesc,
-        op: &O,
+        kernel: &K,
         inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
@@ -50,7 +51,7 @@ impl KernelModulePool {
     ) -> KernelModuleHandle {
         self.pool.get_or_create(desc, |desc| {
             let source = desc
-                .create_kernel_source(op, inplace, dst, workgroup_size)
+                .create_kernel_source(kernel, inplace, dst, workgroup_size)
                 .expect("Failed to create kernel source");
 
             let shader_module_desc = wgpu::ShaderModuleDescriptor {
