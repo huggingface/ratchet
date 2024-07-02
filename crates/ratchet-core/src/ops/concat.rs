@@ -26,7 +26,11 @@ impl KernelRenderable for ConcatKernels {
             return Err(OperationError::InplaceError("bingo".to_string()));
         }
         let arr = Array::<P>::default();
-        for i in 0..self.inputs.len() {
+        let inner = match self {
+            ConcatKernels::Standard(inner) => inner,
+        };
+
+        for i in 0..inner.inputs.len() {
             builder.register_storage(format!("X{}", i).as_str(), BindingMode::ReadOnly, arr);
         }
         builder.register_storage("Y", BindingMode::ReadWrite, arr);
@@ -37,10 +41,10 @@ impl KernelRenderable for ConcatKernels {
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.inputs[0].device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -73,7 +77,11 @@ impl KernelRenderable for ConcatKernels {
             }
         });
 
-        for i in 1..self.inputs.len() {
+        let inner = match self {
+            ConcatKernels::Standard(inner) => inner,
+        };
+
+        for i in 1..inner.inputs.len() {
             let prevcum = format!("metadata.cum{}", i - 1);
             let cum = format!("metadata.cum{}", i);
             let stride = format!("metadata.x{}_stride", i);
