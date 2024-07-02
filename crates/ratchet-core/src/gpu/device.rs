@@ -17,12 +17,12 @@ pub const MAX_BUFFER_SIZE: u64 = (2 << 29) - 1;
 #[derive(Clone)]
 pub struct WgpuDevice {
     ordinal: u32,
-    buffer_allocator: Arc<BufferAllocator>,
     bind_group_pool: Arc<BindGroupPool>,
     bind_group_layout_pool: Arc<BindGroupLayoutPool>,
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
-    compute_pipeline_pool: Arc<ComputePipelinePool>,
     kernel_module_pool: Arc<KernelModulePool>,
+    compute_pipeline_pool: Arc<ComputePipelinePool>,
+    buffer_allocator: Arc<BufferAllocator>,
     device_limits: DeviceLimits,
     device_features: DeviceFeatures,
     queue: Arc<wgpu::Queue>,
