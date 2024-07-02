@@ -2,8 +2,8 @@ use crate::gpu::dtype::WgslDType;
 use crate::gpu::WgslPrimitive;
 use crate::{
     rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
-    KernelRenderable, KernelSource, MatmulSpec, OperationError, Scalar, Tensor, Vec4, WgslFragment,
-    WgslKernelBuilder, WorkgroupSize, Workload,
+    KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError, Scalar, Tensor, Vec4,
+    WgslFragment, WgslKernelBuilder, WorkgroupSize, Workload,
 };
 use encase::ShaderType;
 use half::f16;
@@ -13,12 +13,36 @@ use ratchet_macros::WgslMetadata;
 
 use crate::Kernel;
 
-#[derive(derive_new::new)]
 pub struct SubgroupGEMV {
     lhs: Tensor,
     rhs: Tensor,
     bias: Option<Tensor>,
+    trans_lhs: bool,
+    trans_rhs: bool,
+    trans_out: bool,
     spec: MatmulSpec,
+}
+
+impl SubgroupGEMV {
+    pub fn from_matmul(matmul: &Matmul, spec: MatmulSpec) -> Self {
+        let Matmul {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+        } = matmul.clone();
+        Self {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+            spec,
+        }
+    }
 }
 
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]

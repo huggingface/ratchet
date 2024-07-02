@@ -4,9 +4,9 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, InvariantError,
-    Kernel, KernelElement, KernelRenderable, KernelSource, MatmulSpec, OperationError, Scalar,
-    Strides, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupCount,
-    WorkgroupSize, Workload,
+    Kernel, KernelElement, KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError,
+    Scalar, Strides, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupCount, WorkgroupSize, Workload,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -19,6 +19,28 @@ pub struct GEMM {
     trans_rhs: bool,
     trans_out: bool,
     spec: MatmulSpec,
+}
+
+impl GEMM {
+    pub fn from_matmul(matmul: &Matmul, spec: MatmulSpec) -> Self {
+        let Matmul {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+        } = matmul.clone();
+        Self {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+            spec,
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

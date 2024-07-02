@@ -4,8 +4,8 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     rvec, Array, BindingMode, BuiltIn, DType, InvariantError, Kernel, KernelRenderable,
-    KernelSource, MatmulSpec, OperationError, Scalar, Tensor, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupSize,
+    KernelSource, Matmul, MatmulSpec, OperationError, Scalar, Tensor, WgslKernelBuilder,
+    WgslPrimitive, WorkgroupSize,
 };
 use inline_wgsl::wgsl;
 
@@ -20,7 +20,32 @@ pub struct Quantized {
     lhs: Tensor,
     rhs: Tensor,
     bias: Option<Tensor>,
+    trans_lhs: bool,
+    trans_rhs: bool,
+    trans_out: bool,
     spec: MatmulSpec,
+}
+
+impl Quantized {
+    pub fn from_matmul(matmul: &Matmul, spec: MatmulSpec) -> Self {
+        let Matmul {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+        } = matmul.clone();
+        Self {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+            spec,
+        }
+    }
 }
 
 impl Kernel for Quantized {

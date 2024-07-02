@@ -83,6 +83,14 @@ impl DType {
         )
     }
 
+    pub fn is_q8(self) -> bool {
+        matches!(self, DType::Q8_0H(_) | DType::Q8_0F(_))
+    }
+
+    pub fn is_q4(self) -> bool {
+        matches!(self, DType::Q4_KH(_) | DType::Q4_KF(_))
+    }
+
     pub fn is_float(self) -> bool {
         matches!(self, DType::F16 | DType::BF16 | DType::F32)
     }

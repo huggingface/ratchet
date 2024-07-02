@@ -3,8 +3,8 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, Kernel,
-    KernelElement, KernelRenderable, KernelSource, MatmulSpec, OperationError, Scalar, Strides,
-    Tensor, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    KernelElement, KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError, Scalar,
+    Strides, Tensor, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -24,6 +24,7 @@ pub struct WorkgroupGEMVMeta {
     dimInner: i32,
 }
 
+#[derive(Debug, Clone)]
 pub struct WorkgroupGEMV {
     lhs: Tensor,
     rhs: Tensor,
@@ -32,6 +33,28 @@ pub struct WorkgroupGEMV {
     trans_rhs: bool,
     trans_out: bool,
     spec: MatmulSpec,
+}
+
+impl WorkgroupGEMV {
+    pub fn from_matmul(matmul: &Matmul, spec: MatmulSpec) -> Self {
+        let Matmul {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+        } = matmul.clone();
+        Self {
+            lhs,
+            rhs,
+            bias,
+            trans_lhs,
+            trans_rhs,
+            trans_out,
+            spec,
+        }
+    }
 }
 
 impl Kernel for WorkgroupGEMV {

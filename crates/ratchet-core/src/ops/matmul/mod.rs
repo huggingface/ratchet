@@ -69,14 +69,14 @@ impl MatmulSpec {
     pub fn new(
         LHS: &Tensor,
         RHS: &Tensor,
-        OUT: &Tensor,
         trans_lhs: bool,
         trans_rhs: bool,
         trans_out: bool,
     ) -> Self {
         let mut lhs_shape = LHS.shape().clone();
         let mut rhs_shape = RHS.shape().clone();
-        let mut c_shape = OUT.shape().clone();
+        let mut c_shape =
+            Matmul::compute_c_shape(LHS, RHS, trans_lhs, trans_rhs, trans_out).unwrap();
         let a_dt = LHS.dt();
         let rhs_dt = RHS.dt();
 
@@ -343,11 +343,10 @@ impl Matmul {
         Ok(c_shape_final)
     }
 
-    pub fn compute_spec(&self, dst: &Tensor) -> MatmulSpec {
+    pub fn compute_spec(&self) -> MatmulSpec {
         MatmulSpec::new(
             &self.lhs,
             &self.rhs,
-            dst,
             self.trans_lhs,
             self.trans_rhs,
             self.trans_out,
@@ -566,7 +565,7 @@ impl GPUOperation for Matmul {
         }
 
         let is_gemv = self.rhs.shape().is_vector() && !self.trans_lhs;
-        let is_quantized = self.lhs.dt().is_quantized();
+        let is_q4 = self.lhs.dt().is_q4();
         let supports_subgroup = self
             .lhs
             .device()
@@ -575,13 +574,17 @@ impl GPUOperation for Matmul {
             .compute_features()
             .SUBGROUP;
 
-        match (is_gemv, is_quantized, supports_subgroup) {
-            (true, false, true) => MatmulKernels::SubgroupGEMV(SubgroupGEMV::new(
-                self.lhs,
-                self.rhs,
-                self.bias,
-                self.compute_spec(dst),
-            )),
+        let spec = self.compute_spec();
+
+        match (is_gemv, is_q4, supports_subgroup) {
+            (true, false, true) => {
+                MatmulKernels::SubgroupGEMV(SubgroupGEMV::from_matmul(self, spec))
+            }
+            (true, false, false) => {
+                MatmulKernels::WorkgroupGEMV(WorkgroupGEMV::from_matmul(self, spec))
+            }
+            (false, true, _) => MatmulKernels::Quantized(Quantized::from_matmul(self, spec)),
+            (false, false, _) => MatmulKernels::GEMM(GEMM::from_matmul(self, spec)),
             _ => todo!(),
         }
     }
@@ -590,6 +593,7 @@ impl GPUOperation for Matmul {
         &self,
         inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        //SHOULD PROBABLY MOVE THIS METHOD ONTO THE ACTUAL KERNEL
         todo!()
     }
 }
