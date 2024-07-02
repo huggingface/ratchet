@@ -3,24 +3,22 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindingMode, BuiltIn, CpuUniform, DType,
-    GPUOperation, InvariantError, Kernel, KernelElement, KernelRenderable, KernelSource,
-    MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec2, Vec4, WgslFragment,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupCount, WorkgroupSize, Workload,
+    gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, InvariantError,
+    Kernel, KernelElement, KernelRenderable, KernelSource, MatmulSpec, OperationError, Scalar,
+    Strides, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupCount,
+    WorkgroupSize, Workload,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
 
 pub struct GEMM {
-    aShape: IVec3,
-    aStrides: IVec3,
-    bShape: IVec3,
-    bStrides: IVec3,
-    outShape: IVec3,
-    outStrides: IVec3,
-    dimAOuter: i32,
-    dimBOuter: i32,
-    dimInner: i32,
+    lhs: Tensor,
+    rhs: Tensor,
+    bias: Option<Tensor>,
+    trans_lhs: bool,
+    trans_rhs: bool,
+    trans_out: bool,
+    spec: MatmulSpec,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -41,7 +39,7 @@ impl KernelRenderable for GEMM {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
-        inplace: bool,
+        _: bool,
     ) -> Result<(), OperationError> {
         let (A, _, bias) = (&self.lhs, &self.rhs, &self.bias);
 
@@ -79,7 +77,7 @@ impl KernelRenderable for GEMM {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.lhs.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -91,14 +89,14 @@ impl KernelRenderable for GEMM {
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)
             .unwrap();
-        kernel_builder.render_metadata::<GEMMMeta>();
+        //kernel_builder.render_metadata::<GEMMMeta>();
         self.write_indexing::<P>(&mut kernel_builder);
         self.write_getters::<P>(dst, &mut kernel_builder)?;
-        self.write_readers_and_writers::<P>(&mut kernel_builder, self.tile_fit())?;
+        self.write_readers_and_writers::<P>(&mut kernel_builder, self.spec.tile_fit())?;
         if P::W == 1 {
-            self.build_gemm_scalar::<P>(kernel_builder)
+            self.render_scalar::<P>(kernel_builder)
         } else {
-            self.build_gemm_vectorized::<P>(kernel_builder)
+            self.render_vectorized::<P>(kernel_builder)
         }
     }
 }
@@ -106,12 +104,12 @@ impl KernelRenderable for GEMM {
 impl Kernel for GEMM {
     type Metadata = GEMMMeta;
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
-        let spec = self.compute_spec();
+    fn kernel_name(&self) -> String {
+        "gemm".to_string()
+    }
+
+    fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
+        let spec = &self.spec;
         let mut lhs_shape = spec.lhs_shape.clone();
         lhs_shape.insert(0, spec.lhs_stack());
         let aStrides = Strides::from(&lhs_shape);
@@ -141,7 +139,7 @@ impl Kernel for GEMM {
         })
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<crate::Workload, OperationError> {
+    fn calculate_dispatch(&self, _: &Tensor) -> Result<crate::Workload, OperationError> {
         //GEMM
         let TILE_DIM = 32;
         let lhs_shape = self.spec.lhs_shape();
@@ -176,44 +174,35 @@ impl Kernel for GEMM {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let spec = todo!();
-        let kernel_element = spec.select_kernel_element();
+        let kernel_element = self.spec.select_kernel_element();
         match (self.lhs.dt(), kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                self.build_gemm::<Vec2<f32>>(inplace, dst, workgroup_size, spec)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                self.build_gemm::<Vec4<f32>>(inplace, dst, workgroup_size, spec)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                self.build_gemm::<Vec2<f16>>(inplace, dst, workgroup_size, spec)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                self.build_gemm::<Vec4<f16>>(inplace, dst, workgroup_size, spec)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
-            (DType::Q8_0F(_), _) => {
-                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
-            }
-            (DType::Q8_0H(_), _) => {
-                self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
-            }
-            (DType::Q4_KF(_), _) => {
-                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, spec)
-            }
-            (DType::Q4_KH(_), _) => {
-                self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size, spec)
-            }
+            (DType::Q8_0F(_), _) => self.render::<Scalar<f32>>(inplace, dst, workgroup_size),
+            (DType::Q8_0H(_), _) => self.render::<Scalar<f16>>(inplace, dst, workgroup_size),
+            (DType::Q4_KF(_), _) => self.render::<Scalar<f32>>(inplace, dst, workgroup_size),
+            (DType::Q4_KH(_), _) => self.render::<Scalar<f16>>(inplace, dst, workgroup_size),
             _ => return Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
         }
     }
 
-    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
+    fn kernel_element(&self, _: &Tensor) -> KernelElement {
         self.spec.select_kernel_element()
     }
 }
@@ -403,7 +392,7 @@ impl GEMM {
         Ok(())
     }
 
-    fn build_gemm_scalar<P: WgslPrimitive>(
+    fn render_scalar<P: WgslPrimitive>(
         &self,
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
@@ -556,7 +545,7 @@ impl GEMM {
         Ok(kernel_builder.build()?)
     }
 
-    fn build_gemm_vectorized<P: WgslPrimitive>(
+    fn render_vectorized<P: WgslPrimitive>(
         &self,
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
