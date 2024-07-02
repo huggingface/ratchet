@@ -22,7 +22,7 @@ pub struct Conv {
     //dilation: usize, TODO: implement dilation
 }
 
-impl KernelRenderable for Conv {
+impl KernelRenderable for ConvKernels {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -188,6 +188,12 @@ pub enum ConvKernels {
 impl Kernel for ConvKernels {
     type Metadata = ConvMeta;
 
+    fn kernel_name(&self) -> String {
+        match self {
+            ConvKernels::Threebythree(_) => "conv1d_3x3".to_string(),
+        }
+    }
+
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let inner = match self {
             ConvKernels::Threebythree(i) => i,
@@ -243,22 +249,22 @@ impl Kernel for ConvKernels {
         };
         match (inner.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",

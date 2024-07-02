@@ -176,6 +176,16 @@ impl WgslKernelBuilder {
         self.register_binding(BindingType::Storage, mode, name, format!("{}", array));
     }
 
+    /// Cast kernel requires this
+    pub(crate) unsafe fn register_storage_raw(
+        &mut self,
+        name: impl Into<Ident>,
+        mode: BindingMode,
+        array: String,
+    ) {
+        self.register_binding(BindingType::Storage, mode, name, array);
+    }
+
     pub(crate) fn register_uniform(&mut self) {
         self.register_binding(
             BindingType::Uniform,

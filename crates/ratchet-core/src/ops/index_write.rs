@@ -5,11 +5,10 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
-    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
-    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
-    Workload,
+    gpu::BindGroupLayoutDescriptor, rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel,
+    KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
+    Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -123,6 +122,12 @@ impl KernelRenderable for IndexWriteKernels {
 
 impl Kernel for IndexWriteKernels {
     type Metadata = IndexWriteMeta;
+
+    fn kernel_name(&self) -> String {
+        match self {
+            IndexWriteKernels::Standard(_) => "index_write".to_string(),
+        }
+    }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let inner = match self {

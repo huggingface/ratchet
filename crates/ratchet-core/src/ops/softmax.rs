@@ -1,4 +1,3 @@
-use crate::StaticKernelMetadata;
 use derive_new::new;
 use encase::ShaderType;
 use half::f16;
@@ -39,7 +38,7 @@ impl OpGuards for Softmax {
     }
 }
 
-impl KernelRenderable for Softmax {
+impl KernelRenderable for SoftmaxKernels {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -202,6 +201,12 @@ impl Operation for Softmax {
 impl Kernel for SoftmaxKernels {
     type Metadata = SoftmaxMeta;
 
+    fn kernel_name(&self) -> String {
+        match self {
+            Self::Standard(_) => String::from("softmax"),
+        }
+    }
+
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
         let inner = match self {
             Self::Standard(op) => op,
@@ -224,31 +229,28 @@ impl Kernel for SoftmaxKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let inner = match self {
-            Self::Standard(op) => op,
-        };
-        match (inner.input.dt(), &kernel_element) {
+        match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
-                inner.input.dt(),
+                dst.dt(),
                 kernel_element
             ))),
         }
