@@ -69,8 +69,8 @@ impl Operation for RoPE {
 impl GPUOperation for RoPE {
     type KernelEnum = RoPEKernels;
 
-    fn select_kernel(self) -> Self::KernelEnum {
-        RoPEKernels::Standard(self)
+    fn select_kernel(&self) -> Self::KernelEnum {
+        RoPEKernels::Standard(self.clone())
     }
 
     fn storage_bind_group_layout(

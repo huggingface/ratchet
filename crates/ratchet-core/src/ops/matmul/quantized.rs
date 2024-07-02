@@ -3,8 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, KernelSource, MatmulSpec,
-    OperationError, Scalar, Tensor, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, Kernel, KernelRenderable,
+    KernelSource, MatmulSpec, OperationError, Scalar, Tensor, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize,
 };
 use inline_wgsl::wgsl;
 
@@ -16,10 +17,51 @@ pub struct QuantizedMeta {
 
 #[derive(Debug, Clone)]
 pub struct Quantized {
+    lhs: Tensor,
+    rhs: Tensor,
+    bias: Option<Tensor>,
     spec: MatmulSpec,
 }
 
-impl Quantized {
+impl Kernel for Quantized {
+    type Metadata = QuantizedMeta;
+
+    fn kernel_name(&self) -> String {
+        "quantized_mm".to_string()
+    }
+
+    fn metadata(
+        &self,
+        _: &Tensor,
+        _: &crate::KernelElement,
+    ) -> Result<Self::Metadata, OperationError> {
+        Ok(QuantizedMeta { dummy: 0 })
+    }
+
+    fn calculate_dispatch(&self, dst: &Tensor) -> Result<crate::Workload, OperationError> {
+        todo!()
+    }
+
+    fn kernel_element(&self, dst: &Tensor) -> crate::KernelElement {
+        todo!()
+    }
+
+    fn build_kernel(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        let kernel_element = self.spec.select_kernel_element();
+        match (self.lhs.dt(), kernel_element) {
+            (DType::Q4_KF(_), _) => self.render::<Scalar<f32>>(inplace, dst, workgroup_size),
+            (DType::Q4_KH(_), _) => self.render::<Scalar<f16>>(inplace, dst, workgroup_size),
+            _ => return Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
+        }
+    }
+}
+
+impl KernelRenderable for Quantized {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -51,28 +93,23 @@ impl Quantized {
         Ok(())
     }
 
-    pub fn build_kernel(
+    fn render<P: WgslPrimitive>(
         &self,
-        inplace: bool,
+        _: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let kernel_element = self.spec.select_kernel_element();
-        match (self.lhs.dt(), kernel_element) {
-            (DType::Q4_KF(_), _) => {
-                self.build_gemm::<Scalar<f32>>(inplace, dst, workgroup_size, self.spec)
-            }
-            (DType::Q4_KH(_), _) => {
-                self.build_gemm::<Scalar<f16>>(inplace, dst, workgroup_size, self.spec)
-            }
-            _ => return Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
-        }
-    }
+        let device = dst.device().try_gpu()?;
+        let mut kernel_builder = WgslKernelBuilder::new(
+            workgroup_size.clone(),
+            rvec![
+                BuiltIn::GlobalInvocationId,
+                BuiltIn::LocalInvocationId,
+                BuiltIn::WorkgroupId
+            ],
+            device.compute_features().clone(),
+        );
 
-    fn build_quantized<P: WgslPrimitive>(
-        &self,
-        mut kernel_builder: WgslKernelBuilder,
-    ) -> Result<KernelSource, OperationError> {
         /* Extract the 16 x 6 bit values scales-mins pairs. The
          * encoding of those values is odd because of performance
          * reasons:
@@ -193,31 +230,5 @@ impl Quantized {
         let x = kernel_builder.build()?;
         println!("{}", x);
         Ok(x)
-    }
-
-    fn build_gemm<P: WgslPrimitive>(
-        &self,
-        inplace: bool,
-        dst: &Tensor,
-        workgroup_size: &WorkgroupSize,
-        spec: MatmulSpec,
-    ) -> Result<KernelSource, OperationError> {
-        let device = dst.device().try_gpu()?;
-        let mut kernel_builder = WgslKernelBuilder::new(
-            workgroup_size.clone(),
-            rvec![
-                BuiltIn::GlobalInvocationId,
-                BuiltIn::LocalInvocationId,
-                BuiltIn::WorkgroupId
-            ],
-            device.compute_features().clone(),
-        );
-        //kernel_builder.render_metadata::<QuantizedMeta>();
-        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
-        if spec.is_gemv() {
-            todo!()
-        } else {
-            todo!()
-        }
     }
 }

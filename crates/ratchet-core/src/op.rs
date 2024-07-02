@@ -275,7 +275,7 @@ pub trait GPUOperation: Operation {
     /// Enumeration of all possible kernels that can be used for this operation.
     type KernelEnum: Kernel;
 
-    fn select_kernel(self) -> Self::KernelEnum;
+    fn select_kernel(&self) -> Self::KernelEnum;
 
     /// # Storage Bind Group Layout
     ///

@@ -366,7 +366,7 @@ impl Matmul {
 }
 
 impl Operation for Matmul {
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "Matmul"
     }
 
@@ -462,7 +462,7 @@ impl KernelMetadata for MatmulMeta {
     }
 }
 
-impl Kernel for Matmul {
+impl Kernel for MatmulKernels {
     type Metadata = MatmulMeta;
 
     fn metadata(
@@ -470,47 +470,48 @@ impl Kernel for Matmul {
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> Result<Self::Metadata, OperationError> {
+        match self {
+            MatmulKernels::GEMM(kernel) => {
+                let meta = kernel.metadata(dst, kernel_element)?;
+                Ok(MatmulMeta::GEMMMeta(meta))
+            }
+            MatmulKernels::SubgroupGEMV(kernel) => {
+                let meta = kernel.metadata(dst, kernel_element)?;
+                Ok(MatmulMeta::SubgroupGEMVMeta(meta))
+            }
+            MatmulKernels::WorkgroupGEMV(kernel) => {
+                let meta = kernel.metadata(dst, kernel_element)?;
+                Ok(MatmulMeta::WorkgroupGEMVMeta(meta))
+            }
+            MatmulKernels::Quantized(kernel) => {
+                let meta = kernel.metadata(dst, kernel_element)?;
+                Ok(MatmulMeta::Quantized(meta))
+            }
+        }
     }
 
     fn kernel_key(
         &self,
         workgroup_size: &WorkgroupSize,
         inplace: bool,
+        srcs: &[&Tensor],
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> KernelKey {
-        let spec = self.compute_spec(dst);
-        let device = dst.device().try_gpu().unwrap();
-        let kernel_stem = if spec.is_gemv() { "gemv" } else { "gemm" };
-        let subgroup = if spec.is_gemv() && device.compute_features().SUBGROUP {
-            "subgroup"
-        } else {
-            ""
-        };
-        let (a_fit, b_fit, out_fit) = spec.tile_fit();
-        let bias_key = if self.bias.is_some() { "bias" } else { "" };
-
-        let additional = format!(
-            "{}_{}_{}_{}_{}_{}_{}_{}",
-            if a_fit { "" } else { "a_checked" },
-            if b_fit { "" } else { "b_checked" },
-            if out_fit { "" } else { "out_checked" },
-            if self.trans_lhs { "trans_a" } else { "" },
-            if self.trans_rhs { "trans_b" } else { "" },
-            if self.trans_out { "trans_out" } else { "" },
-            subgroup,
-            bias_key
-        );
-
-        KernelKey::new(
-            kernel_stem,
-            &self.srcs(),
-            dst,
-            workgroup_size,
-            inplace,
-            kernel_element,
-            Some(&additional),
-        )
+        match self {
+            MatmulKernels::GEMM(kernel) => {
+                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
+            }
+            MatmulKernels::SubgroupGEMV(kernel) => {
+                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
+            }
+            MatmulKernels::WorkgroupGEMV(kernel) => {
+                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
+            }
+            MatmulKernels::Quantized(kernel) => {
+                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
+            }
+        }
     }
 
     fn kernel_element(&self, dst: &Tensor) -> KernelElement {
@@ -520,31 +521,11 @@ impl Kernel for Matmul {
 
     //TODO: clean
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
-        let spec = self.compute_spec(dst);
-
-        if spec.rhs_shape().is_vector() && !self.trans_lhs {
-            //GEMV
-            let device = self.lhs.device().try_gpu().unwrap();
-            if device.compute_features().SUBGROUP {
-                Ok(Workload {
-                    workgroup_count: wgc![
-                        ((spec.new_dim_lhs_outer() / 32) + 1) as _,
-                        1,
-                        spec.stacks() as _
-                    ],
-                    workgroup_size: wgs![32, 8, 1],
-                })
-            } else {
-                //GEMV workgroup style
-                let (TX, TY) = spec.heuristic.as_workgroup_size();
-                let group_x = WorkgroupCount::div_ceil(spec.lhs_shape()[0], TX);
-
-                Ok(Workload {
-                    workgroup_count: wgc![group_x as _, 1, spec.stacks() as _],
-                    workgroup_size: wgs![TX as _, TY as _, 1],
-                })
-            }
-        } else {
+        match self {
+            MatmulKernels::GEMM(g) => g.calculate_dispatch(dst),
+            MatmulKernels::SubgroupGEMV(sg) => sg.calculate_dispatch(dst),
+            MatmulKernels::WorkgroupGEMV(wg) => wg.calculate_dispatch(dst),
+            MatmulKernels::Quantized(q) => q.calculate_dispatch(dst),
         }
     }
 
@@ -572,6 +553,10 @@ impl Kernel for Matmul {
             }
             _ => Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
         }
+    }
+
+    fn kernel_name(&self) -> String {
+        format!("matmul")
     }
 }
 
