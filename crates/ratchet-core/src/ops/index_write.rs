@@ -55,7 +55,7 @@ impl GPUOperation for IndexWrite {
     type KernelEnum = IndexWriteKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        IndexWriteKernels::Standard(self)
+        IndexWriteKernels::Standard(self.clone())
     }
 
     fn storage_bind_group_layout(

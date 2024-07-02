@@ -286,7 +286,7 @@ impl GPUOperation for Unary {
     }
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        UnaryKernels::Standard(self)
+        UnaryKernels::Standard(self.clone())
     }
 }
 

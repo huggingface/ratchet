@@ -300,6 +300,6 @@ impl GPUOperation for Reindex {
     }
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        ReindexKernels::Standard(self)
+        ReindexKernels::Standard(self.clone())
     }
 }

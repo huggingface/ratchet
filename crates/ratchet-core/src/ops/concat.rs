@@ -253,7 +253,7 @@ impl GPUOperation for Concat {
     type KernelEnum = ConcatKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        ConcatKernels::Standard(self)
+        ConcatKernels::Standard(self.clone())
     }
 
     fn storage_bind_group_layout(

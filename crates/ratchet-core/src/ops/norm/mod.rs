@@ -383,7 +383,7 @@ impl GPUOperation for NormOp {
     type KernelEnum = NormKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        NormKernels::Standard(self)
+        NormKernels::Standard(self.clone())
     }
 
     fn storage_bind_group_layout(

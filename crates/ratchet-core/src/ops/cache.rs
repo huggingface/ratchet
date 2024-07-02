@@ -156,7 +156,7 @@ impl GPUOperation for Cache {
     type KernelEnum = CacheKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        CacheKernels::Standard(self)
+        CacheKernels::Standard(self.clone())
     }
 
     fn storage_bind_group_layout(

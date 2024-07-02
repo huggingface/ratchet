@@ -74,7 +74,7 @@ impl GPUOperation for IndexSelect {
     type KernelEnum = IndexSelectKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        IndexSelectKernels::Standard(self)
+        IndexSelectKernels::Standard(self.clone())
     }
 
     fn storage_bind_group_layout(

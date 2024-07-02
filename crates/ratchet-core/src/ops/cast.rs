@@ -133,7 +133,7 @@ impl GPUOperation for Cast {
     type KernelEnum = CastKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        CastKernels::Standard(self)
+        CastKernels::Standard(self.clone())
     }
 
     fn storage_bind_group_layout(
