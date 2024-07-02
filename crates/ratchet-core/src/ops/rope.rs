@@ -161,11 +161,13 @@ impl KernelRenderable for RoPEKernels {
 impl Kernel for RoPEKernels {
     type Metadata = RoPEMeta;
 
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
+    fn kernel_name(&self) -> String {
+        match self {
+            RoPEKernels::Standard(_) => "rope".to_string(),
+        }
+    }
+
+    fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let inner = match self {
             RoPEKernels::Standard(op) => op,
         };

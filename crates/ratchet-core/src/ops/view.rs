@@ -23,7 +23,7 @@ impl OpGuards for View {
 }
 
 impl Operation for View {
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "View"
     }
 

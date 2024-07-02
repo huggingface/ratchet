@@ -179,7 +179,7 @@ impl GPUOperation for Binary {
     type KernelEnum = BinaryKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        BinaryKernels::Standard(self)
+        BinaryKernels::Standard(self.clone())
     }
 
     fn storage_bind_group_layout(
