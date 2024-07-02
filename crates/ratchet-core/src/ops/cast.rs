@@ -24,9 +24,7 @@ impl KernelRenderable for CastKernels {
         _: bool,
     ) -> Result<(), OperationError> {
         builder.register_storage("X", BindingMode::ReadOnly, Array::<SP>::default());
-        let inner = match self {
-            CastKernels::Standard(s) => s,
-        };
+        let CastKernels::Standard(inner) = self;
         //TODO: This is a bit of a hack, this match should be formalized
         let dst_accessor = match SP::W {
             1 => inner.dst_dt.as_wgsl().to_string(),
@@ -74,9 +72,7 @@ impl KernelRenderable for CastKernels {
             }
         });
 
-        let inner = match self {
-            CastKernels::Standard(s) => s,
-        };
+        let CastKernels::Standard(inner) = self;
 
         //Bit of a hack
         let dst_accessor = match n {
@@ -183,9 +179,7 @@ impl Kernel for CastKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let inner = match self {
-            CastKernels::Standard(s) => s,
-        };
+        let CastKernels::Standard(inner) = self;
         match (inner.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
                 self.render::<Scalar<f32>>(inplace, dst, workgroup_size)

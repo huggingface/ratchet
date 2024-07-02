@@ -98,9 +98,7 @@ impl KernelRenderable for BinaryKernels {
             }
         });
 
-        let inner = match self {
-            BinaryKernels::Standard(op) => op,
-        };
+        let BinaryKernels::Standard(inner) = self;
         let op = inner.op.kernel_operator();
         let apply = if inplace {
             wgsl! {
@@ -236,9 +234,7 @@ impl Kernel for BinaryKernels {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let inner = match self {
-            BinaryKernels::Standard(op) => op,
-        };
+        let BinaryKernels::Standard(inner) = self;
         let kernel_element = self.kernel_element(dst);
         match (inner.lhs.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {

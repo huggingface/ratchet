@@ -310,7 +310,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
-    use crate::{shape, wgs, Device, DeviceRequest, Softmax, Tensor};
+    use crate::{shape, Device, DeviceRequest, Tensor};
 
     thread_local! {
         static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();

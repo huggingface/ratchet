@@ -18,8 +18,8 @@ pub enum DynMetaField {
 impl DynMetaField {
     fn render(&self) -> String {
         match self {
-            DynMetaField::Vec4U32(_) => format!("vec4<u32>"),
-            DynMetaField::U32(_) => format!("u32"),
+            DynMetaField::Vec4U32(_) => "vec4<u32>".to_string(),
+            DynMetaField::U32(_) => "u32".to_string(),
         }
     }
 }
@@ -40,6 +40,12 @@ impl From<u32> for DynMetaField {
 pub struct DynKernelMetadata {
     //Can't use a trait object here, ShaderType has assoc type
     fields: FxHashMap<String, DynMetaField>,
+}
+
+impl Default for DynKernelMetadata {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DynKernelMetadata {

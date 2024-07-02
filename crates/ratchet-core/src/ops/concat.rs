@@ -26,9 +26,7 @@ impl KernelRenderable for ConcatKernels {
             return Err(OperationError::InplaceError("bingo".to_string()));
         }
         let arr = Array::<P>::default();
-        let inner = match self {
-            ConcatKernels::Standard(inner) => inner,
-        };
+        let ConcatKernels::Standard(inner) = self;
 
         for i in 0..inner.inputs.len() {
             builder.register_storage(format!("X{}", i).as_str(), BindingMode::ReadOnly, arr);
@@ -77,9 +75,7 @@ impl KernelRenderable for ConcatKernels {
             }
         });
 
-        let inner = match self {
-            ConcatKernels::Standard(inner) => inner,
-        };
+        let ConcatKernels::Standard(inner) = self;
 
         for i in 1..inner.inputs.len() {
             let prevcum = format!("metadata.cum{}", i - 1);
@@ -164,9 +160,7 @@ impl Kernel for ConcatKernels {
     }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            ConcatKernels::Standard(inner) => inner,
-        };
+        let ConcatKernels::Standard(inner) = self;
 
         let original_rank = inner.inputs[0].rank();
         let promotion = 4 - original_rank;

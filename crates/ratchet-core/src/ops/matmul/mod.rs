@@ -11,8 +11,8 @@ pub use workgroup_gemv::*;
 use std::cmp::Ordering;
 
 use crate::{
-    gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
-    rvec, wgc, wgs, DType, GPUOperation, InvariantError, Kernel, KernelElement, KernelKey,
+    gpu::{BindGroupLayoutDescriptor, CpuUniform},
+    rvec, DType, GPUOperation, Kernel, KernelElement,
     KernelMetadata, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
     Shape, StorageView, Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };

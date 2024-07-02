@@ -107,9 +107,7 @@ impl KernelRenderable for UnaryKernels {
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
-        let inner = match self {
-            UnaryKernels::Standard(inner) => inner,
-        };
+        let UnaryKernels::Standard(inner) = self;
 
         //Write global functions
         match inner.op {
@@ -300,9 +298,7 @@ impl Kernel for UnaryKernels {
     }
 
     fn kernel_element(&self, _dst: &Tensor) -> KernelElement {
-        let inner = match self {
-            UnaryKernels::Standard(inner) => inner,
-        };
+        let UnaryKernels::Standard(inner) = self;
 
         let a_rank = &inner.input.shape().rank();
         let N = &inner.input.shape()[a_rank - 1];

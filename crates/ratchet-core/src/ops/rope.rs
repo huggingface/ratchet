@@ -168,9 +168,7 @@ impl Kernel for RoPEKernels {
     }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            RoPEKernels::Standard(op) => op,
-        };
+        let RoPEKernels::Standard(inner) = self;
         let mut input_shape = inner.input.shape().clone();
         let SL = input_shape[2];
         let mut out_shape = dst.shape().clone();
@@ -198,9 +196,7 @@ impl Kernel for RoPEKernels {
         const WGSZ: usize = 1;
         let workgroup_size = wgs![WGSX as _, WGSY as _, WGSZ as _];
 
-        let inner = match self {
-            RoPEKernels::Standard(op) => op,
-        };
+        let RoPEKernels::Standard(inner) = self;
         let [_, _, SL, HD]: [usize; 4] = inner.input.shape().try_into()?;
         let mat_size = SL * HD;
 
@@ -225,9 +221,7 @@ impl Kernel for RoPEKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let inner = match self {
-            RoPEKernels::Standard(op) => op,
-        };
+        let RoPEKernels::Standard(inner) = self;
         match (inner.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
                 self.render::<Scalar<f32>>(inplace, dst, workgroup_size)

@@ -96,9 +96,7 @@ impl KernelRenderable for IndexSelectKernels {
         _: bool,
     ) -> Result<(), OperationError> {
         let index_arr = Array::<Scalar<i32>>::default();
-        let inner = match self {
-            IndexSelectKernels::Standard(inner) => inner,
-        };
+        let IndexSelectKernels::Standard(inner) = self;
         match inner.src.dt() {
             DType::F16 | DType::F32 => {
                 builder.register_storage("E", BindingMode::ReadOnly, Array::<P>::default());
@@ -139,9 +137,7 @@ impl KernelRenderable for IndexSelectKernels {
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
-        let inner = match self {
-            IndexSelectKernels::Standard(inner) => inner,
-        };
+        let IndexSelectKernels::Standard(inner) = self;
         //TODO: REFACTOR
         match inner.src.dt() {
             DType::Q8_0H(_) | DType::Q8_0F(_) => {
@@ -197,9 +193,7 @@ impl Kernel for IndexSelectKernels {
     }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            IndexSelectKernels::Standard(inner) => inner,
-        };
+        let IndexSelectKernels::Standard(inner) = self;
 
         let dst_numel = dst.shape().numel() as u32;
         let right_numel = inner.src.shape()[(inner.dim + 1)..]
@@ -218,9 +212,7 @@ impl Kernel for IndexSelectKernels {
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
         let workgroup_size = wgs![8, 8, 1];
-        let inner = match self {
-            IndexSelectKernels::Standard(inner) => inner,
-        };
+        let IndexSelectKernels::Standard(inner) = self;
         let numel = match inner.src.dt() {
             DType::F32 | DType::F16 => dst.shape().numel(),
             DType::Q8_0H(_) | DType::Q8_0F(_) => dst.shape().numel() / 4,
@@ -244,9 +236,7 @@ impl Kernel for IndexSelectKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let inner = match self {
-            IndexSelectKernels::Standard(inner) => inner,
-        };
+        let IndexSelectKernels::Standard(inner) = self;
         match (inner.src.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
                 self.render::<Scalar<f32>>(inplace, dst, workgroup_size)

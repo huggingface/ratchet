@@ -91,9 +91,7 @@ impl KernelRenderable for ReindexKernels {
 
         });
 
-        let inner = match self {
-            ReindexKernels::Standard(reindex) => reindex,
-        };
+        let ReindexKernels::Standard(inner) = self;
 
         let body = match inner {
             Reindex::Permute(_) => wgsl! {
@@ -161,9 +159,7 @@ impl Kernel for ReindexKernels {
     }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            ReindexKernels::Standard(reindex) => reindex,
-        };
+        let ReindexKernels::Standard(inner) = self;
         let srcs = inner.srcs();
         let src = srcs.first().unwrap();
         let src_shape = Shape::promote(src.shape().clone(), 4);

@@ -1,4 +1,4 @@
-use crate::{gpu::*, DType, GPUOperation, Tensor, TensorId};
+use crate::{gpu::*, DType, Tensor, TensorId};
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, sync::Arc};
 use wgpu::{Adapter, Limits};

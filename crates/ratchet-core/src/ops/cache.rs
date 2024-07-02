@@ -187,9 +187,7 @@ impl Kernel for CacheKernels {
     }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            CacheKernels::Standard(inner) => inner,
-        };
+        let CacheKernels::Standard(inner) = self;
 
         let original_rank = inner.cache.rank();
         let promotion = 4 - original_rank;

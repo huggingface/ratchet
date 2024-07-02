@@ -220,7 +220,7 @@ impl Kernel for GEMM {
             (DType::Q8_0H(_), _) => self.render::<Scalar<f16>>(inplace, dst, workgroup_size),
             (DType::Q4_KF(_), _) => self.render::<Scalar<f32>>(inplace, dst, workgroup_size),
             (DType::Q4_KH(_), _) => self.render::<Scalar<f16>>(inplace, dst, workgroup_size),
-            _ => return Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
+            _ => Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
         }
     }
 

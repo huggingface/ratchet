@@ -1,5 +1,5 @@
 use crate::{
-    GPUOperation, Kernel, KernelKey, KernelSource, OperationError, Tensor, WgpuDevice,
+    Kernel, KernelKey, KernelSource, OperationError, Tensor, WgpuDevice,
     WorkgroupSize,
 };
 

@@ -195,9 +195,7 @@ impl Kernel for ConvKernels {
     }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            ConvKernels::Threebythree(i) => i,
-        };
+        let ConvKernels::Threebythree(inner) = self;
         let [_N, Cin, Lin]: [usize; 3] = inner.input.shape().try_into()?;
         let [_Cout, _, KS]: [usize; 3] = inner.weight.shape().try_into()?;
         let [_, _, Lout]: [usize; 3] = dst.shape().try_into()?;
@@ -217,9 +215,7 @@ impl Kernel for ConvKernels {
 
     fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
         let workgroup_size = wgs![256, 1, 1];
-        let inner = match self {
-            ConvKernels::Threebythree(i) => i,
-        };
+        let ConvKernels::Threebythree(inner) = self;
 
         let input = &inner.input;
         let [_N, Cin, Lin]: [usize; 3] = input.shape().try_into()?;
@@ -244,9 +240,7 @@ impl Kernel for ConvKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let inner = match self {
-            ConvKernels::Threebythree(i) => i,
-        };
+        let ConvKernels::Threebythree(inner) = self;
         match (inner.input.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
                 self.render::<Scalar<f32>>(inplace, dst, workgroup_size)

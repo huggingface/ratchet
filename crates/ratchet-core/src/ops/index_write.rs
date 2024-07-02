@@ -131,9 +131,7 @@ impl Kernel for IndexWriteKernels {
     }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            IndexWriteKernels::Standard(inner) => inner,
-        };
+        let IndexWriteKernels::Standard(inner) = self;
         let padder = |mut shape: Shape| {
             shape.left_pad_to(1, 4);
             let strides = Strides::from(&shape);
@@ -156,9 +154,7 @@ impl Kernel for IndexWriteKernels {
     }
 
     fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
-        let inner = match self {
-            IndexWriteKernels::Standard(inner) => inner,
-        };
+        let IndexWriteKernels::Standard(inner) = self;
         Ok(Workload::std(
             inner.src.shape().numel(),
             KernelElement::Scalar,
@@ -176,9 +172,7 @@ impl Kernel for IndexWriteKernels {
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         let kernel_element = self.kernel_element(dst);
-        let inner = match self {
-            IndexWriteKernels::Standard(inner) => inner,
-        };
+        let IndexWriteKernels::Standard(inner) = self;
         match (inner.src.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
                 self.render::<Scalar<f32>>(inplace, dst, workgroup_size)

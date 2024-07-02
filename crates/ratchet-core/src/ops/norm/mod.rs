@@ -100,9 +100,7 @@ impl KernelRenderable for NormKernels {
         builder.register_storage("X", BindingMode::ReadOnly, arr);
         builder.register_storage("S", BindingMode::ReadOnly, arr);
 
-        let inner = match self {
-            NormKernels::Standard(n) => n,
-        };
+        let NormKernels::Standard(inner) = self;
         if !matches!(inner, NormOp::RMSNorm(_)) {
             builder.register_storage("B", BindingMode::ReadOnly, arr);
         }
@@ -130,9 +128,7 @@ impl KernelRenderable for NormKernels {
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
 
-        let inner = match self {
-            NormKernels::Standard(n) => n,
-        };
+        let NormKernels::Standard(inner) = self;
 
         let reduction_len = match P::W {
             1 => "metadata.N",
@@ -277,9 +273,7 @@ impl Kernel for NormKernels {
     }
 
     fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            NormKernels::Standard(n) => n,
-        };
+        let NormKernels::Standard(inner) = self;
         let input = inner.srcs()[0];
         let rank = input.rank();
         let meta = match inner {
@@ -307,9 +301,7 @@ impl Kernel for NormKernels {
     }
 
     fn calculate_dispatch(&self, _: &Tensor) -> Result<Workload, OperationError> {
-        let inner = match self {
-            NormKernels::Standard(n) => n,
-        };
+        let NormKernels::Standard(inner) = self;
 
         let input = inner.srcs()[0];
         let rank = input.rank();
