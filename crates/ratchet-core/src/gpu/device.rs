@@ -25,8 +25,8 @@ pub struct WgpuDevice {
     kernel_module_pool: Arc<KernelModulePool>,
     device_limits: DeviceLimits,
     device_features: DeviceFeatures,
-    device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
+    device: Arc<wgpu::Device>,
 }
 
 impl std::ops::Deref for WgpuDevice {
