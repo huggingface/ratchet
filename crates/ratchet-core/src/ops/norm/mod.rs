@@ -90,7 +90,7 @@ pub enum NormOp {
     GroupNorm(GroupNorm),
 }
 
-impl KernelRenderable for NormOp {
+impl KernelRenderable for NormKernels {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -100,7 +100,10 @@ impl KernelRenderable for NormOp {
         builder.register_storage("X", BindingMode::ReadOnly, arr);
         builder.register_storage("S", BindingMode::ReadOnly, arr);
 
-        if !matches!(self, NormOp::RMSNorm(_)) {
+        let inner = match self {
+            NormKernels::Standard(n) => n,
+        };
+        if !matches!(inner, NormOp::RMSNorm(_)) {
             builder.register_storage("B", BindingMode::ReadOnly, arr);
         }
         builder.register_storage("Y", BindingMode::ReadWrite, arr);
@@ -114,7 +117,7 @@ impl KernelRenderable for NormOp {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = dst.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -126,6 +129,10 @@ impl KernelRenderable for NormOp {
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
         kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
+
+        let inner = match self {
+            NormKernels::Standard(n) => n,
+        };
 
         let reduction_len = match P::W {
             1 => "metadata.N",
@@ -157,7 +164,7 @@ impl KernelRenderable for NormOp {
         });
 
         kernel_builder.write_main(wgsl! { var threadSum = 'accessor(0.); });
-        if matches!(self, NormOp::RMSNorm(_)) {
+        if matches!(inner, NormOp::RMSNorm(_)) {
             kernel_builder.write_main(wgsl! { let mu = 0.; });
         } else {
             Self::compute_mu::<P>(
@@ -192,7 +199,7 @@ impl KernelRenderable for NormOp {
         };
         kernel_builder.write_main(sigma);
 
-        let loop_core = if matches!(self, NormOp::RMSNorm(_)) {
+        let loop_core = if matches!(inner, NormOp::RMSNorm(_)) {
             wgsl! { Y[anchor + i] = val * S[i]; }
         } else {
             wgsl! { Y[anchor + i] = fma(val, S[i], B[i]); }
@@ -209,7 +216,7 @@ impl KernelRenderable for NormOp {
     }
 }
 
-impl NormOp {
+impl NormKernels {
     fn compute_mu<P: WgslPrimitive>(
         kernel_builder: &mut WgslKernelBuilder,
         accessor: String,
@@ -257,6 +264,17 @@ pub enum NormKernels {
 
 impl Kernel for NormKernels {
     type Metadata = NormMeta;
+
+    fn kernel_name(&self) -> String {
+        match self {
+            NormKernels::Standard(n) => match n {
+                NormOp::LayerNorm(_) => "layer_norm",
+                NormOp::RMSNorm(_) => "rms_norm",
+                NormOp::GroupNorm(_) => "group_norm",
+            }
+            .to_string(),
+        }
+    }
 
     fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let inner = match self {
@@ -332,28 +350,25 @@ impl Kernel for NormKernels {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let inner = match self {
-            NormKernels::Standard(n) => n,
-        };
         let kernel_element = self.kernel_element(dst);
         match (dst.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
