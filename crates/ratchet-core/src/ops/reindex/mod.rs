@@ -264,6 +264,14 @@ impl OpGuards for Reindex {
 }
 
 impl Operation for Reindex {
+    fn name(&self) -> &'static str {
+        match self {
+            Reindex::Permute(_) => "Permute",
+            Reindex::Slice(_) => "Slice",
+            Reindex::Broadcast(_) => "Broadcast",
+        }
+    }
+
     fn compute_view(&self) -> Result<crate::StorageView, OperationError> {
         match self {
             Reindex::Permute(p) => p.compute_view(),
@@ -277,14 +285,6 @@ impl Operation for Reindex {
             Reindex::Permute(p) => p.srcs(),
             Reindex::Slice(s) => s.srcs(),
             Reindex::Broadcast(b) => b.srcs(),
-        }
-    }
-
-    fn name(&self) -> &'static str {
-        match self {
-            Reindex::Permute(_) => "Permute",
-            Reindex::Slice(_) => "Slice",
-            Reindex::Broadcast(_) => "Broadcast",
         }
     }
 }

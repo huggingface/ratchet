@@ -13,8 +13,8 @@ use std::cmp::Ordering;
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform, WorkgroupCount},
     rvec, wgc, wgs, DType, GPUOperation, InvariantError, Kernel, KernelElement, KernelKey,
-    KernelMetadata, KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView,
-    Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+    KernelMetadata, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
+    Shape, StorageView, Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -264,16 +264,6 @@ pub struct Matmul {
 }
 
 impl Matmul {
-    pub fn new(
-        lhs: Tensor,
-        rhs: Tensor,
-        bias: Option<Tensor>,
-        trans_lhs: bool,
-        trans_rhs: bool,
-        trans_out: bool,
-    ) -> Self {
-    }
-
     pub fn compute_c_shape(
         a: &Tensor,
         b: &Tensor,
@@ -462,104 +452,6 @@ impl KernelMetadata for MatmulMeta {
     }
 }
 
-impl Kernel for MatmulKernels {
-    type Metadata = MatmulMeta;
-
-    fn metadata(
-        &self,
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> Result<Self::Metadata, OperationError> {
-        match self {
-            MatmulKernels::GEMM(kernel) => {
-                let meta = kernel.metadata(dst, kernel_element)?;
-                Ok(MatmulMeta::GEMMMeta(meta))
-            }
-            MatmulKernels::SubgroupGEMV(kernel) => {
-                let meta = kernel.metadata(dst, kernel_element)?;
-                Ok(MatmulMeta::SubgroupGEMVMeta(meta))
-            }
-            MatmulKernels::WorkgroupGEMV(kernel) => {
-                let meta = kernel.metadata(dst, kernel_element)?;
-                Ok(MatmulMeta::WorkgroupGEMVMeta(meta))
-            }
-            MatmulKernels::Quantized(kernel) => {
-                let meta = kernel.metadata(dst, kernel_element)?;
-                Ok(MatmulMeta::Quantized(meta))
-            }
-        }
-    }
-
-    fn kernel_key(
-        &self,
-        workgroup_size: &WorkgroupSize,
-        inplace: bool,
-        srcs: &[&Tensor],
-        dst: &Tensor,
-        kernel_element: &KernelElement,
-    ) -> KernelKey {
-        match self {
-            MatmulKernels::GEMM(kernel) => {
-                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
-            }
-            MatmulKernels::SubgroupGEMV(kernel) => {
-                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
-            }
-            MatmulKernels::WorkgroupGEMV(kernel) => {
-                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
-            }
-            MatmulKernels::Quantized(kernel) => {
-                kernel.kernel_key(workgroup_size, inplace, srcs, dst, kernel_element)
-            }
-        }
-    }
-
-    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
-        let spec = self.compute_spec(dst);
-        spec.select_kernel_element()
-    }
-
-    //TODO: clean
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
-        match self {
-            MatmulKernels::GEMM(g) => g.calculate_dispatch(dst),
-            MatmulKernels::SubgroupGEMV(sg) => sg.calculate_dispatch(dst),
-            MatmulKernels::WorkgroupGEMV(wg) => wg.calculate_dispatch(dst),
-            MatmulKernels::Quantized(q) => q.calculate_dispatch(dst),
-        }
-    }
-
-    fn build_kernel(
-        &self,
-        inplace: bool,
-        dst: &Tensor,
-        workgroup_size: &WorkgroupSize,
-    ) -> Result<KernelSource, OperationError> {
-        let spec = self.compute_spec(dst);
-
-        match self.lhs.dt() {
-            DType::F32 | DType::F16 | DType::Q8_0F(_) | DType::Q8_0H(_) => {
-                if spec.is_gemv() {
-                    let gemv: GEMV = self.clone().into();
-                    gemv.build_kernel(inplace, dst, workgroup_size, spec)
-                } else {
-                    let gemm: GEMM = self.clone().into();
-                    gemm.build_kernel(inplace, dst, workgroup_size)
-                }
-            }
-            DType::Q4_KF(_) | DType::Q4_KH(_) => {
-                let quantized: Quantized = self.clone().into();
-                quantized.build_kernel(inplace, dst, workgroup_size, spec)
-            }
-            _ => Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
-        }
-    }
-
-    fn kernel_name(&self) -> String {
-        format!("matmul")
-    }
-}
-
 pub enum MatmulKernels {
     GEMM(GEMM),
     SubgroupGEMV(SubgroupGEMV),
@@ -567,29 +459,65 @@ pub enum MatmulKernels {
     Quantized(Quantized),
 }
 
+impl KernelRenderable for MatmulKernels {
+    fn register_bindings<P: crate::WgslPrimitive>(
+        &self,
+        builder: &mut crate::WgslKernelBuilder,
+        inplace: bool,
+    ) -> Result<(), OperationError> {
+        match self {
+            MatmulKernels::GEMM(kernel) => kernel.register_bindings::<P>(builder, inplace),
+            MatmulKernels::SubgroupGEMV(kernel) => kernel.register_bindings::<P>(builder, inplace),
+            MatmulKernels::WorkgroupGEMV(kernel) => kernel.register_bindings::<P>(builder, inplace),
+            MatmulKernels::Quantized(kernel) => kernel.register_bindings::<P>(builder, inplace),
+        }
+    }
+
+    fn render<P: crate::WgslPrimitive>(
+        &self,
+        inplace: bool,
+        dst: &Tensor,
+        workgroup_size: &WorkgroupSize,
+    ) -> Result<KernelSource, OperationError> {
+        match self {
+            MatmulKernels::GEMM(k) => k.render::<P>(inplace, dst, workgroup_size),
+            MatmulKernels::SubgroupGEMV(k) => k.render::<P>(inplace, dst, workgroup_size),
+            MatmulKernels::WorkgroupGEMV(k) => k.render::<P>(inplace, dst, workgroup_size),
+            MatmulKernels::Quantized(k) => k.render::<P>(inplace, dst, workgroup_size),
+        }
+    }
+}
+
 /// Defer down to kernel level
 impl Kernel for MatmulKernels {
     type Metadata = MatmulMeta;
+
+    fn kernel_name(&self) -> String {
+        match self {
+            MatmulKernels::GEMM(kernel) => kernel.kernel_name(),
+            MatmulKernels::SubgroupGEMV(kernel) => kernel.kernel_name(),
+            MatmulKernels::WorkgroupGEMV(kernel) => kernel.kernel_name(),
+            MatmulKernels::Quantized(kernel) => kernel.kernel_name(),
+        }
+    }
 
     fn metadata(
         &self,
         dst: &Tensor,
         kernel_element: &KernelElement,
     ) -> Result<Self::Metadata, OperationError> {
-        let inner = match self {
-            MatmulKernels::GEMM(kernel) => {
-                MatmulMeta::GEMMMeta(kernel.metadata(dst, kernel_element))
+        match self {
+            MatmulKernels::GEMM(k) => Ok(MatmulMeta::GEMMMeta(k.metadata(dst, kernel_element)?)),
+            MatmulKernels::SubgroupGEMV(k) => Ok(MatmulMeta::SubgroupGEMVMeta(
+                k.metadata(dst, kernel_element)?,
+            )),
+            MatmulKernels::WorkgroupGEMV(k) => Ok(MatmulMeta::WorkgroupGEMVMeta(
+                k.metadata(dst, kernel_element)?,
+            )),
+            MatmulKernels::Quantized(k) => {
+                Ok(MatmulMeta::Quantized(k.metadata(dst, kernel_element)?))
             }
-            MatmulKernels::SubgroupGEMV(kernel) => {
-                MatmulMeta::SubgroupGEMVMeta(kernel.metadata(dst, kernel_element))
-            }
-            MatmulKernels::WorkgroupGEMV(kernel) => {
-                MatmulMeta::WorkgroupGEMVMeta(kernel.metadata(dst, kernel_element))
-            }
-            MatmulKernels::Quantized(kernel) => {
-                MatmulMeta::Quantized(kernel.metadata(dst, kernel_element))
-            }
-        };
+        }
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<Workload, OperationError> {
@@ -618,12 +546,8 @@ impl Kernel for MatmulKernels {
     ) -> Result<KernelSource, OperationError> {
         match self {
             MatmulKernels::GEMM(kernel) => kernel.build_kernel(inplace, dst, workgroup_size),
-            MatmulKernels::SubgroupGEMV(kernel) => {
-                kernel.build_kernel(inplace, dst, workgroup_size)
-            }
-            MatmulKernels::WorkgroupGEMV(kernel) => {
-                kernel.build_kernel(inplace, dst, workgroup_size)
-            }
+            MatmulKernels::SubgroupGEMV(k) => k.build_kernel(inplace, dst, workgroup_size),
+            MatmulKernels::WorkgroupGEMV(k) => k.build_kernel(inplace, dst, workgroup_size),
             MatmulKernels::Quantized(kernel) => kernel.build_kernel(inplace, dst, workgroup_size),
         }
     }

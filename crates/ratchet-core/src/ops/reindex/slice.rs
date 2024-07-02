@@ -48,6 +48,10 @@ impl OpGuards for Slice {
 }
 
 impl Operation for Slice {
+    fn name(&self) -> &'static str {
+        "Slice"
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let output_shape = self
             .indices

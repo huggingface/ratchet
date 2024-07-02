@@ -139,6 +139,15 @@ impl OpGuards for Binary {
 }
 
 impl Operation for Binary {
+    fn name(&self) -> &'static str {
+        match self.op {
+            BinaryOp::Add => "Add",
+            BinaryOp::Sub => "Sub",
+            BinaryOp::Mul => "Mul",
+            BinaryOp::Div => "Div",
+        }
+    }
+
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let lhs = &self.lhs;
         let rhs = &self.rhs;
@@ -163,15 +172,6 @@ impl Operation for Binary {
 
     fn supports_inplace(&self) -> bool {
         true
-    }
-
-    fn name(&self) -> &'static str {
-        match self.op {
-            BinaryOp::Add => "Add",
-            BinaryOp::Sub => "Sub",
-            BinaryOp::Mul => "Mul",
-            BinaryOp::Div => "Div",
-        }
     }
 }
 

@@ -60,6 +60,10 @@ impl OpGuards for Broadcast {
 }
 
 impl Operation for Broadcast {
+    fn name(&self) -> &'static str {
+        "Broadcast"
+    }
+
     //For rules, see https://numpy.org/doc/stable/user/basics.broadcasting.html
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let src_shape = self.src.shape();
