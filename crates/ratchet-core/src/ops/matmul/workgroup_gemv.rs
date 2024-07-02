@@ -1,10 +1,12 @@
 use encase::ShaderType;
+use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, Array, BindingMode, BuiltIn, DType, InvariantError, Kernel,
-    KernelElement, KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError, Scalar,
-    Strides, Tensor, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindGroupLayoutDescriptor, BindingMode, BuiltIn,
+    DType, InvariantError, Kernel, KernelElement, KernelRenderable, KernelSource, Matmul,
+    MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupCount, WorkgroupSize, Workload,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -95,12 +97,19 @@ impl Kernel for WorkgroupGEMV {
         })
     }
 
-    fn calculate_dispatch(&self, dst: &Tensor) -> Result<crate::Workload, OperationError> {
-        todo!()
+    fn calculate_dispatch(&self, _: &Tensor) -> Result<crate::Workload, OperationError> {
+        //GEMV workgroup style
+        let (TX, TY) = self.spec.heuristic.as_workgroup_size();
+        let group_x = WorkgroupCount::div_ceil(self.spec.lhs_shape()[0], TX);
+
+        Ok(Workload {
+            workgroup_count: wgc![group_x as _, 1, self.spec.stacks() as _],
+            workgroup_size: wgs![TX as _, TY as _, 1],
+        })
     }
 
-    fn kernel_element(&self, dst: &Tensor) -> KernelElement {
-        todo!()
+    fn kernel_element(&self, _: &Tensor) -> KernelElement {
+        self.spec.select_kernel_element()
     }
 
     fn build_kernel(
@@ -109,7 +118,37 @@ impl Kernel for WorkgroupGEMV {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        todo!()
+        let kernel_element = KernelElement::Scalar;
+        match (self.lhs.dt(), kernel_element) {
+            (DType::F32, KernelElement::Scalar) => {
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
+            }
+            (DType::F16, KernelElement::Scalar) => {
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
+            }
+            (DType::Q8_0F(_), _) => self.render::<Vec4<f32>>(inplace, dst, workgroup_size),
+            (DType::Q8_0H(_), _) => self.render::<Vec4<f16>>(inplace, dst, workgroup_size),
+            _ => panic!("Unsupported dtype"),
+        }
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        _inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        let (LHS, RHS, bias) = (&self.lhs, &self.rhs, &self.bias);
+        let layout = match (LHS.dt(), RHS.dt(), bias.is_some()) {
+            (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
+            (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
+            (DType::F16, DType::F16, false) => BindGroupLayoutDescriptor::binary(),
+            (DType::F16, DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0F(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0H(_), DType::F16, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0F(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
+            (DType::Q8_0H(_), DType::F16, true) => BindGroupLayoutDescriptor::nthary(4),
+            _ => return Err(InvariantError::UnsupportedDType(RHS.dt()).into()),
+        };
+        Ok(layout)
     }
 }
 
@@ -152,7 +191,7 @@ impl KernelRenderable for WorkgroupGEMV {
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.lhs.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -174,7 +213,8 @@ impl KernelRenderable for WorkgroupGEMV {
         let scalar = P::T::DT;
         let zero = P::T::zero().render();
 
-        //kernel_builder.render_metadata::<WorkgroupGEMVMeta>();
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
+
         kernel_builder.write_unpack(self.lhs.dt());
 
         let work_size = (workgroup_size.x * workgroup_size.y / (n as u32)).render();

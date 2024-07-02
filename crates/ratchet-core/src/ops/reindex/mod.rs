@@ -109,9 +109,14 @@ impl KernelRenderable for ReindexKernels {
         };
         kernel_builder.write_main(body);
 
+        let src_offsets = match inner {
+            Reindex::Slice(_) => wgsl! { metadata.src_offsets },
+            _ => wgsl! { vec4<u32>(0u) },
+        };
+
         kernel_builder.write_main(wgsl! {
             //Convert 4D index into 1D offset
-            let src_offset = ndIndexToOffset(src_index, metadata.src_offsets, metadata.src_stride);
+            let src_offset = ndIndexToOffset(src_index, 'src_offsets, metadata.src_stride);
             //Read from input buffer and write to output buffer
             Y[dst_offset] = X[src_offset];
         });
@@ -215,6 +220,13 @@ impl Kernel for ReindexKernels {
             ))),
         }
     }
+
+    fn storage_bind_group_layout(
+        &self,
+        _inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        Ok(BindGroupLayoutDescriptor::unary())
+    }
 }
 
 pub enum ReindexMeta {
@@ -287,13 +299,6 @@ impl Operation for Reindex {
 
 impl GPUOperation for Reindex {
     type KernelEnum = ReindexKernels;
-
-    fn storage_bind_group_layout(
-        &self,
-        _inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        Ok(BindGroupLayoutDescriptor::unary())
-    }
 
     fn select_kernel(&self) -> Self::KernelEnum {
         ReindexKernels::Standard(self.clone())

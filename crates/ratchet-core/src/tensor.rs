@@ -772,7 +772,7 @@ impl Tensor {
             if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace) {
                 compiled_ops.push(compiled_op);
             } else {
-                log::warn!("No compiled op for {:?}", t.op().name());
+                log::warn!("Compilation failed for operation: {:?}", t.op().name());
             }
         }
 

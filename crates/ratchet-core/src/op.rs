@@ -277,14 +277,6 @@ pub trait GPUOperation: Operation {
 
     fn select_kernel(&self) -> Self::KernelEnum;
 
-    /// # Storage Bind Group Layout
-    ///
-    /// Determine the layout of the storage bind group.
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError>;
-
     fn compile_gpu(
         &self,
         dst: &Tensor,
@@ -301,7 +293,7 @@ pub trait GPUOperation: Operation {
         let workload = kernel.calculate_dispatch(dst)?;
 
         let storage_layout = device
-            .get_or_create_bind_group_layout(&self.storage_bind_group_layout(can_inplace)?)?;
+            .get_or_create_bind_group_layout(&kernel.storage_bind_group_layout(can_inplace)?)?;
 
         let uniform_layout =
             device.get_or_create_bind_group_layout(&BindGroupLayoutDescriptor::uniform())?;

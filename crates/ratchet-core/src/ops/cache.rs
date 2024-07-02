@@ -158,19 +158,6 @@ impl GPUOperation for Cache {
     fn select_kernel(&self) -> Self::KernelEnum {
         CacheKernels::Standard(self.clone())
     }
-
-    fn storage_bind_group_layout(
-        &self,
-        _: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        Ok(BindGroupLayoutDescriptor {
-            entries: rvec![
-                BindGroupLayoutEntry::compute_storage_buffer(0, false),
-                BindGroupLayoutEntry::compute_storage_buffer(1, true),
-                BindGroupLayoutEntry::compute_storage_buffer(2, false)
-            ],
-        })
-    }
 }
 
 pub enum CacheKernels {
@@ -179,6 +166,20 @@ pub enum CacheKernels {
 
 impl Kernel for CacheKernels {
     type Metadata = CacheMeta;
+
+    fn storage_bind_group_layout(
+        &self,
+        _: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        // Custom layout because of funky mutability requirements
+        Ok(BindGroupLayoutDescriptor {
+            entries: rvec![
+                BindGroupLayoutEntry::compute_storage_buffer(0, false),
+                BindGroupLayoutEntry::compute_storage_buffer(1, true),
+                BindGroupLayoutEntry::compute_storage_buffer(2, false)
+            ],
+        })
+    }
 
     fn kernel_name(&self) -> String {
         match self {

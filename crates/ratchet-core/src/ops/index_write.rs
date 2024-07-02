@@ -57,16 +57,6 @@ impl GPUOperation for IndexWrite {
     fn select_kernel(&self) -> Self::KernelEnum {
         IndexWriteKernels::Standard(self.clone())
     }
-
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if !inplace {
-            panic!("IndexWrite only supports inplace operation");
-        }
-        Ok(BindGroupLayoutDescriptor::binary_inplace())
-    }
 }
 
 pub enum IndexWriteKernels {
@@ -123,6 +113,16 @@ impl KernelRenderable for IndexWriteKernels {
 
 impl Kernel for IndexWriteKernels {
     type Metadata = IndexWriteMeta;
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if !inplace {
+            panic!("IndexWrite only supports inplace operation");
+        }
+        Ok(BindGroupLayoutDescriptor::binary_inplace())
+    }
 
     fn kernel_name(&self) -> String {
         match self {

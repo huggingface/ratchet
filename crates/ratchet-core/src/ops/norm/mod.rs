@@ -369,20 +369,13 @@ impl Kernel for NormKernels {
             ))),
         }
     }
-}
-
-impl GPUOperation for NormOp {
-    type KernelEnum = NormKernels;
-
-    fn select_kernel(&self) -> Self::KernelEnum {
-        NormKernels::Standard(self.clone())
-    }
 
     fn storage_bind_group_layout(
         &self,
         _inplace: bool,
     ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        match self {
+        let NormKernels::Standard(inner) = self;
+        match inner {
             NormOp::LayerNorm(l) => match l.bias {
                 Some(_) => Ok(BindGroupLayoutDescriptor::ternary()),
                 None => Ok(BindGroupLayoutDescriptor::binary()),
@@ -393,6 +386,14 @@ impl GPUOperation for NormOp {
                 None => Ok(BindGroupLayoutDescriptor::binary()),
             },
         }
+    }
+}
+
+impl GPUOperation for NormOp {
+    type KernelEnum = NormKernels;
+
+    fn select_kernel(&self) -> Self::KernelEnum {
+        NormKernels::Standard(self.clone())
     }
 }
 

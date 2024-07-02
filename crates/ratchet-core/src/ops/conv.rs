@@ -188,6 +188,13 @@ pub enum ConvKernels {
 impl Kernel for ConvKernels {
     type Metadata = ConvMeta;
 
+    fn storage_bind_group_layout(
+        &self,
+        _: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        Ok(BindGroupLayoutDescriptor::ternary())
+    }
+
     fn kernel_name(&self) -> String {
         match self {
             ConvKernels::Threebythree(_) => "conv1d_3x3".to_string(),
@@ -274,13 +281,6 @@ impl GPUOperation for Conv {
 
     fn select_kernel(&self) -> Self::KernelEnum {
         ConvKernels::Threebythree(self.clone())
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        _: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        Ok(BindGroupLayoutDescriptor::ternary())
     }
 }
 

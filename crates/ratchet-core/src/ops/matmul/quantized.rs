@@ -3,9 +3,9 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    rvec, Array, BindingMode, BuiltIn, DType, InvariantError, Kernel, KernelRenderable,
-    KernelSource, Matmul, MatmulSpec, OperationError, Scalar, Tensor, WgslKernelBuilder,
-    WgslPrimitive, WorkgroupSize,
+    rvec, Array, BindGroupLayoutDescriptor, BindingMode, BuiltIn, DType, InvariantError, Kernel,
+    KernelElement, KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError, Scalar,
+    Tensor, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 use inline_wgsl::wgsl;
 
@@ -64,11 +64,11 @@ impl Kernel for Quantized {
     }
 
     fn calculate_dispatch(&self, dst: &Tensor) -> Result<crate::Workload, OperationError> {
-        todo!()
+        Ok(Workload::std(dst.shape().numel(), self.kernel_element(dst)))
     }
 
-    fn kernel_element(&self, dst: &Tensor) -> crate::KernelElement {
-        todo!()
+    fn kernel_element(&self, _: &Tensor) -> crate::KernelElement {
+        KernelElement::Scalar
     }
 
     fn build_kernel(
@@ -83,6 +83,23 @@ impl Kernel for Quantized {
             (DType::Q4_KH(_), _) => self.render::<Scalar<f16>>(inplace, dst, workgroup_size),
             _ => Err(InvariantError::UnsupportedDType(self.lhs.dt()).into()),
         }
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        _inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        let (LHS, RHS, bias) = (&self.lhs, &self.rhs, &self.bias);
+        let layout = match (LHS.dt(), RHS.dt(), bias.is_some()) {
+            (DType::Q4_KH(_) | DType::Q4_KF(_), DType::F32 | DType::F16, false) => {
+                BindGroupLayoutDescriptor::nthary(5)
+            }
+            (DType::Q4_KH(_) | DType::Q4_KF(_), DType::F32 | DType::F16, true) => {
+                BindGroupLayoutDescriptor::nthary(6)
+            }
+            _ => return Err(InvariantError::UnsupportedDType(RHS.dt()).into()),
+        };
+        Ok(layout)
     }
 }
 
@@ -120,7 +137,7 @@ impl KernelRenderable for Quantized {
 
     fn render<P: WgslPrimitive>(
         &self,
-        _: bool,
+        inplace: bool,
         dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
@@ -134,6 +151,9 @@ impl KernelRenderable for Quantized {
             ],
             device.compute_features().clone(),
         );
+        self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+
+        kernel_builder.render_metadata(&QuantizedMeta { dummy: 0 });
 
         /* Extract the 16 x 6 bit values scales-mins pairs. The
          * encoding of those values is odd because of performance

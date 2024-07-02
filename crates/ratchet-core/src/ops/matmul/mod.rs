@@ -12,9 +12,9 @@ use std::cmp::Ordering;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, DType, GPUOperation, Kernel, KernelElement,
-    KernelMetadata, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
-    Shape, StorageView, Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+    rvec, DType, GPUOperation, Kernel, KernelElement, KernelMetadata, KernelRenderable,
+    KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
+    WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -550,6 +550,18 @@ impl Kernel for MatmulKernels {
             MatmulKernels::Quantized(kernel) => kernel.build_kernel(inplace, dst, workgroup_size),
         }
     }
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        match self {
+            MatmulKernels::GEMM(kernel) => kernel.storage_bind_group_layout(inplace),
+            MatmulKernels::SubgroupGEMV(kernel) => kernel.storage_bind_group_layout(inplace),
+            MatmulKernels::WorkgroupGEMV(kernel) => kernel.storage_bind_group_layout(inplace),
+            MatmulKernels::Quantized(kernel) => kernel.storage_bind_group_layout(inplace),
+        }
+    }
 }
 
 impl GPUOperation for Matmul {
@@ -587,14 +599,6 @@ impl GPUOperation for Matmul {
             (false, false, _) => MatmulKernels::GEMM(GEMM::from_matmul(self, spec)),
             _ => todo!(),
         }
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        //SHOULD PROBABLY MOVE THIS METHOD ONTO THE ACTUAL KERNEL
-        todo!()
     }
 }
 

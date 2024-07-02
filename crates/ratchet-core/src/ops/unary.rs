@@ -272,17 +272,6 @@ pub enum UnaryKernels {
 impl GPUOperation for Unary {
     type KernelEnum = UnaryKernels;
 
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if inplace {
-            Ok(BindGroupLayoutDescriptor::unary_inplace())
-        } else {
-            Ok(BindGroupLayoutDescriptor::unary())
-        }
-    }
-
     fn select_kernel(&self) -> Self::KernelEnum {
         UnaryKernels::Standard(self.clone())
     }
@@ -294,6 +283,17 @@ impl Kernel for UnaryKernels {
     fn kernel_name(&self) -> String {
         match self {
             UnaryKernels::Standard(inner) => inner.op.kernel_name().into_owned(),
+        }
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if inplace {
+            Ok(BindGroupLayoutDescriptor::unary_inplace())
+        } else {
+            Ok(BindGroupLayoutDescriptor::unary())
         }
     }
 

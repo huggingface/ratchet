@@ -2,8 +2,8 @@ use rustc_hash::FxHashMap;
 use std::fmt::Debug;
 
 use crate::{
-    CpuUniform, KernelElement, KernelKey, KernelSource, OperationError, Tensor, WgslFragment,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload, UNIFORM_ALIGN,
+    BindGroupLayoutDescriptor, CpuUniform, KernelElement, KernelKey, KernelSource, OperationError,
+    Tensor, WgslFragment, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload, UNIFORM_ALIGN,
 };
 
 use encase::{internal::WriteInto, ShaderType};
@@ -64,15 +64,19 @@ impl KernelMetadata for DynKernelMetadata {
     fn render_meta(&self) -> crate::WgslFragment {
         let mut fragment = WgslFragment::new(512);
         fragment.write(r#"struct Meta {"#);
-        for (name, field) in self.fields.iter() {
+
+        for (index, (name, field)) in self.fields.iter().enumerate() {
             fragment.write(format!("{}: {}", name, field.render()));
+            if index < self.fields.len() - 1 {
+                fragment.write(", ");
+            }
         }
         fragment.write("}\n");
         fragment
     }
 
     fn write(&self, uniform: &mut CpuUniform) -> Result<u64, OperationError> {
-        uniform.write_struct_end();
+        let _ = uniform.write_struct_end();
         for f in self.fields.values() {
             let _ = match f {
                 DynMetaField::Vec4U32(v) => uniform.write_struct_member(v)?,
@@ -127,6 +131,14 @@ pub trait Kernel: KernelRenderable {
     type Metadata: KernelMetadata + 'static;
 
     fn kernel_name(&self) -> String;
+
+    /// # Storage Bind Group Layout
+    ///
+    /// Determine the layout of the storage bind group.
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError>;
 
     fn metadata(
         &self,

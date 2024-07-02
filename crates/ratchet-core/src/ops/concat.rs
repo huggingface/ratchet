@@ -53,6 +53,7 @@ impl KernelRenderable for ConcatKernels {
             device.compute_features().clone(),
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)?;
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
         kernel_builder.write_offset_to_index();
         kernel_builder.write_index_to_offset();
 
@@ -153,6 +154,16 @@ pub enum ConcatKernels {
 impl Kernel for ConcatKernels {
     type Metadata = DynKernelMetadata;
 
+    fn storage_bind_group_layout(
+        &self,
+        _: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        let inner = match self {
+            ConcatKernels::Standard(inner) => inner,
+        };
+        Ok(BindGroupLayoutDescriptor::nthary(inner.inputs.len()))
+    }
+
     fn kernel_name(&self) -> String {
         match self {
             ConcatKernels::Standard(_) => "concat".to_string(),
@@ -248,13 +259,6 @@ impl GPUOperation for Concat {
 
     fn select_kernel(&self) -> Self::KernelEnum {
         ConcatKernels::Standard(self.clone())
-    }
-
-    fn storage_bind_group_layout(
-        &self,
-        _: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        Ok(BindGroupLayoutDescriptor::nthary(self.inputs.len()))
     }
 }
 

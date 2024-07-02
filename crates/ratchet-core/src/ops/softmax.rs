@@ -281,14 +281,6 @@ impl Kernel for SoftmaxKernels {
         let ND4 = N / 4;
         Ok(SoftmaxMeta { M, N, ND2, ND4 })
     }
-}
-
-pub enum SoftmaxKernels {
-    Standard(Softmax),
-}
-
-impl GPUOperation for Softmax {
-    type KernelEnum = SoftmaxKernels;
 
     fn storage_bind_group_layout(
         &self,
@@ -299,9 +291,19 @@ impl GPUOperation for Softmax {
         }
         Ok(BindGroupLayoutDescriptor::unary_inplace())
     }
+}
+
+pub enum SoftmaxKernels {
+    Standard(Softmax),
+}
+
+impl GPUOperation for Softmax {
+    type KernelEnum = SoftmaxKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        todo!()
+        match self {
+            Self { .. } => SoftmaxKernels::Standard(self.clone()),
+        }
     }
 }
 

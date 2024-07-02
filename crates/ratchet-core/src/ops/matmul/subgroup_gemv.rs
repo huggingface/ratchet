@@ -1,9 +1,9 @@
 use crate::gpu::dtype::WgslDType;
 use crate::gpu::WgslPrimitive;
 use crate::{
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, InvariantError, KernelElement,
-    KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError, Scalar, Tensor, Vec4,
-    WgslFragment, WgslKernelBuilder, WorkgroupSize, Workload,
+    rvec, wgc, wgs, Array, BindGroupLayoutDescriptor, BindingMode, BuiltIn, DType, InvariantError,
+    KernelElement, KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError, Scalar,
+    Tensor, Vec4, WgslFragment, WgslKernelBuilder, WorkgroupSize, Workload,
 };
 use encase::ShaderType;
 use half::f16;
@@ -89,7 +89,7 @@ impl KernelRenderable for SubgroupGEMV {
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
         const TM: usize = 4;
@@ -112,7 +112,8 @@ impl KernelRenderable for SubgroupGEMV {
             ],
             device.compute_features().clone(),
         );
-        //kernel_builder.render_metadata::<SubgroupGEMVMeta>();
+
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
         kernel_builder.write_unpack(self.lhs.dt());
 
         self.register_bindings::<P>(&mut kernel_builder, inplace)
@@ -339,6 +340,25 @@ impl Kernel for SubgroupGEMV {
 
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         KernelElement::Scalar
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        _inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        let (LHS, RHS, bias) = (&self.lhs, &self.rhs, &self.bias);
+        let layout = match (LHS.dt(), RHS.dt(), bias.is_some()) {
+            (DType::F32, DType::F32, false) => BindGroupLayoutDescriptor::binary(),
+            (DType::F32, DType::F32, true) => BindGroupLayoutDescriptor::ternary(),
+            (DType::F16, DType::F16, false) => BindGroupLayoutDescriptor::binary(),
+            (DType::F16, DType::F16, true) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0F(_), DType::F32, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0H(_), DType::F16, false) => BindGroupLayoutDescriptor::ternary(),
+            (DType::Q8_0F(_), DType::F32, true) => BindGroupLayoutDescriptor::nthary(4),
+            (DType::Q8_0H(_), DType::F16, true) => BindGroupLayoutDescriptor::nthary(4),
+            _ => return Err(InvariantError::UnsupportedDType(RHS.dt()).into()),
+        };
+        Ok(layout)
     }
 
     fn build_kernel(

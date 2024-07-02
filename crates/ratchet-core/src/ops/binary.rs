@@ -179,6 +179,14 @@ impl GPUOperation for Binary {
     fn select_kernel(&self) -> Self::KernelEnum {
         BinaryKernels::Standard(self.clone())
     }
+}
+
+pub enum BinaryKernels {
+    Standard(Binary),
+}
+
+impl Kernel for BinaryKernels {
+    type Metadata = BinaryMeta;
 
     fn storage_bind_group_layout(
         &self,
@@ -190,14 +198,6 @@ impl GPUOperation for Binary {
             Ok(BindGroupLayoutDescriptor::binary())
         }
     }
-}
-
-pub enum BinaryKernels {
-    Standard(Binary),
-}
-
-impl Kernel for BinaryKernels {
-    type Metadata = BinaryMeta;
 
     fn kernel_name(&self) -> String {
         match self {

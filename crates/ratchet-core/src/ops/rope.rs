@@ -72,16 +72,6 @@ impl GPUOperation for RoPE {
     fn select_kernel(&self) -> Self::KernelEnum {
         RoPEKernels::Standard(self.clone())
     }
-
-    fn storage_bind_group_layout(
-        &self,
-        inplace: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        if inplace {
-            return Ok(BindGroupLayoutDescriptor::unary_inplace());
-        }
-        panic!("RoPE does not support out-of-place operation");
-    }
 }
 
 pub enum RoPEKernels {
@@ -165,6 +155,16 @@ impl Kernel for RoPEKernels {
         match self {
             RoPEKernels::Standard(_) => "rope".to_string(),
         }
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        inplace: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        if inplace {
+            return Ok(BindGroupLayoutDescriptor::unary_inplace());
+        }
+        panic!("RoPE does not support out-of-place operation");
     }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {

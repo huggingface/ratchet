@@ -76,17 +76,6 @@ impl GPUOperation for IndexSelect {
     fn select_kernel(&self) -> Self::KernelEnum {
         IndexSelectKernels::Standard(self.clone())
     }
-
-    fn storage_bind_group_layout(
-        &self,
-        _: bool,
-    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
-        match self.src.dt() {
-            DType::F32 | DType::F16 => Ok(BindGroupLayoutDescriptor::binary()),
-            DType::Q8_0H(_) | DType::Q8_0F(_) => Ok(BindGroupLayoutDescriptor::ternary()),
-            _ => unimplemented!(),
-        }
-    }
 }
 
 impl KernelRenderable for IndexSelectKernels {
@@ -189,6 +178,18 @@ impl Kernel for IndexSelectKernels {
     fn kernel_name(&self) -> String {
         match self {
             IndexSelectKernels::Standard(_) => "index_select".to_string(),
+        }
+    }
+
+    fn storage_bind_group_layout(
+        &self,
+        _: bool,
+    ) -> Result<BindGroupLayoutDescriptor, OperationError> {
+        let IndexSelectKernels::Standard(inner) = self;
+        match inner.src.dt() {
+            DType::F32 | DType::F16 => Ok(BindGroupLayoutDescriptor::binary()),
+            DType::Q8_0H(_) | DType::Q8_0F(_) => Ok(BindGroupLayoutDescriptor::ternary()),
+            _ => unimplemented!(),
         }
     }
 

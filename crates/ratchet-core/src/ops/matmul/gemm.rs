@@ -3,10 +3,10 @@ use half::f16;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, InvariantError,
-    Kernel, KernelElement, KernelRenderable, KernelSource, Matmul, MatmulSpec, OperationError,
-    Scalar, Strides, Tensor, Vec2, Vec4, WgslFragment, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupCount, WorkgroupSize, Workload,
+    gpu::dtype::WgslDType, rvec, wgc, wgs, Array, BindGroupLayoutDescriptor as BGLD, BindingMode,
+    BuiltIn, DType, InvariantError, Kernel, KernelElement, KernelRenderable, KernelSource, Matmul,
+    MatmulSpec, OperationError, Scalar, Strides, Tensor, Vec2, Vec4, WgslFragment,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupCount, WorkgroupSize, Workload,
 };
 use glam::IVec3;
 use inline_wgsl::wgsl;
@@ -111,7 +111,7 @@ impl KernelRenderable for GEMM {
         );
         self.register_bindings::<P>(&mut kernel_builder, inplace)
             .unwrap();
-        //kernel_builder.render_metadata::<GEMMMeta>();
+        kernel_builder.render_metadata(&self.metadata(dst, &self.kernel_element(dst))?);
         self.write_indexing::<P>(&mut kernel_builder);
         self.write_getters::<P>(dst, &mut kernel_builder)?;
         self.write_readers_and_writers::<P>(&mut kernel_builder, self.spec.tile_fit())?;
@@ -226,6 +226,18 @@ impl Kernel for GEMM {
 
     fn kernel_element(&self, _: &Tensor) -> KernelElement {
         self.spec.select_kernel_element()
+    }
+
+    fn storage_bind_group_layout(&self, _inplace: bool) -> Result<BGLD, OperationError> {
+        let (LHS, RHS, bias) = (&self.lhs, &self.rhs, &self.bias);
+        let layout = match (LHS.dt(), RHS.dt(), bias.is_some()) {
+            (DType::F32 | DType::F16, DType::F32 | DType::F16, false) => BGLD::binary(),
+            (DType::F32 | DType::F16, DType::F32 | DType::F16, true) => BGLD::ternary(),
+            (DType::Q8_0F(_) | DType::Q8_0H(_), DType::F32 | DType::F16, false) => BGLD::ternary(),
+            (DType::Q8_0F(_) | DType::Q8_0H(_), DType::F32 | DType::F16, true) => BGLD::nthary(4),
+            _ => return Err(InvariantError::UnsupportedDType(RHS.dt()).into()),
+        };
+        Ok(layout)
     }
 }
 

@@ -131,6 +131,10 @@ impl GPUOperation for Cast {
     fn select_kernel(&self) -> Self::KernelEnum {
         CastKernels::Standard(self.clone())
     }
+}
+
+impl Kernel for CastKernels {
+    type Metadata = CastMeta;
 
     fn storage_bind_group_layout(
         &self,
@@ -141,10 +145,6 @@ impl GPUOperation for Cast {
         }
         Ok(BindGroupLayoutDescriptor::unary())
     }
-}
-
-impl Kernel for CastKernels {
-    type Metadata = CastMeta;
 
     fn kernel_name(&self) -> String {
         match self {
