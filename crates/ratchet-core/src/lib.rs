@@ -1,4 +1,3 @@
-#![feature(generic_const_exprs)]
 #![allow(non_snake_case)]
 mod compiled_op;
 mod device;

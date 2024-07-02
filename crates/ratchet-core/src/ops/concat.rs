@@ -94,7 +94,7 @@ impl KernelRenderable for ConcatKernels {
 }
 
 impl Operation for Concat {
-    pub fn name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Concat"
     }
 

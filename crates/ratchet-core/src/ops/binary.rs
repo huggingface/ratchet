@@ -50,7 +50,7 @@ pub struct Binary {
     op: BinaryOp,
 }
 
-impl KernelRenderable for Binary {
+impl KernelRenderable for BinaryKernels {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,
@@ -71,10 +71,10 @@ impl KernelRenderable for Binary {
     fn render<P: WgslPrimitive>(
         &self,
         inplace: bool,
-        _: &Tensor,
+        dst: &Tensor,
         workgroup_size: &WorkgroupSize,
     ) -> Result<KernelSource, OperationError> {
-        let device = self.lhs.device().try_gpu().unwrap();
+        let device = dst.device().try_gpu()?;
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
             rvec![
@@ -98,7 +98,10 @@ impl KernelRenderable for Binary {
             }
         });
 
-        let op = self.op.kernel_operator();
+        let inner = match self {
+            BinaryKernels::Standard(op) => op,
+        };
+        let op = inner.op.kernel_operator();
         let apply = if inplace {
             wgsl! {
                 let val = A[index];
@@ -161,6 +164,15 @@ impl Operation for Binary {
     fn supports_inplace(&self) -> bool {
         true
     }
+
+    fn name(&self) -> &'static str {
+        match self.op {
+            BinaryOp::Add => "Add",
+            BinaryOp::Sub => "Sub",
+            BinaryOp::Mul => "Mul",
+            BinaryOp::Div => "Div",
+        }
+    }
 }
 
 impl GPUOperation for Binary {
@@ -188,6 +200,12 @@ pub enum BinaryKernels {
 
 impl Kernel for BinaryKernels {
     type Metadata = BinaryMeta;
+
+    fn kernel_name(&self) -> String {
+        match self {
+            BinaryKernels::Standard(k) => k.op.kernel_name().to_string(),
+        }
+    }
 
     fn metadata(&self, dst: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let numel = dst.shape().numel() as _;
@@ -224,22 +242,22 @@ impl Kernel for BinaryKernels {
         let kernel_element = self.kernel_element(dst);
         match (inner.lhs.dt(), &kernel_element) {
             (DType::F32, KernelElement::Scalar) => {
-                inner.render::<Scalar<f32>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec2) => {
-                inner.render::<Vec2<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F32, KernelElement::Vec4) => {
-                inner.render::<Vec4<f32>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f32>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Scalar) => {
-                inner.render::<Scalar<f16>>(inplace, dst, workgroup_size)
+                self.render::<Scalar<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec2) => {
-                inner.render::<Vec2<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec2<f16>>(inplace, dst, workgroup_size)
             }
             (DType::F16, KernelElement::Vec4) => {
-                inner.render::<Vec4<f16>>(inplace, dst, workgroup_size)
+                self.render::<Vec4<f16>>(inplace, dst, workgroup_size)
             }
             _ => Err(OperationError::CompileError(format!(
                 "Unsupported dtype {:?} or kernel element {:?}",
