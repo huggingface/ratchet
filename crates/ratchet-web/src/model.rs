@@ -175,31 +175,11 @@ impl Model {
     ) -> Result<Model, JsValue> {
         let model_key = ModelKey::from_available(&model, quantization);
         let model_repo = ApiBuilder::from_hf(&model_key.repo_id(), RepoType::Model).build();
-        let db = RatchetDB::open().await.map_err(|e| {
-            let e: JsError = e.into();
-            Into::<JsValue>::into(e)
-        })?;
 
-        log::warn!("Loading model: {:?}", model_key);
-        if let None = db.get_model(&model_key).await.map_err(|e| {
-            let e: JsError = e.into();
-            Into::<JsValue>::into(e)
-        })? {
-            let header: gguf::Header = serde_wasm_bindgen::from_value(
-                model_repo.fetch_gguf_header(&model_key.model_id()).await?,
-            )?;
-            Self::fetch_tensors(&db, &model_repo, &header, model_key.clone(), progress).await?;
-            let model_record = ModelRecord::new(model_key.clone(), model.clone(), header);
-            db.put_model(&model_key, model_record).await.map_err(|e| {
-                let e: JsError = e.into();
-                Into::<JsValue>::into(e)
-            })?;
-        };
-
-        let model_record = db.get_model(&model_key).await.unwrap().unwrap();
-        let tensors = db.get_tensors(&model_key).await.unwrap();
+        let webModel = Self::load_inner(model, &model_repo, model_key, progress).await?;
+        
         Ok(Model {
-            inner: WebModel::from_stored(model_record, tensors).await.unwrap(),
+            inner: webModel,
         })
     }
 
@@ -212,6 +192,20 @@ impl Model {
     ) -> Result<Model, JsValue> {
         let model_key = ModelKey::from_available(&model, quantization);
         let model_repo = ApiBuilder::from_custom(endpoint).build();
+
+        let webModel = Self::load_inner(model, &model_repo, model_key, progress).await?;
+        
+        Ok(Model {
+            inner: webModel,
+        })
+    }
+
+    async fn load_inner(
+        model: AvailableModels,
+        model_repo: &Api,
+        model_key: ModelKey,
+        progress: &js_sys::Function,
+    ) -> Result<WebModel, JsValue> {
         let db = RatchetDB::open().await.map_err(|e| {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
@@ -235,9 +229,8 @@ impl Model {
 
         let model_record = db.get_model(&model_key).await.unwrap().unwrap();
         let tensors = db.get_tensors(&model_key).await.unwrap();
-        Ok(Model {
-            inner: WebModel::from_stored(model_record, tensors).await.unwrap(),
-        })
+
+        Ok(WebModel::from_stored(model_record, tensors).await.unwrap())
     }
 
     /// User-facing method to run the model.
@@ -391,7 +384,7 @@ mod tests {
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
         let mut model = Model::load_custom(
-            "https://huggingface.co/FL33TW00D-HF/whisper-base2/resolve/main".to_string(),
+            "https://huggingface.co/FL33TW00D-HF/whisper-base/resolve/main".to_string(),
             AvailableModels::Whisper(WhisperVariants::Base),
             Quantization::F16,
             js_cb,
