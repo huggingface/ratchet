@@ -782,6 +782,45 @@ impl Tensor {
         Ok(self)
     }
 
+    fn resolve_debug(self, device: WgpuDevice) -> Result<Tensor, TensorError> {
+        let mut uniform = CpuUniform::new();
+        device.begin_pass();
+
+        let execution_order = self.execution_order();
+
+        let mut compiled_ops = Vec::with_capacity(execution_order.len());
+        let mut allocations = device.allocate_cfg(&execution_order, &device)?;
+
+        for t in execution_order.iter() {
+            log::debug!("Compiling: {:?}", t.op().name());
+            assert!(t.device().is_gpu());
+            if t.resolved() {
+                continue;
+            }
+
+            let id = t.id();
+            let inner = allocations.remove(&id).ok_or(TensorError::NoStorage(id))?;
+            t.update_storage(Storage::GPU(GPUBuffer {
+                inner,
+                alignment: t.dt().size_of(),
+            }));
+
+            let to_modify = t.op().srcs()[0];
+            let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
+
+            if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace) {
+                compiled_ops.push(compiled_op);
+            } else {
+                log::warn!("Compilation failed for operation: {:?}", t.op().name());
+            }
+        }
+
+        let executable = Executable::new(compiled_ops, uniform.into_gpu(&device)?);
+        let index = executable.dispatch(&device).unwrap();
+        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
+        Ok(self)
+    }
+
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
         if self.device().is_gpu() || !self.resolved() {
             return Ok(self.clone());

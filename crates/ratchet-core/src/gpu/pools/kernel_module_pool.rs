@@ -1,7 +1,4 @@
-use crate::{
-    Kernel, KernelKey, KernelSource, OperationError, Tensor, WgpuDevice,
-    WorkgroupSize,
-};
+use crate::{Kernel, KernelKey, KernelSource, OperationError, Tensor, WgpuDevice, WorkgroupSize};
 
 use super::static_resource_pool::{StaticResourcePool, StaticResourcePoolReadLockAccessor};
 use std::hash::Hash;
@@ -50,6 +47,7 @@ impl KernelModulePool {
         device: &WgpuDevice,
     ) -> KernelModuleHandle {
         self.pool.get_or_create(desc, |desc| {
+            log::info!("Creating kernel module: {}", desc.key);
             let source = desc
                 .create_kernel_source(kernel, inplace, dst, workgroup_size)
                 .expect("Failed to create kernel source");
