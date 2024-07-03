@@ -175,6 +175,37 @@ impl Model {
     ) -> Result<Model, JsValue> {
         let model_key = ModelKey::from_available(&model, quantization);
         let model_repo = ApiBuilder::from_hf(&model_key.repo_id(), RepoType::Model).build();
+
+        let webModel = Self::load_inner(model, &model_repo, model_key, progress).await?;
+        
+        Ok(Model {
+            inner: webModel,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub async fn load_custom(
+        endpoint: String,
+        model: AvailableModels,
+        quantization: Quantization,
+        progress: &js_sys::Function,
+    ) -> Result<Model, JsValue> {
+        let model_key = ModelKey::from_available(&model, quantization);
+        let model_repo = ApiBuilder::from_custom(endpoint).build();
+
+        let webModel = Self::load_inner(model, &model_repo, model_key, progress).await?;
+        
+        Ok(Model {
+            inner: webModel,
+        })
+    }
+
+    async fn load_inner(
+        model: AvailableModels,
+        model_repo: &Api,
+        model_key: ModelKey,
+        progress: &js_sys::Function,
+    ) -> Result<WebModel, JsValue> {
         let db = RatchetDB::open().await.map_err(|e| {
             let e: JsError = e.into();
             Into::<JsValue>::into(e)
@@ -198,9 +229,8 @@ impl Model {
 
         let model_record = db.get_model(&model_key).await.unwrap().unwrap();
         let tensors = db.get_tensors(&model_key).await.unwrap();
-        Ok(Model {
-            inner: WebModel::from_stored(model_record, tensors).await.unwrap(),
-        })
+
+        Ok(WebModel::from_stored(model_record, tensors).await.unwrap())
     }
 
     /// User-facing method to run the model.
@@ -316,6 +346,45 @@ mod tests {
         let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
 
         let mut model = Model::load(
+            AvailableModels::Whisper(WhisperVariants::Base),
+            Quantization::F16,
+            js_cb,
+        )
+        .await
+        .unwrap();
+
+        let data_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
+        let audio_bytes = data_repo.get("mm0.wav").await?;
+        let sample = load_sample(&audio_bytes.to_vec());
+
+        let decode_options = DecodingOptionsBuilder::default().build();
+
+        let cb: Closure<dyn Fn(JsValue)> = Closure::new(|s| {
+            log::info!("GENERATED SEGMENT: {:?}", s);
+        });
+        let js_cb: &js_sys::Function = cb.as_ref().unchecked_ref();
+
+        let input = WhisperInputs {
+            audio: sample,
+            decode_options,
+            callback: js_cb.clone(),
+        };
+        let input = serde_wasm_bindgen::to_value(&input).unwrap();
+        let result = model.run(input).await.unwrap();
+        log::warn!("Result: {:?}", result);
+        Ok(())
+    }
+
+    #[wasm_bindgen_test]
+    async fn whisper_browser_custom() -> Result<(), JsValue> {
+        log_init();
+        let download_cb: Closure<dyn Fn(f64)> = Closure::new(|p| {
+            log::info!("Provided closure got progress: {}", p);
+        });
+        let js_cb: &js_sys::Function = download_cb.as_ref().unchecked_ref();
+
+        let mut model = Model::load_custom(
+            "https://huggingface.co/FL33TW00D-HF/whisper-base/resolve/main".to_string(),
             AvailableModels::Whisper(WhisperVariants::Base),
             Quantization::F16,
             js_cb,
