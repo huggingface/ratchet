@@ -163,6 +163,10 @@ impl Inner {
             storage,
         }
     }
+
+    pub(crate) fn storage(&self) -> RwLockReadGuard<Option<Storage>> {
+        self.storage.read()
+    }
 }
 
 impl Tensor {
@@ -715,27 +719,28 @@ impl Tensor {
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
         can_inplace: bool,
+        debug: bool,
     ) -> Option<CompiledOp> {
         match self.op() {
-            LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Cast(c) => c.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::RoPE(r) => r.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Concat(c) => c.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::IndexWrite(i) => i.compile(self, uniform, device, can_inplace).ok(),
-            LazyOp::Cache(c) => c.compile(self, uniform, device, can_inplace).ok(),
+            LazyOp::Binary(b) => b.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Cast(c) => c.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Matmul(m) => m.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Softmax(s) => s.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::RoPE(r) => r.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Unary(u) => u.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Reindex(r) => r.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Concat(c) => c.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Norm(n) => n.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Conv(c) => c.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Select(i) => i.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::IndexWrite(i) => i.compile(self, uniform, device, can_inplace, debug).ok(),
+            LazyOp::Cache(c) => c.compile(self, uniform, device, can_inplace, debug).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }
     }
 
-    pub fn resolve(self) -> Result<Tensor, TensorError> {
+    fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
         device.begin_pass();
@@ -768,7 +773,7 @@ impl Tensor {
             let to_modify = t.op().srcs()[0];
             let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
 
-            if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
+            if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace, debug) {
                 compiled_ops.push(compiled_op);
             } else {
                 log::warn!("No compiled op for {:?}", t.op().name());
@@ -781,9 +786,26 @@ impl Tensor {
         }
 
         let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
-        let index = executable.dispatch_operations(device).unwrap();
+        let index = if debug {
+            executable.dispatch_debugging(device).unwrap()
+        } else {
+            executable.dispatch_operations(device).unwrap()
+        };
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(self)
+    }
+
+    pub fn resolve(self) -> Result<Tensor, TensorError> {
+        self.resolve_inner(false)
+    }
+
+    /// Resolves the tensor computations and copies the output
+    /// from each operation to a debug buffer.
+    ///
+    /// The copy calls are inserted between each operation, so inplace
+    /// operations are captured.
+    pub fn resolve_debug(self) -> Result<Tensor, TensorError> {
+        self.resolve_inner(true)
     }
 
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {

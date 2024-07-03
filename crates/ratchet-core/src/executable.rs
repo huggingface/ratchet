@@ -1,7 +1,7 @@
 use crate::gpu::{GpuUniform, PoolError, StaticResourcePoolAccessor, WgpuDevice};
-use crate::CompiledOp;
+use crate::{CompiledOp, OpDebugger};
 use derive_new::new;
-use wgpu::SubmissionIndex;
+use wgpu::{CommandEncoder, SubmissionIndex};
 
 /// # Executable
 ///
@@ -18,9 +18,34 @@ pub struct Executable {
 pub enum ExecutionError {
     #[error(transparent)]
     PipelineNotFound(#[from] PoolError),
+    #[error("Failed during debugging: {0}")]
+    DebuggingError(&'static str),
 }
 
 impl Executable {
+    pub(crate) fn write_debug(
+        encoder: &mut CommandEncoder,
+        op_debugger: &OpDebugger,
+    ) -> Result<(), ExecutionError> {
+        let storage_guard = op_debugger.dst_tensor.inner.storage();
+        let storage = storage_guard
+            .as_ref()
+            .ok_or(ExecutionError::DebuggingError("Storage is None"))?;
+
+        let gpu_storage = storage
+            .try_gpu()
+            .map_err(|_| ExecutionError::DebuggingError("GPU storage not available"))?;
+
+        encoder.copy_buffer_to_buffer(
+            &op_debugger.debug_buffer,
+            0,
+            &gpu_storage.inner,
+            0,
+            op_debugger.dst_tensor.num_bytes() as _,
+        );
+        Ok(())
+    }
+
     #[cfg(not(feature = "gpu-profiling"))]
     pub fn dispatch_operations(
         &self,
@@ -48,6 +73,46 @@ impl Executable {
 
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
+            }
+        }
+        Ok(device.queue().submit(Some(encoder.finish())))
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn dispatch_debugging(
+        &self,
+        device: &WgpuDevice,
+    ) -> Result<SubmissionIndex, ExecutionError> {
+        let pipeline_resources = device.pipeline_resources();
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        {
+            for step in self.steps.iter() {
+                //Create cpass for every step
+                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("ratchet inference pass"),
+                    timestamp_writes: None,
+                });
+                cpass.set_pipeline(pipeline_resources.get(step.pipeline_handle())?);
+
+                for (group_index, bind_group) in step.storage_groups().iter().enumerate() {
+                    cpass.set_bind_group(group_index as u32, bind_group, &[]);
+                }
+
+                let uniform_group_index = step.storage_groups().len() as u32;
+                let uniform_group = self.gpu_uniform.bind_group();
+                cpass.set_bind_group(uniform_group_index, uniform_group, &[step.offset()]);
+
+                let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
+                cpass.dispatch_workgroups(x_count, y_count, z_count);
+
+                #[cfg(debug_assertions)]
+                {
+                    if let Some(debugger) = &step.debugger {
+                        Self::write_debug(&mut encoder, debugger)?;
+                    }
+                }
             }
         }
         Ok(device.queue().submit(Some(encoder.finish())))
