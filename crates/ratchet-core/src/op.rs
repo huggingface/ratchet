@@ -3,7 +3,7 @@ use crate::gpu::{
     PoolError, WgpuDevice,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelModuleDesc, OpDebugger, RVec,
+    ops::*, rvec, CompiledOp, InvariantError, KernelBuildError, KernelModuleDesc, RVec,
     StorageView, Tensor, WgslFragment, WorkgroupSize, Workload,
 };
 use encase::internal::WriteInto;
@@ -307,7 +307,6 @@ pub trait MetaOperation: Debug + 'static {
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
         can_inplace: bool,
-        debug: bool,
     ) -> Result<CompiledOp, OperationError> {
         let kernel_element = self.kernel_element(dst);
         let offset = self.write_metadata(uniform, dst, &kernel_element)? as usize;
@@ -353,21 +352,12 @@ pub trait MetaOperation: Debug + 'static {
             can_inplace,
         )?;
 
-        #[cfg(debug_assertions)]
-        let debugger = if debug {
-            Some(OpDebugger::new(dst.clone()))
-        } else {
-            None
-        };
-
         Ok(CompiledOp::new(
             pipeline_handle,
             workload.workgroup_count,
             storage_bind_groups,
             offset as _,
             kernel_src_desc.key,
-            #[cfg(debug_assertions)]
-            debugger,
         ))
     }
 }

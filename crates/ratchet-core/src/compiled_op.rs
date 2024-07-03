@@ -16,30 +16,6 @@ pub struct CompiledOp {
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
     pub kernel_key: KernelKey,
-    #[cfg(debug_assertions)]
-    pub debugger: Option<OpDebugger>, //store output of this operation
-}
-
-#[derive(Debug)]
-pub struct OpDebugger {
-    pub dst_tensor: Tensor,
-    pub debug_buffer: wgpu::Buffer,
-}
-
-impl OpDebugger {
-    pub fn new(dst_tensor: Tensor) -> Self {
-        let gpu_device = dst_tensor.device().try_gpu().expect("No GPU device");
-        let debug_buffer = gpu_device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("debug_buffer"),
-            size: dst_tensor.num_bytes() as _,
-            usage: wgpu::BufferUsages::standard(),
-            mapped_at_creation: false,
-        });
-        Self {
-            dst_tensor,
-            debug_buffer,
-        }
-    }
 }
 
 impl CompiledOp {

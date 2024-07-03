@@ -238,7 +238,7 @@ mod tests {
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
         let input = Tensor::read_npy::<f32, _>(input_npy, &device)?;
 
-        let result = encoder.schedule(input)?.full()?.resolve()?;
+        let result = encoder.schedule(input)?.full()?.resolve_debug()?;
         let ours = result.to(&Device::CPU)?;
         let ground = Tensor::read_npy::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);

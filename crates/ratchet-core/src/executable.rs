@@ -1,6 +1,8 @@
 use crate::gpu::{GpuUniform, PoolError, StaticResourcePoolAccessor, WgpuDevice};
-use crate::{CompiledOp, OpDebugger};
+use crate::{CompiledOp, Device, Tensor};
 use derive_new::new;
+#[cfg(not(debug_assertions))]
+use std::marker::PhantomData;
 use wgpu::{CommandEncoder, SubmissionIndex};
 
 /// # Executable
@@ -8,9 +10,13 @@ use wgpu::{CommandEncoder, SubmissionIndex};
 /// A linear sequence of compiled operations, with a single uniform buffer
 /// containing metadata for all operations.
 #[derive(new)]
-pub struct Executable {
+pub struct Executable<'t> {
     steps: Vec<CompiledOp>,
     gpu_uniform: GpuUniform,
+    #[cfg(debug_assertions)]
+    debug_list: Vec<&'t Tensor>,
+    #[cfg(not(debug_assertions))]
+    _phantom: PhantomData<&'t ()>,
 }
 
 //this error ExecutionError
@@ -22,30 +28,7 @@ pub enum ExecutionError {
     DebuggingError(&'static str),
 }
 
-impl Executable {
-    pub(crate) fn write_debug(
-        encoder: &mut CommandEncoder,
-        op_debugger: &OpDebugger,
-    ) -> Result<(), ExecutionError> {
-        let storage_guard = op_debugger.dst_tensor.inner.storage();
-        let storage = storage_guard
-            .as_ref()
-            .ok_or(ExecutionError::DebuggingError("Storage is None"))?;
-
-        let gpu_storage = storage
-            .try_gpu()
-            .map_err(|_| ExecutionError::DebuggingError("GPU storage not available"))?;
-
-        encoder.copy_buffer_to_buffer(
-            &op_debugger.debug_buffer,
-            0,
-            &gpu_storage.inner,
-            0,
-            op_debugger.dst_tensor.num_bytes() as _,
-        );
-        Ok(())
-    }
-
+impl Executable<'_> {
     #[cfg(not(feature = "gpu-profiling"))]
     pub fn dispatch_operations(
         &self,
@@ -84,12 +67,13 @@ impl Executable {
         device: &WgpuDevice,
     ) -> Result<SubmissionIndex, ExecutionError> {
         let pipeline_resources = device.pipeline_resources();
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut last_index = None;
+        assert!(self.debug_list.len() == self.steps.len());
+        for (step_index, step) in self.steps.iter().enumerate() {
+            let mut encoder =
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        {
-            for step in self.steps.iter() {
-                //Create cpass for every step
+            {
                 let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("ratchet inference pass"),
                     timestamp_writes: None,
@@ -106,16 +90,21 @@ impl Executable {
 
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
-
-                #[cfg(debug_assertions)]
-                {
-                    if let Some(debugger) = &step.debugger {
-                        Self::write_debug(&mut encoder, debugger)?;
-                    }
-                }
+                //Drop cpass to finish
             }
+
+            let index = device.queue().submit(Some(encoder.finish()));
+            if step_index < self.steps.len() - 1 {
+                //Ensure work is completed before readback
+                device.poll(wgpu::Maintain::WaitForSubmissionIndex(index.clone()));
+            }
+            last_index = Some(index);
+
+            // Debugging
+            let dbg = self.debug_list[step_index].to(&Device::CPU).unwrap();
+            log::debug!("\n{}\n{:#?}\n", step.kernel_key, dbg);
         }
-        Ok(device.queue().submit(Some(encoder.finish())))
+        Ok(last_index.unwrap())
     }
 
     #[cfg(feature = "gpu-profiling")]
