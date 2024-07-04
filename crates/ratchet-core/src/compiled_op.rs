@@ -2,7 +2,7 @@ use crate::gpu::{
     BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle, GpuBindGroup, WgpuDevice,
     WorkgroupCount,
 };
-use crate::{drvec, rvec, KernelKey, OperationError, RVec, Tensor};
+use crate::{drvec, rvec, BufferUsagesExt, KernelKey, OperationError, RVec, Tensor};
 use derive_new::new;
 use wgpu::DynamicOffset;
 

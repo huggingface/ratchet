@@ -163,6 +163,10 @@ impl Inner {
             storage,
         }
     }
+
+    pub(crate) fn storage(&self) -> RwLockReadGuard<Option<Storage>> {
+        self.storage.read()
+    }
 }
 
 impl Tensor {
@@ -735,7 +739,7 @@ impl Tensor {
         }
     }
 
-    pub fn resolve(self) -> Result<Tensor, TensorError> {
+    fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
         let mut uniform = CpuUniform::new();
         let device = self.device().try_gpu()?;
         device.begin_pass();
@@ -746,10 +750,10 @@ impl Tensor {
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
 
         #[cfg(feature = "plotting")]
-        {
-            let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "pre-alloc.svg").unwrap();
-        }
+        crate::plot::render_to_file(execution_order.last().unwrap(), "prealloc.svg").unwrap();
+
+        #[cfg(debug_assertions)]
+        let mut compute_dsts = Vec::new();
 
         for t in execution_order.iter() {
             log::debug!("Compiling: {:?}", t.op().name());
@@ -770,20 +774,46 @@ impl Tensor {
 
             if let Some(compiled_op) = t.compile(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
+                #[cfg(debug_assertions)]
+                compute_dsts.push(*t);
             } else {
                 log::warn!("No compiled op for {:?}", t.op().name());
             }
         }
         #[cfg(feature = "plotting")]
-        {
-            let last = execution_order.last().unwrap();
-            crate::plot::render_to_file(last, "alloc.svg").unwrap();
-        }
+        crate::plot::render_to_file(execution_order.last().unwrap(), "alloc.svg").unwrap();
 
-        let executable = Executable::new(compiled_ops, uniform.into_gpu(device)?);
-        let index = executable.dispatch_operations(device).unwrap();
+        let executable = Executable::new(
+            compiled_ops,
+            uniform.into_gpu(device)?,
+            #[cfg(debug_assertions)]
+            compute_dsts,
+        );
+
+        let index = if debug {
+            if cfg!(not(debug_assertions)) {
+                panic!("Debugging is only available in debug builds. Call `resolve()` instead of `resolve_debug()`.")
+            } else {
+                executable.dispatch_debugging(device).unwrap()
+            }
+        } else {
+            executable.dispatch_operations(device).unwrap()
+        };
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(self)
+    }
+
+    pub fn resolve(self) -> Result<Tensor, TensorError> {
+        self.resolve_inner(false)
+    }
+
+    /// Resolves the tensor computations and copies the output
+    /// from each operation to a debug buffer.
+    ///
+    /// The copy calls are inserted between each operation, so inplace
+    /// operations are captured.
+    pub fn resolve_debug(self) -> Result<Tensor, TensorError> {
+        self.resolve_inner(true)
     }
 
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
