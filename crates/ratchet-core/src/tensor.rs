@@ -163,6 +163,10 @@ impl Inner {
             storage,
         }
     }
+
+    pub(crate) fn storage(&self) -> RwLockReadGuard<Option<Storage>> {
+        self.storage.read()
+    }
 }
 
 impl Tensor {
@@ -735,90 +739,80 @@ impl Tensor {
         }
     }
 
+    fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
+        let mut uniform = CpuUniform::new();
+        device.begin_pass();
+
+        let execution_order = self.execution_order();
+
+        let mut compiled_ops = Vec::with_capacity(execution_order.len());
+        let mut allocations = device.allocate_cfg(&execution_order, device)?;
+
+        #[cfg(feature = "plotting")]
+        crate::plot::render_to_file(execution_order.last().unwrap(), "prealloc.svg").unwrap();
+
+        #[cfg(debug_assertions)]
+        let mut compute_dsts = Vec::new();
+
+        for t in execution_order.iter() {
+            log::debug!("Compiling: {:?}", t.op().name());
+            assert!(t.device().is_gpu());
+            if t.resolved() {
+                continue;
+            }
+
+            let id = t.id();
+            let inner = allocations.remove(&id).ok_or(TensorError::NoStorage(id))?;
+            t.update_storage(Storage::GPU(GPUBuffer {
+                inner,
+                alignment: t.dt().size_of(),
+            }));
+
+            let to_modify = t.op().srcs()[0];
+            let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
+
+            if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace) {
+                compiled_ops.push(compiled_op);
+                #[cfg(debug_assertions)]
+                compute_dsts.push(*t);
+            } else {
+                log::warn!("Compilation failed for operation: {:?}", t.op().name());
+            }
+        }
+        #[cfg(feature = "plotting")]
+        crate::plot::render_to_file(execution_order.last().unwrap(), "alloc.svg").unwrap();
+
+        let executable = Executable::new(
+            compiled_ops,
+            uniform.into_gpu(device)?,
+            #[cfg(debug_assertions)]
+            compute_dsts,
+        );
+
+        let index = if debug {
+            if cfg!(not(debug_assertions)) {
+                panic!("Debugging is only available in debug builds. Call `resolve()` instead of `resolve_debug()`.")
+            } else {
+                executable.dispatch_debugging(device).unwrap()
+            }
+        } else {
+            executable.dispatch_operations(device).unwrap()
+        };
+        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
+        Ok(self)
+    }
+
     pub fn resolve(self) -> Result<Tensor, TensorError> {
-        match self.device().clone() {
-            Device::GPU(g) => self.resolve_gpu(g),
-            Device::CPU => unimplemented!("CPU backend is not implemented! Help wanted!"),
-            //Device::NPU => self.resolve_npu(),
-        }
+        self.resolve_inner(false)
     }
 
-    fn resolve_gpu(self, device: WgpuDevice) -> Result<Tensor, TensorError> {
-        let mut uniform = CpuUniform::new();
-        device.begin_pass();
-
-        let execution_order = self.execution_order();
-
-        let mut compiled_ops = Vec::with_capacity(execution_order.len());
-        let mut allocations = device.allocate_cfg(&execution_order, &device)?;
-
-        for t in execution_order.iter() {
-            log::debug!("Compiling: {:?}", t.op().name());
-            assert!(t.device().is_gpu());
-            if t.resolved() {
-                continue;
-            }
-
-            let id = t.id();
-            let inner = allocations.remove(&id).ok_or(TensorError::NoStorage(id))?;
-            t.update_storage(Storage::GPU(GPUBuffer {
-                inner,
-                alignment: t.dt().size_of(),
-            }));
-
-            let to_modify = t.op().srcs()[0];
-            let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
-
-            if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace) {
-                compiled_ops.push(compiled_op);
-            } else {
-                log::warn!("Compilation failed for operation: {:?}", t.op().name());
-            }
-        }
-
-        let executable = Executable::new(compiled_ops, uniform.into_gpu(&device)?);
-        let index = executable.dispatch(&device).unwrap();
-        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
-        Ok(self)
-    }
-
-    fn resolve_debug(self, device: WgpuDevice) -> Result<Tensor, TensorError> {
-        let mut uniform = CpuUniform::new();
-        device.begin_pass();
-
-        let execution_order = self.execution_order();
-
-        let mut compiled_ops = Vec::with_capacity(execution_order.len());
-        let mut allocations = device.allocate_cfg(&execution_order, &device)?;
-
-        for t in execution_order.iter() {
-            log::debug!("Compiling: {:?}", t.op().name());
-            assert!(t.device().is_gpu());
-            if t.resolved() {
-                continue;
-            }
-
-            let id = t.id();
-            let inner = allocations.remove(&id).ok_or(TensorError::NoStorage(id))?;
-            t.update_storage(Storage::GPU(GPUBuffer {
-                inner,
-                alignment: t.dt().size_of(),
-            }));
-
-            let to_modify = t.op().srcs()[0];
-            let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
-
-            if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace) {
-                compiled_ops.push(compiled_op);
-            } else {
-                log::warn!("Compilation failed for operation: {:?}", t.op().name());
-            }
-        }
-
-        let executable = Executable::new(compiled_ops, uniform.into_gpu(&device)?);
-        let index = executable.dispatch(&device).unwrap();
-        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
-        Ok(self)
+    /// Resolves the tensor computations and copies the output
+    /// from each operation to a debug buffer.
+    ///
+    /// The copy calls are inserted between each operation, so inplace
+    /// operations are captured.
+    pub fn resolve_debug(self) -> Result<Tensor, TensorError> {
+        self.resolve_inner(true)
     }
 
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {
