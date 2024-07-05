@@ -41,6 +41,8 @@ clap = { workspace = true, features = [ "derive" ] }
 serde_json.workspace = true
 half.workspace = true
 image = { workspace = true }
+pollster.workspace = true
+wasm-bindgen-futures = "0.4.42"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }  

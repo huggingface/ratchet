@@ -177,10 +177,8 @@ impl Model {
         let model_repo = ApiBuilder::from_hf(&model_key.repo_id(), RepoType::Model).build();
 
         let webModel = Self::load_inner(model, &model_repo, model_key, progress).await?;
-        
-        Ok(Model {
-            inner: webModel,
-        })
+
+        Ok(Model { inner: webModel })
     }
 
     #[wasm_bindgen]
@@ -194,10 +192,8 @@ impl Model {
         let model_repo = ApiBuilder::from_custom(endpoint).build();
 
         let webModel = Self::load_inner(model, &model_repo, model_key, progress).await?;
-        
-        Ok(Model {
-            inner: webModel,
-        })
+
+        Ok(Model { inner: webModel })
     }
 
     async fn load_inner(

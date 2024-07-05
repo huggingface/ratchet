@@ -89,8 +89,8 @@ pub async fn transcribe(
     mut decode_options: DecodingOptions,
     callback: Option<impl Fn(StreamedSegment)>,
 ) -> anyhow::Result<TranscriptionResult> {
-    let runtime = Instant::now();
     let n_mels = model.config.n_mels as usize;
+    let runtime = Instant::now();
     let mel = model.specgen.generate(audio)?.to(&model.device).await?;
     let content_frames = mel.shape()[mel.rank() - 1] - N_FRAMES;
 
@@ -133,6 +133,9 @@ pub async fn transcribe(
         }
 
         let hs = model.encoder.schedule(mel_segment)?.resolve()?;
+
+        let dbg = hs.clone().to(&ratchet::Device::CPU).await;
+        log::warn!("HS: {:?}", dbg);
 
         let task = DecodingTask::new(decode_options, tokenizer.clone());
         let decoded = task.run(&mut model.decoder, hs, &callback).await?;

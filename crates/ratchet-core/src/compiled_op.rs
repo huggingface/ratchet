@@ -1,8 +1,9 @@
+
 use crate::gpu::{
     BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle, GpuBindGroup, WgpuDevice,
     WorkgroupCount,
 };
-use crate::{drvec, rvec, BufferUsagesExt, KernelKey, OperationError, RVec, Tensor};
+use crate::{drvec, rvec, KernelKey, OperationError, RVec, Tensor};
 use derive_new::new;
 use wgpu::DynamicOffset;
 
@@ -16,6 +17,8 @@ pub struct CompiledOp {
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
     pub kernel_key: KernelKey,
+    #[cfg(feature = "debug")]
+    pub debug_buffer: Option<Arc<wgpu::Buffer>>,
 }
 
 impl CompiledOp {

@@ -155,25 +155,7 @@ impl DeviceStorage for GPUBuffer {
     fn to_cpu(&self, device: &Device) -> Result<CPUBuffer, DeviceError> {
         self.validate_usages(BufferUsages::COPY_SRC)?;
         let device = device.try_gpu()?;
-        let buffer_slice = self.inner.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        let alignment = self.alignment;
-
-        wgpu::util::DownloadBuffer::read_buffer(
-            device,
-            device.queue(),
-            &buffer_slice,
-            move |buffer| {
-                tx.send(match buffer {
-                    Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
-                    Err(error) => Err(error),
-                })
-                .expect("Failed to send result of read_buffer");
-            },
-        );
-        device.poll(wgpu::Maintain::Wait);
-        let storage = rx.recv().unwrap()?;
-
+        let storage = wgpu_buffer_to_cpu_buffer(&self.inner, self.alignment, device);
         Ok(storage)
     }
 
@@ -188,4 +170,56 @@ impl DeviceStorage for GPUBuffer {
         result.push_str(&format!("Size: {} bytes\n", self.inner.size()));
         result
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn wgpu_buffer_to_cpu_buffer(
+    src_buf: &wgpu::Buffer,
+    alignment: usize,
+    device: WgpuDevice,
+) -> CPUBuffer {
+    assert!(src_buf.usage().contains(wgpu::BufferUsages::COPY_SRC));
+    let buffer_slice = src_buf.slice(..);
+    let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
+
+    wgpu::util::DownloadBuffer::read_buffer(
+        &device,
+        device.queue(),
+        &buffer_slice,
+        move |buffer| {
+            tx.send(match buffer {
+                Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
+                Err(error) => Err(error),
+            })
+            .expect("Failed to send result of read_buffer");
+        },
+    );
+    device.poll(wgpu::Maintain::Wait);
+    rx.receive().await.unwrap().unwrap()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn wgpu_buffer_to_cpu_buffer(
+    src_buf: &wgpu::Buffer,
+    alignment: usize,
+    device: &WgpuDevice,
+) -> CPUBuffer {
+    assert!(src_buf.usage().contains(wgpu::BufferUsages::COPY_SRC));
+    let buffer_slice = src_buf.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    wgpu::util::DownloadBuffer::read_buffer(
+        device,
+        device.queue(),
+        &buffer_slice,
+        move |buffer| {
+            tx.send(match buffer {
+                Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
+                Err(error) => Err(error),
+            })
+            .expect("Failed to send result of read_buffer");
+        },
+    );
+    device.poll(wgpu::Maintain::Wait);
+    rx.recv().unwrap().unwrap()
 }

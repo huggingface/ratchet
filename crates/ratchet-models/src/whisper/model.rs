@@ -72,9 +72,11 @@ impl Whisper {
         variant: WhisperVariants,
     ) -> anyhow::Result<Self> {
         let device = Device::request_device(ratchet::DeviceRequest::GPU).await?;
-        let mel_bytes = Self::fetch_resource(&variant, "melfilters.bytes")
-            .await
-            .unwrap();
+        let mel_fname = match variant {
+            WhisperVariants::DistilLargeV3 | WhisperVariants::LargeV3 => "melfilters128.bytes",
+            _ => "melfilters.bytes",
+        };
+        let mel_bytes = Self::fetch_resource(&variant, mel_fname).await.unwrap();
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
             &mel_bytes,

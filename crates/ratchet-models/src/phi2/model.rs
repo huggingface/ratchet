@@ -210,12 +210,19 @@ impl Phi2 {
         let ln_post = LayerNorm::new(lt("_norm.weight")?, Some(lt("_norm.bias")?), 1e-5);
         let lm_head = Linear::new(lt(".weight")?, Some(lt(".bias")?));
 
+        let cache_shape = shape![1, 32, Self::MAX_CACHE, 80];
+        let kv_cache = match device.compute_precision() {
+            DType::F16 => KVCache::new::<f16>(n_layers, cache_shape, &device),
+            DType::F32 => KVCache::new::<f32>(n_layers, cache_shape, &device),
+            _ => unimplemented!(),
+        };
+
         Ok(Self {
             embedding,
             layers,
             ln_post,
             lm_head,
-            kv_cache: KVCache::new::<f32>(n_layers, shape![1, 32, Self::MAX_CACHE, 80], &device),
+            kv_cache,
             device,
         })
     }

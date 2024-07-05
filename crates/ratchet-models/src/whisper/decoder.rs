@@ -74,6 +74,7 @@ impl Module for DecoderStem {
             .slice(&[start..end, 0..self.pos_embed.shape()[1]])?;
 
         sliced = sliced.cast(self.token_embed.weight.dt().activation_dt())?;
+
         self.token_embed.schedule(tokens)?.add(sliced)
     }
 }
@@ -306,18 +307,18 @@ def ground(options):
     fn decoder_matches() -> anyhow::Result<()> {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let path = model.get("tiny_f32.gguf").unwrap();
+        let model = api.model("FL33TW00D-HF/distil-whisper-large-v3".to_string());
+        let path = model.get("distil-large-v3_q8_0.gguf").unwrap();
         let config_path = model.get("config.json").unwrap();
         let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
         println!("MODEL LOADED FROM: {}", path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
-        let hs_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
-        let audio_path = dataset.get("jfk.wav").unwrap();
+        let hs_npy = dataset.get("distil_large_v3_q80_mm0_hs.npy").unwrap();
+        let audio_path = dataset.get("mm0.wav").unwrap();
 
-        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
+        let tokenizer_repo = api.model("openai/whisper-large-v3".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
@@ -325,20 +326,30 @@ def ground(options):
         let header = gguf::Header::read(&mut reader).unwrap();
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let audio_ctx = Tensor::read_npy::<f32, _>(hs_npy, &device)?;
+
+        let audio_ctx_cpu = Tensor::read_npy::<f32, _>(hs_npy.clone(), &Device::CPU)?;
+        println!("AUDIO CTX: {:?}", audio_ctx_cpu);
+
+        let audio_ctx = Tensor::read_npy::<f32, _>(hs_npy, &device)?
+            .cast(device.compute_precision())?
+            .resolve()?;
         let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device)?;
 
-        let mut tokens = vec![50258, 50259, 50359];
-        let mut all_tokens = tokens.clone();
+        let mut tokens = vec![50258, 50259, 50360];
+        let all_tokens = tokens.clone();
         let mut all_logits = vec![];
         let start = std::time::Instant::now();
+        let tk_cnt = 0;
         while tokens[tokens.len() - 1] != 50257 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let result = decoder.schedule([audio_ctx.clone(), token_t])?.resolve()?;
+            let result = decoder
+                .schedule([audio_ctx.clone(), token_t])?
+                .resolve_debug()?;
 
             let our_logits = result.to(&Device::CPU)?;
             let nd_logits = our_logits.to_ndarray_view::<f32>();
+            println!("ND LOGITS: {:?}", nd_logits);
             all_logits.push(Tensor::from(
                 nd_logits
                     .slice(s![.., .., ..tokenizer.get_vocab_size(true)])
@@ -357,12 +368,15 @@ def ground(options):
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
             println!("Token: {:?}", tokens);
+            panic!();
             all_tokens.extend(tokens.clone());
+            tk_cnt += 1;
         }
         println!("Took: {:?}", start.elapsed());
 
         let u32_tokens: Vec<_> = all_tokens.iter().map(|&x| x as u32).collect();
         let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
+        println!("All tokens: {:?}", all_tokens);
         println!("Decoded: {}", decoded);
 
         let ground_logits = ground_truth(&audio_path.to_string_lossy(), options)?;

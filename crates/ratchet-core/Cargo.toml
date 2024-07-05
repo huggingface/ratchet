@@ -10,6 +10,7 @@ rand = ["dep:rand", "dep:rand_distr"]
 plotting = ["dep:dot3", "dep:tempfile"]
 testing = ["dep:npyz", "dep:ndarray"]
 pyo3 = ["dep:pyo3", "dep:numpy", "dep:regex"]
+debug = [] #dump every node 
 
 [build-dependencies]
 tera = { workspace = true }
@@ -63,6 +64,7 @@ numpy = { workspace = true, optional = true, features=["half"]}
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true 
 futures-intrusive.workspace = true
+wasm-bindgen-futures.workspace = true 
 
 async-trait = "0.1.77"
 smallvec = { workspace = true , features = ["serde"] }

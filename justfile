@@ -6,6 +6,8 @@ install-pyo3:
     echo $(python --version)
 wasm CRATE:
     wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --release
+wasm-dbg CRATE:
+    wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --dev
 wasm-test CRATE BROWSER:
     cp ./config/webdriver-macos.json ./crates/{{CRATE}}/webdriver.json
     wasm-pack test --{{BROWSER}} --headless `pwd`/crates/{{CRATE}}
