@@ -107,11 +107,11 @@ impl DecodingTask {
             decoder.cache_mut().update(input.len());
 
             let cpu_logits = logits.to(&Device::CPU)?;
-            if i < 2 {
-                log::warn!("Logits: {:?}", cpu_logits);
-            } else {
-                break;
-            }
+            //if i < 2 {
+            //    log::warn!("Logits: {:?}", cpu_logits);
+            //} else {
+            //    break;
+            //}
             let mut logits = Self::slice_logits(cpu_logits, sliced_vocab_size);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
