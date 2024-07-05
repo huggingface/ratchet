@@ -65,7 +65,7 @@ impl Executable<'_> {
         &self,
         device: &WgpuDevice,
     ) -> Result<SubmissionIndex, ExecutionError> {
-        use crate::{CPUBuffer, DeviceStorage};
+        use crate::{wgpu_buffer_to_cpu_buffer, CPUBuffer, DeviceStorage};
 
         let pipeline_resources = device.pipeline_resources();
         assert!(self.debug_list.len() == self.steps.len());
@@ -107,29 +107,17 @@ impl Executable<'_> {
             last_index = Some(index);
         }
 
+        //Dump all of our debug results
         for (step_index, step) in self.steps.iter().enumerate() {
             let dt = self.debug_list[step_index].dt();
             let debug_buffer = step.debug_buffer.as_ref().unwrap();
-            let buffer_slice = debug_buffer.slice(..);
             let alignment = dt.size_of();
-            let (tx, rx) = std::sync::mpsc::channel();
-
-            wgpu::util::DownloadBuffer::read_buffer(
-                device,
-                device.queue(),
-                &buffer_slice,
-                move |buffer| {
-                    tx.send(match buffer {
-                        Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
-                        Err(error) => Err(error),
-                    })
-                    .expect("Failed to send result of read_buffer");
-                },
-            );
-            device.poll(wgpu::Maintain::Wait);
-            let storage = rx.recv().unwrap().unwrap();
+            #[cfg(target_arch = "wasm32")]
+            let cpu_buf = wgpu_buffer_to_cpu_buffer(debug_buffer, alignment, device).await;
+            #[cfg(not(target_arch = "wasm32"))]
+            let cpu_buf = wgpu_buffer_to_cpu_buffer(debug_buffer, alignment, device);
             let kernel_key = &step.kernel_key;
-            log::debug!("{:?}\n {:?}", kernel_key, storage.dump(dt, false));
+            log::debug!("{}\n {:?}\n", kernel_key, cpu_buf.dump(dt, false));
         }
 
         Ok(last_index.unwrap())
