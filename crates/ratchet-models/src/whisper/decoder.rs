@@ -1,7 +1,6 @@
 use super::config::Config;
 use crate::whisper::residual_block::*;
 use half::f16;
-use num::Zero;
 use ratchet::{prelude::*, DType, TensorDType};
 use ratchet_loader::gguf::gguf::Header;
 use ratchet_nn::{Embedding, KVCache, LayerNorm, Module};

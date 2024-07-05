@@ -21,14 +21,6 @@ pub(crate) fn js_error(message: &str) -> JsError {
     JsError::new(message)
 }
 
-pub(crate) async fn to_future<T>(promise: js_sys::Promise) -> Result<T, JsValue>
-where
-    T: JsCast,
-{
-    let result = JsFuture::from(promise).await?;
-    result.dyn_into::<T>()
-}
-
 pub(crate) async fn fetch(url: &str) -> Result<Response, JsValue> {
     let mut opts = RequestInit::new();
     opts.method("GET");

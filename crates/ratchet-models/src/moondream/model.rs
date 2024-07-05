@@ -46,7 +46,7 @@ impl Moondream {
         Self::load_inner(&header, lt, &device)
     }
 
-    fn load_inner<F>(header: &Header, mut lt: F, device: &Device) -> anyhow::Result<Self>
+    fn load_inner<F>(_header: &Header, mut lt: F, device: &Device) -> anyhow::Result<Self>
     where
         F: FnMut(&str) -> Tensor,
     {
