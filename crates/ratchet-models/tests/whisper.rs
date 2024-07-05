@@ -163,13 +163,12 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 #[wasm_bindgen_test]
 async fn tiny_decoder() -> Result<(), JsValue> {
     log_init();
-    let model_repo =
-        ApiBuilder::from_hf("FL33TW00D-HF/distil-whisper-large-v3", RepoType::Model).build();
-    let model_data = model_repo.get("distil-large-v3_q8_0.gguf").await?;
+    let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
+    let model_data = model_repo.get("tiny_f32.gguf").await?;
     let config_data = model_repo.get("config.json").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-    let hs_data = ground_repo.get("distil_large_v3_q80_mm0_hs.npy").await?;
+    let hs_data = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;
 
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(model_data.to_vec()));
     let header = gguf::Header::read(&mut reader).unwrap();
@@ -177,16 +176,11 @@ async fn tiny_decoder() -> Result<(), JsValue> {
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
 
-    let audio_ctx_cpu = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &Device::CPU).unwrap();
-    log::debug!("Audio Context: {:?}", audio_ctx_cpu);
-
-    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device)
-        .unwrap()
-        .cast(device.compute_precision())
-        .unwrap();
+    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device)?
+        .cast(device.compute_precision())?;
     let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device).unwrap();
 
-    let mut tokens = vec![50258, 50259, 50360];
+    let mut tokens = vec![50258, 50259, 50359];
     let mut all_tokens = tokens.clone();
     let mut all_logits = vec![];
     let vocab_size = 51866;
