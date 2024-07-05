@@ -163,12 +163,13 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 #[wasm_bindgen_test]
 async fn tiny_decoder() -> Result<(), JsValue> {
     log_init();
-    let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
-    let model_data = model_repo.get("tiny_f32.gguf").await?;
+    let model_repo =
+        ApiBuilder::from_hf("FL33TW00D-HF/distil-whisper-large-v3", RepoType::Model).build();
+    let model_data = model_repo.get("distil-large-v3_q8_0.gguf").await?;
     let config_data = model_repo.get("config.json").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();
-    let hs_data = ground_repo.get("jfk_tiny_encoder_hs.npy").await?;
+    let hs_data = ground_repo.get("distil_large_v3_q80_mm0_hs.npy").await?;
 
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(model_data.to_vec()));
     let header = gguf::Header::read(&mut reader).unwrap();
@@ -185,9 +186,10 @@ async fn tiny_decoder() -> Result<(), JsValue> {
         .unwrap();
     let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device).unwrap();
 
-    let mut tokens = vec![50258, 50259, 50359];
+    let mut tokens = vec![50258, 50259, 50360];
     let mut all_tokens = tokens.clone();
     let mut all_logits = vec![];
+    let vocab_size = 51866;
     while tokens[tokens.len() - 1] != 50257 {
         let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
         let result = decoder
@@ -199,7 +201,10 @@ async fn tiny_decoder() -> Result<(), JsValue> {
         let our_logits = result.to(&Device::CPU).await.unwrap();
         all_logits.push(our_logits.clone());
         let nd_logits = our_logits.to_ndarray_view::<f32>();
-        let sliced = nd_logits.slice(s![.., -1.., ..51865]).remove_axis(Axis(1));
+        log::debug!("ND LOGITS: {:?}", nd_logits);
+        let sliced = nd_logits
+            .slice(s![.., -1.., ..vocab_size])
+            .remove_axis(Axis(1));
         decoder.cache_mut().update(tokens.len());
 
         tokens = sliced
@@ -208,7 +213,7 @@ async fn tiny_decoder() -> Result<(), JsValue> {
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
         println!("Token: {:?}", tokens);
-        panic!("PANIC");
+        panic!();
         all_tokens.extend(tokens.clone());
     }
 

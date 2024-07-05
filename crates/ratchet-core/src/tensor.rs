@@ -791,15 +791,18 @@ impl Tensor {
             compute_dsts,
         );
 
+        #[cfg(debug_assertions)]
         let index = if debug {
-            if cfg!(not(debug_assertions)) {
-                panic!("Debugging is only available in debug builds. Call `resolve()` instead of `resolve_debug()`.")
-            } else {
+            if cfg!(debug_assertions) {
                 executable.dispatch_debugging(device).unwrap()
+            } else {
+                panic!("Debugging is only available in debug builds. Call `resolve()` instead of `resolve_debug()`.")
             }
         } else {
             executable.dispatch(device).unwrap()
         };
+        #[cfg(not(debug_assertions))]
+        let index = executable.dispatch(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(self)
     }

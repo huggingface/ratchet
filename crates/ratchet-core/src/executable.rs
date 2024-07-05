@@ -65,7 +65,7 @@ impl Executable<'_> {
         &self,
         device: &WgpuDevice,
     ) -> Result<SubmissionIndex, ExecutionError> {
-        use crate::{wgpu_buffer_to_cpu_buffer, CPUBuffer, DeviceStorage};
+        use crate::{wgpu_buffer_to_cpu_buffer, DeviceStorage};
 
         let pipeline_resources = device.pipeline_resources();
         assert!(self.debug_list.len() == self.steps.len());
@@ -108,16 +108,24 @@ impl Executable<'_> {
         }
 
         //Dump all of our debug results
-        for (step_index, step) in self.steps.iter().enumerate() {
-            let dt = self.debug_list[step_index].dt();
-            let debug_buffer = step.debug_buffer.as_ref().unwrap();
+        for (si, step) in self.steps.iter().enumerate() {
+            let d = device.clone();
+            let dt = self.debug_list[si].dt();
+            let debug_buffer = step.debug_buffer.clone().unwrap();
             let alignment = dt.size_of();
+            let kernel_key = step.kernel_key.clone();
             #[cfg(target_arch = "wasm32")]
-            let cpu_buf = wgpu_buffer_to_cpu_buffer(debug_buffer, alignment, device).await;
+            {
+                wasm_bindgen_futures::spawn_local(async move {
+                    let cpu_buf = wgpu_buffer_to_cpu_buffer(&debug_buffer, alignment, d).await;
+                    log::debug!("{}: {}\n {:?}\n", si, kernel_key, cpu_buf.dump(dt, false));
+                });
+            }
             #[cfg(not(target_arch = "wasm32"))]
-            let cpu_buf = wgpu_buffer_to_cpu_buffer(debug_buffer, alignment, device);
-            let kernel_key = &step.kernel_key;
-            log::debug!("{}\n {:?}\n", kernel_key, cpu_buf.dump(dt, false));
+            {
+                let cpu_buf = wgpu_buffer_to_cpu_buffer(&debug_buffer, alignment, &d);
+                log::debug!("{}: {}\n {:?}\n", si, kernel_key, cpu_buf.dump(dt, false));
+            }
         }
 
         Ok(last_index.unwrap())

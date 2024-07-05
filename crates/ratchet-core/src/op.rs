@@ -8,6 +8,7 @@ use crate::{
 };
 use std::borrow::Cow;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -343,12 +344,12 @@ pub trait GPUOperation: Operation {
             println!("Kernel key: {}", key);
             println!("DST SHAPE: {:?}", dst.shape());
             println!("SIZE: {}", dst.num_bytes());
-            Some(device.create_buffer(&wgpu::BufferDescriptor {
+            Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("debug buffer"),
                 size: dst.num_bytes() as _,
                 usage: wgpu::BufferUsages::standard(),
                 mapped_at_creation: false,
-            }))
+            })))
         } else {
             None
         };
@@ -359,6 +360,7 @@ pub trait GPUOperation: Operation {
             storage_bind_groups,
             offset as _,
             kernel_src_desc.key,
+            #[cfg(debug_assertions)]
             debug_buffer,
         ))
     }

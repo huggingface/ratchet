@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::gpu::{
     BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle, GpuBindGroup, WgpuDevice,
     WorkgroupCount,
@@ -17,7 +19,7 @@ pub struct CompiledOp {
     offset: DynamicOffset, //offset into the metadata uniform buffer
     pub kernel_key: KernelKey,
     #[cfg(debug_assertions)]
-    pub debug_buffer: Option<wgpu::Buffer>,
+    pub debug_buffer: Option<Arc<wgpu::Buffer>>,
 }
 
 impl CompiledOp {

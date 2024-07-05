@@ -307,18 +307,18 @@ def ground(options):
     fn decoder_matches() -> anyhow::Result<()> {
         log_init();
         let api = Api::new().unwrap();
-        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let path = model.get("tiny_f32.gguf").unwrap();
+        let model = api.model("FL33TW00D-HF/distil-whisper-large-v3".to_string());
+        let path = model.get("distil-large-v3_q8_0.gguf").unwrap();
         let config_path = model.get("config.json").unwrap();
         let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
         println!("MODEL LOADED FROM: {}", path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
         let options = DecodingOptionsBuilder::new().build();
-        let hs_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
-        let audio_path = dataset.get("jfk.wav").unwrap();
+        let hs_npy = dataset.get("distil_large_v3_q80_mm0_hs.npy").unwrap();
+        let audio_path = dataset.get("mm0.wav").unwrap();
 
-        let tokenizer_repo = api.model("openai/whisper-tiny".to_string());
+        let tokenizer_repo = api.model("openai/whisper-large-v3".to_string());
         let tokenizer_path = tokenizer_repo.get("tokenizer.json").unwrap();
         let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
@@ -335,12 +335,12 @@ def ground(options):
             .resolve()?;
         let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device)?;
 
-        let mut tokens = vec![50258, 50259, 50359];
+        let mut tokens = vec![50258, 50259, 50360];
         let mut all_tokens = tokens.clone();
         let mut all_logits = vec![];
         let start = std::time::Instant::now();
         let mut tk_cnt = 0;
-        while tokens[tokens.len() - 1] != 50257 && tk_cnt < 2 {
+        while tokens[tokens.len() - 1] != 50257 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = decoder
@@ -368,7 +368,7 @@ def ground(options):
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
             println!("Token: {:?}", tokens);
-            //panic!("PANIC");
+            panic!();
             all_tokens.extend(tokens.clone());
             tk_cnt += 1;
         }
@@ -376,6 +376,7 @@ def ground(options):
 
         let u32_tokens: Vec<_> = all_tokens.iter().map(|&x| x as u32).collect();
         let decoded = tokenizer.decode(&u32_tokens, true).unwrap();
+        println!("All tokens: {:?}", all_tokens);
         println!("Decoded: {}", decoded);
 
         let ground_logits = ground_truth(&audio_path.to_string_lossy(), options)?;
