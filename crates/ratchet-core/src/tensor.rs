@@ -753,7 +753,7 @@ impl Tensor {
         #[cfg(feature = "plotting")]
         crate::plot::render_to_file(execution_order.last().unwrap(), "prealloc.svg").unwrap();
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "debug")]
         let mut compute_dsts = Vec::new();
 
         for t in execution_order.iter() {
@@ -775,7 +775,7 @@ impl Tensor {
 
             if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace, debug) {
                 compiled_ops.push(compiled_op);
-                #[cfg(debug_assertions)]
+                #[cfg(feature = "debug")]
                 compute_dsts.push(*t);
             } else {
                 log::warn!("Compilation failed for operation: {:?}", t.op().name());
@@ -787,13 +787,13 @@ impl Tensor {
         let executable = Executable::new(
             compiled_ops,
             uniform.into_gpu(device)?,
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "debug")]
             compute_dsts,
         );
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "debug")]
         let index = if debug {
-            if cfg!(debug_assertions) {
+            if cfg!(feature = "debug") {
                 executable.dispatch_debugging(device).unwrap()
             } else {
                 panic!("Debugging is only available in debug builds. Call `resolve()` instead of `resolve_debug()`.")
@@ -801,7 +801,7 @@ impl Tensor {
         } else {
             executable.dispatch(device).unwrap()
         };
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(feature = "debug"))]
         let index = executable.dispatch(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(self)

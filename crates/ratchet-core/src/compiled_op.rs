@@ -18,7 +18,7 @@ pub struct CompiledOp {
     storage_groups: RVec<GpuBindGroup>,
     offset: DynamicOffset, //offset into the metadata uniform buffer
     pub kernel_key: KernelKey,
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "debug")]
     pub debug_buffer: Option<Arc<wgpu::Buffer>>,
 }
 

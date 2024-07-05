@@ -1,11 +1,9 @@
 use crate::gpu::{GpuUniform, PoolError, StaticResourcePoolAccessor, WgpuDevice};
-use crate::{CompiledOp, Device, Tensor};
+use crate::{CompiledOp, Tensor};
 use derive_new::new;
-#[cfg(not(debug_assertions))]
+#[cfg(not(feature = "debug"))]
 use std::marker::PhantomData;
-use std::sync::Arc;
-use wgpu::util::DownloadBuffer;
-use wgpu::{CommandEncoder, SubmissionIndex};
+use wgpu::SubmissionIndex;
 
 /// # Executable
 ///
@@ -15,9 +13,9 @@ use wgpu::{CommandEncoder, SubmissionIndex};
 pub struct Executable<'t> {
     steps: Vec<CompiledOp>,
     gpu_uniform: GpuUniform,
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "debug")]
     debug_list: Vec<&'t Tensor>,
-    #[cfg(not(debug_assertions))]
+    #[cfg(not(feature = "debug"))]
     _phantom: PhantomData<&'t ()>,
 }
 
@@ -60,7 +58,7 @@ impl Executable<'_> {
         Ok(device.queue().submit(Some(encoder.finish())))
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "debug")]
     pub(crate) fn dispatch_debugging(
         &self,
         device: &WgpuDevice,

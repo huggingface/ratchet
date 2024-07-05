@@ -339,7 +339,7 @@ pub trait GPUOperation: Operation {
             can_inplace,
         )?;
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "debug")]
         let debug_buffer = if debug {
             Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("debug buffer"),
@@ -357,7 +357,7 @@ pub trait GPUOperation: Operation {
             storage_bind_groups,
             offset as _,
             kernel_src_desc.key,
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "debug")]
             debug_buffer,
         ))
     }

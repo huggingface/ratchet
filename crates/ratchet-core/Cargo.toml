@@ -10,6 +10,7 @@ rand = ["dep:rand", "dep:rand_distr"]
 plotting = ["dep:dot3", "dep:tempfile"]
 testing = ["dep:npyz", "dep:ndarray"]
 pyo3 = ["dep:pyo3", "dep:numpy", "dep:regex"]
+debug = []
 
 [build-dependencies]
 tera = { workspace = true }
