@@ -43,16 +43,6 @@ where
     Handle: Key,
     Descriptor: std::fmt::Debug + Clone + Eq + Hash,
 {
-    fn to_pool_error<T>(get_result: Option<T>, handle: Handle) -> Result<T, PoolError> {
-        get_result.ok_or_else(|| {
-            if handle.is_null() {
-                PoolError::NullHandle
-            } else {
-                PoolError::ResourceNotAvailable
-            }
-        })
-    }
-
     pub fn get_or_create<C: Fn(&Descriptor) -> Resource>(
         &self,
         descriptor: &Descriptor,

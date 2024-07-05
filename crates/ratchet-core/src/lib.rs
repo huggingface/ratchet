@@ -93,7 +93,7 @@ pub mod prelude {
 
 #[cfg(feature = "pyo3")]
 pub mod test_util {
-    use crate::{DType, Tensor, TensorDType};
+    use crate::{DType, Tensor};
     use half::f16;
     use regex::Regex;
     use {

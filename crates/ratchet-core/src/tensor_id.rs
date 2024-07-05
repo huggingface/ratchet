@@ -9,14 +9,6 @@ impl std::fmt::Debug for TensorId {
 }
 
 impl TensorId {
-    pub(crate) fn debug(id: usize) -> Self {
-        Self(id)
-    }
-
-    pub(crate) fn inner(&self) -> usize {
-        self.0
-    }
-
     pub(crate) fn new() -> Self {
         // https://users.rust-lang.org/t/idiomatic-rust-way-to-generate-unique-id/33805
         use std::sync::atomic;

@@ -92,7 +92,7 @@ impl DecodingTask {
         let device = audio_ctx.device().clone();
         let mut timestamps_seen = 0;
 
-        for i in 0..self.sample_len {
+        for _ in 0..self.sample_len {
             let input = if tokens.len() > self.initial_tokens_len.unwrap() {
                 &tokens[tokens.len() - 1..]
             } else {
@@ -139,7 +139,7 @@ impl DecodingTask {
         let sliced_vocab_size = self.tokenizer.vocab_size();
         let mut timestamps_seen = 0;
 
-        for i in 0..self.sample_len {
+        for _ in 0..self.sample_len {
             let input = if tokens.len() > self.initial_tokens_len.unwrap() {
                 &tokens[tokens.len() - 1..]
             } else {

@@ -3,8 +3,8 @@ use crate::gpu::{
     PoolError, WgpuDevice,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError,
-    KernelMetadata, KernelModuleDesc, RVec, StorageView, Tensor, WgslFragment, WorkgroupSize,
+    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError, KernelMetadata,
+    KernelModuleDesc, RVec, StorageView, Tensor, WgslFragment, WorkgroupSize,
 };
 use std::borrow::Cow;
 use std::fmt::Debug;
