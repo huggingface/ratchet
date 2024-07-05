@@ -341,9 +341,6 @@ pub trait GPUOperation: Operation {
 
         #[cfg(debug_assertions)]
         let debug_buffer = if debug {
-            println!("Kernel key: {}", key);
-            println!("DST SHAPE: {:?}", dst.shape());
-            println!("SIZE: {}", dst.num_bytes());
             Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("debug buffer"),
                 size: dst.num_bytes() as _,
