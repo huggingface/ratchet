@@ -340,7 +340,7 @@ def ground(options):
         let mut all_logits = vec![];
         let start = std::time::Instant::now();
         let mut tk_cnt = 0;
-        while tokens[tokens.len() - 1] != 50257 && tk_cnt < 10 {
+        while tokens[tokens.len() - 1] != 50257 && tk_cnt < 2 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = decoder

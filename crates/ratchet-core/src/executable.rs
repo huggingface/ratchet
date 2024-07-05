@@ -65,8 +65,7 @@ impl Executable<'_> {
         &self,
         device: &WgpuDevice,
     ) -> Result<SubmissionIndex, ExecutionError> {
-        use std::sync::Arc;
-        use wgpu::BufferUsages;
+        use crate::{CPUBuffer, DeviceStorage};
 
         let pipeline_resources = device.pipeline_resources();
         assert!(self.debug_list.len() == self.steps.len());
@@ -95,28 +94,44 @@ impl Executable<'_> {
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
             }
 
-            // Debugging
-            let bingo = self.debug_list[step_index].clone();
+            let result_t = self.debug_list[step_index].clone();
+            let result_s = result_t.storage();
+            let result_storage = result_s.as_ref().unwrap();
+            let result_gpu = result_storage.try_gpu();
+            let result_buf = &result_gpu.unwrap().inner;
 
-            let download = Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
-                size: bingo.num_bytes() as u64,
-                usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-                label: None,
-            }));
+            let debug_buffer = step.debug_buffer.as_ref().unwrap();
+            encoder.copy_buffer_to_buffer(result_buf, 0, debug_buffer, 0, debug_buffer.size());
 
-            let bingo_storage = bingo.inner.storage();
-            let gpu_storage = bingo_storage.as_ref().unwrap().try_gpu().unwrap();
-            encoder.copy_buffer_to_buffer(
-                &gpu_storage.inner,
-                0,
-                &download,
-                0,
-                bingo.num_bytes() as u64,
-            );
             let index = device.queue().submit(Some(encoder.finish()));
             last_index = Some(index);
         }
+
+        for (step_index, step) in self.steps.iter().enumerate() {
+            let dt = self.debug_list[step_index].dt();
+            let debug_buffer = step.debug_buffer.as_ref().unwrap();
+            let buffer_slice = debug_buffer.slice(..);
+            let alignment = dt.size_of();
+            let (tx, rx) = std::sync::mpsc::channel();
+
+            wgpu::util::DownloadBuffer::read_buffer(
+                device,
+                device.queue(),
+                &buffer_slice,
+                move |buffer| {
+                    tx.send(match buffer {
+                        Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
+                        Err(error) => Err(error),
+                    })
+                    .expect("Failed to send result of read_buffer");
+                },
+            );
+            device.poll(wgpu::Maintain::Wait);
+            let storage = rx.recv().unwrap().unwrap();
+            let kernel_key = &step.kernel_key;
+            log::debug!("{:?}\n {:?}", kernel_key, storage.dump(dt, false));
+        }
+
         Ok(last_index.unwrap())
     }
 

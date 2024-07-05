@@ -3,8 +3,8 @@ use crate::gpu::{
     PoolError, WgpuDevice,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError, KernelMetadata,
-    KernelModuleDesc, RVec, StorageView, Tensor, WgslFragment, WorkgroupSize,
+    ops::*, rvec, BufferUsagesExt, CompiledOp, InvariantError, Kernel, KernelBuildError,
+    KernelMetadata, KernelModuleDesc, RVec, StorageView, Tensor, WgslFragment, WorkgroupSize,
 };
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -283,6 +283,7 @@ pub trait GPUOperation: Operation {
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
         can_inplace: bool,
+        debug: bool,
     ) -> Result<CompiledOp, OperationError> {
         let kernel = self.select_kernel();
 
@@ -310,7 +311,7 @@ pub trait GPUOperation: Operation {
         );
         log::debug!("Kernel key: {}", key);
 
-        let kernel_src_desc = KernelModuleDesc { key };
+        let kernel_src_desc = KernelModuleDesc { key: key.clone() };
 
         let kernel_module = device.get_or_create_compute_module(
             &kernel_src_desc,
@@ -337,12 +338,28 @@ pub trait GPUOperation: Operation {
             can_inplace,
         )?;
 
+        #[cfg(debug_assertions)]
+        let debug_buffer = if debug {
+            println!("Kernel key: {}", key);
+            println!("DST SHAPE: {:?}", dst.shape());
+            println!("SIZE: {}", dst.num_bytes());
+            Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("debug buffer"),
+                size: dst.num_bytes() as _,
+                usage: wgpu::BufferUsages::standard(),
+                mapped_at_creation: false,
+            }))
+        } else {
+            None
+        };
+
         Ok(CompiledOp::new(
             pipeline_handle,
             workload.workgroup_count,
             storage_bind_groups,
             offset as _,
             kernel_src_desc.key,
+            debug_buffer,
         ))
     }
 }

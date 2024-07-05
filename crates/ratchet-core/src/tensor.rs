@@ -718,22 +718,23 @@ impl Tensor {
         &self,
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
-        can_inplace: bool,
+        can_ip: bool,
+        debug: bool,
     ) -> Option<CompiledOp> {
         match self.op() {
-            LazyOp::Binary(b) => b.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Cast(c) => c.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Matmul(m) => m.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Softmax(s) => s.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::RoPE(r) => r.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Unary(u) => u.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Reindex(r) => r.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Concat(c) => c.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Norm(n) => n.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Conv(c) => c.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Select(i) => i.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::IndexWrite(i) => i.compile_gpu(self, uniform, device, can_inplace).ok(),
-            LazyOp::Cache(c) => c.compile_gpu(self, uniform, device, can_inplace).ok(),
+            LazyOp::Binary(b) => b.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Cast(c) => c.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Matmul(m) => m.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Softmax(s) => s.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::RoPE(r) => r.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Unary(u) => u.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Reindex(r) => r.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Concat(c) => c.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Norm(n) => n.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Conv(c) => c.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Select(i) => i.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::IndexWrite(i) => i.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Cache(c) => c.compile_gpu(self, uniform, device, can_ip, debug).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }
@@ -772,7 +773,7 @@ impl Tensor {
             let to_modify = t.op().srcs()[0];
             let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
 
-            if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace) {
+            if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace, debug) {
                 compiled_ops.push(compiled_op);
                 #[cfg(debug_assertions)]
                 compute_dsts.push(*t);

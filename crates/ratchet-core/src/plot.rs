@@ -115,9 +115,10 @@ impl RenderableGraph {
         let mut g = RenderableGraph::new();
 
         let mut graph_index_map = HashMap::new();
-        let execution_order = leaf.execution_order();
+        let leaf_cl = leaf.clone();
+        let execution_order = leaf_cl.execution_order();
         for t in execution_order.iter() {
-            let renderable_node = g.create_node(t.id(), Cow::Owned(t.op().name()));
+            let renderable_node = g.create_node(t.id(), Cow::Owned(t.op().name().to_string()));
             let can_inplace = t.op().supports_inplace() && Arc::strong_count(&t.inner) == 1;
             match t.op() {
                 crate::LazyOp::Const => renderable_node.style_as_const(),
@@ -138,7 +139,8 @@ impl RenderableGraph {
             });
         }
 
-        g.create_node(leaf.id(), Cow::Owned(leaf.op().name()))
+        let label = leaf.op().name().to_string();
+        g.create_node(leaf.id(), Cow::Owned(label))
             .style_as_output();
 
         Ok(g)
