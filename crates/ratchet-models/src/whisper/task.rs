@@ -103,15 +103,10 @@ impl DecodingTask {
             let logits = decoder
                 .schedule([audio_ctx.clone(), input_t])?
                 .cast(DType::F32)?
-                .resolve_debug()?;
+                .resolve()?;
             decoder.cache_mut().update(input.len());
 
             let cpu_logits = logits.to(&Device::CPU)?;
-            //if i < 2 {
-            //    log::warn!("Logits: {:?}", cpu_logits);
-            //} else {
-            //    break;
-            //}
             let mut logits = Self::slice_logits(cpu_logits, sliced_vocab_size);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
@@ -152,17 +147,10 @@ impl DecodingTask {
             };
             let input_t = Tensor::from_data(input, shape![1, input.len()], device.clone());
 
-            let logits = decoder
-                .schedule([audio_ctx.clone(), input_t])?
-                .resolve_debug()?;
+            let logits = decoder.schedule([audio_ctx.clone(), input_t])?.resolve()?;
             decoder.cache_mut().update(input.len());
 
             let cpu_logits = logits.to(&Device::CPU).await?;
-            //if i < 2 {
-            //    log::warn!("Logits: {:?}", cpu_logits);
-            //} else {
-            //    break;
-            //}
             let mut logits = Self::slice_logits(cpu_logits, sliced_vocab_size);
             let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], Device::CPU);
             for m in &self.logit_mutators {
