@@ -103,7 +103,7 @@ impl DecodingTask {
             let logits = decoder
                 .schedule([audio_ctx.clone(), input_t])?
                 .cast(DType::F32)?
-                .resolve_debug()?;
+                .resolve()?;
             decoder.cache_mut().update(input.len());
 
             let mut logits = Self::slice_logits(logits.to(&Device::CPU)?, sliced_vocab_size);
