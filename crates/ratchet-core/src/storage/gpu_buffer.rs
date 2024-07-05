@@ -209,7 +209,7 @@ pub fn wgpu_buffer_to_cpu_buffer(
     let (tx, rx) = std::sync::mpsc::channel();
 
     wgpu::util::DownloadBuffer::read_buffer(
-        &device,
+        device,
         device.queue(),
         &buffer_slice,
         move |buffer| {

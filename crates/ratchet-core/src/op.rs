@@ -3,12 +3,11 @@ use crate::gpu::{
     PoolError, WgpuDevice,
 };
 use crate::{
-    ops::*, rvec, BufferUsagesExt, CompiledOp, InvariantError, Kernel, KernelBuildError,
+    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError,
     KernelMetadata, KernelModuleDesc, RVec, StorageView, Tensor, WgslFragment, WorkgroupSize,
 };
 use std::borrow::Cow;
 use std::fmt::Debug;
-use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]

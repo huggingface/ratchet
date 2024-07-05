@@ -336,10 +336,10 @@ def ground(options):
         let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device)?;
 
         let mut tokens = vec![50258, 50259, 50360];
-        let mut all_tokens = tokens.clone();
+        let all_tokens = tokens.clone();
         let mut all_logits = vec![];
         let start = std::time::Instant::now();
-        let mut tk_cnt = 0;
+        let tk_cnt = 0;
         while tokens[tokens.len() - 1] != 50257 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());

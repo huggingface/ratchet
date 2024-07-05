@@ -773,7 +773,7 @@ impl Tensor {
             let to_modify = t.op().srcs()[0];
             let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
 
-            if let Some(compiled_op) = t.compile_gpu(&mut uniform, &device, can_inplace, debug) {
+            if let Some(compiled_op) = t.compile_gpu(&mut uniform, device, can_inplace, debug) {
                 compiled_ops.push(compiled_op);
                 #[cfg(feature = "debug")]
                 compute_dsts.push(*t);

@@ -93,12 +93,20 @@ impl Executable<'_> {
             }
 
             let result_t = self.debug_list[step_index].clone();
-            let result_s = result_t.storage();
-            let result_storage = result_s.as_ref().unwrap();
-            let result_gpu = result_storage.try_gpu();
-            let result_buf = &result_gpu.unwrap().inner;
+            let gpu_storage = result_t.storage();
+            let result_buf = &gpu_storage
+                .as_ref()
+                .ok_or(ExecutionError::DebuggingError("Failed to get result buf."))?
+                .try_gpu()
+                .map_err(|_| ExecutionError::DebuggingError("Failed to get result buf."))?
+                .inner;
 
-            let debug_buffer = step.debug_buffer.as_ref().unwrap();
+            let debug_buffer = step
+                .debug_buffer
+                .as_ref()
+                .ok_or(ExecutionError::DebuggingError(
+                    "Failed to get debug buffer.",
+                ))?;
             encoder.copy_buffer_to_buffer(result_buf, 0, debug_buffer, 0, debug_buffer.size());
 
             let index = device.queue().submit(Some(encoder.finish()));
