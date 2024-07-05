@@ -92,7 +92,6 @@ where
         // First check if we can reclaim a resource we have around from a previous pass.
         if desc.allow_reuse() {
             if let Entry::Occupied(mut entry) = state.last_pass_deallocated.entry(desc.clone()) {
-                log::debug!("Re-using resource {:?}", desc);
                 let handle = entry.get_mut().pop().unwrap();
                 if entry.get().is_empty() {
                     entry.remove();
@@ -103,7 +102,6 @@ where
         }
 
         // Otherwise create a new resource
-        log::debug!("Creating new resource: {:?}", desc);
         let inner_resource = { constructor(desc) };
         self.total_resource_size_in_bytes.fetch_add(
             desc.resource_size_in_bytes(),
