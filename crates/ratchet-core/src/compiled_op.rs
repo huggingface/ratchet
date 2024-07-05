@@ -1,4 +1,3 @@
-
 use crate::gpu::{
     BindGroupDescriptor, BindGroupLayoutHandle, ComputePipelineHandle, GpuBindGroup, WgpuDevice,
     WorkgroupCount,

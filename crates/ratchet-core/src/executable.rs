@@ -1,5 +1,5 @@
 use crate::gpu::{GpuUniform, PoolError, StaticResourcePoolAccessor, WgpuDevice};
-use crate::{CompiledOp, Tensor};
+use crate::CompiledOp;
 use derive_new::new;
 #[cfg(not(feature = "debug"))]
 use std::marker::PhantomData;

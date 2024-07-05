@@ -208,18 +208,13 @@ pub fn wgpu_buffer_to_cpu_buffer(
     let buffer_slice = src_buf.slice(..);
     let (tx, rx) = std::sync::mpsc::channel();
 
-    wgpu::util::DownloadBuffer::read_buffer(
-        device,
-        device.queue(),
-        &buffer_slice,
-        move |buffer| {
-            tx.send(match buffer {
-                Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
-                Err(error) => Err(error),
-            })
-            .expect("Failed to send result of read_buffer");
-        },
-    );
+    wgpu::util::DownloadBuffer::read_buffer(device, device.queue(), &buffer_slice, move |buffer| {
+        tx.send(match buffer {
+            Ok(db) => Ok(CPUBuffer::from_bytes(&db, alignment)),
+            Err(error) => Err(error),
+        })
+        .expect("Failed to send result of read_buffer");
+    });
     device.poll(wgpu::Maintain::Wait);
     rx.recv().unwrap().unwrap()
 }
