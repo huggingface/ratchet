@@ -15,7 +15,7 @@ use wasm_bindgen_test::*;
 fn log_init() {
     console_error_panic_hook::set_once();
     log::set_max_level(log::LevelFilter::Off);
-    console_log::init_with_level(log::Level::Info).unwrap();
+    console_log::init_with_level(log::Level::Debug).unwrap();
 }
 
 /*
@@ -54,6 +54,7 @@ async fn distil_large_v3_encoder() -> Result<(), JsValue> {
     Ok(())
 }*/
 
+/*
 #[wasm_bindgen_test]
 async fn distil_large_v3_decoder() -> Result<(), JsValue> {
     log_init();
@@ -76,6 +77,7 @@ async fn distil_large_v3_decoder() -> Result<(), JsValue> {
         .unwrap()
         .resolve()
         .unwrap();
+    log::debug!("Audio Context: {:?}", audio_ctx);
     let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device).unwrap();
 
     let mut tokens = vec![50258, 50259, 50360];
@@ -86,7 +88,7 @@ async fn distil_large_v3_decoder() -> Result<(), JsValue> {
         let result = decoder
             .schedule([audio_ctx.clone(), token_t])
             .unwrap()
-            .resolve()
+            .resolve_debug()
             .unwrap();
 
         let our_logits = result.to(&Device::CPU).await.unwrap();
@@ -94,7 +96,7 @@ async fn distil_large_v3_decoder() -> Result<(), JsValue> {
         let nd_logits = our_logits.to_ndarray_view::<f32>();
         log::info!("Logits: {:?}", nd_logits);
 
-        let sliced = nd_logits.slice(s![.., -1.., ..51865]).remove_axis(Axis(1));
+        let sliced = nd_logits.slice(s![.., -1.., ..51866]).remove_axis(Axis(1));
         decoder.cache_mut().update(tokens.len());
 
         tokens = sliced
@@ -103,6 +105,7 @@ async fn distil_large_v3_decoder() -> Result<(), JsValue> {
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
         println!("Token: {:?}", tokens);
+        panic!();
         all_tokens.extend(tokens.clone());
     }
 
@@ -125,7 +128,7 @@ async fn distil_large_v3_decoder() -> Result<(), JsValue> {
     ];
     assert_eq!(all_tokens, ground_tokens);
     Ok(())
-}
+}*/
 
 /*
 #[wasm_bindgen_test]
@@ -155,9 +158,11 @@ async fn tiny_encoder() -> Result<(), JsValue> {
     ground.all_close(&ours, 1e-3, 1e-3).unwrap();
     Ok(())
 }
+*/
 
 #[wasm_bindgen_test]
 async fn tiny_decoder() -> Result<(), JsValue> {
+    log_init();
     let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
     let model_data = model_repo.get("tiny_f32.gguf").await?;
     let config_data = model_repo.get("config.json").await?;
@@ -170,7 +175,14 @@ async fn tiny_decoder() -> Result<(), JsValue> {
     let config: Config = serde_json::from_slice(&config_data.to_vec()).unwrap();
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
-    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device).unwrap();
+
+    let audio_ctx_cpu = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &Device::CPU).unwrap();
+    log::debug!("Audio Context: {:?}", audio_ctx_cpu);
+
+    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device)
+        .unwrap()
+        .cast(device.compute_precision())
+        .unwrap();
     let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device).unwrap();
 
     let mut tokens = vec![50258, 50259, 50359];
@@ -181,7 +193,7 @@ async fn tiny_decoder() -> Result<(), JsValue> {
         let result = decoder
             .schedule([audio_ctx.clone(), token_t])
             .unwrap()
-            .resolve()
+            .resolve_debug()
             .unwrap();
 
         let our_logits = result.to(&Device::CPU).await.unwrap();
@@ -196,6 +208,7 @@ async fn tiny_decoder() -> Result<(), JsValue> {
             .map(|&x| x as i32)
             .collect::<Vec<_>>();
         println!("Token: {:?}", tokens);
+        panic!("PANIC");
         all_tokens.extend(tokens.clone());
     }
 
@@ -206,4 +219,3 @@ async fn tiny_decoder() -> Result<(), JsValue> {
     assert_eq!(all_tokens, ground_tokens);
     Ok(())
 }
-*/

@@ -157,7 +157,7 @@ impl BufferAllocator {
 
             true_source = to_modify;
         }
-        log::debug!("Traversed to true source: {:?}", true_source.id());
+        log::trace!("Traversed to true source: {:?}", true_source.id());
         true_source
     }
 

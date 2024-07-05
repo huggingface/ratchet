@@ -283,7 +283,6 @@ pub trait GPUOperation: Operation {
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
         can_inplace: bool,
-        debug: bool,
     ) -> Result<CompiledOp, OperationError> {
         let kernel = self.select_kernel();
 

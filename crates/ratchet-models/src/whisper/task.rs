@@ -103,7 +103,7 @@ impl DecodingTask {
             let logits = decoder
                 .schedule([audio_ctx.clone(), input_t])?
                 .cast(DType::F32)?
-                .resolve()?;
+                .resolve_debug()?;
             decoder.cache_mut().update(input.len());
 
             let mut logits = Self::slice_logits(logits.to(&Device::CPU)?, sliced_vocab_size);
@@ -113,7 +113,8 @@ impl DecodingTask {
             }
 
             let (_, new_tokens, completed) = GreedySampler::sample(tokens, logits)?;
-            //println!("NEW TOKENS: {:?}", new_tokens);
+            println!("NEW TOKENS: {:?}", new_tokens);
+            panic!();
 
             if let Some(ref cb) = callback {
                 self.handle_callback(&self.tokenizer, &new_tokens, &mut timestamps_seen, cb);

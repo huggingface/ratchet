@@ -335,14 +335,16 @@ def index_select(input, indices):
 
         let result = input.index_select(indices, 0).unwrap().resolve().unwrap();
         let x = result.to(&Device::CPU).unwrap();
+        println!("X: {:?}", x);
+        println!("Ground Truth: {:?}", ground_truth);
         ground_truth.all_close(&x, 1e-1, 1e-1).unwrap();
     }
 
     #[test]
     fn qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![4000, 384],
-            indices: Tensor::from_data(vec![3i32, 4i32, 1000i32], shape![3], Device::CPU),
+            input_shape: shape![52000, 1280],
+            indices: Tensor::from_data(vec![50258, 50259, 50360], shape![3], Device::CPU),
         };
         run_index_select_trial(prob, true);
     }

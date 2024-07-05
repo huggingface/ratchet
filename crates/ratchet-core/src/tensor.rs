@@ -741,6 +741,7 @@ impl Tensor {
 
     fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
         let mut uniform = CpuUniform::new();
+        let device = self.device().try_gpu()?;
         device.begin_pass();
 
         let execution_order = self.execution_order();
@@ -796,7 +797,7 @@ impl Tensor {
                 executable.dispatch_debugging(device).unwrap()
             }
         } else {
-            executable.dispatch_operations(device).unwrap()
+            executable.dispatch(device).unwrap()
         };
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(self)
@@ -900,7 +901,7 @@ impl Tensor {
 
     fn to_cpu(&self) -> Result<Tensor, TensorError> {
         if self.device().is_cpu() || !self.resolved() {
-            log::warn!("Tensor may not have been resolved, try calling `resolve()` first.");
+            log::error!("Tensor may not have been resolved, try calling `resolve()` first.");
             return Ok(self.clone());
         }
         let storage_guard = self.storage();

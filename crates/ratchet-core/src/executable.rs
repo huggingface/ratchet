@@ -3,6 +3,8 @@ use crate::{CompiledOp, Device, Tensor};
 use derive_new::new;
 #[cfg(not(debug_assertions))]
 use std::marker::PhantomData;
+use std::sync::Arc;
+use wgpu::util::DownloadBuffer;
 use wgpu::{CommandEncoder, SubmissionIndex};
 
 /// # Executable
@@ -63,9 +65,13 @@ impl Executable<'_> {
         &self,
         device: &WgpuDevice,
     ) -> Result<SubmissionIndex, ExecutionError> {
+        use std::sync::Arc;
+        use wgpu::BufferUsages;
+
         let pipeline_resources = device.pipeline_resources();
-        let mut last_index = None;
         assert!(self.debug_list.len() == self.steps.len());
+
+        let mut last_index = None;
         for (step_index, step) in self.steps.iter().enumerate() {
             let mut encoder =
                 device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -87,19 +93,29 @@ impl Executable<'_> {
 
                 let [x_count, y_count, z_count] = step.workgroup_count().as_slice();
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
-                //Drop cpass to finish
             }
-
-            let index = device.queue().submit(Some(encoder.finish()));
-            if step_index < self.steps.len() - 1 {
-                //Ensure work is completed before readback
-                device.poll(wgpu::Maintain::WaitForSubmissionIndex(index.clone()));
-            }
-            last_index = Some(index);
 
             // Debugging
-            let dbg = self.debug_list[step_index].to(&Device::CPU).unwrap();
-            log::debug!("\n{}\n{:#?}\n", step.kernel_key, dbg);
+            let bingo = self.debug_list[step_index].clone();
+
+            let download = Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+                size: bingo.num_bytes() as u64,
+                usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+                label: None,
+            }));
+
+            let bingo_storage = bingo.inner.storage();
+            let gpu_storage = bingo_storage.as_ref().unwrap().try_gpu().unwrap();
+            encoder.copy_buffer_to_buffer(
+                &gpu_storage.inner,
+                0,
+                &download,
+                0,
+                bingo.num_bytes() as u64,
+            );
+            let index = device.queue().submit(Some(encoder.finish()));
+            last_index = Some(index);
         }
         Ok(last_index.unwrap())
     }

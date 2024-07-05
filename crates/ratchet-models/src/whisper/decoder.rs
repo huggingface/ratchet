@@ -74,6 +74,7 @@ impl Module for DecoderStem {
             .slice(&[start..end, 0..self.pos_embed.shape()[1]])?;
 
         sliced = sliced.cast(self.token_embed.weight.dt().activation_dt())?;
+
         self.token_embed.schedule(tokens)?.add(sliced)
     }
 }
@@ -325,20 +326,30 @@ def ground(options):
         let header = gguf::Header::read(&mut reader).unwrap();
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let audio_ctx = Tensor::read_npy::<f32, _>(hs_npy, &device)?;
+
+        let audio_ctx_cpu = Tensor::read_npy::<f32, _>(hs_npy.clone(), &Device::CPU)?;
+        println!("AUDIO CTX: {:?}", audio_ctx_cpu);
+
+        let audio_ctx = Tensor::read_npy::<f32, _>(hs_npy, &device)?
+            .cast(device.compute_precision())?
+            .resolve()?;
         let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device)?;
 
         let mut tokens = vec![50258, 50259, 50359];
         let mut all_tokens = tokens.clone();
         let mut all_logits = vec![];
         let start = std::time::Instant::now();
-        while tokens[tokens.len() - 1] != 50257 {
+        let mut tk_cnt = 0;
+        while tokens[tokens.len() - 1] != 50257 && tk_cnt < 10 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let result = decoder.schedule([audio_ctx.clone(), token_t])?.resolve()?;
+            let result = decoder
+                .schedule([audio_ctx.clone(), token_t])?
+                .resolve_debug()?;
 
             let our_logits = result.to(&Device::CPU)?;
             let nd_logits = our_logits.to_ndarray_view::<f32>();
+            println!("ND LOGITS: {:?}", nd_logits);
             all_logits.push(Tensor::from(
                 nd_logits
                     .slice(s![.., .., ..tokenizer.get_vocab_size(true)])
@@ -357,7 +368,9 @@ def ground(options):
                 .map(|&x| x as i32)
                 .collect::<Vec<_>>();
             println!("Token: {:?}", tokens);
+            //panic!("PANIC");
             all_tokens.extend(tokens.clone());
+            tk_cnt += 1;
         }
         println!("Took: {:?}", start.elapsed());
 
