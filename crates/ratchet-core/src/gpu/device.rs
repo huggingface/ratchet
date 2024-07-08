@@ -93,7 +93,6 @@ impl WgpuDevice {
             log::warn!("Forcing F32 precision");
             features.SHADER_F16 = false;
         }
-        features.SHADER_F16 = false;
 
         if std::env::var("RATCHET_DISABLE_SUBGROUPS").is_ok() {
             log::warn!("Disabling subgroup support");
