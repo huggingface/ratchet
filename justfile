@@ -11,7 +11,7 @@ wasm-dbg CRATE:
 wasm-test CRATE BROWSER:
     cp ./config/webdriver-macos.json ./crates/{{CRATE}}/webdriver.json
     node_modules/.bin/wasm-pack test --{{BROWSER}} --headless `pwd`/crates/{{CRATE}}
-# Publish a new version of a crate to the npm registry for a pull request
+# Publish a new version of a crate using pkg.pr.new
 wasm-publish-pr CRATE:
     node_modules/.bin/pkg-pr-new publish --pnpm ./target/pkg/{{CRATE}}
 push-example EXAMPLE:
