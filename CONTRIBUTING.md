@@ -2,39 +2,40 @@
 
 This guide outlines the steps necessary to set up and run tests for the Ratchet Rust package. Please follow these steps carefully to ensure a smooth testing process.
 
-## Prerequisites
-
-- Git
-- Rust and Cargo
-
 ## Setup Instructions
 
-### Step 1: Clone the Repository
+### Clone the Repository
 
-First, clone the Ratchet repository from GitHub and navigate into the project directory:
+First, ensure you have Git installed. Clone of the Ratchet repository from GitHub and navigate into the project directory:
 
 ```sh
 git clone https://github.com/FL33TW00D/ratchet.git
 cd ratchet/
 ```
 
-### Option 1: Using pyenv
+### Setup Rust and Cargo
 
-#### Step 1: Install `pyenv`
+Ensure you have Rust and Cargo installed. If not, please refer to the Rust installation guide to set up Rust and Cargo.
 
-First, make sure to install [pyenv](https://github.com/pyenv/pyenv#getting-pyenv). `pyenv` lets you manage multiple versions of Python. Please make sure you follow the install guide and source the correct environment variables.
+### Setup `just`
 
-#### Step 2: Install `just` Command Runner
-
-Before installing PyO3, ensure you have `just`, a command runner that simplifies running project-specific commands, installed. If `just` is not already installed on your system, you can install it using Cargo, Rust's package manager:
+Ensure you have `just`, a command runner that simplifies running project-specific commands, installed. If `just` is not already installed on your system, you can install it using Cargo, Rust's package manager:
 
 ```sh
 cargo install just
 ```
 
-This step assumes you have Rust and Cargo already installed on your system. If not, please refer to the Rust installation guide to set up Rust and Cargo.
+### Setup Python
 
-#### Step 3: Install python 3.10.6
+There are two ways to setup Python for the project: using `pyenv` or using `conda`.
+
+#### Option 1: Using pyenv
+
+##### Step 1: Install `pyenv`
+
+First, make sure to install [pyenv](https://github.com/pyenv/pyenv#getting-pyenv). `pyenv` lets you manage multiple versions of Python. Please make sure you follow the install guide and source the correct environment variables.
+
+##### Step 2: Install python 3.10.6
 
 Use `just` to install `python3.10.6` and enable it as the local python version for the project.
 
@@ -44,7 +45,7 @@ Use `just` to install `python3.10.6` and enable it as the local python version f
 just install-pyo3
 ```
 
-#### Step 4: Create virtual environment (Optional)
+##### Step 3: Create virtual environment (Optional)
 
 This step is optional but _highly_ recommended. You should create and source a virtual environment using your favorite tool (`uv`, `venv`, `virtualenv`...). We'll use the built-in `venv` module:
 
@@ -53,7 +54,7 @@ python -m venv venv
 source venv/bin/activate
 ```
 
-#### Step 5: Install python dependencies
+##### Step 4: Install python dependencies
 
 Install the Python dependencies recursively:
 
@@ -61,7 +62,7 @@ Install the Python dependencies recursively:
 python -m pip install -r requirements.txt
 ```
 
-##### Step 6: Configure Python Environment for PyO3
+##### Step 5: Configure Python Environment for PyO3
 
 PyO3 uses a build script to determine the Python version and set the correct linker arguments. To override the Python interpreter to the virtual environment, run the following:
 
@@ -70,7 +71,7 @@ export PYO3_PYTHON=$(which python)
 echo $PYO3_PYTHON
 ```
 
-### Option 2: Using conda
+#### Option 2: Using conda
 
 ##### Step 1: Create a new conda environment
 
@@ -99,7 +100,15 @@ rustflags = [
 ]
 ```
 
-### Step 2: Test config
+### Setup Node.js
+
+Ensure you have Node.js v18 or later installed. If not, please refer to the Node.js installation guide to set up Node.js.
+
+After installing Node.js, run `corepack enable` to enable the Node.js [corepack](https://github.com/nodejs/corepack) feature.
+
+Then run `pnpm install` to install the Node.js dependencies.
+
+## Test config
 
 We'll first verify that your pyo3 config is correctly setup:
 
@@ -129,7 +138,7 @@ Building the project will throw an error(!) and print the config:
 
 If that looks like this, you are good to go 🎉
 
-### Step 3: Run Tests
+## Run Tests
 
 Finally, run the tests for the package using Cargo:
 
@@ -143,7 +152,7 @@ To run the `PyO3` tests, add the `pyo3` flag:
 cargo test --features pyo3
 ```
 
-### Step 5: Run WASM Tests
+## Run WASM Tests
 
 To run WASM tests (e.g., the whisper test) run:
 

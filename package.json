@@ -1,0 +1,10 @@
+{
+  "name": "ratchet-repo",
+  "version": "0.0.0",
+  "packageManager": "pnpm@8.15.8",
+  "private": true,
+  "devDependencies": {
+    "pkg-pr-new": "0.0.15",
+    "wasm-pack": "0.12.1"
+  }
+}
