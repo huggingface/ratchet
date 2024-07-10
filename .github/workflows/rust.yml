@@ -16,8 +16,8 @@ env:
   WASM_BINDGEN_TEST_TIMEOUT: 300 # 5 minutes
 
 jobs:
-  test:
-    name: Test
+  check:
+    name: Check
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
