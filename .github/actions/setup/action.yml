@@ -1,0 +1,127 @@
+name: Setup
+description: Setup the environment
+
+runs:
+  using: composite
+  steps:
+    - name: Install rust toolchain
+      uses: dtolnay/rust-toolchain@nightly
+
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-nextest
+
+    - name: Install just
+      uses: extractions/setup-just@v1
+      with:
+        just-version: 1.5.0 # optional semver specification, otherwise latest
+
+    - name: Setup python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10.11"
+        cache: "pip"
+
+    - name: Install python dependencies
+      run: pip install -r requirements.txt
+      shell: bash
+
+    - name: Enable node.js corepack
+      run: corepack enable
+      shell: bash
+
+    - name: Setup node.js
+      uses: actions/setup-node@v4
+      with:
+        cache: pnpm
+        node-version: "18"
+
+    - name: Install node.js dependencies
+      run: pnpm install
+      shell: bash
+
+    - name: (linux) install lavapipe, vulkan sdk, alsa
+      if: matrix.os == 'ubuntu-22.04'
+      shell: bash
+      run: |
+        set -e
+        sudo apt-get update -y -qq
+        wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+        sudo add-apt-repository ppa:kisak/kisak-mesa
+        sudo apt-get update
+        sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev
+
+    - name: (windows) install dxc
+      if: matrix.os == 'windows-2022'
+      shell: bash
+      run: |
+        set -e
+
+        curl.exe -L --retry 5 https://github.com/microsoft/DirectXShaderCompiler/releases/download/$DXC_RELEASE/$DXC_FILENAME -o dxc.zip
+        7z.exe e dxc.zip -odxc bin/x64/{dxc.exe,dxcompiler.dll,dxil.dll}
+        # We need to use cygpath to convert PWD to a windows path as we're using bash.
+        cygpath --windows "$PWD/dxc" >> "$GITHUB_PATH"
+
+    - name: (windows) install warp
+      if: matrix.os == 'windows-2022'
+      shell: bash
+      run: |
+        set -e
+        curl.exe -L https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/1.0.7.1 -o warp.zip
+        7z.exe e warp.zip -owarp build/native/amd64/d3d10warp.dll
+        mkdir -p target/ratchet/debug/deps
+        cp -v warp/d3d10warp.dll target/ratchet/debug/
+        cp -v warp/d3d10warp.dll target/ratchet/debug/deps
+
+    - name: (windows) install mesa
+      if: matrix.os == 'windows-2022'
+      shell: bash
+      run: |
+        set -e
+        curl.exe -L https://github.com/pal1000/mesa-dist-win/releases/download/23.2.1/mesa3d-23.2.1-release-msvc.7z -o mesa.7z
+        7z.exe e mesa.7z -omesa x64/{opengl32.dll,libgallium_wgl.dll,libglapi.dll,vulkan_lvp.dll,lvp_icd.x86_64.json}
+        cp -v mesa/* target/ratchet/debug/
+        cp -v mesa/* target/ratchet/debug/deps
+        echo "VK_DRIVER_FILES=$PWD/mesa/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+        echo "GALLIUM_DRIVER=llvmpipe" >> "$GITHUB_ENV"
+
+    - name: Get Chromedriver version
+      id: get_version
+      run: |
+        import requests
+        import os
+
+        response = requests.get('https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json')
+        data = response.json()
+        stable_version = data['channels']['Stable']['version']
+        print(f"::set-output name=version::{stable_version}")
+      shell: python
+
+    - name: Download and extract Chromedriver
+      run: |
+        VERSION=${{ steps.get_version.outputs.version }}
+        PLATFORM=${{ matrix.platform }}
+        URL="https://storage.googleapis.com/chrome-for-testing-public/${VERSION}/${PLATFORM}/chromedriver-${PLATFORM}.zip"
+        if [ "${{ runner.os }}" = "windows-2022" ]; then
+          curl.exe -L --output "chromedriver.zip" $URL 
+          powershell.exe -Command "Expand-Archive -Path chromedriver.zip -DestinationPath ."
+          echo "${PWD}" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+        else
+          curl -L $URL -o chromedriver.zip
+          unzip chromedriver.zip
+          echo "${PWD}" >> $GITHUB_PATH
+        fi
+      shell: bash
+
+    - uses: FedericoCarboni/setup-ffmpeg@v3
+      if: matrix.os != 'macos-14'
+
+    - name: Install FFMPEG M1
+      if: matrix.os == 'macos-14'
+      shell: bash
+      run: |
+        wget -q https://www.osxexperts.net/ffmpeg611arm.zip
+        unzip ffmpeg611arm.zip 
+        sudo mv ffmpeg /usr/local/bin/ffmpeg

@@ -5,11 +5,14 @@ install-pyo3:
     pyenv local 3.10.6
     echo $(python --version)
 wasm CRATE:
-    wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --release
+    node_modules/.bin/wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --release
 wasm-dbg CRATE:
-    wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --dev
+    node_modules/.bin/wasm-pack build -s ratchet --target web -d `pwd`/target/pkg/{{CRATE}} --out-name {{CRATE}} ./crates/{{CRATE}} --dev
 wasm-test CRATE BROWSER:
     cp ./config/webdriver-macos.json ./crates/{{CRATE}}/webdriver.json
-    wasm-pack test --{{BROWSER}} --headless `pwd`/crates/{{CRATE}}
+    node_modules/.bin/wasm-pack test --{{BROWSER}} --headless `pwd`/crates/{{CRATE}}
+# Publish a new version of a crate using pkg.pr.new
+wasm-publish-pr CRATE:
+    node_modules/.bin/pkg-pr-new publish --pnpm ./target/pkg/{{CRATE}}
 push-example EXAMPLE:
     git push {{ EXAMPLE }} `git subtree split --prefix=examples/{{EXAMPLE}}/out master`:main --force
