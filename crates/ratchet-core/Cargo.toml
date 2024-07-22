@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["rand", "testing", "debug"]
+default = ["rand", "testing", "trace"]
 gpu-profiling = ["dep:tabled", "dep:itertools"]
 rand = ["dep:rand", "dep:rand_distr"]
 plotting = ["dep:dot3", "dep:tempfile"]
 testing = ["dep:npyz", "dep:ndarray"]
 pyo3 = ["dep:pyo3", "dep:numpy", "dep:regex"]
-debug = [] #dump every node 
+trace = ["dep:uuid"]
 
 [build-dependencies]
 tera = { workspace = true }
@@ -60,6 +60,10 @@ itertools = { workspace = true, optional = true }
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true } 
 regex = { workspace = true, optional = true }
 numpy = { workspace = true, optional = true, features=["half"]}
+
+# Trace
+uuid = { version="1.1.0", features = ["v4", "fast-rng"], optional = true }
+
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true 

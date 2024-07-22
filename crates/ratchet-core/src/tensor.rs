@@ -719,42 +719,34 @@ impl Tensor {
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
         can_ip: bool,
-        debug: bool,
     ) -> Option<CompiledOp> {
         match self.op() {
-            LazyOp::Binary(b) => b.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Cast(c) => c.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Matmul(m) => m.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Softmax(s) => s.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::RoPE(r) => r.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Unary(u) => u.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Reindex(r) => r.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Concat(c) => c.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Norm(n) => n.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Conv(c) => c.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Select(i) => i.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::IndexWrite(i) => i.compile_gpu(self, uniform, device, can_ip, debug).ok(),
-            LazyOp::Cache(c) => c.compile_gpu(self, uniform, device, can_ip, debug).ok(),
+            LazyOp::Binary(b) => b.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Cast(c) => c.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Matmul(m) => m.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Softmax(s) => s.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::RoPE(r) => r.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Unary(u) => u.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Reindex(r) => r.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Concat(c) => c.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Norm(n) => n.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Conv(c) => c.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Select(i) => i.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::IndexWrite(i) => i.compile_gpu(self, uniform, device, can_ip).ok(),
+            LazyOp::Cache(c) => c.compile_gpu(self, uniform, device, can_ip).ok(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }
     }
 
-    fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
+    fn create_executable(&self, device: &WgpuDevice) -> Result<Executable, TensorError> {
         let mut uniform = CpuUniform::new();
-        let device = self.device().try_gpu()?;
         device.begin_pass();
 
         let execution_order = self.execution_order();
 
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
-
-        #[cfg(feature = "plotting")]
-        crate::plot::render_to_file(execution_order.last().unwrap(), "prealloc.svg").unwrap();
-
-        #[cfg(feature = "debug")]
-        let mut compute_dsts = Vec::new();
 
         for t in execution_order.iter() {
             log::debug!("Compiling: {:?}", t.op().name());
@@ -773,51 +765,47 @@ impl Tensor {
             let to_modify = t.op().srcs()[0];
             let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
 
-            if let Some(compiled_op) = t.compile_gpu(&mut uniform, device, can_inplace, debug) {
+            if let Some(compiled_op) = t.compile_gpu(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
-                #[cfg(feature = "debug")]
-                compute_dsts.push(*t);
             } else {
                 log::warn!("Compilation failed for operation: {:?}", t.op().name());
             }
         }
-        #[cfg(feature = "plotting")]
-        crate::plot::render_to_file(execution_order.last().unwrap(), "alloc.svg").unwrap();
 
-        let executable = Executable::new(
-            compiled_ops,
-            uniform.into_gpu(device)?,
-            #[cfg(feature = "debug")]
-            compute_dsts,
-        );
+        Ok(Executable::new(compiled_ops, uniform.into_gpu(device)?))
+    }
 
-        #[cfg(feature = "debug")]
-        let index = if debug {
-            if cfg!(feature = "debug") {
-                executable.dispatch_debugging(device).unwrap()
-            } else {
-                panic!("Debugging is only available in debug builds. Call `resolve()` instead of `resolve_debug()`.")
-            }
-        } else {
-            executable.dispatch(device).unwrap()
-        };
-        #[cfg(not(feature = "debug"))]
+    /// # Resolve
+    ///
+    /// All work in Ratchet is lazy, and no computation is done until `resolve` is called.
+    ///
+    /// Upon calling resolve, all work required to compute this `Tensor` is done.
+    /// The tensor is then returned with the underlying memory populated.
+    pub fn resolve(self) -> Result<Tensor, TensorError> {
+        let device = self.device.try_gpu()?;
+        let executable = self.create_executable(&device)?;
         let index = executable.dispatch(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
         Ok(self)
     }
 
-    pub fn resolve(self) -> Result<Tensor, TensorError> {
-        self.resolve_inner(false)
-    }
-
-    /// Resolves the tensor computations and copies the output
-    /// from each operation to a debug buffer.
+    /// # Tracing
+    /// Note: trace feature flag must be enabled
     ///
-    /// The copy calls are inserted between each operation, so inplace
-    /// operations are captured.
-    pub fn resolve_debug(self) -> Result<Tensor, TensorError> {
-        self.resolve_inner(true)
+    /// WebGPU runs across heterogenous device, and as such, there
+    /// may be numerical differences.
+    ///
+    /// This method returns a `Vec<Tensor>` containing all the intermediate
+    /// tensors computed during the resolution of this tensor. The final
+    /// tensor in this list is the tensor upon which `resolve` was called.
+    #[cfg(feature = "trace")]
+    pub fn resolve_trace(self) -> Result<Vec<Tensor>, TensorError> {
+        let device = self.device.try_gpu()?;
+        let executable = self.create_executable(&device)?;
+        let index = executable.dispatch_trace(device).unwrap();
+        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
+
+        //Now the trace_list is populated
     }
 
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {

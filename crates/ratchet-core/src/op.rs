@@ -9,7 +9,7 @@ use crate::{
 use std::borrow::Cow;
 use std::fmt::Debug;
 
-#[cfg(feature = "debug")]
+#[cfg(feature = "trace")]
 use {crate::gpu::BufferUsagesExt, std::sync::Arc};
 
 #[derive(Clone, Debug)]
@@ -286,7 +286,6 @@ pub trait GPUOperation: Operation {
         uniform: &mut CpuUniform,
         device: &WgpuDevice,
         can_inplace: bool,
-        debug: bool,
     ) -> Result<CompiledOp, OperationError> {
         let kernel = self.select_kernel();
 
@@ -341,17 +340,13 @@ pub trait GPUOperation: Operation {
             can_inplace,
         )?;
 
-        #[cfg(feature = "debug")]
-        let debug_buffer = if debug {
-            Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("debug buffer"),
-                size: dst.num_bytes() as _,
-                usage: wgpu::BufferUsages::standard(),
-                mapped_at_creation: false,
-            })))
-        } else {
-            None
-        };
+        #[cfg(feature = "trace")]
+        let trace_buffer = Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("debug buffer"),
+            size: dst.num_bytes() as _,
+            usage: wgpu::BufferUsages::standard(),
+            mapped_at_creation: false,
+        })));
 
         Ok(CompiledOp::new(
             pipeline_handle,
@@ -359,8 +354,8 @@ pub trait GPUOperation: Operation {
             storage_bind_groups,
             offset as _,
             kernel_src_desc.key,
-            #[cfg(feature = "debug")]
-            debug_buffer,
+            #[cfg(feature = "trace")]
+            trace_buffer,
         ))
     }
 }

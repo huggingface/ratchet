@@ -340,7 +340,7 @@ def ground(options):
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
             let result = decoder
                 .schedule([audio_ctx.clone(), token_t])?
-                .resolve_debug()?;
+                .resolve_trace()?;
 
             let our_logits = result.to(&Device::CPU)?;
             let nd_logits = our_logits.to_ndarray_view::<f32>();

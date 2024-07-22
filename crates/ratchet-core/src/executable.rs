@@ -3,10 +3,10 @@ use crate::CompiledOp;
 use derive_new::new;
 use wgpu::SubmissionIndex;
 
-#[cfg(not(feature = "debug"))]
+#[cfg(not(feature = "trace"))]
 use std::marker::PhantomData;
 
-#[cfg(feature = "debug")]
+#[cfg(feature = "trace")]
 use crate::Tensor;
 
 /// # Executable
@@ -17,9 +17,9 @@ use crate::Tensor;
 pub struct Executable<'t> {
     steps: Vec<CompiledOp>,
     gpu_uniform: GpuUniform,
-    #[cfg(feature = "debug")]
-    debug_list: Vec<&'t Tensor>,
-    #[cfg(not(feature = "debug"))]
+    #[cfg(feature = "trace")]
+    trace_list: Vec<&'t Tensor>,
+    #[cfg(not(feature = "trace"))]
     _phantom: PhantomData<&'t ()>,
 }
 
@@ -30,6 +30,21 @@ pub enum ExecutionError {
     PipelineNotFound(#[from] PoolError),
     #[error("Failed during debugging: {0}")]
     DebuggingError(&'static str),
+}
+
+impl Executable<'_> {
+    pub fn steps(&self) -> &[CompiledOp] {
+        &self.steps
+    }
+
+    pub fn gpu_uniform(&self) -> &GpuUniform {
+        &self.gpu_uniform
+    }
+
+    #[cfg(feature = "trace")]
+    pub fn debug_list(&self) -> &[&Tensor] {
+        &self.trace_list
+    }
 }
 
 impl Executable<'_> {
@@ -62,15 +77,13 @@ impl Executable<'_> {
         Ok(device.queue().submit(Some(encoder.finish())))
     }
 
-    #[cfg(feature = "debug")]
-    pub(crate) fn dispatch_debugging(
+    #[cfg(feature = "trace")]
+    pub(crate) fn dispatch_trace(
         &self,
         device: &WgpuDevice,
     ) -> Result<SubmissionIndex, ExecutionError> {
-        use crate::{wgpu_buffer_to_cpu_buffer, DeviceStorage};
-
         let pipeline_resources = device.pipeline_resources();
-        assert!(self.debug_list.len() == self.steps.len());
+        assert!(self.trace_list.len() == self.steps.len());
 
         let mut last_index = None;
         for (step_index, step) in self.steps.iter().enumerate() {
@@ -96,7 +109,7 @@ impl Executable<'_> {
                 cpass.dispatch_workgroups(x_count, y_count, z_count);
             }
 
-            let result_t = self.debug_list[step_index].clone();
+            let result_t = self.trace_list[step_index].clone();
             let gpu_storage = result_t.storage();
             let result_buf = &gpu_storage
                 .as_ref()
@@ -106,7 +119,7 @@ impl Executable<'_> {
                 .inner;
 
             let debug_buffer = step
-                .debug_buffer
+                .trace_buffer
                 .as_ref()
                 .ok_or(ExecutionError::DebuggingError(
                     "Failed to get debug buffer.",
@@ -115,27 +128,6 @@ impl Executable<'_> {
 
             let index = device.queue().submit(Some(encoder.finish()));
             last_index = Some(index);
-        }
-
-        //Dump all of our debug results
-        for (si, step) in self.steps.iter().enumerate() {
-            let d = device.clone();
-            let dt = self.debug_list[si].dt();
-            let debug_buffer = step.debug_buffer.clone().unwrap();
-            let alignment = dt.size_of();
-            let kernel_key = step.kernel_key.clone();
-            #[cfg(target_arch = "wasm32")]
-            {
-                wasm_bindgen_futures::spawn_local(async move {
-                    let cpu_buf = wgpu_buffer_to_cpu_buffer(&debug_buffer, alignment, d).await;
-                    log::debug!("{}: {}\n {:?}\n", si, kernel_key, cpu_buf.dump(dt, false));
-                });
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let cpu_buf = wgpu_buffer_to_cpu_buffer(&debug_buffer, alignment, &d);
-                log::debug!("{}: {}\n {:?}\n", si, kernel_key, cpu_buf.dump(dt, false));
-            }
         }
 
         Ok(last_index.unwrap())
