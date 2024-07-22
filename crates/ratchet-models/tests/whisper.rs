@@ -79,7 +79,7 @@ async fn tiny_decoder() -> Result<(), JsValue> {
         let result = decoder
             .schedule([audio_ctx.clone(), token_t])
             .unwrap()
-            .resolve_debug()
+            .resolve()
             .unwrap();
 
         let our_logits = result.to(&Device::CPU).await.unwrap();

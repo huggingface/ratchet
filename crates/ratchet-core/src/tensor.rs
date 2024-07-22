@@ -34,6 +34,8 @@ pub enum TensorError {
     #[error("Failed to transfer data to host")]
     TransferError,
     #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
     OperationError(#[from] OperationError),
 }
 
@@ -748,6 +750,8 @@ impl Tensor {
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
         let mut allocations = device.allocate_cfg(&execution_order, device)?;
 
+        #[cfg(feature = "trace")]
+        let mut trace_list = Vec::with_capacity(execution_order.len());
         for t in execution_order.iter() {
             log::debug!("Compiling: {:?}", t.op().name());
             assert!(t.device().is_gpu());
@@ -767,12 +771,19 @@ impl Tensor {
 
             if let Some(compiled_op) = t.compile_gpu(&mut uniform, device, can_inplace) {
                 compiled_ops.push(compiled_op);
+                #[cfg(feature = "trace")]
+                trace_list.push(*t);
             } else {
                 log::warn!("Compilation failed for operation: {:?}", t.op().name());
             }
         }
 
-        Ok(Executable::new(compiled_ops, uniform.into_gpu(device)?))
+        Ok(Executable::new(
+            compiled_ops,
+            uniform.into_gpu(device)?,
+            #[cfg(feature = "trace")]
+            trace_list,
+        ))
     }
 
     /// # Resolve
@@ -799,13 +810,45 @@ impl Tensor {
     /// tensors computed during the resolution of this tensor. The final
     /// tensor in this list is the tensor upon which `resolve` was called.
     #[cfg(feature = "trace")]
-    pub fn resolve_trace(self) -> Result<Vec<Tensor>, TensorError> {
+    pub fn trace(self) -> Result<Vec<Tensor>, TensorError> {
         let device = self.device.try_gpu()?;
         let executable = self.create_executable(&device)?;
         let index = executable.dispatch_trace(device).unwrap();
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
 
-        //Now the trace_list is populated
+        let Executable { trace_list, .. } = executable;
+        let mut result = trace_list.iter().map(|t| (*t).clone()).collect::<Vec<_>>();
+        result.push(self);
+        Ok(result)
+    }
+
+    /// # Serialization
+    ///
+    /// We may want to serialize a trace to disk to determine platform discrepancies.
+    ///
+    /// This method does the following:
+    /// 1. Creates a trace directory with a UUID, time, and device details
+    /// 2. Serializes each tensor in the trace to disk, with the name being the tensor ID
+    #[cfg(feature = "trace")]
+    pub fn serialize_trace(trace: Vec<Tensor>) -> Result<(), TensorError> {
+        use half::f16;
+        use web_time::Instant;
+        let trace_dir = format!(
+            "trace-{}-{:?}",
+            uuid::Uuid::new_v4().to_string(),
+            Instant::now()
+        );
+        std::fs::create_dir(&trace_dir).map_err(|e| TensorError::IoError(e))?;
+        for t in trace.iter() {
+            let id = t.id();
+            let path = format!("ratchet-{}/{}.npy", trace_dir, id);
+            match t.dt() {
+                DType::F16 => t.write_npy::<f16, _>(&path),
+                DType::F32 => t.write_npy::<f32, _>(&path),
+                _ => unimplemented!(),
+            };
+        }
+        Ok(())
     }
 
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {

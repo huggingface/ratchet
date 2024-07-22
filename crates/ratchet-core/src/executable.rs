@@ -15,10 +15,10 @@ use crate::Tensor;
 /// containing metadata for all operations.
 #[derive(new)]
 pub struct Executable<'t> {
-    steps: Vec<CompiledOp>,
-    gpu_uniform: GpuUniform,
+    pub(crate) steps: Vec<CompiledOp>,
+    pub(crate) gpu_uniform: GpuUniform,
     #[cfg(feature = "trace")]
-    trace_list: Vec<&'t Tensor>,
+    pub(crate) trace_list: Vec<&'t Tensor>,
     #[cfg(not(feature = "trace"))]
     _phantom: PhantomData<&'t ()>,
 }
@@ -30,21 +30,6 @@ pub enum ExecutionError {
     PipelineNotFound(#[from] PoolError),
     #[error("Failed during debugging: {0}")]
     DebuggingError(&'static str),
-}
-
-impl Executable<'_> {
-    pub fn steps(&self) -> &[CompiledOp] {
-        &self.steps
-    }
-
-    pub fn gpu_uniform(&self) -> &GpuUniform {
-        &self.gpu_uniform
-    }
-
-    #[cfg(feature = "trace")]
-    pub fn debug_list(&self) -> &[&Tensor] {
-        &self.trace_list
-    }
 }
 
 impl Executable<'_> {

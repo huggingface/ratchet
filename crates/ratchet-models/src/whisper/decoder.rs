@@ -338,9 +338,7 @@ def ground(options):
         while tokens[tokens.len() - 1] != 50257 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let result = decoder
-                .schedule([audio_ctx.clone(), token_t])?
-                .resolve_trace()?;
+            let result = decoder.schedule([audio_ctx.clone(), token_t])?.trace()?;
 
             let our_logits = result.to(&Device::CPU)?;
             let nd_logits = our_logits.to_ndarray_view::<f32>();
