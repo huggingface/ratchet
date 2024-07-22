@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["rand", "testing"]
+default = ["rand", "testing", "debug"]
 gpu-profiling = ["dep:tabled", "dep:itertools"]
 rand = ["dep:rand", "dep:rand_distr"]
 plotting = ["dep:dot3", "dep:tempfile"]

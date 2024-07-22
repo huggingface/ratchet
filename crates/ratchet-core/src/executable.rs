@@ -1,9 +1,13 @@
 use crate::gpu::{GpuUniform, PoolError, StaticResourcePoolAccessor, WgpuDevice};
 use crate::CompiledOp;
 use derive_new::new;
+use wgpu::SubmissionIndex;
+
 #[cfg(not(feature = "debug"))]
 use std::marker::PhantomData;
-use wgpu::SubmissionIndex;
+
+#[cfg(feature = "debug")]
+use crate::Tensor;
 
 /// # Executable
 ///

@@ -9,6 +9,9 @@ use crate::{
 use std::borrow::Cow;
 use std::fmt::Debug;
 
+#[cfg(feature = "debug")]
+use {crate::gpu::BufferUsagesExt, std::sync::Arc};
+
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum LazyOp {

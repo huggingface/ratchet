@@ -4,6 +4,8 @@ use crate::gpu::{
 };
 use crate::{drvec, rvec, KernelKey, OperationError, RVec, Tensor};
 use derive_new::new;
+#[cfg(feature = "debug")]
+use std::sync::Arc;
 use wgpu::DynamicOffset;
 
 //Compiled op represents a single kernel invocation
