@@ -307,13 +307,12 @@ def ground(options):
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
-        let path = model.get("tiny_f32.gguf").unwrap();
-        let config_path = model.get("config.json").unwrap();
-        let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
+        let path = model.get("tiny_f32.gguf")?;
+        let config_path = model.get("config.json")?;
+        let config: Config = serde_json::from_slice(&std::fs::read(config_path)?)?;
         println!("MODEL LOADED FROM: {}", path.display());
 
         let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
-        let options = DecodingOptionsBuilder::new().build();
         let hs_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
         let audio_path = dataset.get("jfk.wav").unwrap();
 
@@ -338,32 +337,38 @@ def ground(options):
         while tokens[tokens.len() - 1] != 50257 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-            let result = decoder
-                .schedule([audio_ctx.clone(), token_t])?
-                .resolve_debug()?;
+            log::warn!("AUDIO: {:?}", audio_ctx);
+            log::warn!("TOKENS: {:?}", token_t);
+            let mut trace = decoder.schedule([audio_ctx.clone(), token_t])?.trace()?;
+            trace
+                .iter_mut()
+                .for_each(|t| *t = t.to(&Device::CPU).unwrap());
 
-            let our_logits = result.to(&Device::CPU)?;
-            let nd_logits = our_logits.to_ndarray_view::<f32>();
-            println!("ND LOGITS: {:?}", nd_logits);
-            all_logits.push(Tensor::from(
-                nd_logits
-                    .slice(s![.., .., ..tokenizer.get_vocab_size(true)])
-                    .to_owned()
-                    .into_dyn(),
-            ));
+            let _ = trace.serialize(&device)?;
+            panic!("DONE");
 
-            let sliced = nd_logits
-                .slice(s![.., -1.., ..tokenizer.get_vocab_size(true)])
-                .remove_axis(Axis(1));
-            decoder.cache_mut().update(tokens.len());
+            //let our_logits = result.to(&Device::CPU)?;
+            //let nd_logits = our_logits.to_ndarray_view::<f32>();
+            //println!("ND LOGITS: {:?}", nd_logits);
+            //all_logits.push(Tensor::from(
+            //    nd_logits
+            //        .slice(s![.., .., ..tokenizer.get_vocab_size(true)])
+            //        .to_owned()
+            //        .into_dyn(),
+            //));
 
-            tokens = sliced
-                .map_axis(Axis(1), |row| row.argmax_skipnan().unwrap())
-                .iter()
-                .map(|&x| x as i32)
-                .collect::<Vec<_>>();
-            println!("Token: {:?}", tokens);
-            all_tokens.extend(tokens.clone());
+            //let sliced = nd_logits
+            //    .slice(s![.., -1.., ..tokenizer.get_vocab_size(true)])
+            //    .remove_axis(Axis(1));
+            //decoder.cache_mut().update(tokens.len());
+
+            //tokens = sliced
+            //    .map_axis(Axis(1), |row| row.argmax_skipnan().unwrap())
+            //    .iter()
+            //    .map(|&x| x as i32)
+            //    .collect::<Vec<_>>();
+            //println!("Token: {:?}", tokens);
+            //all_tokens.extend(tokens.clone());
         }
         println!("Took: {:?}", start.elapsed());
 
@@ -372,6 +377,7 @@ def ground(options):
         println!("All tokens: {:?}", all_tokens);
         println!("Decoded: {}", decoded);
 
+        let options = DecodingOptionsBuilder::new().build();
         let ground_logits = ground_truth(&audio_path.to_string_lossy(), options)?;
         let all_equal = all_logits
             .iter()

@@ -23,6 +23,7 @@ pub struct WgpuDevice {
     pipeline_layout_pool: Arc<PipelineLayoutPool>,
     compute_pipeline_pool: Arc<ComputePipelinePool>,
     kernel_module_pool: Arc<KernelModulePool>,
+    device_info: DeviceInfo,
     device_limits: DeviceLimits,
     device_features: DeviceFeatures,
     device: Arc<wgpu::Device>,
@@ -76,6 +77,7 @@ impl WgpuDevice {
                 max_compute_invocations_per_workgroup: 1024,
                 ..Default::default()
             },
+            memory_hints: wgpu::MemoryHints::default(),
         };
         let device_request = adapter.request_device(&device_descriptor, None).await;
         let (device, queue) = if let Err(e) = device_request {
@@ -93,6 +95,7 @@ impl WgpuDevice {
             log::warn!("Forcing F32 precision");
             features.SHADER_F16 = false;
         }
+        features.SHADER_F16 = false;
 
         if std::env::var("RATCHET_DISABLE_SUBGROUPS").is_ok() {
             log::warn!("Disabling subgroup support");
@@ -111,6 +114,7 @@ impl WgpuDevice {
             kernel_module_pool: Arc::new(KernelModulePool::new()),
             compute_pipeline_pool: Arc::new(ComputePipelinePool::new()),
             device: Arc::new(device),
+            device_info: adapter.get_info().into(),
             device_limits: limits,
             device_features: features,
         })
@@ -165,6 +169,10 @@ impl WgpuDevice {
 
     pub fn limits(&self) -> &DeviceLimits {
         &self.device_limits
+    }
+
+    pub fn info(&self) -> &DeviceInfo {
+        &self.device_info
     }
 }
 
@@ -280,6 +288,37 @@ impl WgpuDevice {
 
     pub fn compute_limits(&self) -> &DeviceLimits {
         &self.device_limits
+    }
+}
+
+#[derive(Clone)]
+pub struct DeviceInfo {
+    pub name: String,
+    pub vendor: u32,
+    pub device: u32,
+    pub device_type: wgpu::DeviceType,
+    pub driver: String,
+    pub driver_info: String,
+    pub backend: wgpu::Backend,
+}
+
+impl DeviceInfo {
+    pub fn device_identifier(&self) -> String {
+        format!("{}-{}", self.name.replace(" ", "-"), self.backend.to_str())
+    }
+}
+
+impl From<wgpu::AdapterInfo> for DeviceInfo {
+    fn from(info: wgpu::AdapterInfo) -> Self {
+        DeviceInfo {
+            name: info.name,
+            vendor: info.vendor,
+            device: info.device,
+            device_type: info.device_type,
+            driver: info.driver,
+            driver_info: info.driver_info,
+            backend: info.backend,
+        }
     }
 }
 

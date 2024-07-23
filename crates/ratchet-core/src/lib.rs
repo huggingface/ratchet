@@ -15,6 +15,7 @@ mod storage;
 mod strides;
 mod tensor;
 mod tensor_id;
+mod trace;
 
 pub use compiled_op::*;
 pub use device::*;
@@ -31,6 +32,7 @@ pub use storage::*;
 pub use strides::*;
 pub use tensor::*;
 pub use tensor_id::*;
+pub use trace::*;
 
 #[cfg(feature = "plotting")]
 pub use plot::render_to_file;

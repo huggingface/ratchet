@@ -35,19 +35,20 @@ impl Module for ResidualAttentionBlock {
             self.attn
                 .schedule(MHAInputs::new(attn_ln, None, mask.clone(), cache, true))?;
 
-        let mut attn = x.add(self_attn)?;
+        //let mut attn = x.add(self_attn)?;
 
-        if let Some(ref xa_blck) = self.x_attn {
-            if let Some(xa_ln) = &self.x_attn_ln {
-                let x_attn_ln = xa_ln.schedule(attn.clone())?;
-                let x_attn =
-                    xa_blck.schedule(MHAInputs::new(x_attn_ln, xa.clone(), None, None, false))?;
-                attn = x_attn.add(attn.clone())?;
-            }
-        }
-        let mlp_ln = self.mlp_ln.schedule(attn.clone())?;
-        let mlp = self.mlp.schedule(mlp_ln)?;
-        mlp.add(attn)
+        //if let Some(ref xa_blck) = self.x_attn {
+        //    if let Some(xa_ln) = &self.x_attn_ln {
+        //        let x_attn_ln = xa_ln.schedule(attn.clone())?;
+        //        let x_attn =
+        //            xa_blck.schedule(MHAInputs::new(x_attn_ln, xa.clone(), None, None, false))?;
+        //        attn = x_attn.add(attn.clone())?;
+        //    }
+        //}
+        //let mlp_ln = self.mlp_ln.schedule(attn.clone())?;
+        //let mlp = self.mlp.schedule(mlp_ln)?;
+        //mlp.add(attn)
+        Ok(self_attn)
     }
 }
 
