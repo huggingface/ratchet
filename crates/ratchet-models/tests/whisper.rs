@@ -52,7 +52,7 @@ async fn tiny_encoder() -> Result<(), JsValue> {
 async fn tiny_decoder() -> Result<(), JsValue> {
     log_init();
     let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
-    let model_data = model_repo.get("tiny_q8_0.gguf").await?;
+    let model_data = model_repo.get("tiny_f32.gguf").await?;
     let config_data = model_repo.get("config.json").await?;
 
     let ground_repo = ApiBuilder::from_hf("FL33TW00D-HF/ratchet-util", RepoType::Dataset).build();

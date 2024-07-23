@@ -22,6 +22,9 @@ use ndarray::{ArrayD, ArrayViewD, Dimension};
 #[cfg(all(not(target_arch = "wasm32"), feature = "pyo3"))]
 use numpy::PyArrayDyn;
 
+#[cfg(feature = "trace")]
+use crate::Trace;
+
 // thiserror error for Tensor
 #[derive(thiserror::Error, Debug)]
 pub enum TensorError {
@@ -810,7 +813,7 @@ impl Tensor {
     /// tensors computed during the resolution of this tensor. The final
     /// tensor in this list is the tensor upon which `resolve` was called.
     #[cfg(feature = "trace")]
-    pub fn trace(self) -> Result<Vec<Tensor>, TensorError> {
+    pub fn trace(self) -> Result<Trace, TensorError> {
         let device = self.device.try_gpu()?;
         let executable = self.create_executable(&device)?;
         let index = executable.dispatch_trace(device).unwrap();
@@ -819,36 +822,7 @@ impl Tensor {
         let Executable { trace_list, .. } = executable;
         let mut result = trace_list.iter().map(|t| (*t).clone()).collect::<Vec<_>>();
         result.push(self);
-        Ok(result)
-    }
-
-    /// # Serialization
-    ///
-    /// We may want to serialize a trace to disk to determine platform discrepancies.
-    ///
-    /// This method does the following:
-    /// 1. Creates a trace directory with a UUID, time, and device details
-    /// 2. Serializes each tensor in the trace to disk, with the name being the tensor ID
-    #[cfg(feature = "trace")]
-    pub fn serialize_trace(trace: Vec<Tensor>) -> Result<(), TensorError> {
-        use half::f16;
-        use web_time::Instant;
-        let trace_dir = format!(
-            "trace-{}-{:?}",
-            uuid::Uuid::new_v4().to_string(),
-            Instant::now()
-        );
-        std::fs::create_dir(&trace_dir).map_err(|e| TensorError::IoError(e))?;
-        for t in trace.iter() {
-            let id = t.id();
-            let path = format!("ratchet-{}/{}.npy", trace_dir, id);
-            match t.dt() {
-                DType::F16 => t.write_npy::<f16, _>(&path),
-                DType::F32 => t.write_npy::<f32, _>(&path),
-                _ => unimplemented!(),
-            };
-        }
-        Ok(())
+        Ok(Trace::new(result))
     }
 
     fn to_gpu(&self, dst_device: &Device) -> Result<Tensor, TensorError> {

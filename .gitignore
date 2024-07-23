@@ -27,3 +27,4 @@ models/**
 # Python local env
 venv/
 .venv/
+**/trace-*
