@@ -77,6 +77,7 @@ impl WgpuDevice {
                 max_compute_invocations_per_workgroup: 1024,
                 ..Default::default()
             },
+            memory_hints: wgpu::MemoryHints::default(),
         };
         let device_request = adapter.request_device(&device_descriptor, None).await;
         let (device, queue) = if let Err(e) = device_request {

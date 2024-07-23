@@ -19,3 +19,4 @@ pub use config::Config;
 pub use decoder::WhisperDecoder;
 pub use encoder::WhisperEncoder;
 pub use model::Whisper;
+pub use residual_block::ResidualAttentionBlockInputs;

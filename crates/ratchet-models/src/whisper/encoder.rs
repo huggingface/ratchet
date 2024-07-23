@@ -97,7 +97,7 @@ impl EncoderStem {
 #[derive(Debug)]
 pub struct WhisperEncoder {
     stem: EncoderStem,
-    blocks: Vec<ResidualAttentionBlock>,
+    pub blocks: Vec<ResidualAttentionBlock>,
     ln_post: LayerNorm,
     activation_dt: DType,
 }
@@ -207,14 +207,69 @@ impl WhisperEncoder {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use hf_hub::api::sync::Api;
-    use ratchet::{Device, DeviceRequest, Tensor};
+    use ratchet::{prelude::shape, Device, DeviceRequest, Tensor};
     use ratchet_loader::gguf::gguf;
     use ratchet_nn::Module;
 
-    use crate::whisper::{config::Config, encoder::WhisperEncoder};
+    use crate::whisper::{
+        config::Config, encoder::WhisperEncoder, residual_block::ResidualAttentionBlockInputs,
+    };
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    #[test]
+    fn tiny_test() -> anyhow::Result<()> {
+        log_init();
+        let api = Api::new().unwrap();
+        let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
+        let model_path = model.get("tiny_f32.gguf").unwrap();
+        println!("Path: {}", model_path.display());
+        let config_path = model.get("config.json").unwrap();
+
+        let dataset = api.dataset("FL33TW00D-HF/ratchet-util".to_string());
+        let input_npy = dataset.get("jfk_tiny_encoder_input.npy").unwrap();
+        let ground_npy = dataset.get("jfk_tiny_encoder_hs.npy").unwrap();
+
+        let mut reader = std::io::BufReader::new(std::fs::File::open(model_path).unwrap());
+        let header = gguf::Header::read(&mut reader).unwrap();
+        let config: Config = serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+
+        let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
+        //let input = Tensor::read_npy::<f32, _>(input_npy, &device)?;
+
+        let x = Tensor::from_data(
+            vec![5_f32; 1 * 1500 * 384],
+            shape![1, 1500, 384],
+            device.clone(),
+        );
+
+        let mut trace = encoder.blocks[0]
+            .schedule(ResidualAttentionBlockInputs {
+                x: x.clone(),
+                xa: None,
+                mask: None,
+                cache: None,
+            })?
+            .full()?
+            .trace()?;
+
+        trace.iter_mut().for_each(|t| {
+            *t = t.to(&Device::CPU).unwrap();
+            log::warn!("TRACE: {:?}", t);
+        });
+
+        trace.serialize(&device);
+        //let ours = result.to(&Device::CPU)?;
+
+        //let ground = Tensor::read_npy::<f32, _>(ground_npy, &Device::CPU)?;
+        //println!("OURS: {:#?}", ours);
+        //println!("Ground: {:#?}", ground);
+        //ground.all_close(&ours, 1e-3, 1e-3)?;
+
+        Ok(())
     }
 
     #[test]

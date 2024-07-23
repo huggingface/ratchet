@@ -820,11 +820,7 @@ impl Tensor {
         device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
 
         let Executable { trace_list, .. } = executable;
-        let mut result = trace_list.iter().map(|t| (*t).clone()).collect::<Vec<_>>();
-
-        for bingo in &result {
-            log::warn!("TENSOR ID: {:?}", bingo.id());
-        }
+        let result = trace_list.iter().map(|t| (*t).clone()).collect::<Vec<_>>();
 
         Ok(Trace::new(result))
     }

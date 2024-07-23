@@ -59,7 +59,6 @@ impl Trace {
         for (a, b) in self.iter().zip(other.iter()) {
             log::warn!("A: {:?}", a);
             log::warn!("B: {:?}", b);
-            log::warn!("Comparing tensor {} to tensor {}", a.id(), b.id());
             a.all_close(b, atol, rtol)?;
         }
         Ok(())

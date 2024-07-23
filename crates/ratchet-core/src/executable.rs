@@ -103,13 +103,13 @@ impl Executable<'_> {
                 .map_err(|_| ExecutionError::DebuggingError("Failed to get result buf."))?
                 .inner;
 
-            let debug_buffer = step
+            let trace_buffer = step
                 .trace_buffer
                 .as_ref()
                 .ok_or(ExecutionError::DebuggingError(
                     "Failed to get debug buffer.",
                 ))?;
-            encoder.copy_buffer_to_buffer(result_buf, 0, debug_buffer, 0, debug_buffer.size());
+            encoder.copy_buffer_to_buffer(result_buf, 0, trace_buffer, 0, trace_buffer.size());
 
             let index = device.queue().submit(Some(encoder.finish()));
             last_index = Some(index);
