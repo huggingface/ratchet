@@ -81,6 +81,13 @@ impl Device {
         format!("{:?}", self)
     }
 
+    pub fn device_identifier(&self) -> String {
+        match self {
+            Device::CPU => "CPU".to_string(),
+            Device::GPU(gpu) => gpu.info().device_identifier(),
+        }
+    }
+
     pub fn try_gpu(&self) -> Result<&WgpuDevice, DeviceError> {
         match self {
             Device::GPU(gpu) => Ok(gpu),

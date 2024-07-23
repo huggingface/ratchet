@@ -337,12 +337,14 @@ def ground(options):
         while tokens[tokens.len() - 1] != 50257 {
             let token_t =
                 Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
+            log::warn!("AUDIO: {:?}", audio_ctx);
+            log::warn!("TOKENS: {:?}", token_t);
             let mut trace = decoder.schedule([audio_ctx.clone(), token_t])?.trace()?;
             trace
                 .iter_mut()
                 .for_each(|t| *t = t.to(&Device::CPU).unwrap());
 
-            let _ = trace.serialize()?;
+            let _ = trace.serialize(&device)?;
             panic!("DONE");
 
             //let our_logits = result.to(&Device::CPU)?;

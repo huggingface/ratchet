@@ -238,8 +238,18 @@ mod tests {
         let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device)?;
         let input = Tensor::read_npy::<f32, _>(input_npy, &device)?;
 
-        let result = encoder.schedule(input)?.full()?.resolve()?;
-        let ours = result.to(&Device::CPU)?;
+        let mut trace = encoder.schedule(input)?.full()?.trace()?;
+
+        trace
+            .iter_mut()
+            .for_each(|t| *t = t.to(&Device::CPU).unwrap());
+
+        trace.serialize(&device);
+        //let ours = result.to(&Device::CPU)?;
+
+        log::warn!("TRACE FIRST: {:#?}", trace.first().unwrap());
+        let ours = trace.pop().unwrap();
+        log::warn!("RESULT: {:#?}", ours);
         let ground = Tensor::read_npy::<f32, _>(ground_npy, &Device::CPU)?;
         println!("OURS: {:#?}", ours);
         println!("Ground: {:#?}", ground);

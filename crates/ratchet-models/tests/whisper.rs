@@ -18,9 +18,10 @@ fn log_init() {
     console_log::init_with_level(log::Level::Debug).unwrap();
 }
 
-/*
 #[wasm_bindgen_test]
 async fn tiny_encoder() -> Result<(), JsValue> {
+    use include_dir::include_dir;
+    use ratchet::Trace;
     log_init();
     let model_repo = ApiBuilder::from_hf("FL33TW00D-HF/whisper-tiny", RepoType::Model).build();
     let model_data = model_repo.get("tiny_f32.gguf").await?;
@@ -41,13 +42,27 @@ async fn tiny_encoder() -> Result<(), JsValue> {
     let ground = Tensor::from_npy_bytes::<f32>(&ground_npy.to_vec(), &Device::CPU).unwrap();
 
     let encoder = WhisperEncoder::load(&header, &config, &mut reader, &device).unwrap();
-    let result = encoder.schedule(input).unwrap().resolve().unwrap();
+    let mut web_trace = encoder.schedule(input).unwrap().trace().unwrap();
+
+    for t in web_trace.iter_mut() {
+        *t = t.to(&Device::CPU).await.unwrap();
+    }
+
+    log::warn!("TRACE FIRST: {:?}", web_trace.first().unwrap());
+    let result = web_trace.pop().unwrap();
+
+    log::warn!("TRACE RESULT: {:?}", result);
+
+    //let trace =
+    //    Trace::deserialize(include_dir!("/Users/fleetwood/Code/ratchet/crates/ratchet-models/trace-221df6bf-82be-419e-bf79-b00da2964c95-Apple-M3-Max-metal")).unwrap();
+    //trace.compare(&web_trace, 1e-3, 1e-3).unwrap();
+
     let ours = result.to(&Device::CPU).await.unwrap();
     ground.all_close(&ours, 1e-3, 1e-3).unwrap();
     Ok(())
 }
-*/
 
+/*
 #[wasm_bindgen_test]
 async fn tiny_decoder() -> Result<(), JsValue> {
     log_init();
@@ -64,40 +79,51 @@ async fn tiny_decoder() -> Result<(), JsValue> {
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
 
-    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device)
+    let mut audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device)
         .unwrap()
         .cast(device.compute_precision())
         .unwrap();
+
     let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device).unwrap();
 
     let mut tokens = vec![50258, 50259, 50359];
     let mut all_tokens = tokens.clone();
-    let mut all_logits = vec![];
+    //let mut all_logits = vec![];
     let vocab_size = 51865;
     while tokens[tokens.len() - 1] != 50257 {
         let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
-        let result = decoder
+        let mut web_trace = decoder
             .schedule([audio_ctx.clone(), token_t])
             .unwrap()
-            .resolve()
+            .trace()
             .unwrap();
 
-        let our_logits = result.to(&Device::CPU).await.unwrap();
-        all_logits.push(our_logits.clone());
-        let nd_logits = our_logits.to_ndarray_view::<f32>();
-        log::debug!("ND LOGITS: {:?}", nd_logits);
-        let sliced = nd_logits
-            .slice(s![.., -1.., ..vocab_size])
-            .remove_axis(Axis(1));
-        decoder.cache_mut().update(tokens.len());
+        for t in web_trace.iter_mut() {
+            *t = t.to(&Device::CPU).await.unwrap();
+        }
 
-        tokens = sliced
-            .map_axis(Axis(1), |row| row.argmax_skipnan().unwrap())
-            .iter()
-            .map(|&x| x as i32)
-            .collect::<Vec<_>>();
-        println!("Token: {:?}", tokens);
-        all_tokens.extend(tokens.clone());
+        let trace =
+        Trace::deserialize(include_dir!("/Users/fleetwood/Code/ratchet/crates/ratchet-models/trace-f79dfd98-fd7b-4dbf-96a8-e4552021aacc-Apple-M3-Max-metal")).unwrap();
+        trace.compare(&web_trace, 1e-3, 1e-3).unwrap();
+
+        panic!("");
+
+        //let our_logits = result.to(&Device::CPU).await.unwrap();
+        //all_logits.push(our_logits.clone());
+        //let nd_logits = our_logits.to_ndarray_view::<f32>();
+        //log::debug!("ND LOGITS: {:?}", nd_logits);
+        //let sliced = nd_logits
+        //    .slice(s![.., -1.., ..vocab_size])
+        //    .remove_axis(Axis(1));
+        //decoder.cache_mut().update(tokens.len());
+
+        //tokens = sliced
+        //    .map_axis(Axis(1), |row| row.argmax_skipnan().unwrap())
+        //    .iter()
+        //    .map(|&x| x as i32)
+        //    .collect::<Vec<_>>();
+        //println!("Token: {:?}", tokens);
+        //all_tokens.extend(tokens.clone());
     }
 
     let ground_tokens = vec![
@@ -107,3 +133,4 @@ async fn tiny_decoder() -> Result<(), JsValue> {
     assert_eq!(all_tokens, ground_tokens);
     Ok(())
 }
+*/

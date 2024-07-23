@@ -821,7 +821,11 @@ impl Tensor {
 
         let Executable { trace_list, .. } = executable;
         let mut result = trace_list.iter().map(|t| (*t).clone()).collect::<Vec<_>>();
-        result.push(self);
+
+        for bingo in &result {
+            log::warn!("TENSOR ID: {:?}", bingo.id());
+        }
+
         Ok(Trace::new(result))
     }
 
