@@ -7,6 +7,9 @@ use half::f16;
 use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
+
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
     rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
@@ -18,7 +21,7 @@ use crate::{
 use test_strategy::Arbitrary;
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, EnumIter)]
 pub enum UnaryOp {
     Gelu,
     Tanh,
