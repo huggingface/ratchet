@@ -60,7 +60,7 @@ impl WgpuDevice {
 
         #[allow(unused_mut)]
         let mut required_features = wgpu::Features::default();
-        required_features |= wgpu::Features::SHADER_F16;
+        //required_features |= wgpu::Features::SHADER_F16;
         required_features |= wgpu::Features::SUBGROUP;
         #[cfg(feature = "gpu-profiling")]
         {
@@ -76,6 +76,7 @@ impl WgpuDevice {
                 max_compute_invocations_per_workgroup: 1024,
                 ..Default::default()
             },
+            memory_hints: wgpu::MemoryHints::Performance,
         };
         let device_request = adapter.request_device(&device_descriptor, None).await;
         let (device, queue) = if let Err(e) = device_request {

@@ -269,10 +269,6 @@ mod tests {
     use crate::{test_util::run_py_prg, BinaryOp, Device, DeviceRequest, Shape, Tensor};
     use test_strategy::{proptest, Arbitrary};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     #[derive(Arbitrary, Debug)]
     struct BinaryProblem {
         op: BinaryOp,
@@ -299,7 +295,7 @@ def {}(a, b):
         let a = Tensor::randn::<f32>(shape.clone(), cpu_device.clone());
         let b = Tensor::randn::<f32>(shape, cpu_device.clone());
         let ground = ground_truth(&a, &b, &op)?;
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let a_gpu = a.to(&device)?;
         let b_gpu = b.to(&device)?;

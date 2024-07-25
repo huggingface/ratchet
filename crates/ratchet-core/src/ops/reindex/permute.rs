@@ -93,10 +93,6 @@ mod tests {
         }
     }
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     #[derive(Arbitrary, Debug)]
     struct PermuteProblem {
         op: Permute,
@@ -117,7 +113,7 @@ def permute(a):
 
     fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {
         let PermuteProblem { op } = prob;
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;

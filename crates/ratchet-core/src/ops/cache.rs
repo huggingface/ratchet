@@ -264,13 +264,9 @@ impl Kernel for CacheKernels {
 mod tests {
     use crate::{rvec, shape, Device, DeviceRequest, Tensor};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     #[test]
     fn test_cache() -> anyhow::Result<()> {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let populated = 2;
         //Create cache with 2 populated entries, and 14 blank entries
         let mut dst0 = Tensor::randn::<f32>(shape![1, 2, populated, 16], Device::CPU);

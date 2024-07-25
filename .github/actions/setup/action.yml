@@ -27,9 +27,61 @@ runs:
       run: pip install -r requirements.txt
       shell: bash
 
-    - name: Enable node.js corepack
-      run: corepack enable
+    - name: Export libtorch and set environment variables
+      if: matrix.os != 'windows-2022'
+      run: |
+        LIBTORCH=$(python -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
+        echo "LIBTORCH=$LIBTORCH" >> $GITHUB_ENV
+        echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
       shell: bash
+
+    - name: Export libtorch and set environment variables (Windows)
+      if: matrix.os == 'windows-2022'
+      run: |
+        $LIBTORCH = python -c "import torch; from pathlib import Path; print(Path(torch.__file__).parent)"
+        echo "LIBTORCH=$LIBTORCH" >> $env:GITHUB_ENV
+        echo "LIBTORCH_USE_PYTORCH=1" >> $env:GITHUB_ENV
+      shell: pwsh
+
+    - name: Libtorch LD (macos)
+      if: matrix.os == 'macos-14'
+      run: |
+        echo "DYLD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Libtorch LD (linux)
+      if: matrix.os == 'ubuntu-22.04'
+      run: |
+        echo "LD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
+        echo "WGPU_BACKEND=vulkan" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Setup environment variables (Windows)
+      run: |
+        $PYTHON_HOME = python -c "import sys; print(sys.prefix)"
+        $PYTHON_DLL_PATH = python -c "import os, sys; print(os.path.dirname(sys.executable))"
+        $TORCH_PATH = python -c "import os, torch; print(os.path.dirname(torch.__file__))"
+        
+        echo "PYO3_PYTHON=$PYTHON_HOME\python.exe" >> $env:GITHUB_ENV
+        echo "PYTHONHOME=$PYTHON_HOME" >> $env:GITHUB_ENV
+        echo "PYTHONPATH=$PYTHON_HOME\Lib;$PYTHON_HOME\DLLs" >> $env:GITHUB_ENV
+        echo "LIBTORCH_USE_PYTORCH=1" >> $env:GITHUB_ENV
+        echo "LIBTORCH=$TORCH_PATH" >> $env:GITHUB_ENV
+        
+        echo "$PYTHON_HOME" >> $env:GITHUB_PATH
+        echo "$PYTHON_DLL_PATH" >> $env:GITHUB_PATH
+        echo "$TORCH_PATH\lib" >> $env:GITHUB_PATH
+      shell: pwsh
+
+    - name: Print all ENV vars
+      run: |
+        Get-ChildItem Env: | Format-Table -Wrap -AutoSize
+      shell: pwsh
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        run_install: false
 
     - name: Setup node.js
       uses: actions/setup-node@v4
@@ -53,6 +105,10 @@ runs:
         sudo apt-get update
         sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev
 
+    - name: Install 7-Zip
+      if: matrix.os == 'windows-2022'
+      uses: milliewalky/setup-7-zip@v1
+
     - name: (windows) install dxc
       if: matrix.os == 'windows-2022'
       shell: bash
@@ -69,7 +125,7 @@ runs:
       shell: bash
       run: |
         set -e
-        curl.exe -L https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/1.0.7.1 -o warp.zip
+        curl.exe -L https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/$WARP_VERSION -o warp.zip
         7z.exe e warp.zip -owarp build/native/amd64/d3d10warp.dll
         mkdir -p target/ratchet/debug/deps
         cp -v warp/d3d10warp.dll target/ratchet/debug/
@@ -80,12 +136,54 @@ runs:
       shell: bash
       run: |
         set -e
-        curl.exe -L https://github.com/pal1000/mesa-dist-win/releases/download/23.2.1/mesa3d-23.2.1-release-msvc.7z -o mesa.7z
+        curl.exe -L https://github.com/pal1000/mesa-dist-win/releases/download/$MESA_VERSION/mesa3d-$MESA_VERSION-release-msvc.7z -o mesa.7z
         7z.exe e mesa.7z -omesa x64/{opengl32.dll,libgallium_wgl.dll,libglapi.dll,vulkan_lvp.dll,lvp_icd.x86_64.json}
         cp -v mesa/* target/ratchet/debug/
         cp -v mesa/* target/ratchet/debug/deps
         echo "VK_DRIVER_FILES=$PWD/mesa/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
         echo "GALLIUM_DRIVER=llvmpipe" >> "$GITHUB_ENV"
+
+    - name: (linux) install vulkan sdk
+      if: matrix.os == 'ubuntu-22.04'
+      shell: bash
+      run: |
+        set -e
+
+        sudo apt-get update -y -qq
+
+        # vulkan sdk
+        wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-$VULKAN_SDK_VERSION-jammy.list https://packages.lunarg.com/vulkan/$VULKAN_SDK_VERSION/lunarg-vulkan-$VULKAN_SDK_VERSION-jammy.list
+
+        sudo apt-get update
+        sudo apt install -y vulkan-sdk
+
+    - name: (linux) install mesa
+      if: matrix.os == 'ubuntu-22.04'
+      shell: bash
+      run: |
+        set -e
+
+        curl -L --retry 5 https://github.com/gfx-rs/ci-build/releases/download/$CI_BINARY_BUILD/mesa-$MESA_VERSION-linux-x86_64.tar.xz -o mesa.tar.xz
+        mkdir mesa
+        tar xpf mesa.tar.xz -C mesa
+
+        # The ICD provided by the mesa build is hardcoded to the build environment.
+        #
+        # We write out our own ICD file to point to the mesa vulkan
+        cat <<- EOF > icd.json
+        {
+          "ICD": {
+              "api_version": "1.1.255",
+              "library_path": "$PWD/mesa/lib/x86_64-linux-gnu/libvulkan_lvp.so"
+          },
+          "file_format_version": "1.0.0"
+        }
+        EOF
+
+        echo "VK_DRIVER_FILES=$PWD/icd.json" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$PWD/mesa/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+        echo "LIBGL_DRIVERS_PATH=$PWD/mesa/lib/x86_64-linux-gnu/dri" >> "$GITHUB_ENV"
 
     - name: Get Chromedriver version
       id: get_version

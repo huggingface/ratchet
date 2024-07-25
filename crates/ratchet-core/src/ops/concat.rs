@@ -265,10 +265,6 @@ mod tests {
 
     use crate::{rvec, shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     #[derive(Debug)]
     struct ConcatProblem {
         t0: Tensor,
@@ -306,7 +302,7 @@ def permute(t0, t1, t2, t3, t4):
             mut t4,
             dim,
         } = prob;
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let arg_str = format!("{}", dim);
         let ground = ground_truth(&[&t0, &t1, &t2, &t3, &t4], arg_str.as_str())?;
