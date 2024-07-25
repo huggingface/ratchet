@@ -73,5 +73,5 @@ smallvec = { workspace = true , features = ["serde"] }
 env_logger = { workspace = true }
 rand = { workspace = true }
 test-strategy = { workspace = true }
-proptest = { workspace = true }
 ndarray = { workspace = true }
+proptest = { workspace = true }
