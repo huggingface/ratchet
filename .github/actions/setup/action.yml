@@ -27,6 +27,13 @@ runs:
       run: pip install -r requirements.txt
       shell: bash
 
+    - name: Export libtorch
+      if: matrix.os == 'macos-14'
+      run: |
+        export LIBTORCH=$(python3 -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
+        export DYLD_LIBRARY_PATH=${LIBTORCH}/lib
+      shell: bash
+
     - name: Enable node.js corepack
       run: corepack enable
       shell: bash
