@@ -30,7 +30,9 @@ runs:
     - name: Export libtorch
       run: |
         export LIBTORCH=$(python3 -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
+        echo "Libtorch set to $LIBTORCH"
         export DYLD_LIBRARY_PATH=${LIBTORCH}/lib
+        echo "DYLD_LIBRARY_PATH set to $DYLD_LIBRARY_PATH"
       shell: bash
 
     - name: Enable node.js corepack
