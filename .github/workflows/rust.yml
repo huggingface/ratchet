@@ -7,6 +7,7 @@ on:
     branches: ["master"]
 
 env: 
+  RUST_LOG: "info"
   MESA_VERSION: "23.3.1" # Sourced from https://archive.mesa3d.org/ 
   WARP_VERSION: "1.0.8" # Sourced from https://www.nuget.org/packages/Microsoft.Direct3D.WARP
   VULKAN_SDK_VERSION: "1.3.268" # Sourced from https://vulkan.lunarg.com/sdk/home#linux
@@ -18,7 +19,7 @@ env:
   DXC_FILENAME: "dxc_2023_08_14.zip"
   WASM_BINDGEN_TEST_TIMEOUT: 300 # 5 minutes
   CI_BINARY_BUILD: "build18" # Corresponds to https://github.com/gfx-rs/ci-build/releases
-
+  WGPU_BACKEND: "vulkan"
 
 jobs:
   check:

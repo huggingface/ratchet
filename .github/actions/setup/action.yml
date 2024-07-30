@@ -44,14 +44,6 @@ runs:
       if: matrix.os == 'ubuntu-22.04'
       run: |
         echo "LD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
-        echo "WGPU_BACKEND=vulkan" >> $GITHUB_ENV
-      shell: bash
-
-    - name: Run wgpu-info
-      if: matrix.os == 'ubuntu-22.04'
-      run: |
-        cargo install wgpu-info
-        wgpu-info
       shell: bash
 
     - name: Enable node.js corepack
