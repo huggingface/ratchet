@@ -50,15 +50,8 @@ runs:
     - name: Setup Libtorch (Windows)
       if: matrix.os == 'windows-2022'
       run: |
-        # Set LIBTORCH environment variable
-        echo "LIBTORCH=$env:GITHUB_WORKSPACE\libtorch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        
-        # Add libtorch\lib to PATH
-        echo "$env:GITHUB_WORKSPACE\libtorch\lib" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        
-        # Verify the environment variables
-        echo "LIBTORCH is set to: $env:LIBTORCH"
-        echo "PATH now includes: $env:GITHUB_WORKSPACE\libtorch\lib"
+        "LIBTORCH=$LIBTORCH" >> $env:GITHUB_ENV
+        "Path=$env:Path;$LIBTORCH\lib" >> $env:GITHUB_ENV
       shell: pwsh
 
     - name: Enable node.js corepack
