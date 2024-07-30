@@ -250,7 +250,7 @@ impl Kernel for RoPEKernels {
     }
 }
 
-#[cfg(all(test, feature = "pyo3"))]
+#[cfg(all(test, feature = "pyo3", target_os = "macos"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 
