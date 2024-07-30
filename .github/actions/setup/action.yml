@@ -47,6 +47,25 @@ runs:
         echo "WGPU_BACKEND=vulkan" >> $GITHUB_ENV
       shell: bash
 
+    - name: Setup Libtorch (Windows)
+      if: matrix.os == 'windows-2022'
+      run: |
+        # Set LIBTORCH environment variable
+        echo "LIBTORCH=$env:GITHUB_WORKSPACE\libtorch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        
+        # Add libtorch\lib to PATH
+        echo "$env:GITHUB_WORKSPACE\libtorch\lib" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        
+        # Verify the environment variables
+        echo "LIBTORCH is set to: $env:LIBTORCH"
+        echo "PATH now includes: $env:GITHUB_WORKSPACE\libtorch\lib"
+      shell: pwsh
+
+    - name: Libtorch LD (windows)
+      if: matrix.os == 'windows-2022'
+      run: |
+
+
     - name: Enable node.js corepack
       run: corepack enable
       shell: bash
