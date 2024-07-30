@@ -406,12 +406,8 @@ def {}(a):
         run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     fn run_unary_trial(prob: UnaryProblem) -> anyhow::Result<()> {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let UnaryProblem { op, B, M, N } = prob;
         println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
         let a = Tensor::randn::<f32>(shape![B, M], Device::CPU);

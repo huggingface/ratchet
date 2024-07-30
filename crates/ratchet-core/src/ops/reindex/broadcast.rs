@@ -91,10 +91,6 @@ mod tests {
 
     use crate::{shape, test_util::run_py_prg, Broadcast, Device, DeviceRequest, Shape, Tensor};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     impl Arbitrary for BroadcastProblem {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -148,7 +144,7 @@ def slice(a):
         println!("\n\nBroadcast problem: {:?}", prob);
         let BroadcastProblem { op } = prob;
         let a = op.src.clone();
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let a_gpu = a.to(&device)?;
         let ground = ground_truth(&a, &op.to.as_torch())?;

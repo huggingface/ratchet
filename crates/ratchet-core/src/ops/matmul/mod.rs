@@ -636,10 +636,6 @@ mod tests {
 
     use super::*;
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     fn ground_truth(
         a: &Tensor,
         b: &Tensor,
@@ -736,7 +732,7 @@ def matmul(a, b{}):
 
     #[proptest(cases = 64)]
     fn test_sgemm(prob: SGEMMProblem) {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let SGEMMProblem {
             B,
             M,
@@ -811,7 +807,7 @@ def matmul(a, b{}):
 
     #[test]
     fn test_qgemm() -> anyhow::Result<()> {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
@@ -835,7 +831,8 @@ def matmul(a, b{}):
     #[test]
     fn debug_gemm() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
-        let device = GPU_DEVICE.with(|d| d.clone());
+
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![2, 175, 241], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![2, 241, 182], cpu_device.clone());
@@ -874,7 +871,8 @@ def matmul(a, b{}):
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn debug_gemv() -> anyhow::Result<()> {
         let _ = env_logger::builder().is_test(true).try_init();
-        let device = GPU_DEVICE.with(|d| d.clone());
+
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let a = Tensor::randn::<f32>(shape![1, 51865, 384], cpu_device.clone());
         let b = Tensor::randn::<f32>(shape![1, 1, 384], cpu_device.clone());

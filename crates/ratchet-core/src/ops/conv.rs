@@ -291,10 +291,6 @@ mod tests {
     use crate::test_util::run_py_prg;
     use crate::{shape, Device, DeviceRequest, Tensor};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     fn ground_truth(
         input: &Tensor,
         filters: &Tensor,
@@ -361,7 +357,7 @@ def conv(input, filters, bias, stride, padding):
 
     #[proptest(cases = 8)]
     fn test_conv(prob: ConvProblem) {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let ConvProblem {
             Cin,
             Lin,
