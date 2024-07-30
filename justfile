@@ -17,6 +17,5 @@ wasm-publish-pr CRATE:
 push-example EXAMPLE:
     git push {{ EXAMPLE }} `git subtree split --prefix=examples/{{EXAMPLE}}/out master`:main --force
 export-libtorch: # Install libtorch
-    echo "Make sure torch is installed buddy"
-    export LIBTORCH=$(python3 -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
+    export LIBTORCH=$(python3 -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)') 
     export DYLD_LIBRARY_PATH=${LIBTORCH}/lib
