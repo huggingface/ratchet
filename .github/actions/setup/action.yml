@@ -38,11 +38,13 @@ runs:
       if: matrix.os == 'macos-14'
       run: |
         echo "DYLD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
+      shell: bash
 
     - name: Libtorch LD (linux)
       if: matrix.os == 'ubuntu-22.04'
       run: |
         echo "LD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
+      shell: bash
 
     - name: Enable node.js corepack
       run: corepack enable
