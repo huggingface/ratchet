@@ -61,11 +61,6 @@ runs:
         echo "PATH now includes: $env:GITHUB_WORKSPACE\libtorch\lib"
       shell: pwsh
 
-    - name: Libtorch LD (windows)
-      if: matrix.os == 'windows-2022'
-      run: |
-
-
     - name: Enable node.js corepack
       run: corepack enable
       shell: bash
