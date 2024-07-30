@@ -31,9 +31,18 @@ runs:
       run: |
         LIBTORCH=$(python -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
         echo "LIBTORCH=$LIBTORCH" >> $GITHUB_ENV
-        echo "DYLD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
         echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
       shell: bash
+
+    - name: Libtorch LD (macos)
+      if: matrix.os == 'macos-14'
+      run: |
+        echo "DYLD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
+
+    - name: Libtorch LD (linux)
+      if: matrix.os == 'ubuntu-22.04'
+      run: |
+        echo "LD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
 
     - name: Enable node.js corepack
       run: corepack enable
