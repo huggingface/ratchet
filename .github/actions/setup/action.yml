@@ -27,12 +27,12 @@ runs:
       run: pip install -r requirements.txt
       shell: bash
 
-    - name: Export libtorch
+    - name: Export libtorch and set environment variables
       run: |
-        export LIBTORCH=$(python3 -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
-        echo "Libtorch set to $LIBTORCH"
-        export DYLD_LIBRARY_PATH=${LIBTORCH}/lib
-        echo "DYLD_LIBRARY_PATH set to $DYLD_LIBRARY_PATH"
+        LIBTORCH=$(python -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
+        echo "LIBTORCH=$LIBTORCH" >> $GITHUB_ENV
+        echo "DYLD_LIBRARY_PATH=$LIBTORCH/lib" >> $GITHUB_ENV
+        echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
       shell: bash
 
     - name: Enable node.js corepack
