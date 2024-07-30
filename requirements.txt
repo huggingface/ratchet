@@ -2,6 +2,6 @@
 numpy==1.24.3
 torch==2.3.0
 requests==2.26.0
-mlx==0.9.1; sys_platform == 'darwin'
+mlx==0.9.1
 git+https://github.com/FL33TW00D/whisper.git@feature/reference#egg=openai-whisper
 gguf==0.6.0

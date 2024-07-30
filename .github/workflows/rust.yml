@@ -19,7 +19,6 @@ env:
   DXC_FILENAME: "dxc_2023_08_14.zip"
   WASM_BINDGEN_TEST_TIMEOUT: 300 # 5 minutes
   CI_BINARY_BUILD: "build18" # Corresponds to https://github.com/gfx-rs/ci-build/releases
-  WGPU_BACKEND: "vulkan"
 
 jobs:
   check:
