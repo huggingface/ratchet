@@ -38,9 +38,9 @@ runs:
     - name: Export libtorch and set environment variables (Windows)
       if: matrix.os == 'windows-2022'
       run: |
-        LIBTORCH=$(python -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
-        "LIBTORCH=$LIBTORCH" >> $env:GITHUB_ENV
-        "LIBTORCH_USE_PYTORCH=1" >> $env:GITHUB_ENV
+        $LIBTORCH = python -c "import torch; from pathlib import Path; print(Path(torch.__file__).parent)"
+        echo "LIBTORCH=$LIBTORCH" >> $env:GITHUB_ENV
+        echo "LIBTORCH_USE_PYTORCH=1" >> $env:GITHUB_ENV
       shell: pwsh
 
     - name: Libtorch LD (macos)
