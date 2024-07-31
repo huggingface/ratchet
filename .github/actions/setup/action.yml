@@ -60,13 +60,8 @@ runs:
       if: matrix.os == 'windows-2022'
       run: |
         echo "LIB=$LIBTORCH/lib" >> $env:GITHUB_ENV
-        echo "PATH=$LIBTORCH/lib;$PATH" >> $env:GITHUB_ENV
+        echo "$LIBTORCH/lib" >> $env:GITHUB_PATH
       shell: pwsh 
-
-    - name: Enable node.js corepack
-      if: matrix.os != 'windows-2022'
-      run: corepack enable
-      shell: bash
 
     - name: Setup pnpm
       uses: pnpm/action-setup@v4
@@ -95,25 +90,9 @@ runs:
         sudo apt-get update
         sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev
 
-
     - name: Install 7-Zip
       if: matrix.os == 'windows-2022'
-      shell: pwsh
-      run: |
-        $7zipVersion = "2301"
-        $7zipInstaller = "7z$7zipVersion-x64.msi"
-        $7zipDownloadUrl = "https://www.7-zip.org/a/$7zipInstaller"
-        $installerPath = "$env:TEMP\$7zipInstaller"
-
-        Invoke-WebRequest -Uri $7zipDownloadUrl -OutFile $installerPath
-
-        Start-Process msiexec.exe -Wait -ArgumentList "/I $installerPath /qn"
-
-        Remove-Item $installerPath
-
-        $env:PATH += ";C:\Program Files\7-Zip"
-
-        "C:\Program Files\7-Zip" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      uses: milliewalky/setup-7-zip@v1
 
     - name: (windows) install dxc
       if: matrix.os == 'windows-2022'
