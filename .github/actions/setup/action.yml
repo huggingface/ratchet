@@ -97,6 +97,7 @@ runs:
 
 
     - name: (windows) 7zip
+      shell: bash
       if: matrix.os == 'windows-2022'
       uses: milliewalky/setup-7-zip@v1
 
