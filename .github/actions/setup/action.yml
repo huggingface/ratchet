@@ -74,6 +74,10 @@ runs:
         cache: pnpm
         node-version: "18"
 
+    - name: Install pnpm
+      run: npm install -g pnpm
+      shell: bash
+
     - name: Install node.js dependencies
       run: pnpm install
       shell: bash
