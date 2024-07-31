@@ -61,17 +61,11 @@ runs:
       run: |
         echo "LIB=$LIBTORCH/lib" >> $env:GITHUB_ENV
         echo "PATH=$LIBTORCH/lib;$PATH" >> $env:GITHUB_ENV
-      shell: pwsh
+      shell: pwsh 
 
     - name: Enable node.js corepack
-      if: matrix.os != 'windows-2022'
       run: corepack enable
       shell: bash
-
-    - name: Enable node.js corepack (Windows)
-      if: matrix.os == 'windows-2022'
-      run: corepack enable
-      shell: pwsh
 
     - name: Setup node.js
       uses: actions/setup-node@v4
