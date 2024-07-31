@@ -64,6 +64,7 @@ runs:
       shell: pwsh 
 
     - name: Enable node.js corepack
+      if: matrix.os != 'windows-2022'
       run: corepack enable
       shell: bash
 
