@@ -69,7 +69,7 @@ runs:
       shell: bash
 
     - name: Setup pnpm
-    - uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@v4
 
     - name: Setup node.js
       uses: actions/setup-node@v4
