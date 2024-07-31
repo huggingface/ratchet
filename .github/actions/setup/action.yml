@@ -70,6 +70,8 @@ runs:
 
     - name: Setup pnpm
       uses: pnpm/action-setup@v4
+      with:
+        run_install: false
 
     - name: Setup node.js
       uses: actions/setup-node@v4
@@ -92,6 +94,11 @@ runs:
         sudo add-apt-repository ppa:kisak/kisak-mesa
         sudo apt-get update
         sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev
+
+    - name: (windows) install 7z
+      if: matrix.os == 'windows-2022'
+      shell: pwsh
+      run: choco install 7zip -y
 
     - name: (windows) install dxc
       if: matrix.os == 'windows-2022'
