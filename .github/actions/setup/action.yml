@@ -95,10 +95,10 @@ runs:
         sudo apt-get update
         sudo apt install -y libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev vulkan-sdk mesa-vulkan-drivers pkg-config libasound2-dev
 
-    - name: (windows) install 7z
+
+    - name: (windows) 7zip
       if: matrix.os == 'windows-2022'
-      shell: pwsh
-      run: choco install 7zip -y
+      uses: milliewalky/setup-7-zip@v1
 
     - name: (windows) install dxc
       if: matrix.os == 'windows-2022'
