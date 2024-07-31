@@ -28,11 +28,20 @@ runs:
       shell: bash
 
     - name: Export libtorch and set environment variables
+      if: matrix.os != 'windows-2022'
       run: |
         LIBTORCH=$(python -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
         echo "LIBTORCH=$LIBTORCH" >> $GITHUB_ENV
         echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
       shell: bash
+
+    - name: Export libtorch and set environment variables (Windows)
+      if: matrix.os == 'windows-2022'
+      run: |
+        LIBTORCH=$(python -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
+        "LIBTORCH=$LIBTORCH" >> $env:GITHUB_ENV
+        "LIBTORCH_USE_PYTORCH=1" >> $env:GITHUB_ENV
+      shell: pwsh
 
     - name: Libtorch LD (macos)
       if: matrix.os == 'macos-14'
@@ -50,8 +59,8 @@ runs:
     - name: Setup Libtorch (Windows)
       if: matrix.os == 'windows-2022'
       run: |
-        "LIBTORCH=$LIBTORCH" >> $env:GITHUB_ENV
-        "Path=$env:Path;$LIBTORCH\lib" >> $env:GITHUB_ENV
+        echo "LIB=$LIBTORCH/lib" >> $env:GITHUB_ENV
+        echo "PATH=$LIBTORCH/lib;$PATH" >> $env:GITHUB_ENV
       shell: pwsh
 
     - name: Enable node.js corepack

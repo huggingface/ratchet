@@ -70,11 +70,9 @@ jobs:
           just wasm-test ratchet-models chrome
           just wasm-test ratchet-hub chrome
           just wasm-test ratchet-web chrome
-          #pnpm install -r
-          #just vitest
 
   build:
-    name: Build
+    name: Build & Publish Web 
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
