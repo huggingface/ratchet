@@ -68,15 +68,14 @@ runs:
       run: corepack enable
       shell: bash
 
+    - name: Setup pnpm
+    - uses: pnpm/action-setup@v4
+
     - name: Setup node.js
       uses: actions/setup-node@v4
       with:
         cache: pnpm
         node-version: "18"
-
-    - name: Install pnpm
-      run: npm install -g pnpm
-      shell: bash
 
     - name: Install node.js dependencies
       run: pnpm install
