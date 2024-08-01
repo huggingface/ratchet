@@ -57,6 +57,7 @@ runs:
       shell: bash
 
     - name: Setup environment variables (Windows)
+      if: matrix.os == 'windows-2022'
       run: |
         $PYTHON_HOME = python -c "import sys; print(sys.prefix)"
         $PYTHON_DLL_PATH = python -c "import os, sys; print(os.path.dirname(sys.executable))"
