@@ -60,7 +60,7 @@ impl WgpuDevice {
 
         #[allow(unused_mut)]
         let mut required_features = wgpu::Features::default();
-        //required_features |= wgpu::Features::SHADER_F16;
+        required_features |= wgpu::Features::SHADER_F16;
         required_features |= wgpu::Features::SUBGROUP;
         #[cfg(feature = "gpu-profiling")]
         {
@@ -82,6 +82,7 @@ impl WgpuDevice {
         let (device, queue) = if let Err(e) = device_request {
             log::error!("Failed to acq. device, trying with reduced limits: {:?}", e);
             device_descriptor.required_limits = adapter.limits();
+            device_descriptor.required_features = adapter.features();
             adapter.request_device(&device_descriptor, None).await
         } else {
             device_request
