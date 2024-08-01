@@ -250,16 +250,12 @@ impl Kernel for RoPEKernels {
     }
 }
 
-#[cfg(all(test, feature = "pyo3"))]
+#[cfg(all(test, feature = "pyo3", target_os = "macos"))]
 mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
     use crate::{shape, Device, DeviceRequest, Tensor};
-
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
 
     fn ground_truth(a: &Tensor, dim: usize, offset: usize) -> anyhow::Result<Tensor> {
         let prg = r#"
@@ -278,7 +274,7 @@ def mlx_rope(input, dim, offset):
     }
 
     fn run_rope_trial(problem: RoPEProblem) {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let RoPEProblem {
             BS,
             NH,

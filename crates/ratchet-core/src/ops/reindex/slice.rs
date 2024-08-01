@@ -77,10 +77,6 @@ mod tests {
     use proptest::prelude::*;
     use test_strategy::proptest;
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     impl Slice {
         fn as_torch(&self) -> String {
             let mut s = String::from("[");
@@ -165,7 +161,7 @@ def slice(a):
     fn run_reindex_trial(prob: SliceProblem) -> anyhow::Result<()> {
         let SliceProblem { op } = prob;
         println!("SLICE PROBLEM: {:?}", op);
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;

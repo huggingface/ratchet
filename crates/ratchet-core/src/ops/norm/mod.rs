@@ -404,10 +404,6 @@ mod tests {
     use crate::test_util::run_py_prg;
     use crate::{rvec, shape, Device, DeviceRequest, Tensor};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     fn ground_truth(
         var: NormVariant,
         input: &Tensor,
@@ -493,7 +489,7 @@ def manual_rms_norm(input, scale):
 
     #[test]
     fn debug_norm() {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let prob = NormProblem {
             var: NormVariant::LayerNorm,
             B: 2,
@@ -506,7 +502,7 @@ def manual_rms_norm(input, scale):
 
     #[proptest(cases = 64)]
     fn test_norm(prob: NormProblem) {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         println!("prob = {:#?}", prob);
         run_norm_trial(&device, prob).unwrap();
     }

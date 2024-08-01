@@ -176,14 +176,16 @@ async fn tiny_decoder() -> Result<(), JsValue> {
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
 
-    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device)?
-        .cast(device.compute_precision())?;
+    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device)
+        .unwrap()
+        .cast(device.compute_precision())
+        .unwrap();
     let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device).unwrap();
 
     let mut tokens = vec![50258, 50259, 50359];
     let mut all_tokens = tokens.clone();
     let mut all_logits = vec![];
-    let vocab_size = 51866;
+    let vocab_size = 51865;
     while tokens[tokens.len() - 1] != 50257 {
         let token_t = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
         let result = decoder

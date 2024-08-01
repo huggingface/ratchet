@@ -76,11 +76,13 @@ impl WgpuDevice {
                 max_compute_invocations_per_workgroup: 1024,
                 ..Default::default()
             },
+            memory_hints: wgpu::MemoryHints::Performance,
         };
         let device_request = adapter.request_device(&device_descriptor, None).await;
         let (device, queue) = if let Err(e) = device_request {
             log::error!("Failed to acq. device, trying with reduced limits: {:?}", e);
             device_descriptor.required_limits = adapter.limits();
+            device_descriptor.required_features = adapter.features();
             adapter.request_device(&device_descriptor, None).await
         } else {
             device_request

@@ -8,7 +8,7 @@ members = [
     "crates/ratchet-nn", 
     "crates/ratchet-hub", 
     "crates/ratchet-cli", 
-    "crates/ratchet-macros",
+    "crates/ratchet-macros", 
 ]
 resolver = "2"
 edition = "2021"
@@ -54,7 +54,7 @@ encase = { git = "https://github.com/cwfitzgerald/encase", branch = "add-member"
 env_logger = "0.11.3"
 fern = "0.6.2"
 getrandom = "0.2"
-glam = "0.27.0"
+glam = "0.28.0"
 globwalk = "0.8.1"
 gloo-net = { version = "0.5.0", default-features = false }
 hound = "3.5.1"
@@ -81,8 +81,8 @@ serde_bytes = "0.11.14"
 serde_json = "1.0.114"
 slotmap = "1.0.7"
 smallvec = "1.11.2"
-strum = "0.25"
-strum_macros = "0.25"
+strum = "0.26"
+strum_macros = "0.26"
 tabled = "0.15.0"
 tempfile = "3.3.0"
 tera = "1.19.0"

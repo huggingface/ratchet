@@ -7,6 +7,9 @@ use half::f16;
 use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
+
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
     rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
@@ -18,7 +21,7 @@ use crate::{
 use test_strategy::Arbitrary;
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, EnumIter)]
 pub enum UnaryOp {
     Gelu,
     Tanh,
@@ -403,12 +406,8 @@ def {}(a):
         run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     fn run_unary_trial(prob: UnaryProblem) -> anyhow::Result<()> {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let UnaryProblem { op, B, M, N } = prob;
         println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
         let a = Tensor::randn::<f32>(shape![B, M], Device::CPU);

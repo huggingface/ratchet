@@ -215,10 +215,6 @@ mod tests {
 
     use super::Moondream;
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     fn vision_ground_truth(tensor: Tensor) -> anyhow::Result<Tensor> {
         let prg = r#"
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -240,7 +236,7 @@ def ground(*args):
     #[test]
     #[cfg_attr(feature = "ci", ignore)]
     fn moondream_encoder() -> anyhow::Result<()> {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let api = Api::new().unwrap();
         let model_repo = api.model("ratchet-community/ratchet-moondream-2".to_string());
         let model_path = model_repo.get("moondream_f32.gguf").unwrap();
@@ -262,7 +258,7 @@ def ground(*args):
     #[test]
     #[cfg_attr(feature = "ci", ignore)]
     fn moondream_end_to_end() {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let api = Api::new().unwrap();
         let model_repo = api.model("ratchet-community/ratchet-moondream-2".to_string());
         let model_path = model_repo.get("moondream_q8_0.gguf").unwrap();

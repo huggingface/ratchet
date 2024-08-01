@@ -40,10 +40,6 @@ mod tests {
 
     use crate::{Embedding, Module};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     impl Arbitrary for EmbeddingProblem {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -82,7 +78,7 @@ def embedding(weight, indices):
     }
 
     fn run_embedding_trial(problem: EmbeddingProblem) {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         println!("Embedding problem: {:?}", problem);
         let EmbeddingProblem {
             vocab_shape,

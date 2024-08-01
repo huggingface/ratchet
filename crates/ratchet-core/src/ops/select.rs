@@ -281,10 +281,6 @@ mod tests {
     use crate::test_util::run_py_prg;
     use crate::{rvec, shape, Device, DeviceRequest, Quantization, Quantizer, Shape, Tensor};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     impl Arbitrary for IndexSelectProblem {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -317,7 +313,7 @@ def index_select(input, indices):
     }
 
     fn run_index_select_trial(problem: IndexSelectProblem, quantize: bool) {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let IndexSelectProblem {
             input_shape,
             indices,

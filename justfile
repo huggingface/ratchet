@@ -16,3 +16,6 @@ wasm-publish-pr CRATE:
     node_modules/.bin/pkg-pr-new publish --pnpm ./target/pkg/{{CRATE}}
 push-example EXAMPLE:
     git push {{ EXAMPLE }} `git subtree split --prefix=examples/{{EXAMPLE}}/out master`:main --force
+export-libtorch: # Install libtorch
+    export LIBTORCH=$(python3 -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)') 
+    export DYLD_LIBRARY_PATH=${LIBTORCH}/lib

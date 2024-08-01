@@ -12,16 +12,6 @@ testing = ["dep:npyz", "dep:ndarray"]
 pyo3 = ["dep:pyo3", "dep:numpy", "dep:regex"]
 debug = [] #dump every node 
 
-[build-dependencies]
-tera = { workspace = true }
-thiserror = { workspace = true }
-anyhow = { workspace = true }
-globwalk = { workspace = true }
-strum = { workspace = true }
-strum_macros = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-pathdiff = { workspace = true }
-
 [dependencies]
 ratchet-macros = { path = "../ratchet-macros"}
 inline-wgsl = { git = "https://github.com/FL33TW00D/inline-wgsl.git", branch = "master" }
@@ -49,6 +39,9 @@ glam = { workspace = true }
 npyz = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 
+strum = { workspace = true }
+strum_macros = { workspace = true }
+
 #Plotting
 dot3 = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
@@ -73,5 +66,5 @@ smallvec = { workspace = true , features = ["serde"] }
 env_logger = { workspace = true }
 rand = { workspace = true }
 test-strategy = { workspace = true }
-proptest = { workspace = true }
 ndarray = { workspace = true }
+proptest = { workspace = true }

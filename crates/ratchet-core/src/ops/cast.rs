@@ -211,10 +211,6 @@ mod tests {
 
     use crate::{shape, test_util::run_py_prg, DType, Device, DeviceRequest, Tensor};
 
-    thread_local! {
-        static GPU_DEVICE: Device = Device::request_device(DeviceRequest::GPU).unwrap();
-    }
-
     #[derive(Arbitrary, Debug)]
     struct CastProblem {
         dst_dt: DType,
@@ -240,7 +236,7 @@ def cast(a):
     }
 
     fn run_cast_trial(prob: CastProblem) -> anyhow::Result<()> {
-        let device = GPU_DEVICE.with(|d| d.clone());
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let CastProblem { dst_dt, B, M, N } = prob;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let ground = ground_truth(&input, dst_dt)?;
