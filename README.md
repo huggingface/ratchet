@@ -10,7 +10,7 @@ A web-first, cross-platform ML developer toolkit
 We are on a mission to bring fast, cross platform GPU accelerated inference on native + browser.
 
 > [!NOTE]  
-> Ratchet is currently in active development. We are working on making it more stable and adding more models.
+> Ratchet is currently in active development. We are working on the engine, adding more models and improving compatibility. Please, reach out if you'd like to help!
 
 ## Getting Started
 
