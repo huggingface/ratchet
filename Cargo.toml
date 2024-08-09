@@ -8,7 +8,7 @@ members = [
     "crates/ratchet-nn", 
     "crates/ratchet-hub", 
     "crates/ratchet-cli", 
-    "crates/ratchet-macros", 
+    "crates/ratchet-macros", "crates/ratchet-ground", 
 ]
 resolver = "2"
 edition = "2021"
