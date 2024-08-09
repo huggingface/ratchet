@@ -176,10 +176,7 @@ async fn tiny_decoder() -> Result<(), JsValue> {
 
     let device = Device::request_device(DeviceRequest::GPU).await.unwrap();
 
-    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device)
-        .unwrap()
-        .cast(device.compute_precision())
-        .unwrap();
+    let audio_ctx = Tensor::from_npy_bytes::<f32>(&hs_data.to_vec(), &device).unwrap();
     let mut decoder = WhisperDecoder::load(&header, &config, &mut reader, &device).unwrap();
 
     let mut tokens = vec![50258, 50259, 50359];
