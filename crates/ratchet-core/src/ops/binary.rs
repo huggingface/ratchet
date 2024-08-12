@@ -182,51 +182,6 @@ impl GPUOperation for Binary {
     }
 }
 
-impl CPUOperation for Binary {
-    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        match self.op {
-            BinaryOp::Add => self.add(dst),
-            BinaryOp::Sub => self.sub(dst),
-            BinaryOp::Mul => self.mul(dst),
-            BinaryOp::Div => self.div(dst),
-        }
-    }
-}
-
-impl Binary {
-    fn add(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        let mut lhs = self.lhs.to_vec::<f32>()?;
-        let rhs = self.rhs.to_vec::<f32>()?;
-        (0..dst.shape().numel()).for_each(|i| lhs[i] += rhs[i]);
-        cpu_store_result(&dst, &lhs);
-        Ok(dst)
-    }
-
-    fn sub(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        let mut lhs = self.lhs.to_vec::<f32>()?;
-        let rhs = self.rhs.to_vec::<f32>()?;
-        (0..dst.shape().numel()).for_each(|i| lhs[i] -= rhs[i]);
-        cpu_store_result(&dst, &lhs);
-        Ok(dst)
-    }
-
-    fn mul(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        let mut lhs = self.lhs.to_vec::<f32>()?;
-        let rhs = self.rhs.to_vec::<f32>()?;
-        (0..dst.shape().numel()).for_each(|i| lhs[i] *= rhs[i]);
-        cpu_store_result(&dst, &lhs);
-        Ok(dst)
-    }
-
-    fn div(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        let mut lhs = self.lhs.to_vec::<f32>()?;
-        let rhs = self.rhs.to_vec::<f32>()?;
-        (0..dst.shape().numel()).for_each(|i| lhs[i] /= rhs[i]);
-        cpu_store_result(&dst, &lhs);
-        Ok(dst)
-    }
-}
-
 pub enum BinaryKernels {
     Standard(Binary),
 }
@@ -307,6 +262,51 @@ impl Kernel for BinaryKernels {
                 kernel_element
             ))),
         }
+    }
+}
+
+impl CPUOperation for Binary {
+    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        match self.op {
+            BinaryOp::Add => self.add(dst),
+            BinaryOp::Sub => self.sub(dst),
+            BinaryOp::Mul => self.mul(dst),
+            BinaryOp::Div => self.div(dst),
+        }
+    }
+}
+
+impl Binary {
+    fn add(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        let mut lhs = self.lhs.to_vec::<f32>()?;
+        let rhs = self.rhs.to_vec::<f32>()?;
+        (0..dst.shape().numel()).for_each(|i| lhs[i] += rhs[i]);
+        cpu_store_result(&dst, &lhs);
+        Ok(dst)
+    }
+
+    fn sub(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        let mut lhs = self.lhs.to_vec::<f32>()?;
+        let rhs = self.rhs.to_vec::<f32>()?;
+        (0..dst.shape().numel()).for_each(|i| lhs[i] -= rhs[i]);
+        cpu_store_result(&dst, &lhs);
+        Ok(dst)
+    }
+
+    fn mul(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        let mut lhs = self.lhs.to_vec::<f32>()?;
+        let rhs = self.rhs.to_vec::<f32>()?;
+        (0..dst.shape().numel()).for_each(|i| lhs[i] *= rhs[i]);
+        cpu_store_result(&dst, &lhs);
+        Ok(dst)
+    }
+
+    fn div(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        let mut lhs = self.lhs.to_vec::<f32>()?;
+        let rhs = self.rhs.to_vec::<f32>()?;
+        (0..dst.shape().numel()).for_each(|i| lhs[i] /= rhs[i]);
+        cpu_store_result(&dst, &lhs);
+        Ok(dst)
     }
 }
 
