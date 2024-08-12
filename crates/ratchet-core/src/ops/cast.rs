@@ -1,14 +1,15 @@
+use anyhow::anyhow;
 use derive_new::new;
 use encase::ShaderType;
-use half::f16;
+use half::{bf16, f16};
 use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    gpu::BindGroupLayoutDescriptor, rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel,
-    KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
-    Scalar, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
-    WorkgroupSize, Workload,
+    cpu_store_result, gpu::BindGroupLayoutDescriptor, rvec, Array, BindingMode, BuiltIn,
+    CPUOperation, DType, GPUOperation, Kernel, KernelElement, KernelRenderable, KernelSource,
+    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
+    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -204,6 +205,71 @@ impl Kernel for CastKernels {
     }
 }
 
+use crate::{TensorDType, TensorError, Q8_0H};
+
+#[inline]
+fn apply_fn_helper<T: TensorDType, U: TensorDType>(src: &[T], dst: &mut [U], f: fn(T) -> U) {
+    assert_eq!(src.len(), dst.len());
+    for (s, d) in src.iter().copied().zip(dst.iter_mut()) {
+        *d = f(s);
+    }
+}
+
+#[inline]
+fn apply_fn<T: TensorDType, U: TensorDType>(
+    input: &Tensor,
+    dst: &Tensor,
+    f: fn(T) -> U,
+) -> Result<(), OperationError> {
+    let input = input.to_vec::<T>()?;
+    let mut result = vec![U::zero(); dst.shape().numel()];
+    apply_fn_helper(&input, &mut result, f);
+    cpu_store_result(dst, &result);
+    Ok(())
+}
+
+fn direct_cast<T: TensorDType, U: TensorDType>(
+    input: &Tensor,
+    dst: &Tensor,
+) -> Result<(), OperationError> {
+    let input = input.to_vec::<T>()?;
+    let result =
+        bytemuck::try_cast_slice::<T, U>(&input).map_err(|_| anyhow!("Failed direct cast"))?;
+    cpu_store_result(dst, &result);
+    Ok(())
+}
+
+impl CPUOperation for Cast {
+    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        if self.input.dt() == self.dst_dt {
+            return Ok(self.input.clone());
+        }
+        match (self.input.dt(), self.dst_dt) {
+            // F32 ->
+            (DType::F32, DType::F16) => apply_fn::<f32, f16>(&self.input, &dst, f16::from_f32)?,
+            (DType::F32, DType::BF16) => apply_fn::<f32, bf16>(&self.input, &dst, bf16::from_f32)?,
+            (DType::F32, DType::I32) => direct_cast::<f32, i32>(&self.input, &dst)?,
+            (DType::F32, DType::U32) => direct_cast::<f32, u32>(&self.input, &dst)?,
+
+            // F16 ->
+            (DType::F16, DType::F32) => apply_fn::<f16, f32>(&self.input, &dst, f32::from)?,
+
+            // BF16 ->
+            (DType::BF16, DType::F32) => apply_fn::<bf16, f32>(&self.input, &dst, f32::from)?,
+
+            // I32 ->
+            (DType::I32, DType::F32) => direct_cast::<i32, f32>(&self.input, &dst)?,
+
+            // U32 ->
+            (DType::U32, DType::F32) => direct_cast::<u32, f32>(&self.input, &dst)?,
+
+            _ => unimplemented!("Cannot cast {:?} -> {:?}", self.input.dt(), self.dst_dt),
+        };
+
+        Ok(dst)
+    }
+}
+
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
     use half::f16;
@@ -235,28 +301,34 @@ def cast(a):
         run_py_prg(prg.to_string(), &[input], &[], dst_dt)
     }
 
-    fn run_cast_trial(prob: CastProblem) -> anyhow::Result<()> {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+    fn run_cast_trial(prob: CastProblem, device: Device) -> anyhow::Result<()> {
         let CastProblem { dst_dt, B, M, N } = prob;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let ground = ground_truth(&input, dst_dt)?;
 
-        let input_gpu = input.to(&device)?;
-        let casted = input_gpu.cast(dst_dt)?.resolve()?;
+        let input = input.to(&device)?;
+        let casted = input.cast(dst_dt)?.resolve()?;
 
-        let casted_cpu = casted.to(&Device::CPU)?;
+        let casted = casted.to(&Device::CPU)?;
         match dst_dt {
             DType::F16 => {
-                ground.all_close::<f16>(&casted_cpu, f16::from_f32(1e-4), f16::from_f32(1e-4))?
+                ground.all_close::<f16>(&casted, f16::from_f32(1e-4), f16::from_f32(1e-4))?
             }
-            DType::F32 => ground.all_close::<f32>(&casted_cpu, 1e-4, 1e-4)?,
+            DType::F32 => ground.all_close::<f32>(&casted, 1e-4, 1e-4)?,
             _ => return Ok(()), //all_close doesn't support integers
         }
         Ok(())
     }
 
     #[proptest(cases = 256)]
-    fn test_type_cast(prob: CastProblem) {
-        run_cast_trial(prob).unwrap();
+    fn test_type_cast_gpu(prob: CastProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_cast_trial(prob, device).unwrap();
+    }
+
+    #[proptest(cases = 256)]
+    fn test_type_cast_cpu(prob: CastProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_cast_trial(prob, device).unwrap();
     }
 }

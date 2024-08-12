@@ -744,7 +744,7 @@ impl Tensor {
         use CPUOperation;
         match self.op() {
             LazyOp::Binary(b) => b.apply(dst).ok(),
-            LazyOp::Cast(c) => todo!(),
+            LazyOp::Cast(c) => c.apply(dst).ok(),
             LazyOp::Matmul(m) => todo!(),
             LazyOp::Softmax(s) => todo!(),
             LazyOp::RoPE(r) => todo!(),
