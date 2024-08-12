@@ -190,7 +190,7 @@ impl Moondream {
             LayerNorm::new(lt("vision_encoder.encoder.model.visual.norm.weight"), Some(lt("vision_encoder.encoder.model.visual.norm.bias")), ln_eps),
         );
 
-        let vision_encoder = VisionEncoder::new(projection, transformer);
+        let vision_encoder = VisionEncoder::new(transformer, projection);
         Ok(Self {
             vision_encoder,
             text_model,

@@ -7,7 +7,6 @@ use half::f16;
 use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
-use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 use crate::{

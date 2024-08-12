@@ -1,3 +1,5 @@
+use std::panic::Location;
+
 use derive_new::new;
 use encase::ShaderType;
 use half::f16;
@@ -6,9 +8,10 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
-    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
-    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
-    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, wgc, wgs, Array, BindingMode, BuiltIn, DType, GPUOperation, GuardError, Kernel,
+    KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
+    Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -26,10 +29,26 @@ pub struct SoftmaxMeta {
 }
 
 impl OpGuards for Softmax {
+    #[track_caller]
     fn check_shapes(&self) {
         let input = &self.input;
-        assert!(input.rank() >= 2);
-        assert!(self.dim < input.rank());
+
+        if input.rank() < 2 {
+            GuardError::custom(
+                self,
+                format!("Input rank must be at least 2, got: {}", input.rank()),
+            )
+            .panic(Location::caller());
+        }
+
+        if self.dim >= input.rank() {
+            let msg = format!(
+                "Dim {} is out of bounds for input with rank {}",
+                self.dim,
+                input.rank(),
+            );
+            GuardError::custom(self, msg).panic(Location::caller());
+        }
     }
 
     fn check_dtypes(&self) {

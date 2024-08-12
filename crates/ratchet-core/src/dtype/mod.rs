@@ -95,13 +95,11 @@ impl DType {
         matches!(self, DType::F16 | DType::BF16 | DType::F32)
     }
 
-    /// Returns the activation dtype for the given quantized dtype.
-    pub fn activation_dt(&self) -> DType {
+    /// Returns the compute dtype for the given quantized dtype.
+    pub fn compute_dt(&self) -> DType {
         match self {
-            DType::Q8_0H(_) => DType::F16,
-            DType::Q8_0F(_) => DType::F32,
-            DType::Q4_KH(_) => DType::F16,
-            DType::Q4_KF(_) => DType::F32,
+            DType::Q8_0H(_) | DType::Q4_KH(_) => DType::F16,
+            DType::Q8_0F(_) | DType::Q4_KF(_) => DType::F32,
             _ => *self,
         }
     }

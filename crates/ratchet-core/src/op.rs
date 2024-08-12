@@ -3,11 +3,12 @@ use crate::gpu::{
     PoolError, WgpuDevice,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError, KernelMetadata,
-    KernelModuleDesc, RVec, StorageView, Tensor, WgslFragment, WorkgroupSize,
+    ops::*, rvec, CompiledOp, DType, InvariantError, Kernel, KernelBuildError, KernelMetadata,
+    KernelModuleDesc, RVec, Shape, StorageView, Tensor, WgslFragment, WorkgroupSize,
 };
 use std::borrow::Cow;
 use std::fmt::Debug;
+use std::panic::Location;
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -139,6 +140,8 @@ pub enum OperationError {
     InplaceError(String),
     #[error(transparent)]
     DeviceError(#[from] crate::DeviceError),
+    #[error("Unsupported cast: {0} -> {1}")]
+    UnsupportedCast(DType, DType),
 }
 
 /// Unique string representing a kernel.
@@ -201,6 +204,64 @@ impl From<KernelSource> for wgpu::ShaderSource<'static> {
 impl std::fmt::Display for KernelSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum GuardError {
+    #[error("Shape mismatch in {op_name} operation\n{shapes:?}\n{expected:?}\nHint: Ensure that the shapes are compatible for this operation.")]
+    ShapeMismatch {
+        op_name: &'static str,
+        shapes: Vec<Shape>,
+        expected: Option<Shape>,
+    },
+    #[error("DType mismatch in {op_name} operation\n{dtypes:?}\nHint: Ensure all dtypes are compatible for this operation.")]
+    DTypeMismatch {
+        op_name: &'static str,
+        dtypes: Vec<DType>,
+    },
+    #[error("Error in {op_name} operation: {message}")]
+    CustomError {
+        op_name: &'static str,
+        message: Cow<'static, str>,
+    },
+}
+
+impl GuardError {
+    pub fn custom<O: Operation>(op: &O, message: impl Into<Cow<'static, str>>) -> Self {
+        Self::CustomError {
+            op_name: op.name(),
+            message: message.into(),
+        }
+    }
+
+    pub fn shape_mismatch<O: Operation>(
+        op: &O,
+        shapes: impl Into<Vec<Shape>>,
+        expected: Option<Shape>,
+    ) -> Self {
+        Self::ShapeMismatch {
+            op_name: op.name(),
+            shapes: shapes.into(),
+            expected,
+        }
+    }
+
+    pub fn dtype_mismatch<O: Operation>(op: &O, dtypes: Vec<DType>) -> Self {
+        Self::DTypeMismatch {
+            op_name: op.name(),
+            dtypes,
+        }
+    }
+
+    pub fn panic(self, location: &Location) -> ! {
+        panic!(
+            "{}\n\nError occurred at {}:{}:{}",
+            self,
+            location.file(),
+            location.line(),
+            location.column()
+        )
     }
 }
 

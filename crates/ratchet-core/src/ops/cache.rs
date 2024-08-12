@@ -8,7 +8,7 @@ use wgpu::BindGroupLayoutEntry;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntryExt},
-    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel, KernelElement,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, GuardError, Kernel, KernelElement,
     KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
     StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
     Workload,
@@ -118,12 +118,29 @@ pub struct CacheMeta {
 
 impl OpGuards for Cache {
     fn check_shapes(&self) {
-        assert!(self.cache.rank() >= 3);
-        assert!(self.offset <= self.cache.shape()[self.dim]);
+        if self.cache.rank() < 3 {
+            let msg = format!(
+                "Cache tensor must have rank >= 3, got {}",
+                self.cache.rank()
+            );
+            GuardError::custom(self, msg);
+        }
+
+        if self.offset > self.cache.shape()[self.dim] {
+            let msg = format!(
+                "Cache capacity exceeded, attempted to write at offset {} in dim {}, but cache size is {}",
+                self.offset,
+                self.dim,
+                self.cache.shape()[self.dim]
+            );
+            GuardError::custom(self, msg);
+        }
     }
 
     fn check_dtypes(&self) {
-        assert_eq!(self.cache.dt(), self.source.dt());
+        if self.cache.dt() != self.source.dt() {
+            GuardError::dtype_mismatch(self, vec![self.cache.dt(), self.source.dt()]);
+        }
     }
 }
 
