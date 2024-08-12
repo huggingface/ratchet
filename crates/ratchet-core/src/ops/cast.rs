@@ -6,10 +6,12 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    cpu_store_result, gpu::BindGroupLayoutDescriptor, rvec, Array, BindingMode, BuiltIn,
-    CPUOperation, DType, GPUOperation, Kernel, KernelElement, KernelRenderable, KernelSource,
-    OpGuards, Operation, OperationError, RVec, Scalar, StorageView, Strides, Tensor, Vec2, Vec4,
-    WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    cpu::{apply_fn, cpu_store_result},
+    gpu::BindGroupLayoutDescriptor,
+    rvec, Array, BindingMode, BuiltIn, CPUOperation, DType, GPUOperation, Kernel, KernelElement,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
+    Strides, Tensor, TensorDType, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -203,29 +205,6 @@ impl Kernel for CastKernels {
             _ => unimplemented!("Cannot cast {:?} -> {:?}", inner.input.dt(), inner.dst_dt),
         }
     }
-}
-
-use crate::{TensorDType, TensorError, Q8_0H};
-
-#[inline]
-fn apply_fn_helper<T: TensorDType, U: TensorDType>(src: &[T], dst: &mut [U], f: fn(T) -> U) {
-    assert_eq!(src.len(), dst.len());
-    for (s, d) in src.iter().copied().zip(dst.iter_mut()) {
-        *d = f(s);
-    }
-}
-
-#[inline]
-fn apply_fn<T: TensorDType, U: TensorDType>(
-    input: &Tensor,
-    dst: &Tensor,
-    f: fn(T) -> U,
-) -> Result<(), OperationError> {
-    let input = input.to_vec::<T>()?;
-    let mut result = vec![U::zero(); dst.shape().numel()];
-    apply_fn_helper(&input, &mut result, f);
-    cpu_store_result(dst, &result);
-    Ok(())
 }
 
 fn direct_cast<T: TensorDType, U: TensorDType>(

@@ -366,7 +366,3 @@ pub trait GPUOperation: Operation {
 pub trait CPUOperation: Operation {
     fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError>;
 }
-
-pub(crate) fn cpu_store_result<T: NoUninit>(dst: &Tensor, data: &[T]) {
-    dst.update_storage(Storage::CPU(CPUBuffer::from_slice(data, dst.shape())));
-}
