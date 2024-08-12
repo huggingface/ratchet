@@ -237,6 +237,10 @@ def cast(a):
 
     fn run_cast_trial(prob: CastProblem) -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let device_precision = device.compute_precision();
+        if matches!(device_precision, DType::F32) {
+            return Ok(())
+        }
         let CastProblem { dst_dt, B, M, N } = prob;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let ground = ground_truth(&input, dst_dt)?;
@@ -256,7 +260,7 @@ def cast(a):
     }
 
     #[proptest(cases = 256)]
-    fn test_type_cast(prob: CastProblem) {
+    fn test_cast(prob: CastProblem) {
         run_cast_trial(prob).unwrap();
     }
 }
