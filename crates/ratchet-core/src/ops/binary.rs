@@ -1,3 +1,5 @@
+use std::panic::Location;
+
 use derive_new::new;
 use encase::ShaderType;
 use half::f16;
@@ -6,10 +8,10 @@ use ratchet_macros::WgslMetadata;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
-    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, InvariantError, Kernel, KernelElement,
-    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
-    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
-    Workload,
+    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, GuardError, InvariantError, Kernel,
+    KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
+    Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -125,14 +127,22 @@ pub struct BinaryMeta {
 }
 
 impl OpGuards for Binary {
+    #[track_caller]
     fn check_shapes(&self) {
         let shapes = [self.lhs.shape(), self.rhs.shape()];
         let broadcasted = Shape::multi_broadcast(&shapes);
-        assert!(broadcasted.is_some());
+        if broadcasted.is_none() {
+            let shapes = shapes.iter().map(|s| (*s).clone()).collect::<Vec<_>>();
+            GuardError::shape_mismatch(self, shapes, None).panic(Location::caller());
+        }
     }
 
+    #[track_caller]
     fn check_dtypes(&self) {
-        assert_eq!(self.lhs.dt(), self.rhs.dt());
+        if self.lhs.dt() != self.rhs.dt() {
+            GuardError::dtype_mismatch(self, vec![self.lhs.dt(), self.rhs.dt()])
+                .panic(Location::caller());
+        }
     }
 }
 

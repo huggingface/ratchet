@@ -9,7 +9,7 @@ pub struct MLP {
 
 impl MLP {
     pub fn activation_dt(&self) -> ratchet::DType {
-        self.l1.w.dt().activation_dt()
+        self.l1.w.dt().compute_dt()
     }
 }
 

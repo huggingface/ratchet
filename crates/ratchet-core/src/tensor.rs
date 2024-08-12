@@ -302,6 +302,17 @@ impl Tensor {
             return Ok(self);
         }
 
+        let dst_dt = if dst_dt.is_quantized() {
+            log::warn!(
+                "Cannot cast to quantized type: {:?}, casting to associated compute precision: {:?}",
+                dst_dt,
+                dst_dt.compute_dt()
+            );
+            dst_dt.compute_dt()
+        } else {
+            dst_dt
+        };
+
         let device = self.device.clone();
         let cast = Cast::new(self, dst_dt);
         let new_view = cast.compute_view()?;
@@ -384,7 +395,15 @@ impl Tensor {
     //TODO: horrific interface
     pub fn matmul(self, rhs: Tensor, trans_lhs: bool, trans_rhs: bool) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let matmul = Matmul::new(self, rhs, None, trans_lhs, trans_rhs, false);
+
+        let (lhs, rhs) = if self.dt() != rhs.dt() {
+            let unified_dt = self.dt();
+            (self, rhs.cast(unified_dt)?)
+        } else {
+            (self, rhs)
+        };
+
+        let matmul = Matmul::new(lhs, rhs, None, trans_lhs, trans_rhs, false);
         let new_view = matmul.compute_view()?;
         Ok(Tensor::lazy(LazyOp::Matmul(matmul), new_view, device))
     }
@@ -398,7 +417,26 @@ impl Tensor {
         trans_out: bool,
     ) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let gemm = Matmul::new(self, rhs, bias, trans_lhs, trans_rhs, trans_out);
+
+        let (lhs, rhs) = if self.dt() != rhs.dt() {
+            let unified_dt = self.dt();
+            (self, rhs.cast(unified_dt)?)
+        } else {
+            (self, rhs)
+        };
+
+        // Cast bias if required
+        let bias = if let Some(b) = bias {
+            if b.dt() != rhs.dt() {
+                Some(b.cast(rhs.dt())?)
+            } else {
+                Some(b)
+            }
+        } else {
+            None
+        };
+
+        let gemm = Matmul::new(lhs, rhs, bias, trans_lhs, trans_rhs, trans_out);
         let new_view = gemm.compute_view()?;
         Ok(Tensor::lazy(LazyOp::Matmul(gemm), new_view, device))
     }

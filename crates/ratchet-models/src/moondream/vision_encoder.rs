@@ -156,8 +156,8 @@ impl Module for VisionProjection {
 
 #[derive(Debug, derive_new::new)]
 pub struct VisionEncoder {
-    projection: VisionProjection,
     transformer: VisionTransformer,
+    projection: VisionProjection,
 }
 
 impl Module for VisionEncoder {
@@ -165,6 +165,7 @@ impl Module for VisionEncoder {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let transformed = self.transformer.schedule(input)?;
+        log::warn!("SUCCESSFULLY TRANSFORMED");
         self.projection.schedule(Tensor::cat(
             rvec![transformed.clone(), transformed.clone()],
             2,

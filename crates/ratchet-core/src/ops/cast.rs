@@ -239,7 +239,7 @@ def cast(a):
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let device_precision = device.compute_precision();
         if matches!(device_precision, DType::F32) {
-            return Ok(())
+            return Ok(());
         }
         let CastProblem { dst_dt, B, M, N } = prob;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);

@@ -12,9 +12,9 @@ use std::cmp::Ordering;
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, DType, GPUOperation, Kernel, KernelElement, KernelKey, KernelMetadata, KernelRenderable,
-    KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
-    WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+    rvec, DType, GPUOperation, GuardError, Kernel, KernelElement, KernelKey, KernelMetadata,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView,
+    Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -404,20 +404,12 @@ impl OpGuards for Matmul {
         ];
 
         if !allowed_pairs.contains(&(self.lhs.dt(), self.rhs.dt())) {
-            panic!(
-                "DType mismatch: lhs: {:?}, rhs: {:?}",
-                self.lhs.dt(),
-                self.rhs.dt()
-            );
+            GuardError::dtype_mismatch(self, vec![self.lhs.dt(), self.rhs.dt()]);
         }
 
         if let Some(bias) = &self.bias {
             if bias.dt() != self.rhs.dt() {
-                panic!(
-                    "DType mismatch: bias: {:?}, rhs: {:?}",
-                    bias.dt(),
-                    self.rhs.dt()
-                );
+                GuardError::dtype_mismatch(self, vec![bias.dt(), self.rhs.dt()]);
             }
         }
     }
