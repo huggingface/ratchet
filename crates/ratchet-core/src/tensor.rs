@@ -748,7 +748,7 @@ impl Tensor {
             LazyOp::Matmul(m) => todo!(),
             LazyOp::Softmax(s) => todo!(),
             LazyOp::RoPE(r) => todo!(),
-            LazyOp::Unary(u) => todo!(),
+            LazyOp::Unary(u) => u.apply(dst).ok(),
             LazyOp::Reindex(r) => todo!(),
             LazyOp::Concat(c) => todo!(),
             LazyOp::Norm(n) => todo!(),
