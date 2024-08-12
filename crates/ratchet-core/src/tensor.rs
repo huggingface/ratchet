@@ -764,7 +764,7 @@ impl Tensor {
     fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
         match self.device().clone() {
             Device::CPU => {
-                return self.resolve_cpu(debug);
+                return self.resolve_cpu();
             }
             Device::GPU(device) => {
                 return self.resolve_gpu(&device, debug);
@@ -772,7 +772,7 @@ impl Tensor {
         }
     }
 
-    fn resolve_cpu(self, debug: bool) -> Result<Tensor, TensorError> {
+    fn resolve_cpu(self) -> Result<Tensor, TensorError> {
         let mut tensor = self.clone();
         let execution_order = self.execution_order();
 
