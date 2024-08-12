@@ -197,9 +197,7 @@ impl Binary {
     fn add(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         let mut lhs = self.lhs.to_vec::<f32>()?;
         let rhs = self.rhs.to_vec::<f32>()?;
-        for i in 0..dst.shape().numel() {
-            lhs[i] += rhs[i];
-        }
+        (0..dst.shape().numel()).for_each(|i| lhs[i] += rhs[i]);
         cpu_store_result(&dst, &lhs);
         Ok(dst)
     }
@@ -207,9 +205,7 @@ impl Binary {
     fn sub(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         let mut lhs = self.lhs.to_vec::<f32>()?;
         let rhs = self.rhs.to_vec::<f32>()?;
-        for i in 0..dst.shape().numel() {
-            lhs[i] -= rhs[i];
-        }
+        (0..dst.shape().numel()).for_each(|i| lhs[i] -= rhs[i]);
         cpu_store_result(&dst, &lhs);
         Ok(dst)
     }
@@ -217,9 +213,7 @@ impl Binary {
     fn mul(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         let mut lhs = self.lhs.to_vec::<f32>()?;
         let rhs = self.rhs.to_vec::<f32>()?;
-        for i in 0..dst.shape().numel() {
-            lhs[i] *= rhs[i];
-        }
+        (0..dst.shape().numel()).for_each(|i| lhs[i] *= rhs[i]);
         cpu_store_result(&dst, &lhs);
         Ok(dst)
     }
@@ -227,9 +221,7 @@ impl Binary {
     fn div(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         let mut lhs = self.lhs.to_vec::<f32>()?;
         let rhs = self.rhs.to_vec::<f32>()?;
-        for i in 0..dst.shape().numel() {
-            lhs[i] /= rhs[i];
-        }
+        (0..dst.shape().numel()).for_each(|i| lhs[i] /= rhs[i]);
         cpu_store_result(&dst, &lhs);
         Ok(dst)
     }
