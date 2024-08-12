@@ -6,8 +6,6 @@ use encase::ShaderType;
 use half::f16;
 use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
-
-use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 use crate::{
@@ -407,7 +405,7 @@ def {}(a):
     }
 
     fn run_unary_trial(prob: UnaryProblem) -> anyhow::Result<()> {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
         let UnaryProblem { op, B, M, N } = prob;
         println!("op: {:?}, B: {}, M: {}, N: {}", op, B, M, N);
         let a = Tensor::randn::<f32>(shape![B, M], Device::CPU);
@@ -419,6 +417,7 @@ def {}(a):
         let ground = ground_truth(&a, &op, args)?;
 
         let a_gpu = a.to(&device)?;
+        let a_gpu = a;
         let c_gpu = match op {
             UnaryOp::Gelu => a_gpu.gelu()?,
             UnaryOp::Tanh => a_gpu.tanh()?,

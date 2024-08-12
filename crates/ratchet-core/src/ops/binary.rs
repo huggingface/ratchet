@@ -5,11 +5,12 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
+    cpu_store_result,
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
-    rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, InvariantError, Kernel, KernelElement,
-    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, Shape,
-    StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
-    Workload,
+    rvec, Array, BindingMode, BuiltIn, CPUOperation, DType, GPUOperation, InvariantError, Kernel,
+    KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
+    Scalar, Shape, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
 #[cfg(test)]
 use test_strategy::Arbitrary;
@@ -181,6 +182,59 @@ impl GPUOperation for Binary {
     }
 }
 
+impl CPUOperation for Binary {
+    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        match self.op {
+            BinaryOp::Add => self.add(dst),
+            BinaryOp::Sub => self.sub(dst),
+            BinaryOp::Mul => self.mul(dst),
+            BinaryOp::Div => self.div(dst),
+        }
+    }
+}
+
+impl Binary {
+    fn add(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        let mut lhs = self.lhs.to_vec::<f32>()?;
+        let rhs = self.rhs.to_vec::<f32>()?;
+        for i in 0..dst.shape().numel() {
+            lhs[i] += rhs[i];
+        }
+        cpu_store_result(&dst, &lhs);
+        Ok(dst)
+    }
+
+    fn sub(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        let mut lhs = self.lhs.to_vec::<f32>()?;
+        let rhs = self.rhs.to_vec::<f32>()?;
+        for i in 0..dst.shape().numel() {
+            lhs[i] -= rhs[i];
+        }
+        cpu_store_result(&dst, &lhs);
+        Ok(dst)
+    }
+
+    fn mul(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        let mut lhs = self.lhs.to_vec::<f32>()?;
+        let rhs = self.rhs.to_vec::<f32>()?;
+        for i in 0..dst.shape().numel() {
+            lhs[i] *= rhs[i];
+        }
+        cpu_store_result(&dst, &lhs);
+        Ok(dst)
+    }
+
+    fn div(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        let mut lhs = self.lhs.to_vec::<f32>()?;
+        let rhs = self.rhs.to_vec::<f32>()?;
+        for i in 0..dst.shape().numel() {
+            lhs[i] /= rhs[i];
+        }
+        cpu_store_result(&dst, &lhs);
+        Ok(dst)
+    }
+}
+
 pub enum BinaryKernels {
     Standard(Binary),
 }
@@ -289,31 +343,38 @@ def {}(a, b):
         run_py_prg(prg.to_string(), &[a, b], &[], a.dt())
     }
 
-    fn run_binary_trial(prob: BinaryProblem) -> anyhow::Result<()> {
+    fn run_binary_trial(prob: BinaryProblem, device: Device) -> anyhow::Result<()> {
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
         let BinaryProblem { op, shape } = prob;
         let a = Tensor::randn::<f32>(shape.clone(), cpu_device.clone());
         let b = Tensor::randn::<f32>(shape, cpu_device.clone());
         let ground = ground_truth(&a, &b, &op)?;
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
-        let a_gpu = a.to(&device)?;
-        let b_gpu = b.to(&device)?;
-        let c_gpu = match op {
-            BinaryOp::Add => a_gpu.add(b_gpu)?,
-            BinaryOp::Sub => a_gpu.sub(b_gpu)?,
-            BinaryOp::Mul => a_gpu.mul(b_gpu)?,
-            BinaryOp::Div => a_gpu.div(b_gpu)?,
+        let a = a.to(&device)?;
+        let b = b.to(&device)?;
+
+        let c = match op {
+            BinaryOp::Add => a.add(b)?,
+            BinaryOp::Sub => a.sub(b)?,
+            BinaryOp::Mul => a.mul(b)?,
+            BinaryOp::Div => a.div(b)?,
         }
         .resolve()?;
 
-        let d_gpu = c_gpu.to(&Device::CPU)?;
-        ground.all_close(&d_gpu, 1e-4, 1e-4)?;
+        let d = c.to(&Device::CPU)?;
+        ground.all_close(&d, 1e-4, 1e-4)?;
         Ok(())
     }
 
     #[proptest(cases = 8)]
-    fn test_binary(prob: BinaryProblem) {
-        run_binary_trial(prob).unwrap();
+    fn test_binary_gpu(prob: BinaryProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_binary_trial(prob, device).unwrap();
+    }
+
+    #[proptest(cases = 8)]
+    fn test_binary_cpu(prob: BinaryProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_binary_trial(prob, device).unwrap();
     }
 }
