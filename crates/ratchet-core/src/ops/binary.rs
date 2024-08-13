@@ -265,18 +265,9 @@ impl Kernel for BinaryKernels {
     }
 }
 
-impl CPUOperation for Binary {
-    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        match self.op {
-            BinaryOp::Add => self.add(dst),
-            BinaryOp::Sub => self.sub(dst),
-            BinaryOp::Mul => self.mul(dst),
-            BinaryOp::Div => self.div(dst),
-        }
-    }
-}
-
 impl Binary {
+    // TODO: Support all dtypes
+    // TODO: Avoid polluting the namespace with these functions. Use wrapping type.
     fn add(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         binary_apply_inplace::<f32>(&self.lhs, &self.rhs, &dst, |a, b| a + b)?;
         Ok(dst)
@@ -295,6 +286,17 @@ impl Binary {
     fn div(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         binary_apply_inplace::<f32>(&self.lhs, &self.rhs, &dst, |a, b| a / b)?;
         Ok(dst)
+    }
+}
+
+impl CPUOperation for Binary {
+    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        match self.op {
+            BinaryOp::Add => self.add(dst),
+            BinaryOp::Sub => self.sub(dst),
+            BinaryOp::Mul => self.mul(dst),
+            BinaryOp::Div => self.div(dst),
+        }
     }
 }
 

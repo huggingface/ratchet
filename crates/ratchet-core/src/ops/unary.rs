@@ -10,9 +10,10 @@ use strum_macros::EnumIter;
 
 use crate::{
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
-    rvec, Array, BindingMode, BuiltIn, CPUOperation, DType, GPUOperation, Kernel, KernelElement,
-    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
-    Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize, Workload,
+    rvec, unary_apply_fn, Array, BindingMode, BuiltIn, CPUOperation, DType, GPUOperation, Kernel,
+    KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
+    Scalar, StorageView, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
+    Workload,
 };
 
 #[cfg(test)]
@@ -164,6 +165,10 @@ impl Unary {
 
     pub fn op(&self) -> &UnaryOp {
         &self.op
+    }
+
+    pub fn input(&self) -> &Tensor {
+        &self.input
     }
 
     fn render_gelu<P: WgslPrimitive>() -> String {
@@ -355,30 +360,6 @@ impl Kernel for UnaryKernels {
         Ok(UnaryMeta {
             numel: dst.shape().numel() as u32,
         })
-    }
-}
-
-impl CPUOperation for Unary {
-    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        Ok(dst)
-        /*
-        match self.op {
-            UnaryOp::Gelu => self.gelu(dst),
-            UnaryOp::Tanh => self.tanh(dst),
-            UnaryOp::Exp => self.exp(dst),
-            UnaryOp::Log => self.log(dst),
-            UnaryOp::Sin => self.sin(dst),
-            UnaryOp::Cos => self.cos(dst),
-            UnaryOp::Abs => self.abs(dst),
-            UnaryOp::Sqrt => self.sqrt(dst),
-            UnaryOp::Relu => self.relu(dst),
-            UnaryOp::Floor => self.floor(dst),
-            UnaryOp::Ceil => self.ceil(dst),
-            UnaryOp::Neg => self.neg(dst),
-            UnaryOp::Silu => self.silu(dst),
-            UnaryOp::Sigmoid => self.sigmoid(dst),
-        }
-         */
     }
 }
 

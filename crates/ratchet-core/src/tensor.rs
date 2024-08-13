@@ -1,12 +1,12 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, BufferSegment, CPUBuffer, CPUOperation, CompiledOp, DType, Device, DeviceRequest,
+    apply_unary, ops::*, rvec, BufferSegment, CPUBuffer, CPUOperation, CompiledOp, DType, Device,
     DeviceStorage, Executable, GPUBuffer, GPUOperation, InvariantError, LazyOp, Operation,
     OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
 use npyz::WriterBuilder;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockReadGuard};
 use std::collections::HashSet;
 use std::io::{BufRead, Seek};
 use std::ops::Bound;
@@ -740,15 +740,14 @@ impl Tensor {
         }
     }
 
-    pub fn cpu_apply(&self, dst: Tensor) -> Option<Tensor> {
-        use CPUOperation;
-        match self.op() {
+    pub fn cpu_apply(self, dst: Tensor) -> Option<Tensor> {
+        match self.op().clone() {
             LazyOp::Binary(b) => b.apply(dst).ok(),
             LazyOp::Cast(c) => c.apply(dst).ok(),
             LazyOp::Matmul(m) => todo!(),
             LazyOp::Softmax(s) => todo!(),
             LazyOp::RoPE(r) => todo!(),
-            LazyOp::Unary(u) => u.apply(dst).ok(),
+            LazyOp::Unary(u) => apply_unary(u, dst).ok(),
             LazyOp::Reindex(r) => todo!(),
             LazyOp::Concat(c) => todo!(),
             LazyOp::Norm(n) => todo!(),
