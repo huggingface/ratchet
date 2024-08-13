@@ -360,7 +360,7 @@ impl Kernel for UnaryKernels {
 
 impl CPUOperation for Unary {
     fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        todo!()
+        Ok(dst)
         /*
         match self.op {
             UnaryOp::Gelu => self.gelu(dst),
@@ -378,7 +378,7 @@ impl CPUOperation for Unary {
             UnaryOp::Silu => self.silu(dst),
             UnaryOp::Sigmoid => self.sigmoid(dst),
         }
-        */
+         */
     }
 }
 

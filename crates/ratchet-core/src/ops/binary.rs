@@ -5,7 +5,7 @@ use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    cpu_store_result,
+    binary_apply_inplace, cpu_store_result,
     gpu::{dtype::WgslDType, BindGroupLayoutDescriptor},
     rvec, Array, BindingMode, BuiltIn, CPUOperation, DType, GPUOperation, InvariantError, Kernel,
     KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
@@ -278,34 +278,22 @@ impl CPUOperation for Binary {
 
 impl Binary {
     fn add(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        let mut lhs = self.lhs.to_vec::<f32>()?;
-        let rhs = self.rhs.to_vec::<f32>()?;
-        (0..dst.shape().numel()).for_each(|i| lhs[i] += rhs[i]);
-        cpu_store_result(&dst, &lhs);
+        binary_apply_inplace::<f32>(&self.lhs, &self.rhs, &dst, |a, b| a + b)?;
         Ok(dst)
     }
 
     fn sub(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        let mut lhs = self.lhs.to_vec::<f32>()?;
-        let rhs = self.rhs.to_vec::<f32>()?;
-        (0..dst.shape().numel()).for_each(|i| lhs[i] -= rhs[i]);
-        cpu_store_result(&dst, &lhs);
+        binary_apply_inplace::<f32>(&self.lhs, &self.rhs, &dst, |a, b| a - b)?;
         Ok(dst)
     }
 
     fn mul(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        let mut lhs = self.lhs.to_vec::<f32>()?;
-        let rhs = self.rhs.to_vec::<f32>()?;
-        (0..dst.shape().numel()).for_each(|i| lhs[i] *= rhs[i]);
-        cpu_store_result(&dst, &lhs);
+        binary_apply_inplace::<f32>(&self.lhs, &self.rhs, &dst, |a, b| a * b)?;
         Ok(dst)
     }
 
     fn div(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-        let mut lhs = self.lhs.to_vec::<f32>()?;
-        let rhs = self.rhs.to_vec::<f32>()?;
-        (0..dst.shape().numel()).for_each(|i| lhs[i] /= rhs[i]);
-        cpu_store_result(&dst, &lhs);
+        binary_apply_inplace::<f32>(&self.lhs, &self.rhs, &dst, |a, b| a / b)?;
         Ok(dst)
     }
 }
