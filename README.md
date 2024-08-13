@@ -7,9 +7,20 @@ A web-first, cross-platform ML developer toolkit
 <br>
 </div>
 
+We are on a mission to bring fast, cross platform GPU accelerated inference on native + browser.
+
+> [!NOTE]  
+> Ratchet is currently in active development. We are working on the engine, adding more models and improving compatibility. Please, reach out if you'd like to help!
+
 ## Getting Started
 
-Check out our [HuggingFace space](https://huggingface.co/spaces/FL33TW00D-HF/ratchet-whisper) for a live demo!
+The easiest way to experience Ratchet is to check out our [Hugging Face spaces](https://huggingface.co/FL33TW00D-HF):
+- [Whisper](https://huggingface.co/spaces/FL33TW00D-HF/ratchet-whisper)
+- [Phi](https://huggingface.co/spaces/FL33TW00D-HF/ratchet-phi)
+
+To dig deeper, check out the [examples](https://github.com/FL33TW00D/ratchet/tree/master/examples)
+
+We welcome contributions from the community. If you have any ideas or suggestions, please feel free to open an issue or pull request.
 
 ### Javascript
 
@@ -23,7 +34,6 @@ let result = await model.run({ input });
 
 Rust crate & CLI coming soon...
 
-
 ## Philosophy
 
 We want a toolkit for developers to make integrating performant AI functionality into existing production applications easy.
@@ -36,5 +46,8 @@ The following principles will help us accomplish this:
 
 ## Supported Models
 - Whisper
-- Coming soon...
+- Phi 2 & 3
+- Moondream
 
+## Upcoming Models
+- Gemini 2 2B

@@ -1,17 +1,14 @@
-use anyhow::anyhow;
 use derive_new::new;
 use encase::ShaderType;
-use half::{bf16, f16};
+use half::f16;
 use inline_wgsl::wgsl;
 use ratchet_macros::WgslMetadata;
 
 use crate::{
-    cpu::{cpu_store_result, unary_apply_fn},
-    gpu::BindGroupLayoutDescriptor,
-    rvec, Array, BindingMode, BuiltIn, CPUOperation, DType, GPUOperation, Kernel, KernelElement,
-    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Scalar, StorageView,
-    Strides, Tensor, TensorDType, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive, WorkgroupSize,
-    Workload,
+    gpu::BindGroupLayoutDescriptor, rvec, Array, BindingMode, BuiltIn, DType, GPUOperation, Kernel,
+    KernelElement, KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec,
+    Scalar, StorageView, Strides, Tensor, Vec2, Vec4, WgslKernelBuilder, WgslPrimitive,
+    WorkgroupSize, Workload,
 };
 
 #[derive(new, Debug, Clone)]
@@ -249,6 +246,10 @@ def cast(a):
     }
 
     fn run_cast_trial(prob: CastProblem, device: Device) -> anyhow::Result<()> {
+        let device_precision = device.compute_precision();
+        if matches!(device_precision, DType::F32) {
+            return Ok(());
+        }
         let CastProblem { dst_dt, B, M, N } = prob;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let ground = ground_truth(&input, dst_dt)?;

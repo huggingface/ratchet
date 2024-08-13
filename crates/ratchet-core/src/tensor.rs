@@ -1198,8 +1198,8 @@ mod tests {
     #[test]
     fn has_nan_works() {
         let device = Device::request_device(crate::DeviceRequest::GPU).unwrap();
-        let rand = Tensor::randn::<f16>(shape![1, 1500, 384], device.clone());
-        let nans = Tensor::from_data(vec![f16::NAN; 1500 * 384], shape![1, 1500, 384], device);
+        let rand = Tensor::randn::<f32>(shape![1, 1500, 384], device.clone());
+        let nans = Tensor::from_data(vec![f32::NAN; 1500 * 384], shape![1, 1500, 384], device);
 
         let bingo = Tensor::cat(rvec![rand, nans], 2)
             .unwrap()
@@ -1208,6 +1208,6 @@ mod tests {
 
         let result = bingo.to(&Device::CPU).unwrap();
         println!("RESULT: {:?}", result);
-        assert!(result.has_nan::<f16>());
+        assert!(result.has_nan::<f32>());
     }
 }
