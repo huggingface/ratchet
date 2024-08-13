@@ -140,4 +140,3 @@ impl GgmlDType {
         numel * self.type_size() / self.block_numel()
     }
 }
-

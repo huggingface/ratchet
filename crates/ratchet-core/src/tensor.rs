@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage, Executable,
-    GPUBuffer, GPUOperation, InvariantError, LazyOp, Operation, OperationError, RVec, RawCPUBuffer,
-    Shape, Storage, Strides, TensorDType, TensorId,
+    cpu::*, ops::*, rvec, BufferSegment, CPUBuffer, CPUOperation, CompiledOp, DType, Device,
+    DeviceStorage, Executable, GPUBuffer, GPUOperation, InvariantError, LazyOp, Operation,
+    OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
 use npyz::WriterBuilder;
@@ -76,7 +76,7 @@ impl Tensor {
         Arc::strong_count(&self.inner)
     }
 
-    fn update_storage(&self, storage: Storage) {
+    pub(crate) fn update_storage(&self, storage: Storage) {
         *self.inner.storage.write() = Some(storage);
     }
 }
@@ -648,7 +648,7 @@ impl Tensor {
             })
     }
 
-    /// # Segments  
+    /// # Segments
     ///
     /// In Ratchet, a tensor may be split into multiple segments.
     /// This is due to our quantization scheme allowing multiple quantized components to be packed
@@ -740,15 +740,60 @@ impl Tensor {
         }
     }
 
-    fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
-        let mut uniform = CpuUniform::new();
-        let device = self.device().try_gpu()?;
-        device.begin_pass();
+    pub fn cpu_apply(self, dst: Tensor) -> Option<Tensor> {
+        match self.op().clone() {
+            LazyOp::Binary(b) => cpu_binary(b, dst).ok(),
+            LazyOp::Cast(c) => cpu_cast(c, dst).ok(),
+            LazyOp::Matmul(m) => todo!(),
+            LazyOp::Softmax(s) => todo!(),
+            LazyOp::RoPE(r) => todo!(),
+            LazyOp::Unary(u) => cpu_unary(u, dst).ok(),
+            LazyOp::Reindex(r) => todo!(),
+            LazyOp::Concat(c) => todo!(),
+            LazyOp::Norm(n) => todo!(),
+            LazyOp::Conv(c) => todo!(),
+            LazyOp::Select(i) => cpu_index_select(i, dst).ok(),
+            LazyOp::IndexWrite(i) => todo!(),
+            LazyOp::Cache(c) => todo!(),
+            LazyOp::Const => None,
+            LazyOp::View(_) => None,
+        }
+    }
 
+    fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
+        match self.device().clone() {
+            Device::CPU => {
+                return self.resolve_cpu();
+            }
+            Device::GPU(device) => {
+                return self.resolve_gpu(&device, debug);
+            }
+        }
+    }
+
+    fn resolve_cpu(self) -> Result<Tensor, TensorError> {
+        let mut tensor = self.clone();
         let execution_order = self.execution_order();
 
+        for t in execution_order.into_iter() {
+            log::debug!("Running: {:?}", t.op().name());
+            assert!(t.device().is_cpu());
+            if t.resolved() {
+                continue;
+            }
+            tensor = tensor.cpu_apply(t.clone()).unwrap();
+        }
+
+        Ok(tensor.clone())
+    }
+
+    fn resolve_gpu(self, gpu_device: &WgpuDevice, debug: bool) -> Result<Tensor, TensorError> {
+        let execution_order = self.execution_order();
+        let mut uniform = CpuUniform::new();
         let mut compiled_ops = Vec::with_capacity(execution_order.len());
-        let mut allocations = device.allocate_cfg(&execution_order, device)?;
+
+        gpu_device.begin_pass();
+        let mut allocations = gpu_device.allocate_cfg(&execution_order, gpu_device)?;
 
         #[cfg(feature = "plotting")]
         crate::plot::render_to_file(execution_order.last().unwrap(), "prealloc.svg").unwrap();
@@ -773,7 +818,7 @@ impl Tensor {
             let to_modify = t.op().srcs()[0];
             let can_inplace = t.op().supports_inplace() && to_modify.strong_count() == 1;
 
-            if let Some(compiled_op) = t.compile_gpu(&mut uniform, device, can_inplace, debug) {
+            if let Some(compiled_op) = t.compile_gpu(&mut uniform, gpu_device, can_inplace, debug) {
                 compiled_ops.push(compiled_op);
                 #[cfg(feature = "debug")]
                 compute_dsts.push(*t);
@@ -786,7 +831,7 @@ impl Tensor {
 
         let executable = Executable::new(
             compiled_ops,
-            uniform.into_gpu(device)?,
+            uniform.into_gpu(gpu_device)?,
             #[cfg(feature = "debug")]
             compute_dsts,
         );
@@ -802,8 +847,9 @@ impl Tensor {
             executable.dispatch(device).unwrap()
         };
         #[cfg(not(feature = "debug"))]
-        let index = executable.dispatch(device).unwrap();
-        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
+        let index = executable.dispatch(gpu_device).unwrap();
+        gpu_device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(index));
+
         Ok(self)
     }
 

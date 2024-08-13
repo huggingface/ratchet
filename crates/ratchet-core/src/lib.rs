@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 mod compiled_op;
+mod cpu;
 mod device;
 mod dtype;
 mod enforcer;
@@ -17,6 +18,7 @@ mod tensor;
 mod tensor_id;
 
 pub use compiled_op::*;
+pub use cpu::*;
 pub use device::*;
 pub use dtype::*;
 pub use enforcer::*;

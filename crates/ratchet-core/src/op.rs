@@ -3,9 +3,10 @@ use crate::gpu::{
     PoolError, WgpuDevice,
 };
 use crate::{
-    ops::*, rvec, CompiledOp, InvariantError, Kernel, KernelBuildError, KernelMetadata,
-    KernelModuleDesc, RVec, StorageView, Tensor, WgslFragment, WorkgroupSize,
+    ops::*, rvec, CPUBuffer, CompiledOp, InvariantError, Kernel, KernelBuildError, KernelMetadata,
+    KernelModuleDesc, RVec, Storage, StorageView, Tensor, WgslFragment, WorkgroupSize,
 };
+use bytemuck::NoUninit;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -360,4 +361,8 @@ pub trait GPUOperation: Operation {
             debug_buffer,
         ))
     }
+}
+
+pub trait CPUOperation: Operation {
+    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError>;
 }

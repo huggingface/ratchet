@@ -18,7 +18,19 @@ pub struct IndexSelect {
     dim: usize,
 }
 
-impl IndexSelect {}
+impl IndexSelect {
+    pub fn src(&self) -> &Tensor {
+        &self.src
+    }
+
+    pub fn indices(&self) -> &Tensor {
+        &self.indices
+    }
+
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
+}
 
 #[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
 pub struct IndexSelectMeta {
@@ -312,8 +324,7 @@ def index_select(input, indices):
         run_py_prg(prg.to_string(), &[input, indices], &[], input.dt())
     }
 
-    fn run_index_select_trial(problem: IndexSelectProblem, quantize: bool) {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+    fn run_index_select_trial(problem: IndexSelectProblem, device: Device, quantize: bool) {
         let IndexSelectProblem {
             input_shape,
             indices,
@@ -342,7 +353,11 @@ def index_select(input, indices):
             input_shape: shape![52000, 1280],
             indices: Tensor::from_data(vec![50258, 50259, 50360], shape![3], Device::CPU),
         };
-        run_index_select_trial(prob, true);
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_index_select_trial(prob.clone(), device, true);
+
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_index_select_trial(prob, device, true);
     }
 
     #[derive(Debug, Clone)]
@@ -352,7 +367,14 @@ def index_select(input, indices):
     }
 
     #[proptest(cases = 16)]
-    fn test_index_select(prob: IndexSelectProblem) {
-        run_index_select_trial(prob, false);
+    fn test_index_select_gpu(prob: IndexSelectProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_index_select_trial(prob, device, false);
+    }
+
+    #[proptest(cases = 16)]
+    fn test_index_select_cpu(prob: IndexSelectProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_index_select_trial(prob, device, false);
     }
 }

@@ -17,6 +17,16 @@ pub struct Cast {
     dst_dt: DType,
 }
 
+impl Cast {
+    pub fn input(&self) -> &Tensor {
+        &self.input
+    }
+
+    pub fn dst_dt(&self) -> DType {
+        self.dst_dt
+    }
+}
+
 impl KernelRenderable for CastKernels {
     fn register_bindings<SP: WgslPrimitive>(
         &self,
@@ -235,32 +245,38 @@ def cast(a):
         run_py_prg(prg.to_string(), &[input], &[], dst_dt)
     }
 
-    fn run_cast_trial(prob: CastProblem) -> anyhow::Result<()> {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+    fn run_cast_trial(prob: CastProblem, device: Device) -> anyhow::Result<()> {
         let device_precision = device.compute_precision();
         if matches!(device_precision, DType::F32) {
-            return Ok(())
+            return Ok(());
         }
         let CastProblem { dst_dt, B, M, N } = prob;
         let input = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let ground = ground_truth(&input, dst_dt)?;
 
-        let input_gpu = input.to(&device)?;
-        let casted = input_gpu.cast(dst_dt)?.resolve()?;
+        let input = input.to(&device)?;
+        let casted = input.cast(dst_dt)?.resolve()?;
 
-        let casted_cpu = casted.to(&Device::CPU)?;
+        let casted = casted.to(&Device::CPU)?;
         match dst_dt {
             DType::F16 => {
-                ground.all_close::<f16>(&casted_cpu, f16::from_f32(1e-4), f16::from_f32(1e-4))?
+                ground.all_close::<f16>(&casted, f16::from_f32(1e-4), f16::from_f32(1e-4))?
             }
-            DType::F32 => ground.all_close::<f32>(&casted_cpu, 1e-4, 1e-4)?,
+            DType::F32 => ground.all_close::<f32>(&casted, 1e-4, 1e-4)?,
             _ => return Ok(()), //all_close doesn't support integers
         }
         Ok(())
     }
 
     #[proptest(cases = 256)]
-    fn test_cast(prob: CastProblem) {
-        run_cast_trial(prob).unwrap();
+    fn test_type_cast_gpu(prob: CastProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_cast_trial(prob, device).unwrap();
+    }
+
+    #[proptest(cases = 256)]
+    fn test_type_cast_cpu(prob: CastProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_cast_trial(prob, device).unwrap();
     }
 }
