@@ -1,6 +1,6 @@
 use crate::{
-    Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, OpGuards, Operation, OperationError,
-    RVec, Storage, StorageView, Tensor, TensorDType, Unary, UnaryOp,
+    Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect, InvariantError, OpGuards,
+    Operation, OperationError, RVec, Storage, StorageView, Tensor, TensorDType, Unary, UnaryOp,
 };
 use anyhow::anyhow;
 use bytemuck::NoUninit;
@@ -117,7 +117,7 @@ impl_cpu_unary!(f32);
 impl_cpu_unary!(f16, f16::from_f32);
 impl_cpu_unary!(bf16, bf16::from_f32);
 
-pub fn apply_unary(unary: Unary, dst: Tensor) -> Result<Tensor, OperationError> {
+pub fn cpu_unary(unary: Unary, dst: Tensor) -> Result<Tensor, OperationError> {
     match dst.dt() {
         DType::F32 => CPU::<f32, _>::new(unary).apply(dst),
         DType::F16 => CPU::<f16, _>::new(unary).apply(dst),
@@ -161,11 +161,66 @@ impl_cpu_binary!(f32);
 impl_cpu_binary!(f16);
 impl_cpu_binary!(bf16);
 
-pub fn apply_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationError> {
+pub fn cpu_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationError> {
     match dst.dt() {
         DType::F32 => CPU::<f32, _>::new(binary).apply(dst),
         DType::F16 => CPU::<f16, _>::new(binary).apply(dst),
         DType::BF16 => CPU::<bf16, _>::new(binary).apply(dst),
+        _ => todo!(),
+    }
+}
+
+fn index_select<T: TensorDType>(
+    index_select: IndexSelect,
+    dst: Tensor,
+) -> Result<Tensor, OperationError> {
+    let src = index_select.src();
+    let indices = index_select.indices();
+    let dim = index_select.dim();
+
+    // TODO: Add support for other indexing types
+    if !matches!(indices.dt(), DType::I32) {
+        return Err(InvariantError::DTypeMismatch {
+            expected: DType::I32,
+            actual: indices.dt(),
+        }
+        .into());
+    }
+
+    let mut dst_dims = src.shape().to_vec();
+    let indices_dims = indices.shape().to_vec();
+
+    let src_dim = dst_dims[dim];
+    let n_ids = indices_dims[0];
+    dst_dims[dim] = n_ids;
+
+    let dst_len: usize = dst_dims.iter().product();
+    let left_len: usize = dst_dims[..dim].iter().product();
+    let right_len: usize = dst_dims[dim + 1..].iter().product();
+
+    let src = src.to_vec::<T>()?;
+    let indices = indices.to_vec::<i32>()?;
+    let mut result = vec![T::zero(); dst_len];
+
+    for left_i in 0..left_len {
+        let start_src_idx = left_i * right_len * src_dim;
+        let start_dst_idx = left_i * right_len * n_ids;
+        for i in 0..n_ids {
+            let src_idx = start_src_idx + indices[i] as usize * right_len;
+            let dst_idx = start_dst_idx + i * right_len;
+            result[dst_idx..dst_idx + right_len]
+                .copy_from_slice(&src[src_idx..src_idx + right_len]);
+        }
+    }
+    cpu_store_result(&dst, &result);
+    Ok(dst)
+}
+
+pub fn cpu_index_select(i: IndexSelect, dst: Tensor) -> Result<Tensor, OperationError> {
+    match dst.dt() {
+        DType::F32 => index_select::<f32>(i, dst),
+        DType::F16 => index_select::<f16>(i, dst),
+        DType::BF16 => index_select::<bf16>(i, dst),
         _ => todo!(),
     }
 }
@@ -181,7 +236,7 @@ fn direct_cast<T: TensorDType, U: TensorDType>(
     Ok(())
 }
 
-pub fn apply_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
+pub fn cpu_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
     if cast.input().dt() == cast.dst_dt() {
         return Ok(cast.input().clone());
     }
