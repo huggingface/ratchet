@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    apply_unary, ops::*, rvec, BufferSegment, CPUBuffer, CPUOperation, CompiledOp, DType, Device,
-    DeviceStorage, Executable, GPUBuffer, GPUOperation, InvariantError, LazyOp, Operation,
-    OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    apply_binary, apply_unary, ops::*, rvec, BufferSegment, CPUBuffer, CPUOperation, CompiledOp,
+    DType, Device, DeviceStorage, Executable, GPUBuffer, GPUOperation, InvariantError, LazyOp,
+    Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
 use npyz::WriterBuilder;
@@ -742,7 +742,7 @@ impl Tensor {
 
     pub fn cpu_apply(self, dst: Tensor) -> Option<Tensor> {
         match self.op().clone() {
-            LazyOp::Binary(b) => b.apply(dst).ok(),
+            LazyOp::Binary(b) => apply_binary(b, dst).ok(),
             LazyOp::Cast(c) => c.apply(dst).ok(),
             LazyOp::Matmul(m) => todo!(),
             LazyOp::Softmax(s) => todo!(),

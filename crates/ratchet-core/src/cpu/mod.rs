@@ -1,6 +1,6 @@
 use crate::{
-    CPUBuffer, CPUOperation, DType, OpGuards, Operation, OperationError, RVec, Storage,
-    StorageView, Tensor, TensorDType, Unary, UnaryOp,
+    Binary, BinaryOp, CPUBuffer, CPUOperation, DType, OpGuards, Operation, OperationError, RVec,
+    Storage, StorageView, Tensor, TensorDType, Unary, UnaryOp,
 };
 use bytemuck::NoUninit;
 use core::marker::PhantomData;
@@ -121,6 +121,50 @@ pub fn apply_unary(unary: Unary, dst: Tensor) -> Result<Tensor, OperationError> 
         DType::F32 => CPU::<f32, _>::new(unary).apply(dst),
         DType::F16 => CPU::<f16, _>::new(unary).apply(dst),
         DType::BF16 => CPU::<bf16, _>::new(unary).apply(dst),
+        _ => todo!(),
+    }
+}
+
+macro_rules! impl_cpu_binary_op {
+    ($method_name:ident, $dtype:ident, $op:expr) => {
+        fn $method_name(lhs: &Tensor, rhs: &Tensor, dst: Tensor) -> Result<Tensor, OperationError> {
+            binary_apply_inplace::<$dtype>(lhs, rhs, &dst, $op)?;
+            Ok(dst)
+        }
+    };
+}
+
+macro_rules! impl_cpu_binary {
+    ($dtype:ident) => {
+        impl CPU<$dtype, Binary> {
+            impl_cpu_binary_op!(add, $dtype, |lhs, rhs| lhs + rhs);
+            impl_cpu_binary_op!(sub, $dtype, |lhs, rhs| lhs - rhs);
+            impl_cpu_binary_op!(mul, $dtype, |lhs, rhs| lhs * rhs);
+            impl_cpu_binary_op!(div, $dtype, |lhs, rhs| lhs / rhs);
+        }
+
+        impl CPUOperation for CPU<$dtype, Binary> {
+            fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+                match self.op.op() {
+                    BinaryOp::Add => Self::add(self.op.lhs(), self.op.rhs(), dst),
+                    BinaryOp::Sub => Self::sub(self.op.lhs(), self.op.rhs(), dst),
+                    BinaryOp::Mul => Self::mul(self.op.lhs(), self.op.rhs(), dst),
+                    BinaryOp::Div => Self::div(self.op.lhs(), self.op.rhs(), dst),
+                }
+            }
+        }
+    };
+}
+
+impl_cpu_binary!(f32);
+impl_cpu_binary!(f16);
+impl_cpu_binary!(bf16);
+
+pub fn apply_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationError> {
+    match dst.dt() {
+        DType::F32 => CPU::<f32, _>::new(binary).apply(dst),
+        DType::F16 => CPU::<f16, _>::new(binary).apply(dst),
+        DType::BF16 => CPU::<bf16, _>::new(binary).apply(dst),
         _ => todo!(),
     }
 }
