@@ -1,7 +1,8 @@
 use crate::{
-    Binary, BinaryOp, CPUBuffer, CPUOperation, DType, OpGuards, Operation, OperationError, RVec,
-    Storage, StorageView, Tensor, TensorDType, Unary, UnaryOp,
+    Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, OpGuards, Operation, OperationError,
+    RVec, Storage, StorageView, Tensor, TensorDType, Unary, UnaryOp,
 };
+use anyhow::anyhow;
 use bytemuck::NoUninit;
 use core::marker::PhantomData;
 use half::{bf16, f16};
@@ -167,6 +168,48 @@ pub fn apply_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationErro
         DType::BF16 => CPU::<bf16, _>::new(binary).apply(dst),
         _ => todo!(),
     }
+}
+
+fn direct_cast<T: TensorDType, U: TensorDType>(
+    input: &Tensor,
+    dst: &Tensor,
+) -> Result<(), OperationError> {
+    let input = input.to_vec::<T>()?;
+    let result =
+        bytemuck::try_cast_slice::<T, U>(&input).map_err(|_| anyhow!("Failed direct cast"))?;
+    cpu_store_result(dst, &result);
+    Ok(())
+}
+
+pub fn apply_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
+    if cast.input().dt() == cast.dst_dt() {
+        return Ok(cast.input().clone());
+    }
+    match (cast.input().dt(), cast.dst_dt()) {
+        // F32 ->
+        (DType::F32, DType::F16) => unary_apply_fn::<f32, f16>(cast.input(), &dst, f16::from_f32)?,
+        (DType::F32, DType::BF16) => {
+            unary_apply_fn::<f32, bf16>(cast.input(), &dst, bf16::from_f32)?
+        }
+        (DType::F32, DType::I32) => direct_cast::<f32, i32>(cast.input(), &dst)?,
+        (DType::F32, DType::U32) => direct_cast::<f32, u32>(cast.input(), &dst)?,
+
+        // F16 ->
+        (DType::F16, DType::F32) => unary_apply_fn::<f16, f32>(cast.input(), &dst, f32::from)?,
+
+        // BF16 ->
+        (DType::BF16, DType::F32) => unary_apply_fn::<bf16, f32>(cast.input(), &dst, f32::from)?,
+
+        // I32 ->
+        (DType::I32, DType::F32) => direct_cast::<i32, f32>(cast.input(), &dst)?,
+
+        // U32 ->
+        (DType::U32, DType::F32) => direct_cast::<u32, f32>(cast.input(), &dst)?,
+
+        _ => unimplemented!("Cannot cast {:?} -> {:?}", cast.input().dt(), cast.dst_dt()),
+    };
+
+    Ok(dst)
 }
 
 #[inline]
