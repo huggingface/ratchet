@@ -732,7 +732,7 @@ def matmul(a, b{}):
 
     #[proptest(cases = 64)]
     fn test_sgemm(prob: SGEMMProblem) {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
         let SGEMMProblem {
             B,
             M,

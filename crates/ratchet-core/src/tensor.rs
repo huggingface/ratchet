@@ -741,10 +741,12 @@ impl Tensor {
     }
 
     pub fn cpu_apply(self, dst: Tensor) -> Option<Tensor> {
+        use crate::cpu::gemm::*;
+
         match self.op().clone() {
             LazyOp::Binary(b) => cpu_binary(b, dst).ok(),
             LazyOp::Cast(c) => cpu_cast(c, dst).ok(),
-            LazyOp::Matmul(m) => todo!(),
+            LazyOp::Matmul(m) => m.apply(dst).ok(),
             LazyOp::Softmax(s) => todo!(),
             LazyOp::RoPE(r) => todo!(),
             LazyOp::Unary(u) => cpu_unary(u, dst).ok(),

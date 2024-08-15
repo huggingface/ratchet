@@ -53,6 +53,8 @@ itertools = { workspace = true, optional = true }
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true } 
 regex = { workspace = true, optional = true }
 numpy = { workspace = true, optional = true, features=["half"]}
+gemm = { version = "0.18.0", features = ["nightly", "wasm-simd128-enable"] }
+num_cpus = "1.16.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true 
