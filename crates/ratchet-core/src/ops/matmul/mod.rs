@@ -49,15 +49,17 @@ impl GEMVHeuristic {
 pub struct MatmulSpec {
     lhs_dt: DType,
     rhs_dt: DType,
+    raw_lhs_shape: Shape,
+    raw_rhs_shape: Shape,
     lhs_shape: Shape,
     rhs_shape: Shape,
-    out_shape: Shape,
+    dst_shape: Shape,
     lhs_stack: usize,
     rhs_stack: usize,
-    out_stack: usize,
+    dst_stack: usize,
     trans_lhs: bool,
     trans_rhs: bool,
-    trans_out: bool,
+    trans_dst: bool,
     stack_shape: Shape, //N-D matmul is handled by stacking the first N-2 dimensions
     pub heuristic: GEMVHeuristic,
 }
@@ -71,13 +73,16 @@ impl MatmulSpec {
         RHS: &Tensor,
         trans_lhs: bool,
         trans_rhs: bool,
-        trans_out: bool,
+        trans_dst: bool,
     ) -> Self {
-        let mut lhs_shape = LHS.shape().clone();
-        let mut rhs_shape = RHS.shape().clone();
-        let mut c_shape =
-            Matmul::compute_c_shape(LHS, RHS, trans_lhs, trans_rhs, trans_out).unwrap();
-        let a_dt = LHS.dt();
+        let raw_lhs_shape = LHS.shape().clone();
+        let raw_rhs_shape = RHS.shape().clone();
+        let mut lhs_shape = raw_lhs_shape.clone();
+        let mut rhs_shape = raw_rhs_shape.clone();
+        let mut dst_shape =
+            Matmul::compute_dst_shape(&lhs_shape, &rhs_shape, trans_lhs, trans_rhs, trans_dst)
+                .unwrap();
+        let lhs_dt = LHS.dt();
         let rhs_dt = RHS.dt();
 
         if (lhs_shape.rank() < 2) || (rhs_shape.rank() < 2) {
@@ -94,17 +99,17 @@ impl MatmulSpec {
             _ => {}
         };
 
-        let stack_dims = c_shape.rank() - 2;
-        let stack_shape = c_shape.slice(0..stack_dims);
+        let stack_dims = dst_shape.rank() - 2;
+        let stack_shape = dst_shape.slice(0..stack_dims);
 
         let lhs_stack = lhs_shape.drain(0..stack_dims).product();
         let rhs_stack = rhs_shape.drain(0..stack_dims).product();
-        let out_stack = c_shape.drain(0..stack_dims).product();
+        let dst_stack = dst_shape.drain(0..stack_dims).product();
 
         if lhs_stack != 1 && rhs_stack != 1 {
             //Here we want all of the stacks to be equal
             //OR A or B to be 1
-            assert!(lhs_stack == rhs_stack && rhs_stack == out_stack);
+            assert!(lhs_stack == rhs_stack && rhs_stack == dst_stack);
         }
 
         if lhs_shape.rank() == 1 {
@@ -115,35 +120,42 @@ impl MatmulSpec {
             rhs_shape.insert(0, 1);
         }
 
+        if trans_lhs {
+            lhs_shape.transpose();
+        }
+
+        if trans_rhs {
+            rhs_shape.transpose();
+        }
+
         log::debug!(
-            "MatMul stacking: left {} right {} stack_dims={} stack_count={}",
-            lhs_shape,
-            rhs_shape,
-            stack_dims,
+            "MatmulSpec stacking: lhs={lhs_shape:?} rhs={rhs_shape:?} stack_dims={stack_dims} stack_count={}",
             stack_shape.numel(),
         );
 
-        let heuristic = GEMVHeuristic::new(lhs_shape[0], lhs_shape[1]);
+        let heuristic = GEMVHeuristic::new(rhs_shape[0], rhs_shape[1]);
 
         Self {
-            lhs_dt: a_dt,
+            lhs_dt,
             rhs_dt,
+            raw_lhs_shape,
+            raw_rhs_shape,
             lhs_shape,
             rhs_shape,
-            out_shape: c_shape,
+            dst_shape,
             lhs_stack,
             rhs_stack,
-            out_stack,
+            dst_stack,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
             stack_shape,
             heuristic,
         }
     }
 
     pub fn select_kernel_element(&self) -> KernelElement {
-        if self.trans_lhs || self.trans_rhs || self.trans_out || self.rhs_shape.is_vector() {
+        if self.trans_lhs || self.trans_rhs || self.trans_dst || self.rhs_shape.is_vector() {
             //We cannot support transposed with vectorized kernels
             //If GEMV we use Scalar
             return KernelElement::Scalar;
@@ -151,10 +163,10 @@ impl MatmulSpec {
 
         let checks = [
             self.dim_inner(),
-            self.out_shape[1],
+            self.dst_shape[1],
             self.lhs_shape.numel(),
             self.rhs_shape.numel(),
-            self.out_shape.numel(),
+            self.dst_shape.numel(),
         ];
 
         if checks.iter().all(|&x| x % 4 == 0) {
@@ -164,30 +176,38 @@ impl MatmulSpec {
         }
     }
 
+    pub fn raw_lhs_shape(&self) -> &Shape {
+        &self.raw_lhs_shape
+    }
+
     pub fn lhs_shape(&self) -> &Shape {
         &self.lhs_shape
+    }
+
+    pub fn raw_rhs_shape(&self) -> &Shape {
+        &self.raw_lhs_shape
     }
 
     pub fn rhs_shape(&self) -> &Shape {
         &self.rhs_shape
     }
 
-    pub fn out_shape(&self) -> &Shape {
-        &self.out_shape
+    pub fn dst_shape(&self) -> &Shape {
+        &self.dst_shape
     }
 
     pub fn dim_lhs_outer(&self) -> usize {
-        self.out_shape[0]
+        self.dst_shape[0]
     }
     pub fn dim_rhs_outer(&self) -> usize {
-        self.out_shape[1]
+        self.dst_shape[1]
     }
 
     pub fn new_dim_lhs_outer(&self) -> usize {
-        if self.trans_out {
-            self.out_shape[1]
+        if self.trans_dst {
+            self.dst_shape[1]
         } else {
-            self.out_shape[0]
+            self.dst_shape[0]
         }
     }
 
@@ -196,6 +216,49 @@ impl MatmulSpec {
             self.rhs_shape[1]
         } else {
             self.rhs_shape[0]
+        }
+    }
+
+    // Returns M dimension before transpose
+    pub fn raw_m(&self) -> usize {
+        return self.lhs_shape[0];
+    }
+
+    // Returns N dimension before transpose
+    pub fn raw_n(&self) -> usize {
+        return self.rhs_shape[1];
+    }
+
+    /// Returns K dimension before transpose
+    pub fn raw_k(&self) -> usize {
+        assert_eq!(self.lhs_shape[1], self.rhs_shape[0]);
+        return self.rhs_shape[0];
+    }
+
+    /// Returns M dimension after transpose
+    pub fn m(&self) -> usize {
+        if self.trans_lhs {
+            self.lhs_shape[1]
+        } else {
+            self.raw_m()
+        }
+    }
+
+    /// Returns N dimension after transpose
+    pub fn n(&self) -> usize {
+        if self.trans_rhs {
+            self.rhs_shape[0]
+        } else {
+            self.raw_n()
+        }
+    }
+
+    /// Returns K dimension after transpose
+    pub fn k(&self) -> usize {
+        if self.trans_lhs {
+            self.lhs_shape[0]
+        } else {
+            self.raw_k()
         }
     }
 
@@ -216,7 +279,7 @@ impl MatmulSpec {
     }
 
     pub fn out_stack(&self) -> usize {
-        self.out_stack
+        self.dst_stack
     }
 
     pub fn stacks(&self) -> usize {
@@ -234,7 +297,7 @@ impl MatmulSpec {
     pub fn stacked_shapes(&self) -> (Shape, Shape, Shape) {
         let mut lhs_shape = self.lhs_shape.clone();
         let mut rhs_shape = self.rhs_shape.clone();
-        let mut out_shape = self.out_shape.clone();
+        let mut out_shape = self.dst_shape.clone();
         lhs_shape.insert(0, self.stacks());
         rhs_shape.insert(0, self.stacks());
         out_shape.insert(0, self.stacks());
@@ -264,22 +327,23 @@ pub struct Matmul {
 }
 
 impl Matmul {
-    pub fn compute_c_shape(
-        a: &Tensor,
-        b: &Tensor,
+    pub fn compute_dst_shape(
+        lhs_shape: &Shape,
+        rhs_shape: &Shape,
         trans_lhs: bool,
         trans_rhs: bool,
-        trans_out: bool,
+        trans_dst: bool,
     ) -> anyhow::Result<Shape> {
-        let (mut ashape, mut bshape) = (a.shape().clone(), b.shape().clone());
+        let mut lhs_shape = lhs_shape.clone();
+        let mut rhs_shape = rhs_shape.clone();
 
-        let implicit_m = ashape.rank() < 2;
-        let implicit_n = bshape.rank() < 2;
+        let implicit_m = lhs_shape.rank() < 2;
+        let implicit_n = rhs_shape.rank() < 2;
         if implicit_m {
-            ashape.insert(trans_lhs as usize, 1);
+            lhs_shape.insert(trans_lhs as usize, 1);
         }
         if implicit_n {
-            bshape.insert(!trans_rhs as usize, 1);
+            rhs_shape.insert(!trans_rhs as usize, 1);
         }
 
         let equalize_rank = |shape: &mut Shape, target_rank: usize| {
@@ -287,60 +351,56 @@ impl Matmul {
                 shape.insert(0, 1);
             }
         };
-        equalize_rank(&mut ashape, bshape.rank());
-        equalize_rank(&mut bshape, ashape.rank());
+        equalize_rank(&mut lhs_shape, rhs_shape.rank());
+        equalize_rank(&mut rhs_shape, lhs_shape.rank());
 
-        let arank = ashape.rank();
-        let brank = bshape.rank();
-        let (a_prefix, b_prefix) = (&ashape[..arank - 2], &bshape[..brank - 2]);
-        let mut c_broadcasted_prefix =
-            Shape::multi_broadcast(&[&a_prefix.into(), &b_prefix.into()]).ok_or_else(|| {
+        let lhs_rank = lhs_shape.rank();
+        let rhs_rank = rhs_shape.rank();
+        let (lhs_prefix, rhs_prefix) = (&lhs_shape[..lhs_rank - 2], &rhs_shape[..rhs_rank - 2]);
+        let dst_broadcasted_prefix =
+            Shape::multi_broadcast(&[&lhs_prefix.into(), &rhs_prefix.into()]).ok_or_else(|| {
                 anyhow::anyhow!(
                     "Matmul broadcasting: a: {:?} b: {:?} trans_a: {:?} trans_b: {:?}",
-                    ashape,
-                    bshape,
+                    lhs_shape,
+                    rhs_shape,
                     trans_lhs,
                     trans_rhs
                 )
             })?;
 
-        let (mut m, mut ka) = (ashape[arank - 2], ashape[arank - 1]);
-        let (mut kb, mut n) = (bshape[brank - 2], bshape[brank - 1]);
+        let (mut m, mut kl) = (lhs_shape[lhs_rank - 2], lhs_shape[lhs_rank - 1]);
+        let (mut kr, mut n) = (rhs_shape[rhs_rank - 2], rhs_shape[rhs_rank - 1]);
 
         if trans_lhs {
-            std::mem::swap(&mut m, &mut ka);
+            std::mem::swap(&mut m, &mut kl);
         }
 
         if trans_rhs {
-            std::mem::swap(&mut kb, &mut n);
+            std::mem::swap(&mut kr, &mut n);
         }
 
-        if ka != kb {
-            anyhow::bail!("Matmul broadcasting: ka != kb: {} != {}", ka, kb);
+        if kl != kr {
+            anyhow::bail!("Matmul broadcasting: ka != kb: {} != {}", kl, kr);
         }
 
-        let mut c_shape_final = c_broadcasted_prefix.clone();
-        if trans_out {
-            c_broadcasted_prefix.push(n);
-            c_broadcasted_prefix.push(m);
+        let mut dst_shape_final = dst_broadcasted_prefix.clone();
+        if trans_dst {
             if !implicit_n {
-                c_shape_final.push(n);
+                dst_shape_final.push(n);
             }
             if !implicit_m {
-                c_shape_final.push(m);
+                dst_shape_final.push(m);
             }
         } else {
-            c_broadcasted_prefix.push(m);
-            c_broadcasted_prefix.push(n);
             if !implicit_m {
-                c_shape_final.push(m);
+                dst_shape_final.push(m);
             }
             if !implicit_n {
-                c_shape_final.push(n);
+                dst_shape_final.push(n);
             }
         }
 
-        Ok(c_shape_final)
+        Ok(dst_shape_final)
     }
 
     pub fn compute_spec(&self) -> MatmulSpec {
@@ -360,16 +420,16 @@ impl Operation for Matmul {
     }
 
     fn compute_view(&self) -> Result<StorageView, OperationError> {
-        let c_shape = Matmul::compute_c_shape(
-            &self.lhs,
-            &self.rhs,
+        let dst_shape = Matmul::compute_dst_shape(
+            self.lhs.shape(),
+            self.rhs.shape(),
             self.trans_lhs,
             self.trans_rhs,
             self.trans_out,
         )
         .unwrap();
-        let c_strides = Strides::from(&c_shape);
-        Ok(StorageView::new(c_shape, self.rhs.dt(), c_strides))
+        let dst_strides = Strides::from(&dst_shape);
+        Ok(StorageView::new(dst_shape, self.rhs.dt(), dst_strides))
     }
 
     fn srcs(&self) -> RVec<&Tensor> {
@@ -383,14 +443,14 @@ impl Operation for Matmul {
 
 impl OpGuards for Matmul {
     fn check_shapes(&self) {
-        let c_shape = Matmul::compute_c_shape(
-            &self.lhs,
-            &self.rhs,
+        let dst_shape = Matmul::compute_dst_shape(
+            self.lhs.shape(),
+            self.rhs.shape(),
             self.trans_lhs,
             self.trans_rhs,
             self.trans_out,
         );
-        assert!(c_shape.is_ok());
+        assert!(dst_shape.is_ok());
     }
 
     fn check_dtypes(&self) {
@@ -810,9 +870,9 @@ def matmul(a, b{}):
     fn test_matmul_something() {
         let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
         let problem = SGEMMProblem {
-            B: 1,
-            M: 16,
-            K: 2,
+            B: 2,
+            M: 32,
+            K: 1,
             N: 16,
             has_bias: false,
             transpose: TransKind::None,

@@ -3,18 +3,20 @@ use crate::{
     Tensor, TensorDType,
 };
 use anyhow::{anyhow, Result};
+use core::num::NonZero;
+use core::str::FromStr;
 use gemm::{gemm, Parallelism};
-use num_cpus;
-use std::str::FromStr;
 
-pub fn get_num_threads() -> usize {
+pub fn get_num_threads() -> NonZero<usize> {
     // Respond to the same environment variable as rayon.
     match std::env::var("RAYON_NUM_THREADS")
         .ok()
         .and_then(|s| usize::from_str(&s).ok())
     {
-        Some(x) if x > 0 => x,
-        Some(_) | None => num_cpus::get(),
+        Some(x) if x > 0 => NonZero::new(x).unwrap(),
+        Some(_) | None => {
+            std::thread::available_parallelism().unwrap_or_else(|_| NonZero::new(1usize).unwrap())
+        }
     }
 }
 
@@ -49,48 +51,21 @@ fn calculate_ab_skip(
     Ok((a_skip, b_skip))
 }
 
-pub fn stride_contiguous(strides: &Strides) -> Vec<isize> {
-    let mut stride: Vec<_> = strides
-        .to_vec()
-        .iter()
-        .rev()
-        .scan(1, |prod, u| {
-            let prod_pre_mult = *prod;
-            *prod *= u;
-            Some(prod_pre_mult)
-        })
-        .collect();
-    stride.reverse();
-    stride
-}
 fn gemm_impl<T: TensorDType>(
-    batches: usize,
+    spec: MatmulSpec,
     lhs: &[T],
-    lhs_shape: &Shape,
-    lhs_strides: &Strides,
     rhs: &[T],
-    rhs_shape: &Shape,
-    rhs_strides: &Strides,
-    dst_strides: &Strides,
-    trans_lhs: bool,
-    trans_rhs: bool,
 ) -> Result<Vec<T>, OperationError> {
-    let b = batches;
-    let m = if trans_lhs {
-        lhs_shape[1]
-    } else {
-        lhs_shape[0]
-    };
-    let n = if trans_rhs {
-        rhs_shape[0]
-    } else {
-        rhs_shape[1]
-    };
-    let k = if trans_lhs {
-        lhs_shape[0]
-    } else {
-        lhs_shape[1]
-    };
+    let lhs_shape = spec.lhs_shape();
+    let rhs_shape = spec.rhs_shape();
+    let dst_shape = spec.dst_shape();
+    let lhs_strides = Strides::from(lhs_shape);
+    let rhs_strides = Strides::from(rhs_shape);
+    let dst_strides = Strides::from(dst_shape);
+    let b = spec.stacks();
+    let m = lhs_shape[0];
+    let n = rhs_shape[1];
+    let k = lhs_shape[1];
 
     let lhs_strides = lhs_strides.to_vec();
     let rhs_strides = rhs_strides.to_vec();
@@ -98,11 +73,11 @@ fn gemm_impl<T: TensorDType>(
 
     println!("lhs_strides: {lhs_strides:?}, rhs_strides: {rhs_strides:?}, rank: {rank}");
 
-    let lhs_cs = lhs_strides[rank];
-    let lhs_rs = lhs_strides[rank - 1];
+    let lhs_cs = lhs_strides[rank - 1];
+    let lhs_rs = lhs_strides[rank - 2];
 
-    let rhs_cs = rhs_strides[rank];
-    let rhs_rs = rhs_strides[rank - 1];
+    let rhs_cs = rhs_strides[rank - 1];
+    let rhs_rs = rhs_strides[rank - 2];
 
     let (a_skip, b_skip) = calculate_ab_skip(
         lhs_shape,
@@ -122,15 +97,13 @@ fn gemm_impl<T: TensorDType>(
     let dst_cs = dst_strides[1];
 
     let mut dst = vec![T::zero(); b * m * n];
-    /*
-    let num_threads = get_num_threads();
+
+    let num_threads: usize = get_num_threads().into();
     let parallelism = if num_threads > 1 {
         Parallelism::Rayon(num_threads)
     } else {
         Parallelism::None
     };
-    */
-    let parallelism = Parallelism::None;
 
     println!("b: {b}, m: {m}, n: {n}, k: {k}");
     println!("dst_cs: {dst_cs}, dst_rs: {dst_rs}, a_skip: {a_skip}, b_skip: {b_skip}");
@@ -180,29 +153,10 @@ impl CPUOperation for Matmul {
             trans_out,
         } = self;
 
-        let lhs_shape = spec.lhs_shape();
-        let rhs_shape = spec.rhs_shape();
-        let out_shape = spec.out_shape();
-        let lhs_strides = lhs.strides();
-        let rhs_strides = rhs.strides();
-        let out_strides = Strides::from(out_shape);
-        let batches = spec.stacks();
-
         let lhs = lhs.to_vec::<f32>()?;
         let rhs = rhs.to_vec::<f32>()?;
 
-        let result = gemm_impl::<f32>(
-            batches,
-            &lhs,
-            lhs_shape,
-            lhs_strides,
-            &rhs,
-            rhs_shape,
-            rhs_strides,
-            &out_strides,
-            *trans_lhs,
-            *trans_rhs,
-        )?;
+        let result = gemm_impl::<f32>(spec, &lhs, &rhs)?;
         println!("{result:?}");
 
         cpu_store_result(&dst_tensor, &result);

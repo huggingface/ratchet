@@ -109,7 +109,7 @@ impl Kernel for WorkgroupGEMV {
         rhs_shape.insert(0, spec.rhs_stack());
         let bStrides = Strides::from(&rhs_shape);
 
-        let mut out_shape = spec.out_shape.clone();
+        let mut out_shape = spec.dst_shape.clone();
         out_shape.insert(0, spec.stacks());
         let outStrides = Strides::from(&out_shape);
 

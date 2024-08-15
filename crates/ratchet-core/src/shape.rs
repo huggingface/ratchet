@@ -134,6 +134,14 @@ impl Shape {
         }
         Some(shape)
     }
+
+    pub fn transpose(&mut self) {
+        let rank = self.rank();
+        if rank < 2 {
+            return;
+        }
+        self.0.swap(rank - 1, rank - 2);
+    }
 }
 
 impl std::fmt::Debug for Shape {

@@ -46,15 +46,15 @@ impl GEMM {
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
 pub struct GEMMMeta {
-    aShape: IVec3,
-    aStrides: IVec3,
-    bShape: IVec3,
-    bStrides: IVec3,
-    outShape: IVec3,
-    outStrides: IVec3,
-    dimAOuter: i32,
-    dimBOuter: i32,
-    dimInner: i32,
+    lhs_shape: IVec3,
+    lhs_strides: IVec3,
+    rhs_shape: IVec3,
+    rhs_strides: IVec3,
+    dst_shape: IVec3,
+    dst_strides: IVec3,
+    dim_lhs_outer: i32,
+    dim_rhs_outer: i32,
+    dim_inner: i32,
 }
 
 impl KernelRenderable for GEMM {
@@ -167,30 +167,30 @@ impl Kernel for GEMM {
         let spec = &self.spec;
         let mut lhs_shape = spec.lhs_shape.clone();
         lhs_shape.insert(0, spec.lhs_stack());
-        let aStrides = Strides::from(&lhs_shape);
+        let lhs_strides = Strides::from(&lhs_shape);
 
         let mut rhs_shape = spec.rhs_shape.clone();
         rhs_shape.insert(0, spec.rhs_stack());
-        let bStrides = Strides::from(&rhs_shape);
+        let rhs_strides = Strides::from(&rhs_shape);
 
-        let mut out_shape = spec.out_shape.clone();
-        out_shape.insert(0, spec.stacks());
-        let outStrides = Strides::from(&out_shape);
+        let mut dst_shape = spec.dst_shape().clone();
+        dst_shape.insert(0, spec.stacks());
+        let out_strides = Strides::from(&dst_shape);
 
-        let dimAOuter = spec.dim_lhs_outer() as i32;
-        let dimBOuter = spec.dim_rhs_outer() as i32;
-        let dimInner = spec.dim_inner() as i32;
+        let dim_lhs_outer = spec.dim_lhs_outer() as i32;
+        let dim_rhs_outer = spec.dim_rhs_outer() as i32;
+        let dim_inner = spec.dim_inner() as i32;
 
         Ok(GEMMMeta {
-            aShape: lhs_shape.into(),
-            aStrides: aStrides.into(),
-            bShape: rhs_shape.into(),
-            bStrides: bStrides.into(),
-            outShape: out_shape.into(),
-            outStrides: outStrides.into(),
-            dimAOuter,
-            dimBOuter,
-            dimInner,
+            lhs_shape: lhs_shape.into(),
+            lhs_strides: lhs_strides.into(),
+            rhs_shape: rhs_shape.into(),
+            rhs_strides: rhs_strides.into(),
+            dst_shape: dst_shape.into(),
+            dst_strides: out_strides.into(),
+            dim_lhs_outer,
+            dim_rhs_outer,
+            dim_inner,
         })
     }
 

@@ -10,10 +10,10 @@ rand = ["dep:rand", "dep:rand_distr"]
 plotting = ["dep:dot3", "dep:tempfile"]
 testing = ["dep:npyz", "dep:ndarray"]
 pyo3 = ["dep:pyo3", "dep:numpy", "dep:regex"]
-debug = [] #dump every node 
+debug = []                                      #dump every node
 
 [dependencies]
-ratchet-macros = { path = "../ratchet-macros"}
+ratchet-macros = { path = "../ratchet-macros" }
 inline-wgsl = { git = "https://github.com/FL33TW00D/inline-wgsl.git", branch = "master" }
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
@@ -23,7 +23,7 @@ num-traits = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-anyhow.workspace = true 
+anyhow.workspace = true
 
 rustc-hash = { workspace = true }
 slotmap = { workspace = true }
@@ -31,7 +31,9 @@ parking_lot = { workspace = true }
 smallvec = { workspace = true }
 encase = { workspace = true, features = ["smallvec", "glam"] }
 pollster = { workspace = true }
-getrandom = { workspace = true, features = ["js"] } # Needed for wasm support in `num` trait
+getrandom = { workspace = true, features = [
+    "js",
+] } # Needed for wasm support in `num` trait
 num = { workspace = true }
 rand_distr = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
@@ -50,19 +52,18 @@ tempfile = { workspace = true, optional = true }
 tabled = { workspace = true, optional = true }
 itertools = { workspace = true, optional = true }
 
-pyo3 = { workspace = true, features = ["auto-initialize"], optional = true } 
+pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
 regex = { workspace = true, optional = true }
-numpy = { workspace = true, optional = true, features=["half"]}
+numpy = { workspace = true, optional = true, features = ["half"] }
 gemm = { version = "0.18.0", features = ["nightly", "wasm-simd128-enable"] }
-num_cpus = "1.16.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen.workspace = true 
+wasm-bindgen.workspace = true
 futures-intrusive.workspace = true
-wasm-bindgen-futures.workspace = true 
+wasm-bindgen-futures.workspace = true
 
 async-trait = "0.1.77"
-smallvec = { workspace = true , features = ["serde"] }
+smallvec = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 env_logger = { workspace = true }
