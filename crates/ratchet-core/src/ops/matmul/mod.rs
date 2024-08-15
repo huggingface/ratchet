@@ -763,6 +763,7 @@ def matmul(a, b{}):
         if trans_out {
             has_bias = false;
         }
+        has_bias = false;
 
         let lhs_shape = if trans_lhs {
             shape![B, K, M]
@@ -803,6 +804,21 @@ def matmul(a, b{}):
         println!("PYTORCH FP32:\n{:?}", ground);
         ground.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
+    }
+
+    #[test]
+    fn test_matmul_something() {
+        let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
+        let problem = SGEMMProblem {
+            B: 1,
+            M: 16,
+            K: 2,
+            N: 16,
+            has_bias: false,
+            transpose: TransKind::None,
+        };
+
+        run_matmul_trial(&cpu_device, problem).unwrap();
     }
 
     #[test]

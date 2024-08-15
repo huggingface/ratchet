@@ -49,7 +49,7 @@ fn calculate_ab_skip(
     Ok((a_skip, b_skip))
 }
 
-fn stride_contiguous(strides: &Strides) -> Vec<isize> {
+pub fn stride_contiguous(strides: &Strides) -> Vec<isize> {
     let mut stride: Vec<_> = strides
         .to_vec()
         .iter()
@@ -71,6 +71,7 @@ fn gemm_impl<T: TensorDType>(
     rhs: &[T],
     rhs_shape: &Shape,
     rhs_strides: &Strides,
+    dst_strides: &Strides,
     trans_lhs: bool,
     trans_rhs: bool,
 ) -> Result<Vec<T>, OperationError> {
@@ -91,17 +92,17 @@ fn gemm_impl<T: TensorDType>(
         lhs_shape[1]
     };
 
-    println!("b: {b}, m: {m}, n: {n}, k: {k}");
-
     let lhs_strides = lhs_strides.to_vec();
     let rhs_strides = rhs_strides.to_vec();
     let rank = lhs_shape.rank();
 
-    let lhs_cs = lhs_strides[rank - 1];
-    let lhs_rs = lhs_strides[rank - 2];
+    println!("lhs_strides: {lhs_strides:?}, rhs_strides: {rhs_strides:?}, rank: {rank}");
 
-    let rhs_cs = rhs_strides[rank - 1];
-    let rhs_rs = rhs_strides[rank - 2];
+    let lhs_cs = lhs_strides[rank];
+    let lhs_rs = lhs_strides[rank - 1];
+
+    let rhs_cs = rhs_strides[rank];
+    let rhs_rs = rhs_strides[rank - 1];
 
     let (a_skip, b_skip) = calculate_ab_skip(
         lhs_shape,
@@ -114,7 +115,9 @@ fn gemm_impl<T: TensorDType>(
         k,
     )?;
     let c_skip: usize = m * n;
-    let dst_strides = stride_contiguous(&Strides::from(&shape![m, n]));
+    // [m, n] -> [n, 1]
+    //let dst_strides = stride_contiguous(&Strides::from(&shape![m, n]));
+    println!("{dst_strides:?}");
     let dst_rs = dst_strides[0];
     let dst_cs = dst_strides[1];
 
@@ -129,7 +132,9 @@ fn gemm_impl<T: TensorDType>(
     */
     let parallelism = Parallelism::None;
 
-    println!("b: {b}, m: {m}, n: {n}, k: {k}, dst_cs: {dst_cs}, dst_rs: {dst_rs}, a_skip: {a_skip}, b_skip: {b_skip}");
+    println!("b: {b}, m: {m}, n: {n}, k: {k}");
+    println!("dst_cs: {dst_cs}, dst_rs: {dst_rs}, a_skip: {a_skip}, b_skip: {b_skip}");
+    println!("lhs_cs: {lhs_cs}, lhs_rs: {lhs_rs}, rhs_cs: {rhs_cs}, rhs_rs: {rhs_rs}");
 
     for step in 0..b {
         let lhs_p = &lhs[step * a_skip..];
@@ -177,8 +182,10 @@ impl CPUOperation for Matmul {
 
         let lhs_shape = spec.lhs_shape();
         let rhs_shape = spec.rhs_shape();
+        let out_shape = spec.out_shape();
         let lhs_strides = lhs.strides();
         let rhs_strides = rhs.strides();
+        let out_strides = Strides::from(out_shape);
         let batches = spec.stacks();
 
         let lhs = lhs.to_vec::<f32>()?;
@@ -192,9 +199,11 @@ impl CPUOperation for Matmul {
             &rhs,
             rhs_shape,
             rhs_strides,
+            &out_strides,
             *trans_lhs,
             *trans_rhs,
         )?;
+        println!("{result:?}");
 
         cpu_store_result(&dst_tensor, &result);
         Ok(dst_tensor)

@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use crate::{rvec, RVec, Shape};
 use encase::impl_wrapper;
 
@@ -19,6 +21,14 @@ impl std::fmt::Debug for Strides {
             shape.push_str(&format!("x{}", dim));
         }
         write!(f, "{}]", shape)
+    }
+}
+
+impl Index<usize> for Strides {
+    type Output = isize;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
     }
 }
 
