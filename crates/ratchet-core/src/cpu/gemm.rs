@@ -7,7 +7,7 @@ use core::str::FromStr;
 use gemm::{gemm, Parallelism};
 use std::{mem, num::NonZeroUsize};
 
-pub fn get_num_threads() -> NonZeroUsize {
+fn get_num_threads() -> NonZeroUsize {
     // Respond to the same environment variable as rayon.
     match std::env::var("RAYON_NUM_THREADS")
         .ok()
@@ -16,6 +16,13 @@ pub fn get_num_threads() -> NonZeroUsize {
         Some(x) if x > 0 => NonZeroUsize::new(x).unwrap(),
         Some(_) | None => std::thread::available_parallelism()
             .unwrap_or_else(|_| NonZeroUsize::new(1usize).unwrap()),
+    }
+}
+
+fn get_parallelism() -> Parallelism {
+    match get_num_threads().get() {
+        1 => Parallelism::None,
+        n => Parallelism::Rayon(n),
     }
 }
 
@@ -29,9 +36,7 @@ fn calculate_skips(
     n: usize,
     k: usize,
 ) -> Result<(usize, usize)> {
-    let rhs_strides = rhs_strides.to_vec();
-
-    let a_skip: usize = match lhs_strides[..rank - 2] {
+    let lhs_skip: usize = match lhs_strides[..rank - 2] {
         [s1, stride] if s1 == stride * lhs_shape[1] as isize => stride as usize,
         [_, stride] if lhs_shape[0] == 1 => stride as usize,
         [stride, _] if lhs_shape[1] == 1 => stride as usize,
@@ -39,7 +44,7 @@ fn calculate_skips(
         [] => m * k,
         _ => Err(anyhow!("non-contiguous lhs"))?,
     };
-    let b_skip: usize = match rhs_strides[..rank - 2] {
+    let rhs_skip: usize = match rhs_strides[..rank - 2] {
         [s1, stride] if s1 == stride * rhs_shape[1] as isize => stride as usize,
         [_, stride] if rhs_shape[0] == 1 => stride as usize,
         [stride, _] if rhs_shape[1] == 1 => stride as usize,
@@ -47,7 +52,7 @@ fn calculate_skips(
         [] => n * k,
         _ => Err(anyhow!("non-contiguous rhs"))?,
     };
-    Ok((a_skip, b_skip))
+    Ok((lhs_skip, rhs_skip))
 }
 
 fn gemm_impl<T: TensorDType>(
@@ -57,10 +62,9 @@ fn gemm_impl<T: TensorDType>(
 ) -> Result<Vec<T>, OperationError> {
     let lhs_shape = spec.lhs_shape();
     let rhs_shape = spec.rhs_shape();
-    let dst_shape = spec.dst_shape();
-    let lhs_strides = Strides::from(lhs_shape);
-    let rhs_strides = Strides::from(rhs_shape);
-    let dst_strides = Strides::from(dst_shape);
+    let lhs_strides = spec.lhs_strides();
+    let rhs_strides = spec.rhs_strides();
+    let dst_strides = spec.dst_strides();
     let b = spec.stacks();
     let m = spec.m();
     let n = spec.n();
@@ -89,20 +93,10 @@ fn gemm_impl<T: TensorDType>(
         k,
     )?;
     let dst_skip: usize = m * n;
-    let (dst_cs, dst_rs) = if spec.trans_dst() {
-        (dst_strides[rank - 2], dst_strides[rank - 1])
-    } else {
-        (dst_strides[rank - 1], dst_strides[rank - 2])
-    };
+    let dst_rs = dst_strides[0];
+    let dst_cs = dst_strides[1];
 
     let mut dst = vec![T::zero(); b * m * n];
-
-    let num_threads = get_num_threads().get();
-    let parallelism = if num_threads > 1 {
-        Parallelism::Rayon(num_threads)
-    } else {
-        Parallelism::None
-    };
 
     println!("b: {b}, m: {m}, n: {n}, k: {k}");
     println!("dst_cs: {dst_cs}, dst_rs: {dst_rs}, dst_skip: {dst_skip}");
@@ -133,7 +127,7 @@ fn gemm_impl<T: TensorDType>(
                 false,
                 false,
                 false,
-                parallelism,
+                get_parallelism(),
             )
         }
     }
@@ -156,8 +150,11 @@ impl CPUOperation for Matmul {
         let lhs = lhs.to_vec::<f32>()?;
         let rhs = rhs.to_vec::<f32>()?;
 
-        let result = gemm_impl::<f32>(spec, &lhs, &rhs)?;
-        println!("{result:?}");
+        let result = if spec.trans_dst() {
+            gemm_impl::<f32>(spec, &rhs, &lhs)?
+        } else {
+            gemm_impl::<f32>(spec, &lhs, &rhs)?
+        };
 
         cpu_store_result(&dst_tensor, &result);
         Ok(dst_tensor)

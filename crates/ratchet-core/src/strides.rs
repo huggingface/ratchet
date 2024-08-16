@@ -12,6 +12,14 @@ impl Strides {
     pub fn to_vec(&self) -> Vec<isize> {
         self.0.to_vec()
     }
+
+    pub fn transpose(&mut self) {
+        let rank = self.0.len();
+        if rank < 2 {
+            return;
+        }
+        self.0.swap(rank - 2, rank - 1);
+    }
 }
 
 impl std::fmt::Debug for Strides {

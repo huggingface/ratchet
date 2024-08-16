@@ -54,6 +54,9 @@ pub struct MatmulSpec {
     lhs_shape: Shape,
     rhs_shape: Shape,
     dst_shape: Shape,
+    lhs_strides: Strides,
+    rhs_strides: Strides,
+    dst_strides: Strides,
     lhs_stack: usize,
     rhs_stack: usize,
     dst_stack: usize,
@@ -71,14 +74,17 @@ impl MatmulSpec {
     pub fn new(
         LHS: &Tensor,
         RHS: &Tensor,
-        mut trans_lhs: bool,
-        mut trans_rhs: bool,
+        trans_lhs: bool,
+        trans_rhs: bool,
         trans_dst: bool,
     ) -> Self {
         let raw_lhs_shape = LHS.shape().clone();
         let raw_rhs_shape = RHS.shape().clone();
         let mut lhs_shape = raw_lhs_shape.clone();
         let mut rhs_shape = raw_rhs_shape.clone();
+
+        let mut trans_lhs = trans_lhs;
+        let mut trans_rhs = trans_rhs;
 
         let lhs_dt = LHS.dt();
         let rhs_dt = RHS.dt();
@@ -122,27 +128,47 @@ impl MatmulSpec {
             rhs_shape.insert(0, 1);
         }
 
+        let mut lhs_strides = Strides::from(&lhs_shape);
+        let mut rhs_strides = Strides::from(&rhs_shape);
+        let mut dst_strides = Strides::from(&dst_shape);
+
+        println!("before --------------------");
+        println!("LHS: {lhs_shape:?} {lhs_strides:?}");
+        println!("RHS: {rhs_shape:?} {rhs_strides:?}");
+        println!("DST: {dst_shape:?} {dst_strides:?}");
+
         // The (a b)T => bT aT rule means that if we have to transpose dst we can simply transpose the inputs and swap them.
         // However two transposes cancel each other out, in which case we can just skip transposing the input altogether.
         // This is just the xor operator (^).
         if trans_lhs ^ trans_dst {
+            println!("TRANSPOSING LHS: {lhs_shape:?}");
             lhs_shape.transpose();
+            lhs_strides = Strides::from(&lhs_shape);
+            lhs_strides.transpose();
         }
         if trans_rhs ^ trans_dst {
+            println!("TRANSPOSING RHS: {rhs_shape:?}");
             rhs_shape.transpose();
+            rhs_strides = Strides::from(&rhs_shape);
+            rhs_strides.transpose();
         }
         if trans_dst {
+            println!("TRANSPOSING DST (lhs and rhs)");
+            // (a b)T => bT aT
+            // aT bT has already been applied correctly above, so we can just swap.
             mem::swap(&mut lhs_shape, &mut rhs_shape);
-            // transposes must follow their shapes
-            mem::swap(&mut trans_lhs, &mut trans_rhs);
+            // strides and transposes must follow their shapes
+            mem::swap(&mut lhs_strides, &mut rhs_strides);
+            // mem::swap(&mut trans_lhs, &mut trans_rhs);
 
             println!("lhs_shape: {lhs_shape:?}, trans_lhs: {trans_lhs}");
             println!("rhs_shape: {rhs_shape:?}, trans_rhs: {trans_rhs}");
-
-            dst_shape =
-                Matmul::compute_dst_shape(&lhs_shape, &rhs_shape, trans_lhs, trans_rhs, trans_dst)
-                    .unwrap();
         }
+
+        println!("after --------------------");
+        println!("LHS: {lhs_shape:?} {lhs_strides:?}");
+        println!("RHS: {rhs_shape:?} {rhs_strides:?}");
+        println!("DST: {dst_shape:?} {dst_strides:?}");
 
         log::debug!(
             "MatmulSpec stacking: lhs={lhs_shape:?} rhs={rhs_shape:?} stack_dims={stack_dims} stack_count={}",
@@ -159,6 +185,9 @@ impl MatmulSpec {
             lhs_shape,
             rhs_shape,
             dst_shape,
+            lhs_strides,
+            rhs_strides,
+            dst_strides,
             lhs_stack,
             rhs_stack,
             dst_stack,
@@ -196,12 +225,12 @@ impl MatmulSpec {
         &self.raw_lhs_shape
     }
 
-    pub fn lhs_shape(&self) -> &Shape {
-        &self.lhs_shape
-    }
-
     pub fn raw_rhs_shape(&self) -> &Shape {
         &self.raw_lhs_shape
+    }
+
+    pub fn lhs_shape(&self) -> &Shape {
+        &self.lhs_shape
     }
 
     pub fn rhs_shape(&self) -> &Shape {
@@ -210,6 +239,18 @@ impl MatmulSpec {
 
     pub fn dst_shape(&self) -> &Shape {
         &self.dst_shape
+    }
+
+    pub fn lhs_strides(&self) -> &Strides {
+        &self.lhs_strides
+    }
+
+    pub fn rhs_strides(&self) -> &Strides {
+        &self.rhs_strides
+    }
+
+    pub fn dst_strides(&self) -> &Strides {
+        &self.dst_strides
     }
 
     pub fn dim_lhs_outer(&self) -> usize {
@@ -836,11 +877,10 @@ def matmul(a, b{}):
             ref transpose,
         } = prob;
 
-        // let (trans_lhs, trans_rhs, trans_dst) = transpose.clone().into();
-        let (trans_lhs, trans_rhs, trans_dst) = (false, false, false);
-        //if trans_dst {
-        //    has_bias = false;
-        //}
+        let (trans_lhs, trans_rhs, trans_dst) = transpose.clone().into();
+        if trans_dst {
+            has_bias = false;
+        }
         has_bias = false;
 
         let lhs_shape = if trans_lhs {
@@ -894,11 +934,11 @@ def matmul(a, b{}):
         let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
         let problem = SGEMMProblem {
             B: 1,
-            M: 2,
-            K: 1,
-            N: 1,
+            M: 16,
+            K: 2,
+            N: 8,
             has_bias: false,
-            transpose: TransKind::RHS,
+            transpose: TransKind::DST,
         };
 
         run_matmul_trial(&cpu_device, problem).unwrap();
