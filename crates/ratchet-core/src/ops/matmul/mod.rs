@@ -831,7 +831,25 @@ def matmul(a, b{}):
     }
 
     #[proptest(cases = 64)]
-    fn test_sgemm(prob: SGEMMProblem) {
+    fn test_sgemm_gpu(prob: SGEMMProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let SGEMMProblem {
+            B,
+            M,
+            K,
+            N,
+            has_bias,
+            ref transpose,
+        } = prob;
+        println!(
+            "Running sgemm: B={} M={} N={} K={} has_bias={} transpose={:?}",
+            B, M, N, K, has_bias, transpose
+        );
+        run_matmul_trial(&device, prob).unwrap();
+    }
+
+    #[proptest(cases = 64)]
+    fn test_sgemm_cpu(prob: SGEMMProblem) {
         let device = Device::request_device(DeviceRequest::CPU).unwrap();
         let SGEMMProblem {
             B,
