@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{anyhow, Result};
 use core::str::FromStr;
 use gemm::{gemm, Parallelism};
-use std::num::NonZeroUsize;
+use std::{mem, num::NonZeroUsize};
 
 pub fn get_num_threads() -> NonZeroUsize {
     // Respond to the same environment variable as rayon.
@@ -19,7 +19,7 @@ pub fn get_num_threads() -> NonZeroUsize {
     }
 }
 
-fn calculate_ab_skip(
+fn calculate_skips(
     lhs_shape: &Shape,
     lhs_strides: &[isize],
     rhs_shape: &Shape,
@@ -78,7 +78,7 @@ fn gemm_impl<T: TensorDType>(
     let rhs_cs = rhs_strides[rank - 1];
     let rhs_rs = rhs_strides[rank - 2];
 
-    let (a_skip, b_skip) = calculate_ab_skip(
+    let (lhs_skip, rhs_skip) = calculate_skips(
         lhs_shape,
         &lhs_strides,
         rhs_shape,
@@ -88,9 +88,12 @@ fn gemm_impl<T: TensorDType>(
         n,
         k,
     )?;
-    let c_skip: usize = m * n;
-    let dst_rs = dst_strides[0];
-    let dst_cs = dst_strides[1];
+    let dst_skip: usize = m * n;
+    let (dst_cs, dst_rs) = if spec.trans_dst() {
+        (dst_strides[rank - 2], dst_strides[rank - 1])
+    } else {
+        (dst_strides[rank - 1], dst_strides[rank - 2])
+    };
 
     let mut dst = vec![T::zero(); b * m * n];
 
@@ -102,13 +105,14 @@ fn gemm_impl<T: TensorDType>(
     };
 
     println!("b: {b}, m: {m}, n: {n}, k: {k}");
-    println!("dst_cs: {dst_cs}, dst_rs: {dst_rs}, a_skip: {a_skip}, b_skip: {b_skip}");
-    println!("lhs_cs: {lhs_cs}, lhs_rs: {lhs_rs}, rhs_cs: {rhs_cs}, rhs_rs: {rhs_rs}");
+    println!("dst_cs: {dst_cs}, dst_rs: {dst_rs}, dst_skip: {dst_skip}");
+    println!("lhs_cs: {lhs_cs}, lhs_rs: {lhs_rs}, lhs_skip: {lhs_skip}");
+    println!("rhs_cs: {rhs_cs}, rhs_rs: {rhs_rs}, rhs_skip: {rhs_skip}");
 
     for step in 0..b {
-        let lhs_p = &lhs[step * a_skip..];
-        let rhs_p = &rhs[step * b_skip..];
-        let dst_p = &mut dst[step * c_skip..];
+        let lhs_p = &lhs[step * lhs_skip..];
+        let rhs_p = &rhs[step * rhs_skip..];
+        let dst_p = &mut dst[step * dst_skip..];
         unsafe {
             gemm(
                 m,

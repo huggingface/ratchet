@@ -140,7 +140,7 @@ impl Shape {
         if rank < 2 {
             return;
         }
-        self.0.swap(rank - 1, rank - 2);
+        self.0.swap(rank - 2, rank - 1);
     }
 }
 

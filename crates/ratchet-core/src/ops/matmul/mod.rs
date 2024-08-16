@@ -71,8 +71,8 @@ impl MatmulSpec {
     pub fn new(
         LHS: &Tensor,
         RHS: &Tensor,
-        trans_lhs: bool,
-        trans_rhs: bool,
+        mut trans_lhs: bool,
+        mut trans_rhs: bool,
         trans_dst: bool,
     ) -> Self {
         let raw_lhs_shape = LHS.shape().clone();
@@ -80,18 +80,6 @@ impl MatmulSpec {
         let mut lhs_shape = raw_lhs_shape.clone();
         let mut rhs_shape = raw_rhs_shape.clone();
 
-        if trans_dst {
-            lhs_shape.transpose();
-            rhs_shape.transpose();
-            mem::swap(&mut lhs_shape, &mut rhs_shape);
-        }
-        let mut dst_shape =
-            Matmul::compute_dst_shape(&lhs_shape, &rhs_shape, trans_lhs, trans_rhs, trans_dst)
-                .unwrap();
-
-        if trans_dst {
-            dst_shape.transpose();
-        }
         let lhs_dt = LHS.dt();
         let rhs_dt = RHS.dt();
 
@@ -108,6 +96,10 @@ impl MatmulSpec {
             }
             _ => {}
         };
+
+        let mut dst_shape =
+            Matmul::compute_dst_shape(&lhs_shape, &rhs_shape, trans_lhs, trans_rhs, trans_dst)
+                .unwrap();
 
         let stack_dims = dst_shape.rank() - 2;
         let stack_shape = dst_shape.slice(0..stack_dims);
@@ -130,12 +122,26 @@ impl MatmulSpec {
             rhs_shape.insert(0, 1);
         }
 
-        if trans_lhs {
+        // The (a b)T => bT aT rule means that if we have to transpose dst we can simply transpose the inputs and swap them.
+        // However two transposes cancel each other out, in which case we can just skip transposing the input altogether.
+        // This is just the xor operator (^).
+        if trans_lhs ^ trans_dst {
             lhs_shape.transpose();
         }
-
-        if trans_rhs {
+        if trans_rhs ^ trans_dst {
             rhs_shape.transpose();
+        }
+        if trans_dst {
+            mem::swap(&mut lhs_shape, &mut rhs_shape);
+            // transposes must follow their shapes
+            mem::swap(&mut trans_lhs, &mut trans_rhs);
+
+            println!("lhs_shape: {lhs_shape:?}, trans_lhs: {trans_lhs}");
+            println!("rhs_shape: {rhs_shape:?}, trans_rhs: {trans_rhs}");
+
+            dst_shape =
+                Matmul::compute_dst_shape(&lhs_shape, &rhs_shape, trans_lhs, trans_rhs, trans_dst)
+                    .unwrap();
         }
 
         log::debug!(
@@ -279,6 +285,18 @@ impl MatmulSpec {
 
     pub fn dst_stack(&self) -> usize {
         self.dst_stack
+    }
+
+    pub fn trans_lhs(&self) -> bool {
+        self.trans_lhs
+    }
+
+    pub fn trans_rhs(&self) -> bool {
+        self.trans_rhs
+    }
+
+    pub fn trans_dst(&self) -> bool {
+        self.trans_dst
     }
 
     pub fn stacks(&self) -> usize {
@@ -818,10 +836,11 @@ def matmul(a, b{}):
             ref transpose,
         } = prob;
 
-        let (trans_lhs, trans_rhs, trans_dst) = transpose.clone().into();
-        if trans_dst {
-            has_bias = false;
-        }
+        // let (trans_lhs, trans_rhs, trans_dst) = transpose.clone().into();
+        let (trans_lhs, trans_rhs, trans_dst) = (false, false, false);
+        //if trans_dst {
+        //    has_bias = false;
+        //}
         has_bias = false;
 
         let lhs_shape = if trans_lhs {
@@ -859,8 +878,13 @@ def matmul(a, b{}):
             .resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
+        let results = d_gpu.to_vec::<f32>()?;
+        let truth = ground.to_vec::<f32>()?;
         println!("RATCHET SGEMM\n{:?}\n", d_gpu);
         println!("PYTORCH FP32:\n{:?}", ground);
+
+        println!("RATCHET\n{results:?}");
+        println!("PYTORCH\n{truth:?}");
         ground.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
     }
@@ -870,11 +894,11 @@ def matmul(a, b{}):
         let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
         let problem = SGEMMProblem {
             B: 1,
-            M: 16,
+            M: 2,
             K: 1,
-            N: 16,
+            N: 1,
             has_bias: false,
-            transpose: TransKind::DST,
+            transpose: TransKind::RHS,
         };
 
         run_matmul_trial(&cpu_device, problem).unwrap();
