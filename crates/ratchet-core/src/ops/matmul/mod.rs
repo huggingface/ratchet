@@ -130,45 +130,27 @@ impl MatmulSpec {
 
         let mut lhs_strides = Strides::from(&lhs_shape);
         let mut rhs_strides = Strides::from(&rhs_shape);
-        let mut dst_strides = Strides::from(&dst_shape);
-
-        println!("before --------------------");
-        println!("LHS: {lhs_shape:?} {lhs_strides:?}");
-        println!("RHS: {rhs_shape:?} {rhs_strides:?}");
-        println!("DST: {dst_shape:?} {dst_strides:?}");
+        let dst_strides = Strides::from(&dst_shape);
 
         // The (a b)T => bT aT rule means that if we have to transpose dst we can simply transpose the inputs and swap them.
         // However two transposes cancel each other out, in which case we can just skip transposing the input altogether.
         // This is just the xor operator (^).
         if trans_lhs ^ trans_dst {
-            println!("TRANSPOSING LHS: {lhs_shape:?}");
             lhs_shape.transpose();
-            lhs_strides = Strides::from(&lhs_shape);
             lhs_strides.transpose();
         }
         if trans_rhs ^ trans_dst {
-            println!("TRANSPOSING RHS: {rhs_shape:?}");
             rhs_shape.transpose();
-            rhs_strides = Strides::from(&rhs_shape);
             rhs_strides.transpose();
         }
         if trans_dst {
-            println!("TRANSPOSING DST (lhs and rhs)");
             // (a b)T => bT aT
             // aT bT has already been applied correctly above, so we can just swap.
             mem::swap(&mut lhs_shape, &mut rhs_shape);
             // strides and transposes must follow their shapes
             mem::swap(&mut lhs_strides, &mut rhs_strides);
-            // mem::swap(&mut trans_lhs, &mut trans_rhs);
-
-            println!("lhs_shape: {lhs_shape:?}, trans_lhs: {trans_lhs}");
-            println!("rhs_shape: {rhs_shape:?}, trans_rhs: {trans_rhs}");
+            mem::swap(&mut trans_lhs, &mut trans_rhs);
         }
-
-        println!("after --------------------");
-        println!("LHS: {lhs_shape:?} {lhs_strides:?}");
-        println!("RHS: {rhs_shape:?} {rhs_strides:?}");
-        println!("DST: {dst_shape:?} {dst_strides:?}");
 
         log::debug!(
             "MatmulSpec stacking: lhs={lhs_shape:?} rhs={rhs_shape:?} stack_dims={stack_dims} stack_count={}",
@@ -918,13 +900,9 @@ def matmul(a, b{}):
             .resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
-        let results = d_gpu.to_vec::<f32>()?;
-        let truth = ground.to_vec::<f32>()?;
         println!("RATCHET SGEMM\n{:?}\n", d_gpu);
         println!("PYTORCH FP32:\n{:?}", ground);
 
-        println!("RATCHET\n{results:?}");
-        println!("PYTORCH\n{truth:?}");
         ground.all_close(&d_gpu, 1e-4, 1e-4)?;
         Ok(())
     }
@@ -933,7 +911,7 @@ def matmul(a, b{}):
     fn test_matmul_something() {
         let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
         let problem = SGEMMProblem {
-            B: 1,
+            B: 2,
             M: 16,
             K: 2,
             N: 8,
