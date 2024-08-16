@@ -231,18 +231,18 @@ impl MatmulSpec {
 
     // Returns M dimension before transpose
     pub fn raw_m(&self) -> usize {
-        return self.raw_lhs_shape[0];
+        self.raw_lhs_shape[0]
     }
 
     // Returns N dimension before transpose
     pub fn raw_n(&self) -> usize {
-        return self.raw_rhs_shape[1];
+        self.raw_rhs_shape[1]
     }
 
     /// Returns K dimension before transpose
     pub fn raw_k(&self) -> usize {
         assert_eq!(self.raw_lhs_shape[1], self.raw_rhs_shape[0]);
-        return self.raw_rhs_shape[0];
+        self.raw_rhs_shape[0]
     }
 
     /// Returns M dimension after transpose
@@ -258,7 +258,7 @@ impl MatmulSpec {
     /// Returns K dimension after transpose
     pub fn k(&self) -> usize {
         assert_eq!(self.lhs_shape[1], self.rhs_shape[0]);
-        return self.rhs_shape[0];
+        self.rhs_shape[0]
     }
 
     pub fn dim_inner(&self) -> usize {

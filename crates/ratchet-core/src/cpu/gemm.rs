@@ -1,6 +1,6 @@
 use crate::{
-    cpu_store_result, shape, CPUOperation, Matmul, MatmulSpec, OperationError, Shape, Strides,
-    Tensor, TensorDType,
+    cpu_store_result, CPUOperation, Matmul, MatmulSpec, OperationError, Shape, Strides, Tensor,
+    TensorDType,
 };
 use anyhow::{anyhow, Result};
 use core::str::FromStr;
@@ -115,15 +115,15 @@ fn gemm_impl<T: TensorDType>(
                 n,
                 k,
                 dst_p.as_mut_ptr(),
-                dst_cs as isize,
-                dst_rs as isize,
+                dst_cs,
+                dst_rs,
                 false,
                 lhs_p.as_ptr(),
-                lhs_cs as isize,
-                lhs_rs as isize,
+                lhs_cs,
+                lhs_rs,
                 rhs_p.as_ptr(),
-                rhs_cs as isize,
-                rhs_rs as isize,
+                rhs_cs,
+                rhs_rs,
                 T::zero(),
                 T::one(),
                 false,

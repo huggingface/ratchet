@@ -234,7 +234,7 @@ fn direct_cast<T: TensorDType, U: TensorDType>(
     let input = input.to_vec::<T>()?;
     let result =
         bytemuck::try_cast_slice::<T, U>(&input).map_err(|_| anyhow!("Failed direct cast"))?;
-    cpu_store_result(dst, &result);
+    cpu_store_result(dst, result);
     Ok(())
 }
 

@@ -741,8 +741,6 @@ impl Tensor {
     }
 
     pub fn cpu_apply(self, dst: Tensor) -> Option<Tensor> {
-        use crate::cpu::gemm::*;
-
         match self.op().clone() {
             LazyOp::Binary(b) => cpu_binary(b, dst).ok(),
             LazyOp::Cast(c) => cpu_cast(c, dst).ok(),
@@ -764,12 +762,8 @@ impl Tensor {
 
     fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {
         match self.device().clone() {
-            Device::CPU => {
-                return self.resolve_cpu();
-            }
-            Device::GPU(device) => {
-                return self.resolve_gpu(&device, debug);
-            }
+            Device::CPU => self.resolve_cpu(),
+            Device::GPU(device) => self.resolve_gpu(&device, debug),
         }
     }
 
@@ -1193,8 +1187,6 @@ impl<T: TensorDType> From<ArrayD<T>> for Tensor {
 
 #[cfg(test)]
 mod tests {
-    use half::f16;
-
     use crate::{rvec, shape, Device, Tensor};
 
     #[test]
