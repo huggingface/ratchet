@@ -22,7 +22,7 @@ pub struct Quantized {
     bias: Option<Tensor>,
     trans_lhs: bool,
     trans_rhs: bool,
-    trans_out: bool,
+    trans_dst: bool,
     spec: MatmulSpec,
 }
 
@@ -34,7 +34,7 @@ impl Quantized {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
         } = matmul.clone();
         Self {
             lhs,
@@ -42,7 +42,7 @@ impl Quantized {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
             spec,
         }
     }

@@ -150,7 +150,7 @@ impl CPUOperation for Matmul {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
         } = self;
 
         let lhs = lhs.to_vec::<f32>()?;

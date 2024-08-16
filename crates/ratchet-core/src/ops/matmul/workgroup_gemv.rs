@@ -33,7 +33,7 @@ pub struct WorkgroupGEMV {
     bias: Option<Tensor>,
     trans_lhs: bool,
     trans_rhs: bool,
-    trans_out: bool,
+    trans_dst: bool,
     spec: MatmulSpec,
 }
 
@@ -45,7 +45,7 @@ impl WorkgroupGEMV {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
         } = matmul.clone();
         Self {
             lhs,
@@ -53,7 +53,7 @@ impl WorkgroupGEMV {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
             spec,
         }
     }
@@ -84,7 +84,7 @@ impl Kernel for WorkgroupGEMV {
             if out_fit { "" } else { "out_checked" },
             if self.trans_lhs { "trans_a" } else { "" },
             if self.trans_rhs { "trans_b" } else { "" },
-            if self.trans_out { "trans_out" } else { "" },
+            if self.trans_dst { "trans_dst" } else { "" },
             bias_key
         );
 

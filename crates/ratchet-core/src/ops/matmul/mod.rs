@@ -128,6 +128,10 @@ impl MatmulSpec {
             rhs_shape.transpose();
         }
 
+        if trans_dst {
+            dst_shape.transpose();
+        }
+
         log::debug!(
             "MatmulSpec stacking: lhs={lhs_shape:?} rhs={rhs_shape:?} stack_dims={stack_dims} stack_count={}",
             stack_shape.numel(),
@@ -278,7 +282,7 @@ impl MatmulSpec {
         self.rhs_stack
     }
 
-    pub fn out_stack(&self) -> usize {
+    pub fn dst_stack(&self) -> usize {
         self.dst_stack
     }
 
@@ -297,22 +301,22 @@ impl MatmulSpec {
     pub fn stacked_shapes(&self) -> (Shape, Shape, Shape) {
         let mut lhs_shape = self.lhs_shape.clone();
         let mut rhs_shape = self.rhs_shape.clone();
-        let mut out_shape = self.dst_shape.clone();
+        let mut dst_shape = self.dst_shape.clone();
         lhs_shape.insert(0, self.stacks());
         rhs_shape.insert(0, self.stacks());
-        out_shape.insert(0, self.stacks());
-        (lhs_shape, rhs_shape, out_shape)
+        dst_shape.insert(0, self.stacks());
+        (lhs_shape, rhs_shape, dst_shape)
     }
 
     pub fn tile_fit(&self) -> (bool, bool, bool) {
-        let dimAOuter = self.dim_lhs_outer();
-        let dimBOuter = self.dim_rhs_outer();
-        let dimInner = self.dim_inner();
+        let dim_lhs_outer = self.dim_lhs_outer();
+        let dim_rhs_outer = self.dim_rhs_outer();
+        let dim_inner = self.dim_inner();
 
-        let a_fit = dimAOuter % Self::TILE_DIM == 0;
-        let b_fit = dimBOuter % Self::TILE_DIM == 0;
-        let out_fit = dimInner % Self::TILE_DIM == 0;
-        (a_fit, b_fit, out_fit)
+        let lhs_fit = dim_lhs_outer % Self::TILE_DIM == 0;
+        let rhs_fit = dim_rhs_outer % Self::TILE_DIM == 0;
+        let dst_fit = dim_inner % Self::TILE_DIM == 0;
+        (lhs_fit, rhs_fit, dst_fit)
     }
 }
 
@@ -323,7 +327,7 @@ pub struct Matmul {
     pub(crate) bias: Option<Tensor>,
     pub(crate) trans_lhs: bool,
     pub(crate) trans_rhs: bool,
-    pub(crate) trans_out: bool,
+    pub(crate) trans_dst: bool,
 }
 
 impl Matmul {
@@ -409,7 +413,7 @@ impl Matmul {
             &self.rhs,
             self.trans_lhs,
             self.trans_rhs,
-            self.trans_out,
+            self.trans_dst,
         )
     }
 }
@@ -425,7 +429,7 @@ impl Operation for Matmul {
             self.rhs.shape(),
             self.trans_lhs,
             self.trans_rhs,
-            self.trans_out,
+            self.trans_dst,
         )
         .unwrap();
         let dst_strides = Strides::from(&dst_shape);
@@ -448,7 +452,7 @@ impl OpGuards for Matmul {
             self.rhs.shape(),
             self.trans_lhs,
             self.trans_rhs,
-            self.trans_out,
+            self.trans_dst,
         );
         assert!(dst_shape.is_ok());
     }
@@ -702,7 +706,7 @@ mod tests {
         bias: Option<&Tensor>,
         trans_lhs: bool,
         trans_rhs: bool,
-        trans_out: bool,
+        trans_dst: bool,
     ) -> anyhow::Result<Tensor> {
         let a_op = if trans_lhs {
             "torch.permute(torch.from_numpy(a), [0, 2, 1])"
@@ -725,7 +729,7 @@ mod tests {
             format!("torch.matmul({}, {})", a_op, b_op)
         };
 
-        let result_op = if trans_out {
+        let result_op = if trans_dst {
             format!(
                 "np.ascontiguousarray(torch.permute({}, [0, 2, 1]).numpy())",
                 inner
@@ -757,10 +761,10 @@ def matmul(a, b{}):
     enum TransKind {
         None,
         LHS,
-        LHSAndOut,
+        LHSAndDST,
         RHS,
-        RHSAndOut,
-        Out,
+        RHSAndDST,
+        DST,
     }
 
     impl From<TransKind> for (bool, bool, bool) {
@@ -768,10 +772,10 @@ def matmul(a, b{}):
             match val {
                 TransKind::None => (false, false, false),
                 TransKind::LHS => (true, false, false),
-                TransKind::LHSAndOut => (true, false, true),
+                TransKind::LHSAndDST => (true, false, true),
                 TransKind::RHS => (false, true, false),
-                TransKind::RHSAndOut => (false, true, true),
-                TransKind::Out => (false, false, true),
+                TransKind::RHSAndDST => (false, true, true),
+                TransKind::DST => (false, false, true),
             }
         }
     }
@@ -819,8 +823,8 @@ def matmul(a, b{}):
             ref transpose,
         } = prob;
 
-        let (trans_lhs, trans_rhs, trans_out) = transpose.clone().into();
-        if trans_out {
+        let (trans_lhs, trans_rhs, trans_dst) = transpose.clone().into();
+        if trans_dst {
             has_bias = false;
         }
         has_bias = false;
@@ -849,14 +853,14 @@ def matmul(a, b{}):
 
         let a = Tensor::randn::<f32>(lhs_shape, cpu_device.clone());
         let b = Tensor::randn::<f32>(rhs_shape, cpu_device.clone());
-        let ground = ground_truth(&a, &b, bias.as_ref(), trans_lhs, trans_rhs, trans_out)?;
+        let ground = ground_truth(&a, &b, bias.as_ref(), trans_lhs, trans_rhs, trans_dst)?;
         println!("Ground shape: {:?}", ground.shape());
 
         let a_gpu = a.to(device)?;
         let b_gpu = b.to(device)?;
         let bias_gpu = bias.as_ref().map(|b| b.to(device)).transpose()?;
         let c_gpu = a_gpu
-            .gemm(b_gpu, bias_gpu, trans_lhs, trans_rhs, trans_out)?
+            .gemm(b_gpu, bias_gpu, trans_lhs, trans_rhs, trans_dst)?
             .resolve()?;
 
         let d_gpu = c_gpu.to(&Device::CPU)?;
@@ -870,12 +874,12 @@ def matmul(a, b{}):
     fn test_matmul_something() {
         let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
         let problem = SGEMMProblem {
-            B: 2,
-            M: 32,
+            B: 1,
+            M: 16,
             K: 1,
             N: 16,
             has_bias: false,
-            transpose: TransKind::None,
+            transpose: TransKind::DST,
         };
 
         run_matmul_trial(&cpu_device, problem).unwrap();
@@ -916,10 +920,10 @@ def matmul(a, b{}):
 
         let TRANS_LHS = false;
         let TRANS_RHS = false;
-        let TRANS_OUT = false;
+        let TRANS_DST = false;
         let QUANT = false;
 
-        let ground = ground_truth(&a, &b, bias.as_ref(), TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
+        let ground = ground_truth(&a, &b, bias.as_ref(), TRANS_LHS, TRANS_RHS, TRANS_DST)?;
 
         let a_gpu = if QUANT {
             let quantizer = Quantizer::new(Quantization::SInt8);
@@ -932,7 +936,7 @@ def matmul(a, b{}):
         let b_gpu = b.to(&device)?;
         let bias_gpu = bias.as_ref().map(|b| b.to(&device)).transpose()?;
         let c_gpu = a_gpu
-            .gemm(b_gpu, bias_gpu, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
+            .gemm(b_gpu, bias_gpu, TRANS_LHS, TRANS_RHS, TRANS_DST)?
             .resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 
@@ -955,10 +959,10 @@ def matmul(a, b{}):
 
         let TRANS_LHS = false;
         let TRANS_RHS = true;
-        let TRANS_OUT = true;
+        let TRANS_DST = true;
         let QUANT = false;
 
-        let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?;
+        let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_DST)?;
 
         let a_gpu = if QUANT {
             let quantizer = Quantizer::new(Quantization::SInt8);
@@ -970,7 +974,7 @@ def matmul(a, b{}):
 
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu
-            .gemm(b_gpu, None, TRANS_LHS, TRANS_RHS, TRANS_OUT)?
+            .gemm(b_gpu, None, TRANS_LHS, TRANS_RHS, TRANS_DST)?
             .resolve()?;
         let ours = c_gpu.to(&Device::CPU)?;
 

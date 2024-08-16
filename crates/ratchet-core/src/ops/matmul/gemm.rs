@@ -17,7 +17,7 @@ pub struct GEMM {
     bias: Option<Tensor>,
     trans_lhs: bool,
     trans_rhs: bool,
-    trans_out: bool,
+    trans_dst: bool,
     spec: MatmulSpec,
 }
 
@@ -29,7 +29,7 @@ impl GEMM {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
         } = matmul.clone();
         Self {
             lhs,
@@ -37,7 +37,7 @@ impl GEMM {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
             spec,
         }
     }
@@ -148,7 +148,7 @@ impl Kernel for GEMM {
             if out_fit { "" } else { "out_checked" },
             if self.trans_lhs { "trans_a" } else { "" },
             if self.trans_rhs { "trans_b" } else { "" },
-            if self.trans_out { "trans_out" } else { "" },
+            if self.trans_dst { "trans_dst" } else { "" },
             bias_key
         );
 
@@ -175,7 +175,7 @@ impl Kernel for GEMM {
 
         let mut dst_shape = spec.dst_shape().clone();
         dst_shape.insert(0, spec.stacks());
-        let out_strides = Strides::from(&dst_shape);
+        let dst_strides = Strides::from(&dst_shape);
 
         let dim_lhs_outer = spec.dim_lhs_outer() as i32;
         let dim_rhs_outer = spec.dim_rhs_outer() as i32;
@@ -187,7 +187,7 @@ impl Kernel for GEMM {
             rhs_shape: rhs_shape.into(),
             rhs_strides: rhs_strides.into(),
             dst_shape: dst_shape.into(),
-            dst_strides: out_strides.into(),
+            dst_strides: dst_strides.into(),
             dim_lhs_outer,
             dim_rhs_outer,
             dim_inner,
@@ -587,7 +587,7 @@ impl GEMM {
         for row in 0..ROW_PER_THREAD {
             for col in 0..ROW_PER_THREAD {
                 let bias_val = if self.bias.is_some() {
-                    if self.trans_out {
+                    if self.trans_dst {
                         wgsl! { bias[globalRow + 'row] }
                     } else {
                         wgsl! { bias[globalCol + 'col] }
@@ -596,7 +596,7 @@ impl GEMM {
                     wgsl! { 0. }
                 };
 
-                let writer = if self.trans_out {
+                let writer = if self.trans_dst {
                     wgsl! { mm_write(batch, globalCol + 'col, globalRow + 'row, val); }
                 } else {
                     wgsl! { mm_write(batch, globalRow + 'row, globalCol + 'col, val); }
