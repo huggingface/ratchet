@@ -207,8 +207,8 @@ fn index_select<T: TensorDType>(
     for left_i in 0..left_len {
         let start_src_idx = left_i * right_len * src_dim;
         let start_dst_idx = left_i * right_len * n_ids;
-        for i in 0..n_ids {
-            let src_idx = start_src_idx + indices[i] as usize * right_len;
+        for (i, idx) in indices.iter().enumerate().take(n_ids) {
+            let src_idx = start_src_idx + *idx as usize * right_len;
             let dst_idx = start_dst_idx + i * right_len;
             result[dst_idx..dst_idx + right_len]
                 .copy_from_slice(&src[src_idx..src_idx + right_len]);
