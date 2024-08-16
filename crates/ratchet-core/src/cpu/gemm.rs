@@ -3,20 +3,19 @@ use crate::{
     Tensor, TensorDType,
 };
 use anyhow::{anyhow, Result};
-use core::num::NonZero;
 use core::str::FromStr;
 use gemm::{gemm, Parallelism};
+use std::num::NonZeroUsize;
 
-pub fn get_num_threads() -> NonZero<usize> {
+pub fn get_num_threads() -> NonZeroUsize {
     // Respond to the same environment variable as rayon.
     match std::env::var("RAYON_NUM_THREADS")
         .ok()
         .and_then(|s| usize::from_str(&s).ok())
     {
-        Some(x) if x > 0 => NonZero::new(x).unwrap(),
-        Some(_) | None => {
-            std::thread::available_parallelism().unwrap_or_else(|_| NonZero::new(1usize).unwrap())
-        }
+        Some(x) if x > 0 => NonZeroUsize::new(x).unwrap(),
+        Some(_) | None => std::thread::available_parallelism()
+            .unwrap_or_else(|_| NonZeroUsize::new(1usize).unwrap()),
     }
 }
 
@@ -63,9 +62,9 @@ fn gemm_impl<T: TensorDType>(
     let rhs_strides = Strides::from(rhs_shape);
     let dst_strides = Strides::from(dst_shape);
     let b = spec.stacks();
-    let m = lhs_shape[0];
-    let n = rhs_shape[1];
-    let k = lhs_shape[1];
+    let m = spec.m();
+    let n = spec.n();
+    let k = spec.k();
 
     let lhs_strides = lhs_strides.to_vec();
     let rhs_strides = rhs_strides.to_vec();
@@ -90,15 +89,12 @@ fn gemm_impl<T: TensorDType>(
         k,
     )?;
     let c_skip: usize = m * n;
-    // [m, n] -> [n, 1]
-    //let dst_strides = stride_contiguous(&Strides::from(&shape![m, n]));
-    println!("{dst_strides:?}");
     let dst_rs = dst_strides[0];
     let dst_cs = dst_strides[1];
 
     let mut dst = vec![T::zero(); b * m * n];
 
-    let num_threads: usize = get_num_threads().into();
+    let num_threads = get_num_threads().get();
     let parallelism = if num_threads > 1 {
         Parallelism::Rayon(num_threads)
     } else {

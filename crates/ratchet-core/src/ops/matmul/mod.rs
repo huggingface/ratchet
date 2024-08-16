@@ -8,7 +8,7 @@ pub use quantized::*;
 pub use subgroup_gemv::*;
 pub use workgroup_gemv::*;
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, mem};
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
@@ -79,9 +79,19 @@ impl MatmulSpec {
         let raw_rhs_shape = RHS.shape().clone();
         let mut lhs_shape = raw_lhs_shape.clone();
         let mut rhs_shape = raw_rhs_shape.clone();
+
+        if trans_dst {
+            lhs_shape.transpose();
+            rhs_shape.transpose();
+            mem::swap(&mut lhs_shape, &mut rhs_shape);
+        }
         let mut dst_shape =
             Matmul::compute_dst_shape(&lhs_shape, &rhs_shape, trans_lhs, trans_rhs, trans_dst)
                 .unwrap();
+
+        if trans_dst {
+            dst_shape.transpose();
+        }
         let lhs_dt = LHS.dt();
         let rhs_dt = RHS.dt();
 
@@ -126,10 +136,6 @@ impl MatmulSpec {
 
         if trans_rhs {
             rhs_shape.transpose();
-        }
-
-        if trans_dst {
-            dst_shape.transpose();
         }
 
         log::debug!(
@@ -225,45 +231,34 @@ impl MatmulSpec {
 
     // Returns M dimension before transpose
     pub fn raw_m(&self) -> usize {
-        return self.lhs_shape[0];
+        return self.raw_lhs_shape[0];
     }
 
     // Returns N dimension before transpose
     pub fn raw_n(&self) -> usize {
-        return self.rhs_shape[1];
+        return self.raw_rhs_shape[1];
     }
 
     /// Returns K dimension before transpose
     pub fn raw_k(&self) -> usize {
-        assert_eq!(self.lhs_shape[1], self.rhs_shape[0]);
-        return self.rhs_shape[0];
+        assert_eq!(self.raw_lhs_shape[1], self.raw_rhs_shape[0]);
+        return self.raw_rhs_shape[0];
     }
 
     /// Returns M dimension after transpose
     pub fn m(&self) -> usize {
-        if self.trans_lhs {
-            self.lhs_shape[1]
-        } else {
-            self.raw_m()
-        }
+        self.lhs_shape[0]
     }
 
     /// Returns N dimension after transpose
     pub fn n(&self) -> usize {
-        if self.trans_rhs {
-            self.rhs_shape[0]
-        } else {
-            self.raw_n()
-        }
+        self.rhs_shape[1]
     }
 
     /// Returns K dimension after transpose
     pub fn k(&self) -> usize {
-        if self.trans_lhs {
-            self.lhs_shape[0]
-        } else {
-            self.raw_k()
-        }
+        assert_eq!(self.lhs_shape[1], self.rhs_shape[0]);
+        return self.rhs_shape[0];
     }
 
     pub fn dim_inner(&self) -> usize {
