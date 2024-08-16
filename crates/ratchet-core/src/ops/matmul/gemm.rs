@@ -280,15 +280,15 @@ impl GEMM {
         let W = P::W;
         builder.write_global(wgsl! {
             fn getAIndexFromCoords3D(coords : vec3<i32>) -> i32 {
-                return dot(coords, metadata.aStrides);
+                return dot(coords, metadata.lhs_strides);
             }
 
             fn getBIndexFromCoords3D(coords : vec3<i32>) -> i32 {
-                return dot(coords, metadata.bStrides);
+                return dot(coords, metadata.rhs_strides);
             }
 
             fn getOutputIndexFromCoords(coords : vec3<i32>) -> i32 {
-                return dot(coords, metadata.outStrides);
+                return dot(coords, metadata.dst_strides);
             }
 
             fn setOutputAtIndex(flatIndex : i32, value : 'accessor) {
@@ -378,13 +378,13 @@ impl GEMM {
             a_inner
         } else if self.trans_lhs {
             wgsl! {
-                if (row < metadata.aShape.z && col < metadata.aShape.y) {
+                if (row < metadata.lhs_shape.z && col < metadata.lhs_shape.y) {
                     'a_inner
                 }
             }
         } else {
             wgsl! {
-                if (row < metadata.aShape.y && col < metadata.aShape.z) {
+                if (row < metadata.lhs_shape.y && col < metadata.lhs_shape.z) {
                     'a_inner
                 }
             }
@@ -414,13 +414,13 @@ impl GEMM {
             b_inner
         } else if self.trans_rhs {
             wgsl! {
-                if (row < metadata.bShape.z && col < metadata.bShape.y) {
+                if (row < metadata.rhs_shape.z && col < metadata.rhs_shape.y) {
                     'b_inner
                 }
             }
         } else {
             wgsl! {
-                if (row < metadata.bShape.y && col < metadata.bShape.z) {
+                if (row < metadata.rhs_shape.y && col < metadata.rhs_shape.z) {
                     'b_inner
                 }
             }
@@ -442,7 +442,7 @@ impl GEMM {
             }
         } else {
             wgsl! {
-                if (row < metadata.dimAOuter && col < metadata.dimBOuter) {
+                if (row < metadata.dim_lhs_outer && col < metadata.dim_rhs_outer) {
                     var value = valueIn;
                     let coords = vec3<i32>(batch, row, col);
                     setOutputAtCoords(coords[0], coords[1], coords[2], value);
@@ -478,8 +478,8 @@ impl GEMM {
 
         kernel_builder.write_main(wgsl! {
             let batch = i32(global_invocation_id.z);
-            let batchA = batch % metadata.aShape[0];
-            let batchB = batch % metadata.bShape[0];
+            let batchA = batch % metadata.lhs_shape[0];
+            let batchB = batch % metadata.rhs_shape[0];
 
             let tileRow = i32(local_invocation_id.y) * 'ROW_PER_THREAD;
             let tileCol = i32(local_invocation_id.x) * 4;
@@ -488,7 +488,7 @@ impl GEMM {
             let globalRow = i32(global_invocation_id.y) * 'ROW_PER_THREAD;
             let globalCol = i32(global_invocation_id.x) * 'ROW_PER_THREAD;
 
-            let numTiles = (metadata.dimInner - 1) / 'TILE_DIM + 1;
+            let numTiles = (metadata.dim_inner - 1) / 'TILE_DIM + 1;
             var kStart = 0;
 
             //ALWAYS ACCUM IN FP32
@@ -637,8 +637,8 @@ impl GEMM {
 
         kernel_builder.write_main(wgsl! {
             let batch = i32(global_invocation_id.z);
-            let batchA = batch % metadata.aShape[0];
-            let batchB = batch % metadata.bShape[0];
+            let batchA = batch % metadata.lhs_shape[0];
+            let batchB = batch % metadata.rhs_shape[0];
 
             let localRow = i32(local_invocation_id.y);
             let tileRow = localRow * 'ROW_PER_THREAD;
@@ -647,7 +647,7 @@ impl GEMM {
             let globalRow = i32(global_invocation_id.y) * 'ROW_PER_THREAD;
             let globalCol = i32(global_invocation_id.x) * 'W;
 
-            let numTiles = (metadata.dimInner - 1) / 'TILE_DIM + 1;
+            let numTiles = (metadata.dim_inner - 1) / 'TILE_DIM + 1;
             var kStart = 0;
 
             var acc: array<'fp32_accessor, 'ROW_PER_THREAD>;
