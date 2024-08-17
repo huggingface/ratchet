@@ -215,6 +215,24 @@ impl MatmulSpec {
         &self.lhs_shape
     }
 
+    pub fn lhs_shape_batched(&self) -> Shape {
+        let mut lhs_shape = self.lhs_shape.clone();
+        lhs_shape.insert(0, self.lhs_stack());
+        lhs_shape
+    }
+
+    pub fn rhs_shape_batched(&self) -> Shape {
+        let mut rhs_shape = self.rhs_shape.clone();
+        rhs_shape.insert(0, self.rhs_stack());
+        rhs_shape
+    }
+
+    pub fn dst_shape_batched(&self) -> Shape {
+        let mut dst_shape = self.dst_shape.clone();
+        dst_shape.insert(0, self.stacks());
+        dst_shape
+    }
+
     pub fn rhs_shape(&self) -> &Shape {
         &self.rhs_shape
     }
@@ -927,14 +945,14 @@ def matmul(a, b{}):
 
     #[test]
     fn test_matmul_something() {
-        let cpu_device = Device::request_device(DeviceRequest::CPU).unwrap();
+        let cpu_device = Device::request_device(DeviceRequest::GPU).unwrap();
         let problem = SGEMMProblem {
-            B: 2,
-            M: 16,
+            B: 1,
+            M: 8,
             K: 2,
             N: 8,
             has_bias: false,
-            transpose: TransKind::DST,
+            transpose: TransKind::RHS,
         };
 
         run_matmul_trial(&cpu_device, problem).unwrap();

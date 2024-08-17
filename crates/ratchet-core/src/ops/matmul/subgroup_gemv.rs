@@ -353,9 +353,14 @@ impl Kernel for SubgroupGEMV {
     }
 
     fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
+        println!(
+            "SubgroupGEMVMeta: OVL: {}, IVL: {}",
+            self.spec.new_dim_lhs_outer(),
+            self.spec.k()
+        );
         Ok(SubgroupGEMVMeta {
             OVL: self.spec.new_dim_lhs_outer() as _,
-            IVL: self.spec.new_dim_rhs_outer() as _,
+            IVL: self.spec.k() as _,
         })
     }
 

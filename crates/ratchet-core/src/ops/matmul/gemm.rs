@@ -165,11 +165,11 @@ impl Kernel for GEMM {
 
     fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let spec = &self.spec;
-        let mut lhs_shape = spec.lhs_shape.clone();
+        let mut lhs_shape = spec.lhs_shape().clone();
         lhs_shape.insert(0, spec.lhs_stack());
         let lhs_strides = Strides::from(&lhs_shape);
 
-        let mut rhs_shape = spec.rhs_shape.clone();
+        let mut rhs_shape = spec.rhs_shape().clone();
         rhs_shape.insert(0, spec.rhs_stack());
         let rhs_strides = Strides::from(&rhs_shape);
 
@@ -181,6 +181,17 @@ impl Kernel for GEMM {
         let dim_rhs_outer = spec.dim_rhs_outer() as i32;
         let dim_inner = spec.dim_inner() as i32;
 
+        println!("GEMMMeta");
+        println!("lhs_shape: {:?}", lhs_shape);
+        println!("lhs_strides: {:?}", lhs_strides);
+        println!("rhs_shape: {:?}", rhs_shape);
+        println!("rhs_strides: {:?}", rhs_strides);
+        println!("dst_shape: {:?}", dst_shape);
+        println!("dst_strides: {:?}", dst_strides);
+        println!("dim_lhs_outer: {:?}", spec.m());
+        println!("dim_rhs_outer: {:?}", spec.n());
+        println!("dim_inner: {:?}", spec.k());
+
         Ok(GEMMMeta {
             lhs_shape: lhs_shape.into(),
             lhs_strides: lhs_strides.into(),
@@ -188,9 +199,9 @@ impl Kernel for GEMM {
             rhs_strides: rhs_strides.into(),
             dst_shape: dst_shape.into(),
             dst_strides: dst_strides.into(),
-            dim_lhs_outer,
-            dim_rhs_outer,
-            dim_inner,
+            dim_lhs_outer: spec.m() as i32,
+            dim_rhs_outer: spec.n() as i32,
+            dim_inner: spec.k() as i32,
         })
     }
 
@@ -217,6 +228,7 @@ impl Kernel for GEMM {
         let group_y = div_ceil;
         let workgroup_count = wgc![group_x as _, group_y as _, self.spec.stacks() as _];
 
+        println!("workgroup_count: {:?}", workgroup_count);
         Ok(Workload {
             workgroup_count,
             workgroup_size: wgs![8, 8, 1],

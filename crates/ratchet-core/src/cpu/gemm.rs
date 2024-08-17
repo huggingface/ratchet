@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{anyhow, Result};
 use core::str::FromStr;
 use gemm::{gemm, Parallelism};
-use std::{mem, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
 fn get_num_threads() -> NonZeroUsize {
     // Respond to the same environment variable as rayon.
