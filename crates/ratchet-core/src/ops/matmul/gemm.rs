@@ -217,7 +217,6 @@ impl Kernel for GEMM {
         let group_y = div_ceil;
         let workgroup_count = wgc![group_x as _, group_y as _, self.spec.stacks() as _];
 
-        println!("workgroup_count: {:?}", workgroup_count);
         Ok(Workload {
             workgroup_count,
             workgroup_size: wgs![8, 8, 1],
