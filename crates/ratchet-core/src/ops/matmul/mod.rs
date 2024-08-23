@@ -948,21 +948,6 @@ def matmul(a, b{}):
     }
 
     #[test]
-    fn test_matmul_something() {
-        let cpu_device = Device::request_device(DeviceRequest::GPU).unwrap();
-        let problem = SGEMMProblem {
-            B: 1,
-            M: 8,
-            K: 2,
-            N: 8,
-            has_bias: false,
-            transpose: TransKind::RHS,
-        };
-
-        run_matmul_trial(&cpu_device, problem).unwrap();
-    }
-
-    #[test]
     fn test_qgemm() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
