@@ -12,9 +12,9 @@ use std::{cmp::Ordering, mem};
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, DType, GPUOperation, Kernel, KernelElement, KernelKey, KernelMetadata, KernelRenderable,
-    KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView, Strides, Tensor,
-    WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+    rvec, DType, Device, GPUOperation, Kernel, KernelElement, KernelKey, KernelMetadata,
+    KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView,
+    Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
 
 //https://link.springer.com/chapter/10.1007/978-3-642-29737-3_42
@@ -132,24 +132,28 @@ impl MatmulSpec {
         let mut rhs_strides = Strides::from(&rhs_shape);
         let dst_strides = Strides::from(&dst_shape);
 
-        // The (a b)T => bT aT rule means that if we have to transpose dst we can simply transpose the inputs and swap them.
-        // However two transposes cancel each other out, in which case we can just skip transposing the input altogether.
-        // This is just the xor operator (^).
-        if trans_lhs ^ trans_dst {
-            lhs_shape.transpose();
-            lhs_strides.transpose();
-        }
-        if trans_rhs ^ trans_dst {
-            rhs_shape.transpose();
-            rhs_strides.transpose();
-        }
-        if trans_dst {
-            // (a b)T => bT aT
-            // aT bT has already been applied correctly above, so we can just swap.
-            mem::swap(&mut lhs_shape, &mut rhs_shape);
-            // strides and transposes must follow their shapes
-            mem::swap(&mut lhs_strides, &mut rhs_strides);
-            mem::swap(&mut trans_lhs, &mut trans_rhs);
+        let is_cpu = matches!(LHS.device(), Device::CPU);
+
+        if is_cpu {
+            // The (a b)T => bT aT rule means that if we have to transpose dst we can simply transpose the inputs and swap them.
+            // However two transposes cancel each other out, in which case we can just skip transposing the input altogether.
+            // This is just the xor operator (^).
+            if trans_lhs ^ trans_dst {
+                lhs_shape.transpose();
+                lhs_strides.transpose();
+            }
+            if trans_rhs ^ trans_dst {
+                rhs_shape.transpose();
+                rhs_strides.transpose();
+            }
+            if trans_dst {
+                // (a b)T => bT aT
+                // aT bT has already been applied correctly above, so we can just swap.
+                mem::swap(&mut lhs_shape, &mut rhs_shape);
+                // strides and transposes must follow their shapes
+                mem::swap(&mut lhs_strides, &mut rhs_strides);
+                mem::swap(&mut trans_lhs, &mut trans_rhs);
+            }
         }
 
         log::debug!(

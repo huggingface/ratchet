@@ -181,17 +181,6 @@ impl Kernel for GEMM {
         let dim_rhs_outer = spec.dim_rhs_outer() as i32;
         let dim_inner = spec.dim_inner() as i32;
 
-        println!("GEMMMeta");
-        println!("lhs_shape: {:?}", lhs_shape);
-        println!("lhs_strides: {:?}", lhs_strides);
-        println!("rhs_shape: {:?}", rhs_shape);
-        println!("rhs_strides: {:?}", rhs_strides);
-        println!("dst_shape: {:?}", dst_shape);
-        println!("dst_strides: {:?}", dst_strides);
-        println!("dim_lhs_outer: {:?}", spec.m());
-        println!("dim_rhs_outer: {:?}", spec.n());
-        println!("dim_inner: {:?}", spec.k());
-
         Ok(GEMMMeta {
             lhs_shape: lhs_shape.into(),
             lhs_strides: lhs_strides.into(),
@@ -199,9 +188,9 @@ impl Kernel for GEMM {
             rhs_strides: rhs_strides.into(),
             dst_shape: dst_shape.into(),
             dst_strides: dst_strides.into(),
-            dim_lhs_outer: spec.m() as i32,
-            dim_rhs_outer: spec.n() as i32,
-            dim_inner: spec.k() as i32,
+            dim_lhs_outer,
+            dim_rhs_outer,
+            dim_inner,
         })
     }
 

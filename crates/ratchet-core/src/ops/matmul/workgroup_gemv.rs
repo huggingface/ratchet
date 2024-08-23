@@ -101,7 +101,7 @@ impl Kernel for WorkgroupGEMV {
 
     fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let spec = &self.spec;
-        let mut lhs_shape = spec.raw_lhs_shape().clone();
+        let mut lhs_shape = spec.lhs_shape().clone();
         lhs_shape.insert(0, spec.lhs_stack());
         let lhs_strides = Strides::from(&lhs_shape);
 
@@ -116,17 +116,6 @@ impl Kernel for WorkgroupGEMV {
         let dim_lhs_outer = spec.dim_lhs_outer() as i32;
         let dim_rhs_outer = spec.dim_rhs_outer() as i32;
         let dim_inner = spec.dim_inner() as i32;
-
-        println!("WorkgroupGEMVMeta");
-        println!("lhs_shape: {:?}", lhs_shape);
-        println!("lhs_strides: {:?}", lhs_strides);
-        println!("rhs_shape: {:?}", rhs_shape);
-        println!("rhs_strides: {:?}", rhs_strides);
-        println!("dst_shape: {:?}", dst_shape);
-        println!("dst_strides: {:?}", dst_strides);
-        println!("dim_lhs_outer: {:?}", spec.m());
-        println!("dim_rhs_outer: {:?}", spec.n());
-        println!("dim_inner: {:?}", spec.k());
 
         Ok(WorkgroupGEMVMeta {
             lhs_shape: lhs_shape.into(),
