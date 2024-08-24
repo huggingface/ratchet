@@ -17,7 +17,7 @@ pub struct GEMM {
     bias: Option<Tensor>,
     trans_lhs: bool,
     trans_rhs: bool,
-    trans_out: bool,
+    trans_dst: bool,
     spec: MatmulSpec,
 }
 
@@ -29,7 +29,7 @@ impl GEMM {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
         } = matmul.clone();
         Self {
             lhs,
@@ -37,7 +37,7 @@ impl GEMM {
             bias,
             trans_lhs,
             trans_rhs,
-            trans_out,
+            trans_dst,
             spec,
         }
     }
@@ -46,15 +46,15 @@ impl GEMM {
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, ShaderType, WgslMetadata)]
 pub struct GEMMMeta {
-    aShape: IVec3,
-    aStrides: IVec3,
-    bShape: IVec3,
-    bStrides: IVec3,
-    outShape: IVec3,
-    outStrides: IVec3,
-    dimAOuter: i32,
-    dimBOuter: i32,
-    dimInner: i32,
+    lhs_shape: IVec3,
+    lhs_strides: IVec3,
+    rhs_shape: IVec3,
+    rhs_strides: IVec3,
+    dst_shape: IVec3,
+    dst_strides: IVec3,
+    dim_lhs_outer: i32,
+    dim_rhs_outer: i32,
+    dim_inner: i32,
 }
 
 impl KernelRenderable for GEMM {
@@ -148,7 +148,7 @@ impl Kernel for GEMM {
             if out_fit { "" } else { "out_checked" },
             if self.trans_lhs { "trans_a" } else { "" },
             if self.trans_rhs { "trans_b" } else { "" },
-            if self.trans_out { "trans_out" } else { "" },
+            if self.trans_dst { "trans_dst" } else { "" },
             bias_key
         );
 
@@ -165,32 +165,32 @@ impl Kernel for GEMM {
 
     fn metadata(&self, _: &Tensor, _: &KernelElement) -> Result<Self::Metadata, OperationError> {
         let spec = &self.spec;
-        let mut lhs_shape = spec.lhs_shape.clone();
+        let mut lhs_shape = spec.lhs_shape().clone();
         lhs_shape.insert(0, spec.lhs_stack());
-        let aStrides = Strides::from(&lhs_shape);
+        let lhs_strides = Strides::from(&lhs_shape);
 
-        let mut rhs_shape = spec.rhs_shape.clone();
+        let mut rhs_shape = spec.rhs_shape().clone();
         rhs_shape.insert(0, spec.rhs_stack());
-        let bStrides = Strides::from(&rhs_shape);
+        let rhs_strides = Strides::from(&rhs_shape);
 
-        let mut out_shape = spec.out_shape.clone();
-        out_shape.insert(0, spec.stacks());
-        let outStrides = Strides::from(&out_shape);
+        let mut dst_shape = spec.dst_shape().clone();
+        dst_shape.insert(0, spec.stacks());
+        let dst_strides = Strides::from(&dst_shape);
 
-        let dimAOuter = spec.dim_lhs_outer() as i32;
-        let dimBOuter = spec.dim_rhs_outer() as i32;
-        let dimInner = spec.dim_inner() as i32;
+        let dim_lhs_outer = spec.dim_lhs_outer() as i32;
+        let dim_rhs_outer = spec.dim_rhs_outer() as i32;
+        let dim_inner = spec.dim_inner() as i32;
 
         Ok(GEMMMeta {
-            aShape: lhs_shape.into(),
-            aStrides: aStrides.into(),
-            bShape: rhs_shape.into(),
-            bStrides: bStrides.into(),
-            outShape: out_shape.into(),
-            outStrides: outStrides.into(),
-            dimAOuter,
-            dimBOuter,
-            dimInner,
+            lhs_shape: lhs_shape.into(),
+            lhs_strides: lhs_strides.into(),
+            rhs_shape: rhs_shape.into(),
+            rhs_strides: rhs_strides.into(),
+            dst_shape: dst_shape.into(),
+            dst_strides: dst_strides.into(),
+            dim_lhs_outer,
+            dim_rhs_outer,
+            dim_inner,
         })
     }
 
@@ -280,15 +280,15 @@ impl GEMM {
         let W = P::W;
         builder.write_global(wgsl! {
             fn getAIndexFromCoords3D(coords : vec3<i32>) -> i32 {
-                return dot(coords, metadata.aStrides);
+                return dot(coords, metadata.lhs_strides);
             }
 
             fn getBIndexFromCoords3D(coords : vec3<i32>) -> i32 {
-                return dot(coords, metadata.bStrides);
+                return dot(coords, metadata.rhs_strides);
             }
 
             fn getOutputIndexFromCoords(coords : vec3<i32>) -> i32 {
-                return dot(coords, metadata.outStrides);
+                return dot(coords, metadata.dst_strides);
             }
 
             fn setOutputAtIndex(flatIndex : i32, value : 'accessor) {
@@ -378,13 +378,13 @@ impl GEMM {
             a_inner
         } else if self.trans_lhs {
             wgsl! {
-                if (row < metadata.aShape.z && col < metadata.aShape.y) {
+                if (row < metadata.lhs_shape.z && col < metadata.lhs_shape.y) {
                     'a_inner
                 }
             }
         } else {
             wgsl! {
-                if (row < metadata.aShape.y && col < metadata.aShape.z) {
+                if (row < metadata.lhs_shape.y && col < metadata.lhs_shape.z) {
                     'a_inner
                 }
             }
@@ -414,13 +414,13 @@ impl GEMM {
             b_inner
         } else if self.trans_rhs {
             wgsl! {
-                if (row < metadata.bShape.z && col < metadata.bShape.y) {
+                if (row < metadata.rhs_shape.z && col < metadata.rhs_shape.y) {
                     'b_inner
                 }
             }
         } else {
             wgsl! {
-                if (row < metadata.bShape.y && col < metadata.bShape.z) {
+                if (row < metadata.rhs_shape.y && col < metadata.rhs_shape.z) {
                     'b_inner
                 }
             }
@@ -442,7 +442,7 @@ impl GEMM {
             }
         } else {
             wgsl! {
-                if (row < metadata.dimAOuter && col < metadata.dimBOuter) {
+                if (row < metadata.dim_lhs_outer && col < metadata.dim_rhs_outer) {
                     var value = valueIn;
                     let coords = vec3<i32>(batch, row, col);
                     setOutputAtCoords(coords[0], coords[1], coords[2], value);
@@ -478,8 +478,8 @@ impl GEMM {
 
         kernel_builder.write_main(wgsl! {
             let batch = i32(global_invocation_id.z);
-            let batchA = batch % metadata.aShape[0];
-            let batchB = batch % metadata.bShape[0];
+            let batchA = batch % metadata.lhs_shape[0];
+            let batchB = batch % metadata.rhs_shape[0];
 
             let tileRow = i32(local_invocation_id.y) * 'ROW_PER_THREAD;
             let tileCol = i32(local_invocation_id.x) * 4;
@@ -488,7 +488,7 @@ impl GEMM {
             let globalRow = i32(global_invocation_id.y) * 'ROW_PER_THREAD;
             let globalCol = i32(global_invocation_id.x) * 'ROW_PER_THREAD;
 
-            let numTiles = (metadata.dimInner - 1) / 'TILE_DIM + 1;
+            let numTiles = (metadata.dim_inner - 1) / 'TILE_DIM + 1;
             var kStart = 0;
 
             //ALWAYS ACCUM IN FP32
@@ -587,7 +587,7 @@ impl GEMM {
         for row in 0..ROW_PER_THREAD {
             for col in 0..ROW_PER_THREAD {
                 let bias_val = if self.bias.is_some() {
-                    if self.trans_out {
+                    if self.trans_dst {
                         wgsl! { bias[globalRow + 'row] }
                     } else {
                         wgsl! { bias[globalCol + 'col] }
@@ -596,7 +596,7 @@ impl GEMM {
                     wgsl! { 0. }
                 };
 
-                let writer = if self.trans_out {
+                let writer = if self.trans_dst {
                     wgsl! { mm_write(batch, globalCol + 'col, globalRow + 'row, val); }
                 } else {
                     wgsl! { mm_write(batch, globalRow + 'row, globalCol + 'col, val); }
@@ -637,8 +637,8 @@ impl GEMM {
 
         kernel_builder.write_main(wgsl! {
             let batch = i32(global_invocation_id.z);
-            let batchA = batch % metadata.aShape[0];
-            let batchB = batch % metadata.bShape[0];
+            let batchA = batch % metadata.lhs_shape[0];
+            let batchB = batch % metadata.rhs_shape[0];
 
             let localRow = i32(local_invocation_id.y);
             let tileRow = localRow * 'ROW_PER_THREAD;
@@ -647,7 +647,7 @@ impl GEMM {
             let globalRow = i32(global_invocation_id.y) * 'ROW_PER_THREAD;
             let globalCol = i32(global_invocation_id.x) * 'W;
 
-            let numTiles = (metadata.dimInner - 1) / 'TILE_DIM + 1;
+            let numTiles = (metadata.dim_inner - 1) / 'TILE_DIM + 1;
             var kStart = 0;
 
             var acc: array<'fp32_accessor, 'ROW_PER_THREAD>;

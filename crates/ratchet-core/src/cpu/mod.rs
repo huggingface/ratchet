@@ -1,3 +1,5 @@
+pub mod gemm;
+
 use crate::{
     Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect, InvariantError, OpGuards,
     Operation, OperationError, RVec, Storage, StorageView, Tensor, TensorDType, Unary, UnaryOp,
@@ -205,8 +207,8 @@ fn index_select<T: TensorDType>(
     for left_i in 0..left_len {
         let start_src_idx = left_i * right_len * src_dim;
         let start_dst_idx = left_i * right_len * n_ids;
-        for i in 0..n_ids {
-            let src_idx = start_src_idx + indices[i] as usize * right_len;
+        for (i, idx) in indices.iter().enumerate().take(n_ids) {
+            let src_idx = start_src_idx + *idx as usize * right_len;
             let dst_idx = start_dst_idx + i * right_len;
             result[dst_idx..dst_idx + right_len]
                 .copy_from_slice(&src[src_idx..src_idx + right_len]);
@@ -232,7 +234,7 @@ fn direct_cast<T: TensorDType, U: TensorDType>(
     let input = input.to_vec::<T>()?;
     let result =
         bytemuck::try_cast_slice::<T, U>(&input).map_err(|_| anyhow!("Failed direct cast"))?;
-    cpu_store_result(dst, &result);
+    cpu_store_result(dst, result);
     Ok(())
 }
 

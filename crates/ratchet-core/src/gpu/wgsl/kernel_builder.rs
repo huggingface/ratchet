@@ -123,7 +123,7 @@ impl WgslKernelBuilder {
     }
 
     fn init_main(&mut self) {
-        self.main.write(&format!("{}\n", self.workgroup_size));
+        self.main.write(format!("{}\n", self.workgroup_size));
         self.main.write("fn main(\n");
         for (b, builtin) in self.builtins.iter().enumerate() {
             let mut builtin = builtin.render();
