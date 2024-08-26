@@ -1,5 +1,5 @@
 use bytemuck::{NoUninit, Pod};
-use half::f16;
+use half::{bf16, f16};
 
 use crate::{storage::DeviceStorage, Device, DeviceError, GPUBuffer, Shape, TensorDType};
 
@@ -185,12 +185,14 @@ impl DeviceStorage for CPUBuffer {
                 )
             }
         }
+        // TODO: Implement dump for quantized types
         match dtype {
             DType::F32 => dump_inner(bytemuck::cast_slice::<u8, f32>(bytes), full),
             DType::I32 => dump_inner(bytemuck::cast_slice::<u8, i32>(bytes), full),
             DType::U32 => dump_inner(bytemuck::cast_slice::<u8, u32>(bytes), full),
             DType::F16 => dump_inner(bytemuck::cast_slice::<u8, f16>(bytes), full),
-            _ => unimplemented!("Unable to dump {:?}", dtype),
+            DType::BF16 => dump_inner(bytemuck::cast_slice::<u8, bf16>(bytes), full),
+            dt => format!("(dump not implemented for {dt})"),
         }
     }
 }

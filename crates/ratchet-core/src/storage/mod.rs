@@ -115,6 +115,18 @@ impl Storage {
     }
 }
 
+impl From<CPUBuffer> for Storage {
+    fn from(c: CPUBuffer) -> Self {
+        Storage::CPU(c)
+    }
+}
+
+impl From<GPUBuffer> for Storage {
+    fn from(g: GPUBuffer) -> Self {
+        Storage::GPU(g)
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait)]
 pub trait DeviceStorage: std::fmt::Debug + Clone + 'static {
     // To be expanded to other devices

@@ -109,13 +109,16 @@ fn handle_whisper(matches: &ArgMatches, api: Api) {
 fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     let model_repo = api.model("FL33TW00D-HF/phi2".to_string());
-    let model_path = model_repo.get("phi2-q8_0.gguf").unwrap();
+    let model_path = model_repo.get("phi2_q8_0.gguf").unwrap();
     println!("MODEL PATH: {}", model_path.display());
     let mut reader = std::io::BufReader::new(std::fs::File::open(model_path)?);
-    let device = Device::request_device(DeviceRequest::GPU)?;
+    let device = Device::request_device(DeviceRequest::CPU)?;
     let content = Header::read(&mut reader)?;
     let mut model = Phi2::load(content, &mut reader, &device)?;
-
+    println!(
+        "Phi2 model embedding storage: {}",
+        model.embedding.weight.resolved()
+    );
     let tokenizer =
         Tokenizer::from_file(concat!("../../", "/models/microsoft/phi-2/tokenizer.json")).unwrap();
 
@@ -136,12 +139,15 @@ fn handle_phi2(matches: &ArgMatches, api: Api) -> anyhow::Result<()> {
 
     print!("{}", prompt);
     std::io::stdout().flush().unwrap();
+    println!("");
     let mut all_tokens = tokens.clone();
     let mut loop_cnt = 0;
     let start_time = std::time::Instant::now();
     while tokens[tokens.len() - 1] != 50256 && loop_cnt < *max_tokens {
         let input = Tensor::from_data(tokens.clone(), shape![1, tokens.len()], device.clone());
+        println!("Phi2 input storage: {}", input.resolved());
         let result = model.schedule(input)?.full()?.resolve()?;
+        println!("Cast to full precision successfully!");
         let logits = result.to(&Device::CPU)?;
         model.cache_mut().update(tokens.len());
 

@@ -104,6 +104,7 @@ impl Module for Phi2 {
 
     fn schedule(&self, input: Self::Input) -> anyhow::Result<Tensor> {
         let mut x = self.embedding.schedule(input)?;
+        println!("Phi2 x storage: {}", x.resolved());
 
         let [_, seq_len, n_state]: [usize; 3] = x.shape().try_into()?;
         let mask = if seq_len <= 1 {
@@ -111,6 +112,14 @@ impl Module for Phi2 {
         } else {
             Some(Self::generate_mask(seq_len, x.device())?)
         };
+        match mask.as_ref() {
+            Some(m) => {
+                println!("Phi2 mask storage: {}", m.resolved());
+            }
+            None => {
+                println!("Phi2 mask: None");
+            }
+        }
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
             let input = DecoderLayerInput {
@@ -123,6 +132,9 @@ impl Module for Phi2 {
         x = self.ln_post.schedule(x)?;
         x = x.slice(&[0..1, seq_len - 1..seq_len, 0..n_state])?;
         let logits = self.lm_head.schedule(x)?;
+
+        println!("Phi2 logits storage: {}", logits.resolved());
+
         Ok(logits)
     }
 }
@@ -162,6 +174,22 @@ impl Phi2 {
             DType::F32 => KVCache::new::<f32>(n_layers, cache_shape, device),
             _ => unimplemented!(),
         };
+
+        println!(
+            "Phi2::load embedding storage: {}",
+            embedding.weight.resolved()
+        );
+        /*
+        println!("Phi2 ln_post storage: {}", ln_post.weight().resolved());
+        println!("Phi2 lm_head storage: {}", lm_head.w.resolved());
+        for (idx, entry) in kv_cache.0.iter().enumerate() {
+            println!(
+                "Phi2 kv_cache #{idx}| k: {}, v: {}",
+                entry.k_cache.resolved(),
+                entry.v_cache.resolved()
+            );
+        }
+         */
 
         Ok(Self {
             embedding,

@@ -740,23 +740,25 @@ impl Tensor {
         }
     }
 
-    pub fn cpu_apply(self, dst: Tensor) -> Option<Tensor> {
+    pub fn cpu_apply(self, t: &Tensor) -> Option<Tensor> {
+        let t = t.clone();
+        println!("Applying {:?}", self.op().name());
         match self.op().clone() {
-            LazyOp::Binary(b) => cpu_binary(b, dst).ok(),
-            LazyOp::Cast(c) => cpu_cast(c, dst).ok(),
-            LazyOp::Matmul(m) => m.apply(dst).ok(),
+            LazyOp::Binary(b) => cpu_binary(b, t).ok(),
+            LazyOp::Cast(c) => cpu_cast(c, t).ok(),
+            LazyOp::Matmul(m) => m.apply(t).ok(),
             LazyOp::Softmax(s) => todo!(),
             LazyOp::RoPE(r) => todo!(),
-            LazyOp::Unary(u) => cpu_unary(u, dst).ok(),
+            LazyOp::Unary(u) => cpu_unary(u, t).ok(),
             LazyOp::Reindex(r) => todo!(),
             LazyOp::Concat(c) => todo!(),
             LazyOp::Norm(n) => todo!(),
             LazyOp::Conv(c) => todo!(),
-            LazyOp::Select(i) => cpu_index_select(i, dst).ok(),
+            LazyOp::Select(i) => cpu_index_select(i, t).ok(),
             LazyOp::IndexWrite(i) => todo!(),
             LazyOp::Cache(c) => todo!(),
-            LazyOp::Const => None,
-            LazyOp::View(_) => None,
+            LazyOp::Const => cpu_const(self, t).ok(),
+            LazyOp::View(v) => cpu_view(v, t).ok(),
         }
     }
 
@@ -768,19 +770,30 @@ impl Tensor {
     }
 
     fn resolve_cpu(self) -> Result<Tensor, TensorError> {
-        let mut tensor = self.clone();
-        let execution_order = self.execution_order();
-
-        for t in execution_order.into_iter() {
-            log::debug!("Running: {:?}", t.op().name());
-            assert!(t.device().is_cpu());
-            if t.resolved() {
-                continue;
-            }
-            tensor = tensor.cpu_apply(t.clone()).unwrap();
+        fn alloc_cpu(dtype: DType, shape: &Shape) -> CPUBuffer {
+            let n_bytes = shape.numel() * dtype.size_of();
+            let mut raw = RawCPUBuffer::uninitialized(n_bytes, dtype.align_of());
+            raw.as_bytes_mut().fill(0);
+            CPUBuffer::new(raw)
         }
+        let execution_order = self
+            .execution_order()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
 
-        Ok(tensor.clone())
+        let mut head = execution_order.first().unwrap().clone();
+        assert!(head.device().is_cpu());
+        for t in execution_order.iter().skip(1) {
+            println!("Running: {:?}", head.op().name());
+            assert!(t.device().is_cpu());
+            //if t.resolved() {
+            //    continue;
+            //}
+            //t.update_storage(alloc_cpu(t.op().dtype(), t.shape()).into());
+            head = head.cpu_apply(t).unwrap();
+        }
+        Ok(head.clone())
     }
 
     fn resolve_gpu(self, gpu_device: &WgpuDevice, debug: bool) -> Result<Tensor, TensorError> {

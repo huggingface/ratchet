@@ -76,6 +76,21 @@ impl DType {
         }
     }
 
+    /// Returns the alignment of a type in bytes.
+    pub fn align_of(self) -> usize {
+        match self {
+            DType::F16 => core::mem::align_of::<f16>(),
+            DType::BF16 => core::mem::align_of::<bf16>(),
+            DType::F32 => core::mem::align_of::<f32>(),
+            DType::I32 => core::mem::align_of::<i32>(),
+            DType::U32 => core::mem::align_of::<u32>(),
+            DType::Q8_0H(_) => core::mem::align_of::<BlockQ8_0H>(),
+            DType::Q8_0F(_) => core::mem::align_of::<BlockQ8_0F>(),
+            DType::Q4_KH(_) => core::mem::align_of::<BlockQ4_KH>(),
+            DType::Q4_KF(_) => core::mem::align_of::<BlockQ4_KF>(),
+        }
+    }
+
     pub fn is_quantized(self) -> bool {
         matches!(
             self,

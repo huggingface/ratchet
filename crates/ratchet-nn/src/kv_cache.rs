@@ -18,7 +18,7 @@ impl KVEntry {
 }
 
 #[derive(Clone, Debug)]
-pub struct KVCache(Vec<KVEntry>);
+pub struct KVCache(pub Vec<KVEntry>);
 
 impl std::ops::Index<usize> for KVCache {
     type Output = KVEntry;

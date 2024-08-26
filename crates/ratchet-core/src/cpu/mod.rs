@@ -3,6 +3,7 @@ pub mod gemm;
 use crate::{
     Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect, InvariantError, OpGuards,
     Operation, OperationError, RVec, Storage, StorageView, Tensor, TensorDType, Unary, UnaryOp,
+    View,
 };
 use anyhow::anyhow;
 use bytemuck::NoUninit;
@@ -219,12 +220,67 @@ fn index_select<T: TensorDType>(
 }
 
 pub fn cpu_index_select(i: IndexSelect, dst: Tensor) -> Result<Tensor, OperationError> {
-    match dst.dt() {
+    println!("cpu_index_select");
+    println!("i: {:?}", i);
+    println!("dst: {:?}", dst);
+    match i.src().dt() {
         DType::F32 => index_select::<f32>(i, dst),
         DType::F16 => index_select::<f16>(i, dst),
         DType::BF16 => index_select::<bf16>(i, dst),
         _ => todo!(),
     }
+}
+
+pub fn cpu_const(src: Tensor, dst: Tensor) -> Result<Tensor, OperationError> {
+    println!("cpu_const");
+    println!("src: {:?}", src);
+    println!("dst: {:?}", dst);
+    if dst.resolved() {
+        return Ok(dst);
+    }
+    match src.dt() {
+        DType::F32 => cpu_store_result(&dst, &src.to_vec::<f32>()?),
+        DType::F16 => cpu_store_result(&dst, &src.to_vec::<f16>()?),
+        DType::BF16 => cpu_store_result(&dst, &src.to_vec::<bf16>()?),
+        DType::Q8_0F(_) => cpu_store_result(&dst, &src.to_vec::<u32>()?),
+        DType::Q8_0H(_) => cpu_store_result(&dst, &src.to_vec::<u32>()?),
+        _ => todo!(),
+    }
+    Ok(dst)
+}
+
+pub fn cpu_view(v: View, dst: Tensor) -> Result<Tensor, OperationError> {
+    println!("cpu_view");
+    println!("v: {:?}", v);
+    println!("dst: {:?}", dst);
+    if dst.resolved() {
+        return Ok(dst);
+    }
+    match v.input().dt() {
+        DType::F32 => view::<f32>(v, &dst),
+        DType::F16 => view::<f16>(v, &dst),
+        DType::BF16 => view::<bf16>(v, &dst),
+        DType::I32 => view::<i32>(v, &dst),
+        DType::U32 => view::<u32>(v, &dst),
+        DType::Q8_0F(_) => view::<u32>(v, &dst),
+        DType::Q8_0H(_) => view::<u32>(v, &dst),
+        _ => todo!(),
+    }?;
+
+    Ok(dst)
+}
+
+fn view<T: TensorDType>(v: View, t: &Tensor) -> Result<(), OperationError> {
+    let src = v.input();
+    let src = src.to_vec::<T>()?;
+
+    let mut result = vec![T::zero(); t.shape().numel()];
+
+    for (i, val) in src.into_iter().enumerate() {
+        result[i] = val;
+    }
+    cpu_store_result(t, &result);
+    Ok(())
 }
 
 fn direct_cast<T: TensorDType, U: TensorDType>(
@@ -239,6 +295,8 @@ fn direct_cast<T: TensorDType, U: TensorDType>(
 }
 
 pub fn cpu_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
+    println!("cpu_cast: {:?} -> {:?}", cast.input().dt(), cast.dst_dt());
+    println!("cast.input().resolved(): {}", cast.input().resolved());
     if cast.input().dt() == cast.dst_dt() {
         return Ok(cast.input().clone());
     }
@@ -283,7 +341,15 @@ pub fn unary_apply_fn<T: TensorDType, U: TensorDType>(
     dst: &Tensor,
     f: fn(T) -> U,
 ) -> Result<(), OperationError> {
-    let input = input.to_vec::<T>()?;
+    let i = if input.resolved() {
+        input
+            .clone()
+            .resolve()
+            .map_err(|_| anyhow!("Failed to resolve input tensor"))?
+    } else {
+        input.clone()
+    };
+    let input = i.to_vec::<T>()?;
     let mut result = vec![U::zero(); dst.shape().numel()];
     unary_apply_fn_helper(&input, &mut result, f);
     cpu_store_result(dst, &result);
