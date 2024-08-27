@@ -2,7 +2,8 @@ pub mod gemm;
 
 use crate::{
     Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect, InvariantError, OpGuards,
-    Operation, OperationError, RVec, Storage, StorageView, Tensor, TensorDType, Unary, UnaryOp,
+    Operation, OperationError, Quantization, Quantizer, RVec, Segments, Storage, StorageView,
+    Tensor, TensorDType, Unary, UnaryOp,
 };
 use anyhow::anyhow;
 use bytemuck::NoUninit;
@@ -218,12 +219,35 @@ fn index_select<T: TensorDType>(
     Ok(dst)
 }
 
+fn qindex_select(op: IndexSelect, dst: Tensor) -> Result<Tensor, OperationError> {
+    // NOTE: qindex_select is functional but not optimized at all.
+    // Currently we simply dequantize the entire input tensor to f32 and then call index_select.
+    // Because of borrowing rules dequantizing also requires a deep clone of the input tensor, which is less than ideal.
+    // In the future we would rather directly index the raw buffer of the quantized tensor and dequantize only what is required.
+    // TODO: Add support for direct indexing + partial dequantization
+    let src = op.src().deep_clone();
+
+    // NOTE: Support for other quantization types is dependent on the corresponding dequantization functions.
+    let src = match src.dt() {
+        DType::Q8_0F(_) => {
+            let quantizer = Quantizer::new(Quantization::SInt8);
+            quantizer.sint8_dequantize(src)
+        }
+        _ => return Err(InvariantError::UnsupportedDType(src.dt()).into()),
+    };
+    let indices = op.indices().clone();
+    let dim = op.dim();
+
+    index_select::<f32>(IndexSelect::new(src, indices, dim), dst)
+}
+
 pub fn cpu_index_select(i: IndexSelect, dst: Tensor) -> Result<Tensor, OperationError> {
-    match dst.dt() {
+    match i.src().dt() {
         DType::F32 => index_select::<f32>(i, dst),
         DType::F16 => index_select::<f16>(i, dst),
         DType::BF16 => index_select::<bf16>(i, dst),
-        _ => todo!(),
+        DType::Q8_0F(_) => qindex_select(i, dst),
+        dtype => Err(InvariantError::UnsupportedDType(dtype).into()),
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::{
     cpu_store_result, CPUOperation, DType, InvariantError, Matmul, MatmulSpec, OperationError,
-    Shape, Strides, Tensor, TensorDType,
+    Shape, Tensor, TensorDType,
 };
 use anyhow::{anyhow, Result};
 use core::str::FromStr;

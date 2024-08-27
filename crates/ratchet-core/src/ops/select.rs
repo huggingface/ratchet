@@ -356,9 +356,8 @@ def index_select(input, indices):
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         run_index_select_trial(prob.clone(), device, true);
 
-        // TODO: impl CPU index_select for quantized tensors
-        // let device = Device::request_device(DeviceRequest::CPU).unwrap();
-        // run_index_select_trial(prob, device, true);
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_index_select_trial(prob, device, true);
     }
 
     #[derive(Debug, Clone)]
