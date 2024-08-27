@@ -1,9 +1,11 @@
 use num::integer::div_floor;
-use num_traits::{AsPrimitive, Float};
+use num_traits::{AsPrimitive, Float, FromPrimitive, Zero};
 
 use std::fmt::Debug;
 
-use crate::{gpu::STORAGE_BUFFER_ALIGN, DType, Device, Tensor, Q8_0F};
+use crate::{
+    dtype::Quantized, gpu::STORAGE_BUFFER_ALIGN, DType, Device, Tensor, TensorDType, Q8_0F,
+};
 
 /// Quantizer
 ///
@@ -13,15 +15,115 @@ pub struct Quantizer {
     format: Quantization,
 }
 
-impl Quantizer {
-    pub fn quantize(&self, tensor: Tensor) -> Tensor {
-        match self.format {
-            Quantization::None => tensor,
-            Quantization::SInt8 => self.sint8_quantize(tensor),
-            Quantization::SInt4 => todo!(),
+fn quantize_inner<Q: Quantized>(matrix: &[Q::FP], elements: usize) -> Vec<u32> {
+    assert_eq!(elements % Q::PACK_SIZE, 0);
+    assert_eq!(elements % Q::GROUP_SIZE, 0);
+
+    let qmatrix_len = elements / Q::PACK_SIZE;
+    let amatrix_len = elements / Q::GROUP_SIZE;
+
+    //returns the aligned number of ELEMENTS
+    let aligner = |numel: usize, size_t: usize| -> usize {
+        let nbytes = numel * size_t;
+        let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+            nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
+        } else {
+            nbytes
+        };
+        aligned / size_t
+    };
+
+    let mut quantized_matrix = vec![0u32; aligner(qmatrix_len, std::mem::size_of::<u32>())];
+    let mut absmax_matrix = vec![Q::FP::zero(); aligner(amatrix_len, std::mem::size_of::<Q::FP>())];
+
+    let mut block_absmax = Q::FP::neg_infinity();
+    for i in (0..elements).step_by(Q::PACK_SIZE) {
+        if i % Q::GROUP_SIZE == 0 {
+            let amax = matrix[i..i + Q::GROUP_SIZE]
+                .iter()
+                .fold(Q::FP::neg_infinity(), |acc, &x| acc.max(x.abs()));
+            let d = amax / Q::FP::from_i32((1 << 7) - 1).unwrap();
+            block_absmax = d;
+        }
+        for j in 0..Q::PACK_SIZE {
+            let packed_value: i32 =
+                ((matrix[i + j] / block_absmax).round().as_() & 0xFF) << (j * 8);
+            quantized_matrix[i / Q::PACK_SIZE] |= packed_value as u32;
+        }
+        absmax_matrix[i / Q::GROUP_SIZE] = block_absmax;
+    }
+    quantized_matrix.append(&mut unsafe { std::mem::transmute(absmax_matrix) });
+
+    quantized_matrix
+}
+
+pub fn quantize<Q: Quantized>(tensor: &Tensor) -> Tensor {
+    return match tensor.dt() {
+        DType::F32 => {
+            let matrix = tensor.to_vec::<Q::FP>().unwrap();
+            unsafe {
+                Tensor::from_quantized(
+                    quantize_inner::<Q>(&matrix, tensor.shape().numel()),
+                    DType::Q8_0F(Q8_0F::default()),
+                    tensor.shape().clone(),
+                    Device::CPU,
+                )
+            }
+        }
+        dt => panic!("Unsupported dtype {dt}"),
+    };
+}
+
+fn dequantize_inner<Q: Quantized>(quantized: &[u8], numel: usize) -> Vec<Q::FP> {
+    let num_q = numel / Q::PACK_SIZE;
+    let num_q_bytes = num_q * std::mem::size_of::<u32>();
+    let aligner = |numel: usize, size_t: usize| -> usize {
+        let nbytes = numel * size_t;
+
+        if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+            nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
+        } else {
+            nbytes
+        }
+    };
+    let aligned_q_bytes = aligner(num_q, std::mem::size_of::<u32>());
+
+    let num_absmax = numel / Q::GROUP_SIZE;
+    let num_absmax_bytes = num_absmax * std::mem::size_of::<Q::FP>();
+
+    let quantized_matrix = bytemuck::cast_slice::<u8, u32>(&quantized[..num_q_bytes]);
+    let absmax_matrix = bytemuck::cast_slice::<u8, Q::FP>(
+        &quantized[aligned_q_bytes..aligned_q_bytes + num_absmax_bytes],
+    );
+
+    let mut dequantized = vec![Q::FP::zero(); numel];
+    for i in (0..numel).step_by(Q::PACK_SIZE) {
+        let block_absmax = absmax_matrix[div_floor(i, Q::GROUP_SIZE)];
+        let packed_value = quantized_matrix[div_floor(i, Q::PACK_SIZE)] as i32;
+        for j in 0..Q::PACK_SIZE {
+            dequantized[i + j] =
+                Q::FP::from_i32((packed_value << (8 * (Q::PACK_SIZE - j - 1))) >> 24).unwrap()
+                    * block_absmax;
         }
     }
 
+    dequantized
+}
+
+pub fn dequantize(quantized: Tensor) -> Tensor {
+    return match quantized.dt() {
+        DType::Q8_0F(_) => {
+            let elements = quantized.shape().numel();
+            let original_shape = quantized.shape().clone();
+            let raw_bytes = unsafe { quantized.into_bytes().unwrap() };
+            let dequantized = dequantize_inner::<Q8_0F>(&raw_bytes, elements);
+            Tensor::from_data(&dequantized, original_shape, Device::CPU)
+        }
+        dt => panic!("Unsupported dtype {dt}"),
+    };
+}
+
+impl Quantizer {
     /// Quantizes a float 32 tensor into a packed uint32 tensor.
     pub fn sint8_quantize(&self, tensor: Tensor) -> Tensor {
         let numel = tensor.shape().numel();
@@ -197,11 +299,25 @@ impl Quantization {
 
 #[cfg(test)]
 mod tests {
-    use crate::{shape, Device, Quantization, Quantizer, Tensor};
+    use crate::{dequantize, quantize, shape, Device, Quantization, Quantizer, Tensor, Q8_0F};
+
     #[test]
     pub fn test_sint8_qdq() {
         let ground = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
+
+        // Old api
         let quantizer = Quantizer::new(Quantization::SInt8);
-        let _quantized = quantizer.sint8_quantize(ground.deep_clone());
+        let q1 = quantizer.sint8_quantize(ground.deep_clone());
+        let dq1 = quantizer.sint8_dequantize(q1.deep_clone());
+
+        // New api
+        let q2 = quantize::<Q8_0F>(&ground);
+        let dq2 = dequantize(q2.deep_clone());
+
+        let q1_raw = unsafe { q1.deep_clone().into_bytes().unwrap() };
+        let q2_raw = unsafe { q2.deep_clone().into_bytes().unwrap() };
+        assert_eq!(q1_raw, q2_raw);
+
+        dq1.all_close(&dq2, 1e-3, 1e-3).unwrap();
     }
 }

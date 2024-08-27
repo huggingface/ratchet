@@ -3,9 +3,10 @@
 ///
 /// We closely follow the memory layout of the original GGUF implementation,
 /// but often need 2 variants of each block type for devices that don't support f16.
-use crate::{rvec, Align, BufferSegment, RVec};
+use crate::{rvec, Align, BufferSegment, RVec, TensorDType};
 use derive_new::new;
 use half::f16;
+use num_traits::{AsPrimitive, Float, FromPrimitive};
 
 /// # Bindings
 ///
@@ -162,4 +163,30 @@ impl Segments for Q4_KH {
     fn segments(&self, numel: usize) -> RVec<BufferSegment> {
         self.0.segments(numel)
     }
+}
+
+pub trait Quantized {
+    type FP: TensorDType + Float + AsPrimitive<i32> + FromPrimitive + Copy + PartialEq;
+    const PACK_SIZE: usize;
+    const GROUP_SIZE: usize;
+}
+impl Quantized for Q8_0F {
+    type FP = f32;
+    const PACK_SIZE: usize = 4;
+    const GROUP_SIZE: usize = 32;
+}
+impl Quantized for Q8_0H {
+    type FP = f16;
+    const PACK_SIZE: usize = 4;
+    const GROUP_SIZE: usize = 32;
+}
+impl Quantized for Q4_KF {
+    type FP = f32;
+    const PACK_SIZE: usize = 8;
+    const GROUP_SIZE: usize = 8;
+}
+impl Quantized for Q4_KH {
+    type FP = f16;
+    const PACK_SIZE: usize = 8;
+    const GROUP_SIZE: usize = 8;
 }
