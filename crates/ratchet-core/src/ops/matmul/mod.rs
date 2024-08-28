@@ -577,7 +577,7 @@ pub enum MatmulKernels {
     GEMM(GEMM),
     SubgroupGEMV(SubgroupGEMV),
     WorkgroupGEMV(WorkgroupGEMV),
-    Quantized(Quantized),
+    Quantized(QMatMul),
 }
 
 impl KernelRenderable for MatmulKernels {
@@ -741,7 +741,7 @@ impl GPUOperation for Matmul {
             (true, false, false) => {
                 MatmulKernels::WorkgroupGEMV(WorkgroupGEMV::from_matmul(self, spec))
             }
-            (false, true, _) => MatmulKernels::Quantized(Quantized::from_matmul(self, spec)),
+            (false, true, _) => MatmulKernels::Quantized(QMatMul::from_matmul(self, spec)),
             (false, false, _) => MatmulKernels::GEMM(GEMM::from_matmul(self, spec)),
             _ => todo!(),
         }
@@ -754,7 +754,7 @@ mod tests {
 
     use crate::test_util::run_py_prg;
 
-    use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
+    use crate::{shape, Device, DeviceRequest};
 
     use super::*;
 
