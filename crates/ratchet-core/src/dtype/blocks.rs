@@ -3,7 +3,7 @@
 ///
 /// We closely follow the memory layout of the original GGUF implementation,
 /// but often need 2 variants of each block type for devices that don't support f16.
-use crate::{rvec, Align, BufferSegment, RVec, TensorDType};
+use crate::{rvec, Align, BufferSegment, DType, RVec, TensorDType};
 use derive_new::new;
 use half::f16;
 use num_traits::{AsPrimitive, Float, FromPrimitive};
@@ -169,24 +169,46 @@ pub trait Quantized {
     type FP: TensorDType + Float + AsPrimitive<i32> + FromPrimitive + Copy + PartialEq;
     const PACK_SIZE: usize;
     const GROUP_SIZE: usize;
+
+    const LSHIFT: usize = Self::GROUP_SIZE / Self::PACK_SIZE;
+    const MASK: i32 = (1 << Self::LSHIFT) - 1;
+    const RSHIFT: usize = Self::GROUP_SIZE - Self::LSHIFT;
+
+    fn dt() -> DType;
 }
 impl Quantized for Q8_0F {
     type FP = f32;
     const PACK_SIZE: usize = 4;
     const GROUP_SIZE: usize = 32;
+
+    fn dt() -> DType {
+        DType::Q8_0F(Q8_0F::default())
+    }
 }
 impl Quantized for Q8_0H {
     type FP = f16;
     const PACK_SIZE: usize = 4;
     const GROUP_SIZE: usize = 32;
+
+    fn dt() -> DType {
+        DType::Q8_0H(Q8_0H::default())
+    }
 }
 impl Quantized for Q4_KF {
     type FP = f32;
     const PACK_SIZE: usize = 8;
-    const GROUP_SIZE: usize = 8;
+    const GROUP_SIZE: usize = 32;
+
+    fn dt() -> DType {
+        DType::Q4_KF(Q4_KF::default())
+    }
 }
 impl Quantized for Q4_KH {
     type FP = f16;
     const PACK_SIZE: usize = 8;
-    const GROUP_SIZE: usize = 8;
+    const GROUP_SIZE: usize = 32;
+
+    fn dt() -> DType {
+        DType::Q4_KH(Q4_KH::default())
+    }
 }
