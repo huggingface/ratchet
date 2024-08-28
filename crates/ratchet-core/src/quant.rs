@@ -28,7 +28,7 @@ fn storage_align<T>(n: usize) -> usize {
 }
 
 pub fn quantize_inner<Q: Quantized>(matrix: &[Q::FP], elements: usize) -> Vec<u32> {
-    println!("quantize_inner");
+    println!("quantize_inner: {:?}", core::any::type_name::<Q>());
     assert_eq!(elements % Q::PACK_SIZE, 0);
     assert_eq!(elements % Q::GROUP_SIZE, 0);
 
@@ -110,7 +110,7 @@ pub fn quantize<Q: Quantized>(tensor: &Tensor) -> Tensor {
 }
 
 fn dequantize_inner<Q: Quantized>(quantized: &[u8], numel: usize) -> Vec<Q::FP> {
-    println!("dequantize_inner");
+    println!("deuantize_inner: {:?}", core::any::type_name::<Q>());
     let num_q = numel / Q::PACK_SIZE;
     let num_q_bytes = num_q * std::mem::size_of::<u32>();
     let aligner = |numel: usize, size_t: usize| -> usize {
@@ -359,12 +359,32 @@ impl Quantization {
 #[cfg(test)]
 mod tests {
     use crate::{
-        dequantize, quantize, quantize_inner, shape, Device, Quantization, Quantizer, Tensor,
-        Q4_KF, Q8_0F,
+        dequantize, quantize, quantize_inner, shape, Device, Quantization, Quantized, Quantizer,
+        Tensor, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
     };
+    use half::f16;
+
+    // Verify that quantize -> dequantize is a (lossy) identity operation
+    fn check_qd_reflexive<Q: Quantized>(atol: Q::FP, rtol: Q::FP)
+    where
+        Q::FP: std::fmt::Display + num_traits::Float + Default,
+    {
+        let ground = Tensor::randn::<Q::FP>(shape![64, 64], Device::CPU);
+        let q = quantize::<Q>(&ground);
+        let dq = dequantize(q);
+        ground.all_close(&dq, atol, rtol).unwrap();
+    }
 
     #[test]
-    pub fn test_sint8_qdq() {
+    fn test_quantization_reflexivity() {
+        check_qd_reflexive::<Q8_0F>(0.1, 0.1);
+        check_qd_reflexive::<Q8_0H>(f16::from_f32(0.1), f16::from_f32(0.1));
+        check_qd_reflexive::<Q4_KF>(0.1, 0.1);
+        check_qd_reflexive::<Q4_KH>(f16::from_f32(0.1), f16::from_f32(0.1));
+    }
+
+    #[test]
+    pub fn test_sint8_float_qdq() {
         let ground = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
 
         // Old api
