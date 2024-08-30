@@ -133,7 +133,7 @@ impl CPUBuffer {
         Self::new(raw)
     }
 
-    pub unsafe fn into_bytes(self) -> Vec<u8> {
+    pub fn into_bytes(self) -> Vec<u8> {
         Arc::try_unwrap(self.inner).unwrap().into_bytes()
     }
 
