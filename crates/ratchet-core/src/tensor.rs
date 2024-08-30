@@ -590,6 +590,9 @@ impl Tensor {
         Ok(storage.into_bytes())
     }
 
+    /// # Safety
+    ///
+    /// Inherited from `Storage::from_quantized`.
     pub unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
         data: U,
         dt: DType,

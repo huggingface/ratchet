@@ -18,6 +18,9 @@ pub enum Storage {
 }
 
 impl Storage {
+    /// # Safety
+    ///
+    /// Inherited from the `from_quantized` method of the `CPUBuffer` and `GPUBuffer` structs.
     pub unsafe fn from_quantized<T: NoUninit>(data: &[T], device: &Device) -> Self {
         match device {
             Device::CPU => Storage::CPU(unsafe { CPUBuffer::from_quantized(data) }),
