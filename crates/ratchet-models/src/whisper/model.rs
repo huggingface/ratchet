@@ -129,7 +129,7 @@ impl Whisper {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn detect_language(&mut self, mel: Tensor) -> anyhow::Result<Language> {
+    pub fn detect_language(&mut self, _mel: Tensor) -> anyhow::Result<Language> {
         panic!("DETECT LANGUAGE NOT IMPLEMENTED");
         let audio_ctx = self.encoder.schedule(mel)?.resolve()?;
         let sot = Tensor::from_data([WhisperTokenizer::SOT], shape![1, 1], self.device.clone());

@@ -25,7 +25,7 @@ pub fn generate(
 
     let mut tos = TokenOutputStream::new(tokenizer);
 
-    let img = image::io::Reader::new(std::io::Cursor::new(image_bytes))
+    let img = image::ImageReader::new(std::io::Cursor::new(image_bytes))
         .with_guessed_format()?
         .decode()
         .unwrap()
