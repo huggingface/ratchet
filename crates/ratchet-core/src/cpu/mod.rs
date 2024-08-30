@@ -2,8 +2,8 @@ pub mod gemm;
 
 use crate::{
     Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect, InvariantError, OpGuards,
-    Operation, OperationError, Quantization, Quantizer, RVec, Segments, Storage, StorageView,
-    Tensor, TensorDType, Unary, UnaryOp,
+    Operation, OperationError, Quantization, Quantizer, RVec, Storage, StorageView, Tensor,
+    TensorDType, Unary, UnaryOp,
 };
 use anyhow::anyhow;
 use bytemuck::NoUninit;
