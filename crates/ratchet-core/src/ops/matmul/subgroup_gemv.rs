@@ -97,10 +97,6 @@ impl KernelRenderable for SubgroupGEMV {
         const BM: usize = 8;
         const BN: usize = 32;
 
-        if matches!(self.lhs.dt(), DType::Q8_0F(_) | DType::Q8_0H(_)) {
-            assert!(TN == 4);
-        }
-
         let device = self.lhs.device().try_gpu().unwrap();
         let mut kernel_builder = WgslKernelBuilder::new(
             workgroup_size.clone(),
