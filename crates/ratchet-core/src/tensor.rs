@@ -163,10 +163,6 @@ impl Inner {
             storage,
         }
     }
-
-    pub(crate) fn storage(&self) -> RwLockReadGuard<Option<Storage>> {
-        self.storage.read()
-    }
 }
 
 impl Tensor {
