@@ -28,7 +28,6 @@ fn storage_align<T>(n: usize) -> usize {
 }
 
 pub fn quantize_inner<Q: Quantized>(matrix: &[Q::FP], elements: usize) -> Vec<u32> {
-    println!("quantize_inner: {:?}", core::any::type_name::<Q>());
     assert_eq!(elements % Q::PACK_SIZE, 0);
     assert_eq!(elements % Q::GROUP_SIZE, 0);
 
@@ -111,7 +110,6 @@ pub fn quantize<Q: Quantized>(tensor: &Tensor) -> Tensor {
 }
 
 pub fn dequantize_inner<Q: Quantized>(quantized: &[u8], elements: usize) -> Vec<Q::FP> {
-    println!("dequantize_inner: {:?}", core::any::type_name::<Q>());
     assert_eq!(elements % Q::PACK_SIZE, 0);
     assert_eq!(elements % Q::GROUP_SIZE, 0);
 
@@ -354,8 +352,8 @@ impl Quantization {
 #[cfg(test)]
 mod tests {
     use crate::{
-        dequantize, dequantize_inner, quantize, quantize_inner, shape, Device, Quantization,
-        Quantized, Quantizer, Tensor, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+        dequantize, quantize, shape, Device, Quantization, Quantized, Quantizer, Tensor, Q4_KF,
+        Q4_KH, Q8_0F, Q8_0H,
     };
     use half::f16;
 
@@ -394,9 +392,6 @@ mod tests {
         let q1_raw = unsafe { q1.deep_clone().into_bytes().unwrap() };
         let q2_raw = unsafe { q2.deep_clone().into_bytes().unwrap() };
         assert_eq!(q1_raw, q2_raw);
-        if q1_raw == q2_raw {
-            println!("SInt8 quantization is correct");
-        }
 
         dq1.all_close(&dq2, 1e-3, 1e-3).unwrap();
     }
