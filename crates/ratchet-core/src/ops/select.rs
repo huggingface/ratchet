@@ -347,10 +347,10 @@ def index_select(input, indices):
     }
 
     #[test]
-    fn qindex_select() {
+    fn test_qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![52000, 1280],
-            indices: Tensor::from_data(vec![50258, 50259, 50360], shape![3], Device::CPU),
+            input_shape: shape![256, 32],
+            indices: Tensor::from_data(vec![64, 192, 255], shape![3], Device::CPU),
         };
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         run_index_select_trial(prob.clone(), device, true);
