@@ -400,44 +400,4 @@ mod tests {
 
         dq1.all_close(&dq2, 1e-3, 1e-3).unwrap();
     }
-
-    #[test]
-    pub fn test_sint4_qdq() {
-        let M: usize = 8;
-        let N: usize = 8;
-
-        let original = (0..M * N).map(|x| x as f32).collect::<Vec<f32>>();
-        let ground = Tensor::from_data(&original, shape![M, N], Device::CPU);
-
-        // Old api
-        let data = ground.to_vec::<f32>().unwrap();
-        let (q1, absmax) = Quantizer::sint4_quantize::<f32>(&data, M, N);
-        let dq1 = Quantizer::sint4_dequantize(&q1, absmax, M, N);
-
-        // New api
-        let q2 = quantize_inner::<Q4_KF>(&data, M * N);
-        let q2_u8 = unsafe { core::mem::transmute::<Vec<u32>, Vec<u8>>(q2.clone()) };
-        let dq2 = dequantize_inner::<Q4_KF>(&q2_u8, M * N);
-
-        println!("q1 len: {}", q1.len());
-        println!("dq1 len: {}", dq1.len());
-        println!("q2 len: {}", q2.len());
-        println!("dq2 len: {}", dq2.len());
-
-        for (a, b) in q1.iter().zip(q2.iter()) {
-            println!("{} {}", a, b);
-        }
-
-        for (a, b) in dq1.iter().zip(dq2.iter()) {
-            println!("{} {}", a, b);
-        }
-        /*
-        let dq2_vec = dq2.to_vec::<f32>().unwrap();
-        for (a, b) in dq1.iter().zip(dq2_vec.iter()) {
-            if (a - b).abs() >= 1e-3 {
-                println!("{} {}", a, b);
-            }
-        }
-         */
-    }
 }
