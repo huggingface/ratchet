@@ -464,7 +464,6 @@ impl GEMM {
         mut kernel_builder: WgslKernelBuilder,
     ) -> Result<KernelSource, OperationError> {
         const ROW_PER_THREAD: usize = 4;
-        const COL_PER_THREAD: usize = 4;
         const TILE_DIM: usize = 32;
 
         let accessor = P::render_type();

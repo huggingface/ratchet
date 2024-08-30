@@ -212,7 +212,7 @@ impl MatmulSpec {
     }
 
     pub fn raw_rhs_shape(&self) -> &Shape {
-        &self.raw_lhs_shape
+        &self.raw_rhs_shape
     }
 
     pub fn lhs_shape(&self) -> &Shape {

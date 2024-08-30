@@ -17,8 +17,6 @@ pub struct GPUBuffer {
 }
 
 impl GPUBuffer {
-    const MIN_SIZE: u64 = 16;
-
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape, device: &WgpuDevice) -> Self {
         assert_eq!(data.len(), shape.numel());
         Self::from_bytes(

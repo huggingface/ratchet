@@ -80,7 +80,7 @@ impl TryFrom<u32> for GgmlDType {
 }
 
 impl GgmlDType {
-    pub(crate) fn to_u32(self) -> u32 {
+    pub fn to_u32(self) -> u32 {
         match self {
             Self::F32 => 0,
             Self::F16 => 1,
