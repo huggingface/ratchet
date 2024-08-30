@@ -36,25 +36,26 @@ pub fn quantize_inner<Q: Quantized>(matrix: &[Q::FP], elements: usize) -> Vec<u3
     let amatrix_len = elements / Q::GROUP_SIZE;
 
     let mut quantized_matrix = vec![0u32; storage_align::<u32>(qmatrix_len)];
-    let mut absmax_matrix = vec![Q::FP::zero(); storage_align::<Q::FP>(amatrix_len)];
-    let mut block_absmax = Q::FP::neg_infinity();
+    let mut d_matrix = vec![Q::FP::zero(); storage_align::<Q::FP>(amatrix_len)];
+    let mut d = Q::FP::zero();
 
     for i in (0..elements).step_by(Q::PACK_SIZE) {
         if i % Q::GROUP_SIZE == 0 {
-            let amax = matrix[i..i + Q::GROUP_SIZE]
+            d = matrix[i..i + Q::GROUP_SIZE]
                 .iter()
-                .fold(Q::FP::neg_infinity(), |acc, &x| acc.max(x.abs()));
-            let d = amax / Q::FP::from_i32((1 << 7) - 1).unwrap();
-            block_absmax = d;
+                .fold(Q::FP::zero(), |acc, &x| acc.max(x.abs()))
+                / Q::SF;
+            d_matrix[i / Q::GROUP_SIZE] = d;
         }
+
+        let mut packed_value: i32 = 0;
         for j in 0..Q::PACK_SIZE {
-            let packed_value: i32 =
-                ((matrix[i + j] / block_absmax).round().as_() & Q::MASK) << (j * Q::LSHIFT);
-            quantized_matrix[i / Q::PACK_SIZE] |= packed_value as u32;
+            packed_value |= ((matrix[i + j] / d).round().as_() & Q::MASK) << (j * Q::LSHIFT);
         }
-        absmax_matrix[i / Q::GROUP_SIZE] = block_absmax;
+        quantized_matrix[i / Q::PACK_SIZE] = packed_value as u32;
     }
-    quantized_matrix.append(&mut unsafe { std::mem::transmute(absmax_matrix) });
+
+    quantized_matrix.append(&mut unsafe { std::mem::transmute(d_matrix) });
 
     quantized_matrix
 }
@@ -109,39 +110,32 @@ pub fn quantize<Q: Quantized>(tensor: &Tensor) -> Tensor {
     }
 }
 
-fn dequantize_inner<Q: Quantized>(quantized: &[u8], numel: usize) -> Vec<Q::FP> {
-    println!("deuantize_inner: {:?}", core::any::type_name::<Q>());
-    let num_q = numel / Q::PACK_SIZE;
-    let num_q_bytes = num_q * std::mem::size_of::<u32>();
-    let aligner = |numel: usize, size_t: usize| -> usize {
-        let nbytes = numel * size_t;
+pub fn dequantize_inner<Q: Quantized>(quantized: &[u8], elements: usize) -> Vec<Q::FP> {
+    println!("dequantize_inner: {:?}", core::any::type_name::<Q>());
+    assert_eq!(elements % Q::PACK_SIZE, 0);
+    assert_eq!(elements % Q::GROUP_SIZE, 0);
 
-        if nbytes % STORAGE_BUFFER_ALIGN != 0 {
-            nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
-        } else {
-            nbytes
-        }
-    };
-    let aligned_q_bytes = aligner(num_q, std::mem::size_of::<u32>());
+    let num_q = elements / Q::PACK_SIZE;
+    let num_q_bytes = num_q * core::mem::size_of::<u32>();
+    let aligned_q_bytes = storage_align::<u32>(num_q) * core::mem::size_of::<u32>();
 
-    let num_absmax = numel / Q::GROUP_SIZE;
+    let num_absmax = elements / Q::GROUP_SIZE;
     let num_absmax_bytes = num_absmax * std::mem::size_of::<Q::FP>();
-
     let quantized_matrix = bytemuck::cast_slice::<u8, u32>(&quantized[..num_q_bytes]);
     let absmax_matrix = bytemuck::cast_slice::<u8, Q::FP>(
         &quantized[aligned_q_bytes..aligned_q_bytes + num_absmax_bytes],
     );
 
-    let mut dequantized = vec![Q::FP::zero(); numel];
-    for i in (0..numel).step_by(Q::PACK_SIZE) {
-        let block_absmax = absmax_matrix[div_floor(i, Q::GROUP_SIZE)];
+    let mut dequantized = vec![Q::FP::zero(); elements];
+    for i in (0..elements).step_by(Q::PACK_SIZE) {
+        let absmax = absmax_matrix[div_floor(i, Q::GROUP_SIZE)];
         let packed_value = quantized_matrix[div_floor(i, Q::PACK_SIZE)] as i32;
         for j in 0..Q::PACK_SIZE {
             dequantized[i + j] = Q::FP::from_i32(
                 (packed_value << (Q::LSHIFT * (Q::PACK_SIZE - j - 1))) >> Q::RSHIFT,
             )
             .unwrap()
-                * block_absmax;
+                * absmax;
         }
     }
 
@@ -291,6 +285,7 @@ impl Quantizer {
     ) -> (Vec<u32>, F) {
         assert!(matrix.len() == K * N);
         assert!(matrix.len() % 4 == 0);
+        assert!(matrix.len() % 32 == 0);
         let pack_size = 8;
         let mut quantized_matrix = vec![0u32; K * N / pack_size];
 
@@ -359,8 +354,8 @@ impl Quantization {
 #[cfg(test)]
 mod tests {
     use crate::{
-        dequantize, quantize, quantize_inner, shape, Device, Quantization, Quantized, Quantizer,
-        Tensor, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
+        dequantize, dequantize_inner, quantize, quantize_inner, shape, Device, Quantization,
+        Quantized, Quantizer, Tensor, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
     };
     use half::f16;
 
@@ -379,8 +374,8 @@ mod tests {
     fn test_quantization_reflexivity() {
         check_qd_reflexive::<Q8_0F>(0.1, 0.1);
         check_qd_reflexive::<Q8_0H>(f16::from_f32(0.1), f16::from_f32(0.1));
-        check_qd_reflexive::<Q4_KF>(0.1, 0.1);
-        check_qd_reflexive::<Q4_KH>(f16::from_f32(0.1), f16::from_f32(0.1));
+        check_qd_reflexive::<Q4_KF>(0.3, 0.3);
+        check_qd_reflexive::<Q4_KH>(f16::from_f32(0.3), f16::from_f32(0.3));
     }
 
     #[test]
@@ -408,21 +403,33 @@ mod tests {
 
     #[test]
     pub fn test_sint4_qdq() {
-        let ground = Tensor::randn::<f32>(shape![64, 64], Device::CPU);
+        let M: usize = 8;
+        let N: usize = 8;
+
+        let original = (0..M * N).map(|x| x as f32).collect::<Vec<f32>>();
+        let ground = Tensor::from_data(&original, shape![M, N], Device::CPU);
 
         // Old api
         let data = ground.to_vec::<f32>().unwrap();
-        let (q1, absmax) = Quantizer::sint4_quantize::<f32>(&data, 64, 64);
-        let dq1 = Quantizer::sint4_dequantize(&q1, absmax, 64, 64);
+        let (q1, absmax) = Quantizer::sint4_quantize::<f32>(&data, M, N);
+        let dq1 = Quantizer::sint4_dequantize(&q1, absmax, M, N);
 
         // New api
-        let q2 = quantize_inner::<Q4_KF>(&data, 64 * 64);
-        //let dq2 = dequantize(q2.deep_clone());
+        let q2 = quantize_inner::<Q4_KF>(&data, M * N);
+        let q2_u8 = unsafe { core::mem::transmute::<Vec<u32>, Vec<u8>>(q2.clone()) };
+        let dq2 = dequantize_inner::<Q4_KF>(&q2_u8, M * N);
+
+        println!("q1 len: {}", q1.len());
+        println!("dq1 len: {}", dq1.len());
+        println!("q2 len: {}", q2.len());
+        println!("dq2 len: {}", dq2.len());
 
         for (a, b) in q1.iter().zip(q2.iter()) {
-            if a != b {
-                println!("{} {}", a, b);
-            }
+            println!("{} {}", a, b);
+        }
+
+        for (a, b) in dq1.iter().zip(dq2.iter()) {
+            println!("{} {}", a, b);
         }
         /*
         let dq2_vec = dq2.to_vec::<f32>().unwrap();
