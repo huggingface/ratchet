@@ -31,11 +31,11 @@ impl Align for usize {
     }
 
     fn align_for_copy(&self) -> usize {
-        self + &self.calculate_alignment(Self::COPY_BUFFER_ALIGNMENT)
+        self + self.calculate_alignment(Self::COPY_BUFFER_ALIGNMENT)
     }
 
     fn align_for_offset(&self) -> usize {
-        self + &self.calculate_alignment(Self::STORAGE_BUFFER_OFFSET_ALIGNMENT)
+        self + self.calculate_alignment(Self::STORAGE_BUFFER_OFFSET_ALIGNMENT)
     }
 }
 

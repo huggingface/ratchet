@@ -301,9 +301,7 @@ impl GPUOperation for Softmax {
     type KernelEnum = SoftmaxKernels;
 
     fn select_kernel(&self) -> Self::KernelEnum {
-        match self {
-            Self { .. } => SoftmaxKernels::Standard(self.clone()),
-        }
+        SoftmaxKernels::Standard(self.clone())
     }
 }
 

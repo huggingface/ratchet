@@ -127,7 +127,7 @@ pub trait Kernel: KernelRenderable {
     ///    with the derive macro: `WgslMetadata`. The author still needs to implement
     ///    `write_metadata`.
     /// 2. Dynamic Metadata - the structure is not known at compile time, so the author must
-    ///   implement both `render` and `write_metadata`.
+    ///    implement both `render` and `write_metadata`.
     type Metadata: KernelMetadata + 'static;
 
     fn kernel_name(&self) -> String;

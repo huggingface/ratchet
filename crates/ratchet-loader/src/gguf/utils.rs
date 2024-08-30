@@ -37,7 +37,7 @@ impl<R: std::io::Seek + std::io::Read, Other: std::io::Write> ReadInto<Other> fo
     fn read_u8s_into(&mut self, other: &mut Other, length: usize) -> Result<()> {
         let mut temp = vec![0u8; length];
         self.read_exact(&mut temp)?;
-        other.write_all(&mut temp)?;
+        other.write_all(&temp)?;
         Ok(())
     }
 }

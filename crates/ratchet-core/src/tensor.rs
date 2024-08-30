@@ -163,10 +163,6 @@ impl Inner {
             storage,
         }
     }
-
-    pub(crate) fn storage(&self) -> RwLockReadGuard<Option<Storage>> {
-        self.storage.read()
-    }
 }
 
 impl Tensor {
@@ -590,6 +586,9 @@ impl Tensor {
         Ok(storage.into_bytes())
     }
 
+    /// # Safety
+    ///
+    /// Inherited from `Storage::from_quantized`.
     pub unsafe fn from_quantized<T: TensorDType, U: AsRef<[T]>>(
         data: U,
         dt: DType,
@@ -745,16 +744,16 @@ impl Tensor {
             LazyOp::Binary(b) => cpu_binary(b, dst).ok(),
             LazyOp::Cast(c) => cpu_cast(c, dst).ok(),
             LazyOp::Matmul(m) => m.apply(dst).ok(),
-            LazyOp::Softmax(s) => todo!(),
-            LazyOp::RoPE(r) => todo!(),
+            LazyOp::Softmax(_s) => todo!(),
+            LazyOp::RoPE(_r) => todo!(),
             LazyOp::Unary(u) => cpu_unary(u, dst).ok(),
-            LazyOp::Reindex(r) => todo!(),
-            LazyOp::Concat(c) => todo!(),
-            LazyOp::Norm(n) => todo!(),
-            LazyOp::Conv(c) => todo!(),
+            LazyOp::Reindex(_r) => todo!(),
+            LazyOp::Concat(_c) => todo!(),
+            LazyOp::Norm(_n) => todo!(),
+            LazyOp::Conv(_c) => todo!(),
             LazyOp::Select(i) => cpu_index_select(i, dst).ok(),
-            LazyOp::IndexWrite(i) => todo!(),
-            LazyOp::Cache(c) => todo!(),
+            LazyOp::IndexWrite(_i) => todo!(),
+            LazyOp::Cache(_c) => todo!(),
             LazyOp::Const => None,
             LazyOp::View(_) => None,
         }
