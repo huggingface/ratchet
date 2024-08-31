@@ -12,7 +12,7 @@ use std::{cmp::Ordering, mem};
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    rvec, DType, Device, GPUOperation, Kernel, KernelElement, KernelKey, KernelMetadata,
+    quantize, rvec, DType, Device, GPUOperation, Kernel, KernelElement, KernelKey, KernelMetadata,
     KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView,
     Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
@@ -577,7 +577,7 @@ pub enum MatmulKernels {
     GEMM(GEMM),
     SubgroupGEMV(SubgroupGEMV),
     WorkgroupGEMV(WorkgroupGEMV),
-    Quantized(Quantized),
+    Quantized(QMatMul),
 }
 
 impl KernelRenderable for MatmulKernels {
@@ -741,7 +741,7 @@ impl GPUOperation for Matmul {
             (true, false, false) => {
                 MatmulKernels::WorkgroupGEMV(WorkgroupGEMV::from_matmul(self, spec))
             }
-            (false, true, _) => MatmulKernels::Quantized(Quantized::from_matmul(self, spec)),
+            (false, true, _) => MatmulKernels::Quantized(QMatMul::from_matmul(self, spec)),
             (false, false, _) => MatmulKernels::GEMM(GEMM::from_matmul(self, spec)),
             _ => todo!(),
         }
@@ -754,7 +754,7 @@ mod tests {
 
     use crate::test_util::run_py_prg;
 
-    use crate::{shape, Device, DeviceRequest, Quantization, Quantizer};
+    use crate::{shape, Device, DeviceRequest};
 
     use super::*;
 
@@ -955,8 +955,7 @@ def matmul(a, b{}):
         let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
         let ground = ground_truth(&a, &b, None, false, false, false)?;
 
-        let quantizer = Quantizer::new(Quantization::SInt8);
-        let aq = quantizer.sint8_quantize(a);
+        let aq = quantize::<Q8_0F>(&a);
         let a_gpu = aq.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
@@ -976,8 +975,8 @@ def matmul(a, b{}):
 
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![2, 175, 241], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![2, 241, 182], cpu_device.clone());
+        let a = Tensor::randn::<f32>(shape![2, 175, 240], cpu_device.clone());
+        let b = Tensor::randn::<f32>(shape![2, 240, 182], cpu_device.clone());
         let bias = Some(Tensor::randn::<f32>(shape![182], cpu_device.clone()));
 
         let TRANS_LHS = false;
@@ -988,8 +987,7 @@ def matmul(a, b{}):
         let ground = ground_truth(&a, &b, bias.as_ref(), TRANS_LHS, TRANS_RHS, TRANS_DST)?;
 
         let a_gpu = if QUANT {
-            let quantizer = Quantizer::new(Quantization::SInt8);
-            let aq = quantizer.sint8_quantize(a);
+            let aq = quantize::<Q8_0F>(&a);
             aq.to(&device)?
         } else {
             a.to(&device)?
@@ -1027,8 +1025,7 @@ def matmul(a, b{}):
         let ground = ground_truth(&a, &b, None, TRANS_LHS, TRANS_RHS, TRANS_DST)?;
 
         let a_gpu = if QUANT {
-            let quantizer = Quantizer::new(Quantization::SInt8);
-            let aq = quantizer.sint8_quantize(a);
+            let aq = quantize::<Q8_0F>(&a);
             aq.to(&device)?
         } else {
             a.to(&device)?

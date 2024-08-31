@@ -16,7 +16,7 @@ pub struct QuantizedMeta {
 }
 
 #[derive(Debug, Clone)]
-pub struct Quantized {
+pub struct QMatMul {
     lhs: Tensor,
     rhs: Tensor,
     bias: Option<Tensor>,
@@ -26,7 +26,7 @@ pub struct Quantized {
     spec: MatmulSpec,
 }
 
-impl Quantized {
+impl QMatMul {
     pub fn from_matmul(matmul: &Matmul, spec: MatmulSpec) -> Self {
         let Matmul {
             lhs,
@@ -48,7 +48,7 @@ impl Quantized {
     }
 }
 
-impl Kernel for Quantized {
+impl Kernel for QMatMul {
     type Metadata = QuantizedMeta;
 
     fn kernel_name(&self) -> String {
@@ -103,7 +103,7 @@ impl Kernel for Quantized {
     }
 }
 
-impl KernelRenderable for Quantized {
+impl KernelRenderable for QMatMul {
     fn register_bindings<P: WgslPrimitive>(
         &self,
         builder: &mut WgslKernelBuilder,

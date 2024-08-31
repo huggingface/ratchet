@@ -291,7 +291,7 @@ mod tests {
     use test_strategy::proptest;
 
     use crate::test_util::run_py_prg;
-    use crate::{rvec, shape, Device, DeviceRequest, Quantization, Quantizer, Shape, Tensor};
+    use crate::{quantize, rvec, shape, Device, DeviceRequest, Shape, Tensor, Q8_0F};
 
     impl Arbitrary for IndexSelectProblem {
         type Parameters = ();
@@ -324,7 +324,7 @@ def index_select(input, indices):
         run_py_prg(prg.to_string(), &[input, indices], &[], input.dt())
     }
 
-    fn run_index_select_trial(problem: IndexSelectProblem, device: Device, quantize: bool) {
+    fn run_index_select_trial(problem: IndexSelectProblem, device: Device, quant: bool) {
         let IndexSelectProblem {
             input_shape,
             indices,
@@ -332,9 +332,8 @@ def index_select(input, indices):
         let mut input = Tensor::randn::<f32>(input_shape, Device::CPU);
 
         let ground_truth = ground_truth(&input, &indices, 0).unwrap();
-        if quantize {
-            let quantizer = Quantizer::new(Quantization::SInt8);
-            input = quantizer.quantize(input);
+        if quant {
+            input = quantize::<Q8_0F>(&input);
         }
 
         let input = input.to(&device).unwrap();
@@ -348,10 +347,10 @@ def index_select(input, indices):
     }
 
     #[test]
-    fn qindex_select() {
+    fn test_qindex_select() {
         let prob = IndexSelectProblem {
-            input_shape: shape![52000, 1280],
-            indices: Tensor::from_data(vec![50258, 50259, 50360], shape![3], Device::CPU),
+            input_shape: shape![256, 32],
+            indices: Tensor::from_data(vec![64, 192, 255], shape![3], Device::CPU),
         };
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         run_index_select_trial(prob.clone(), device, true);

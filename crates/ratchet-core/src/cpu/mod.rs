@@ -1,8 +1,8 @@
 pub mod gemm;
 
 use crate::{
-    Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect, InvariantError, OpGuards,
-    Operation, OperationError, Quantization, Quantizer, RVec, Storage, StorageView, Tensor,
+    dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect,
+    InvariantError, OpGuards, Operation, OperationError, RVec, Storage, StorageView, Tensor,
     TensorDType, Unary, UnaryOp,
 };
 use anyhow::anyhow;
@@ -228,13 +228,7 @@ fn qindex_select(op: IndexSelect, dst: Tensor) -> Result<Tensor, OperationError>
     let src = op.src().deep_clone();
 
     // NOTE: Support for other quantization types is dependent on the corresponding dequantization functions.
-    let src = match src.dt() {
-        DType::Q8_0F(_) => {
-            let quantizer = Quantizer::new(Quantization::SInt8);
-            quantizer.sint8_dequantize(src)
-        }
-        _ => return Err(InvariantError::UnsupportedDType(src.dt()).into()),
-    };
+    let src = dequantize(src);
     let indices = op.indices().clone();
     let dim = op.dim();
 
