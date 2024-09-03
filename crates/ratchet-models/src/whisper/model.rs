@@ -212,7 +212,7 @@ impl Whisper {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::path::PathBuf;
+    use std::{path::PathBuf, sync::mpsc, thread, time::Duration};
 
     use hf_hub::api::sync::Api;
     use ratchet::{Device, DeviceRequest};
@@ -225,6 +225,25 @@ mod tests {
             transcript::StreamedSegment,
         },
     };
+
+    fn panic_after<T, F>(d: Duration, f: F) -> T
+    where
+        T: Send + 'static,
+        F: FnOnce() -> T,
+        F: Send + 'static,
+    {
+        let (done_tx, done_rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let val = f();
+            done_tx.send(()).expect("Unable to send completion signal");
+            val
+        });
+
+        match done_rx.recv_timeout(d) {
+            Ok(_) => handle.join().expect("Thread panicked"),
+            Err(_) => panic!("Thread took too long"),
+        }
+    }
 
     fn log_init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -255,7 +274,13 @@ mod tests {
     ];
 
     #[test]
-    pub fn whisper_end_to_end() {
+    fn whisper_end_to_end() {
+        panic_after(Duration::from_secs(120), || {
+            whisper_end_to_end_inner();
+        })
+    }
+
+    fn whisper_end_to_end_inner() {
         log_init();
         let api = Api::new().unwrap();
         let model = api.model("FL33TW00D-HF/whisper-tiny".to_string());
