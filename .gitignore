@@ -27,3 +27,6 @@ models/**
 # Python local env
 venv/
 .venv/
+
+# proptest regression tests
+proptest-regressions/
