@@ -366,4 +366,20 @@ def mlx_rope(input, dim, offset):
         let device = Device::request_device(DeviceRequest::CPU).unwrap();
         run_rope_trial(prob, device);
     }
+
+    #[test]
+    fn debug_rope_cpu() {
+        let prob = RoPEProblem {
+            BS: 1,
+            NH: 1,
+            SL: 2,
+            HD: 8,
+            dim: 8,
+            offset: 3,
+        };
+        println!("{prob:?}");
+
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_rope_trial(prob, device);
+    }
 }

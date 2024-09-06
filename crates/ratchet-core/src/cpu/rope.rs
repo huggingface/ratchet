@@ -21,17 +21,19 @@ pub fn cpu_rope(op: RoPE, dst: Tensor) -> Result<Tensor, OperationError> {
     Ok(dst)
 }
 
-fn calculate_sincos(dim: usize, seq_len: usize, base: f32) -> (Vec<f32>, Vec<f32>) {
+fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Vec<f32>, Vec<f32>) {
     let half_dim = dim / 2;
 
-    let positions = (0..seq_len).map(|x| x as f32).collect::<Vec<f32>>();
+    let positions = (offset..seq_len + offset)
+        .map(|x| x as f32)
+        .collect::<Vec<f32>>();
     let log_base = base.log2();
     let inv_freqs = (0..dim)
         .step_by(2)
         .rev()
         .map(|i| -(i as f32))
         .map(|i| i * log_base / half_dim as f32)
-        .map(|i| i.exp())
+        .map(f32::exp)
         .collect::<Vec<f32>>();
 
     let p_shape = shape!(seq_len, 1);
@@ -63,7 +65,9 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     let [b, t, h, d] = shape.try_into().unwrap();
     let el_count = b * h * t * d;
 
-    let (sin, cos) = calculate_sincos(dim, el_count, base);
+    let (sin, cos) = calculate_sincos(dim, el_count, base, offset);
+    //let sin = &sin[offset..el_count + offset];
+    //let cos = &cos[offset..el_count + offset];
 
     let mut dst = vec![0.0; el_count];
 
