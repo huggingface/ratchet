@@ -1,4 +1,6 @@
 pub mod gemm;
+pub mod rope;
+mod utils;
 
 use crate::{
     dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect,
@@ -6,10 +8,11 @@ use crate::{
     TensorDType, Unary, UnaryOp,
 };
 use anyhow::anyhow;
-use bytemuck::NoUninit;
 use core::marker::PhantomData;
 use half::{bf16, f16};
 use num_traits::Float;
+use rope::*;
+use utils::cpu_store_result;
 
 #[derive(Debug)]
 pub struct CPU<T: TensorDType, OP: Operation> {
@@ -362,8 +365,4 @@ pub fn binary_apply_inplace<T: TensorDType>(
     binary_apply_inplace_helper(&mut lhs, &rhs, f);
     cpu_store_result(dst, &lhs);
     Ok(())
-}
-
-pub fn cpu_store_result<T: NoUninit>(dst: &Tensor, data: &[T]) {
-    dst.update_storage(Storage::CPU(CPUBuffer::from_slice(data, dst.shape())));
 }

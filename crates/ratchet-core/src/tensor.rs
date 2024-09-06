@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    cpu::*, ops::*, rvec, BufferSegment, CPUBuffer, CPUOperation, CompiledOp, DType, Device,
-    DeviceStorage, Executable, GPUBuffer, GPUOperation, InvariantError, LazyOp, Operation,
-    OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    cpu::rope::cpu_rope, cpu::*, ops::*, rvec, BufferSegment, CPUBuffer, CPUOperation, CompiledOp,
+    DType, Device, DeviceStorage, Executable, GPUBuffer, GPUOperation, InvariantError, LazyOp,
+    Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
 use npyz::WriterBuilder;
@@ -372,7 +372,7 @@ impl Tensor {
 
     pub fn rope(self, dim: usize, base: f32, offset: usize) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let rope = RoPE::new(self, dim, f32::log2(base), offset);
+        let rope = RoPE::new(self, dim, base, offset);
         let new_view = rope.compute_view()?;
         Ok(Tensor::lazy(LazyOp::RoPE(rope), new_view, device))
     }
@@ -745,7 +745,7 @@ impl Tensor {
             LazyOp::Cast(c) => cpu_cast(c, dst).ok(),
             LazyOp::Matmul(m) => m.apply(dst).ok(),
             LazyOp::Softmax(_s) => todo!(),
-            LazyOp::RoPE(_r) => todo!(),
+            LazyOp::RoPE(r) => cpu_rope(r, dst).ok(),
             LazyOp::Unary(u) => cpu_unary(u, dst).ok(),
             LazyOp::Reindex(_r) => todo!(),
             LazyOp::Concat(_c) => todo!(),

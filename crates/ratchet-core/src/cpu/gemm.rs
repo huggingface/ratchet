@@ -1,5 +1,5 @@
 use crate::{
-    cpu_store_result, CPUOperation, DType, InvariantError, Matmul, MatmulSpec, OperationError,
+    cpu::cpu_store_result, CPUOperation, DType, InvariantError, Matmul, MatmulSpec, OperationError,
     Shape, Tensor, TensorDType,
 };
 use anyhow::{anyhow, Result};
