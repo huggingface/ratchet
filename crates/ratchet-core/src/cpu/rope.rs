@@ -74,33 +74,3 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
         });
     dst
 }
-
-fn old_rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
-    let cos = src.iter().map(|x| x.cos()).collect::<Vec<f32>>();
-    let sin = src.iter().map(|x| x.sin()).collect::<Vec<f32>>();
-
-    let b = *shape.get(0).unwrap();
-    let t = *shape.get(1).unwrap();
-    let h = *shape.get(2).unwrap();
-    let d = *shape.get(3).unwrap();
-
-    let el_count = b * h * t * d;
-    let mut dst = vec![0.0; el_count];
-    src.chunks(t * h * d)
-        .zip(dst.chunks_mut(t * h * d))
-        .for_each(|(src, dst)| {
-            for i_t in 0..t {
-                for i_d in 0..d / 2 {
-                    let i_cs = i_t * (d / 2) + i_d;
-                    for i_h in 0..h {
-                        let i1 = i_t * h * d + i_h * d + i_d;
-                        let i2 = i1 + d / 2;
-                        dst[i1] = src[i1] * cos[i_cs] - src[i2] * sin[i_cs];
-                        dst[i2] = src[i1] * sin[i_cs] + src[i2] * cos[i_cs];
-                    }
-                }
-            }
-        });
-
-    dst
-}
