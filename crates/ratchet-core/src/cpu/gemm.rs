@@ -1,10 +1,10 @@
 use crate::{
     cpu::cpu_store_result, CPUOperation, DType, InvariantError, Matmul, MatmulSpec, OperationError,
-    Shape, Tensor, TensorDType,
+    Shape, Strides, Tensor, TensorDType,
 };
 use anyhow::{anyhow, Result};
 use core::str::FromStr;
-use gemm::{gemm, Parallelism};
+use gemm::{gemm as gemm_kernel, Parallelism};
 use half::{bf16, f16};
 use std::num::NonZeroUsize;
 
@@ -56,21 +56,19 @@ fn calculate_skips(
     Ok((lhs_skip, rhs_skip))
 }
 
-fn gemm_impl<T: TensorDType>(
-    spec: MatmulSpec,
+pub(crate) fn gemm<T: TensorDType>(
     lhs: &[T],
+    lhs_shape: &Shape,
+    lhs_strides: &Strides,
     rhs: &[T],
+    rhs_shape: &Shape,
+    rhs_strides: &Strides,
+    dst_strides: &Strides,
+    b: usize,
+    m: usize,
+    n: usize,
+    k: usize,
 ) -> Result<Vec<T>, OperationError> {
-    let lhs_shape = spec.lhs_shape();
-    let rhs_shape = spec.rhs_shape();
-    let lhs_strides = spec.lhs_strides();
-    let rhs_strides = spec.rhs_strides();
-    let dst_strides = spec.dst_strides();
-    let b = spec.stacks();
-    let m = spec.m();
-    let n = spec.n();
-    let k = spec.k();
-
     let lhs_strides = lhs_strides.to_vec();
     let rhs_strides = rhs_strides.to_vec();
     let rank = lhs_shape.rank();
@@ -102,7 +100,7 @@ fn gemm_impl<T: TensorDType>(
         let rhs_p = &rhs[step * rhs_skip..];
         let dst_p = &mut dst[step * dst_skip..];
         unsafe {
-            gemm(
+            gemm_kernel(
                 m,
                 n,
                 k,
@@ -126,6 +124,35 @@ fn gemm_impl<T: TensorDType>(
         }
     }
     Ok(dst)
+}
+
+fn gemm_impl<T: TensorDType>(
+    spec: MatmulSpec,
+    lhs: &[T],
+    rhs: &[T],
+) -> Result<Vec<T>, OperationError> {
+    let lhs_shape = spec.lhs_shape();
+    let rhs_shape = spec.rhs_shape();
+    let lhs_strides = spec.lhs_strides();
+    let rhs_strides = spec.rhs_strides();
+    let dst_strides = spec.dst_strides();
+    let b = spec.stacks();
+    let m = spec.m();
+    let n = spec.n();
+    let k = spec.k();
+    gemm(
+        lhs,
+        lhs_shape,
+        lhs_strides,
+        rhs,
+        rhs_shape,
+        rhs_strides,
+        dst_strides,
+        b,
+        m,
+        n,
+        k,
+    )
 }
 
 impl CPUOperation for Matmul {

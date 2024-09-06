@@ -1,6 +1,6 @@
 use crate::{
-    cpu::cpu_store_result, DType, OperationError, RoPE, Shape, Tensor, TensorDType, TensorError,
-    Unary,
+    cpu::{cpu_store_result, gemm::gemm},
+    shape, DType, OperationError, RoPE, Shape, Strides, Tensor, TensorDType, TensorError, Unary,
 };
 use half::{bf16, f16};
 use num_traits::Float;
@@ -21,19 +21,12 @@ pub fn cpu_rope(op: RoPE, dst: Tensor) -> Result<Tensor, OperationError> {
     Ok(dst)
 }
 
-fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
-    let [b, t, h, d] = shape.try_into().unwrap();
-    let el_count = b * h * t * d;
-
-    let src = &src[offset..offset + el_count];
-
+fn calculate_sincos(dim: usize, seq_len: usize, base: f32) -> (Vec<f32>, Vec<f32>) {
     let half_dim = dim / 2;
-    let positions = (offset..el_count + offset)
-        .map(|x| x as f32)
-        .collect::<Vec<f32>>();
 
+    let positions = (0..seq_len).map(|x| x as f32).collect::<Vec<f32>>();
     let log_base = base.log2();
-    let inv_freqs = (0..d)
+    let inv_freqs = (0..dim)
         .step_by(2)
         .rev()
         .map(|i| -(i as f32))
@@ -41,14 +34,36 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
         .map(|i| i.exp())
         .collect::<Vec<f32>>();
 
-    let theta = positions
-        .iter()
-        .zip(inv_freqs.iter())
-        .map(|(p, i)| p * i)
-        .collect::<Vec<f32>>();
+    let p_shape = shape!(seq_len, 1);
+    let p_strides = Strides::from(&p_shape);
+    let i_shape = shape!(1, half_dim);
+    let i_strides = Strides::from(&i_shape);
+    let dst_strides = Strides::from(&shape!(seq_len, half_dim));
+    let theta = gemm(
+        &positions,
+        &p_shape,
+        &p_strides,
+        &inv_freqs,
+        &i_shape,
+        &i_strides,
+        &dst_strides,
+        1,
+        seq_len,
+        half_dim,
+        1,
+    )
+    .unwrap();
 
-    let cos = theta.iter().map(|x| x.cos()).collect::<Vec<f32>>();
-    let sin = theta.iter().map(|x| x.sin()).collect::<Vec<f32>>();
+    let (sin_theta, cos_theta) = theta.iter().map(|i| i.sin_cos()).unzip();
+
+    (sin_theta, cos_theta)
+}
+
+fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
+    let [b, t, h, d] = shape.try_into().unwrap();
+    let el_count = b * h * t * d;
+
+    let (sin, cos) = calculate_sincos(dim, el_count, base);
 
     let mut dst = vec![0.0; el_count];
 
