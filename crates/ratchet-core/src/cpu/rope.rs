@@ -24,23 +24,25 @@ pub fn cpu_rope(op: RoPE, dst: Tensor) -> Result<Tensor, OperationError> {
 fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Vec<f32>, Vec<f32>) {
     let half_dim = dim / 2;
 
-    let positions = (offset..seq_len + offset)
-        .map(|x| x as f32)
-        .collect::<Vec<f32>>();
-    let log_base = base.log2();
-    let inv_freqs = (0..dim)
-        .step_by(2)
-        .rev()
+    let p_len = seq_len + offset;
+
+    let positions = (offset..p_len).map(|x| x as f32).collect::<Vec<f32>>();
+
+    let log_base = base.ln();
+    let inv_freqs = (0..half_dim)
         .map(|i| -(i as f32))
         .map(|i| i * log_base / half_dim as f32)
         .map(f32::exp)
         .collect::<Vec<f32>>();
 
-    let p_shape = shape!(seq_len, 1);
+    println!("positions: {:?}", positions);
+    println!("inv_freqs: {:?}", inv_freqs);
+
+    let p_shape = shape!(p_len, 1);
     let p_strides = Strides::from(&p_shape);
     let i_shape = shape!(1, half_dim);
     let i_strides = Strides::from(&i_shape);
-    let dst_strides = Strides::from(&shape!(seq_len, half_dim));
+    let dst_strides = Strides::from(&shape!(p_len, half_dim));
     let theta = gemm(
         &positions,
         &p_shape,
@@ -56,18 +58,18 @@ fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Ve
     )
     .unwrap();
 
+    println!("theta: {:?}", theta);
+
     let (sin_theta, cos_theta) = theta.iter().map(|i| i.sin_cos()).unzip();
 
     (sin_theta, cos_theta)
 }
 
 fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
-    let [b, t, h, d] = shape.try_into().unwrap();
-    let el_count = b * h * t * d;
+    let [b, h, sl, d] = shape.try_into().unwrap();
+    let el_count = b * h * sl * d;
 
-    let (sin, cos) = calculate_sincos(dim, el_count, base, offset);
-    //let sin = &sin[offset..el_count + offset];
-    //let cos = &cos[offset..el_count + offset];
+    let (sin, cos) = calculate_sincos(dim, sl, base, offset);
 
     let mut dst = vec![0.0; el_count];
 
@@ -76,10 +78,10 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     println!("src len: {}", src.len());
     println!("dst len: {}", dst.len());
 
-    src.chunks(t * h * d)
-        .zip(dst.chunks_mut(t * h * d))
+    src.chunks(sl * h * d)
+        .zip(dst.chunks_mut(sl * h * d))
         .for_each(|(src, dst)| {
-            for i_t in 0..t {
+            for i_t in 0..sl {
                 for i_d in 0..d / 2 {
                     let i_cs = i_t * (d / 2) + i_d;
                     for i_h in 0..h {
