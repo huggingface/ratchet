@@ -110,7 +110,6 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     let [b, h, t, d] = shape.try_into().unwrap();
     let el_count = b * h * t * d;
 
-    let half_dim = dim / 2;
     let (sin, cos) = calculate_sincos(dim, t, base, offset);
     let mut intermediate = Vec::with_capacity(el_count);
 
@@ -118,7 +117,7 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     println!("sin len: {}", sin.len());
     println!("src len: {}", src.len());
 
-    let offset = el_count / t / 2;
+    let offset = el_count / b / h / t / 2;
 
     println!("offset: {}", offset);
     let (x1, x2) = chunk_by_offset(src, offset);
