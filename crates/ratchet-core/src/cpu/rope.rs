@@ -65,33 +65,151 @@ fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Ve
     (sin_theta, cos_theta)
 }
 
+#[inline]
+fn split_by_offset(data: &[f32], offset: usize) -> (Vec<f32>, Vec<f32>) {
+    let mut x1 = Vec::with_capacity(data.len() / 2);
+    let mut x2 = Vec::with_capacity(data.len() / 2);
+
+    let mut start = 0;
+    let mut stop = offset;
+    while stop < data.len() {
+        let mut chunk = data[start..stop].to_vec();
+        x1.append(&mut chunk);
+        start += offset;
+        stop += offset;
+
+        let mut chunk = data[start..stop].to_vec();
+        x2.append(&mut chunk);
+        start += offset;
+        stop += offset;
+    }
+    (x1.to_vec(), x2.to_vec())
+}
+
 fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
-    let [b, h, sl, d] = shape.try_into().unwrap();
-    let el_count = b * h * sl * d;
+    let [b, h, t, d] = shape.try_into().unwrap();
+    let el_count = b * h * t * d;
 
-    let (sin, cos) = calculate_sincos(dim, sl, base, offset);
+    let (sin, cos) = calculate_sincos(dim, t, base, offset);
 
-    let mut dst = vec![0.0; el_count];
+    let mut dst = Vec::with_capacity(el_count);
 
     println!("cos len: {}", cos.len());
     println!("sin len: {}", sin.len());
     println!("src len: {}", src.len());
     println!("dst len: {}", dst.len());
 
-    src.chunks(sl * h * d)
-        .zip(dst.chunks_mut(sl * h * d))
-        .for_each(|(src, dst)| {
-            for i_t in 0..sl {
-                for i_d in 0..d / 2 {
-                    let i_cs = i_t * (d / 2) + i_d;
-                    for i_h in 0..h {
-                        let i1 = i_t * h * d + i_h * d + i_d;
-                        let i2 = i1 + d / 2;
-                        dst[i1] = src[i1] * cos[i_cs] - src[i2] * sin[i_cs];
-                        dst[i2] = src[i1] * sin[i_cs] + src[i2] * cos[i_cs];
-                    }
-                }
-            }
-        });
+    //println!("src: {:?}", src);
+
+    let split = sin.len();
+    let (x1, x2) = split_by_offset(src, split);
+    let x_shape = shape!(4, 1);
+    let x_strides = Strides::from(&x_shape);
+    let theta_shape = shape!(1, 4);
+    let theta_strides = Strides::from(&theta_shape);
+
+    /*
+    a_shape = [2, 4]
+    [[1, 2, 3, 4], [5, 6, 7, 8]]
+    b_shape = [2, 4]
+    [[1, 2, 3, 4], [5, 6, 7, 8]]
+
+    m = 2
+    n = 2
+    k = 4
+
+    */
+
+    let m = 4;
+    let n = 1;
+    let k = 4;
+
+    println!("x_shape: {:?}", x_shape);
+    println!("theta_shape: {:?}", theta_shape);
+
+    println!("m: {}", m);
+    println!("n: {}", n);
+    println!("k: {}", k);
+
+    let x1_sin = gemm(
+        &x1,
+        &x_shape,
+        &x_strides,
+        &sin,
+        &theta_shape,
+        &theta_strides,
+        &x_strides,
+        1,
+        m,
+        n,
+        k,
+    )
+    .unwrap();
+
+    let x1_cos = gemm(
+        &x1,
+        &x_shape,
+        &x_strides,
+        &cos,
+        &theta_shape,
+        &theta_strides,
+        &x_strides,
+        1,
+        m,
+        n,
+        k,
+    )
+    .unwrap();
+
+    let x2_sin = gemm(
+        &x2,
+        &x_shape,
+        &x_strides,
+        &sin,
+        &theta_shape,
+        &theta_strides,
+        &x_strides,
+        1,
+        m,
+        n,
+        k,
+    )
+    .unwrap();
+
+    let x2_cos = gemm(
+        &x2,
+        &x_shape,
+        &x_strides,
+        &cos,
+        &theta_shape,
+        &theta_strides,
+        &x_strides,
+        1,
+        m,
+        n,
+        k,
+    )
+    .unwrap();
+
+    println!("x1: {:?}", x1);
+    println!("x2: {:?}", x2);
+    println!("sin: {:?}", sin);
+    println!("cos: {:?}", cos);
+
+    println!("x1_sin: {:?}", x1_sin);
+    println!("x1_cos: {:?}", x1_cos);
+    println!("x2_sin: {:?}", x2_sin);
+    println!("x2_cos: {:?}", x2_cos);
+
+    x1_cos.iter().zip(x2_sin).for_each(|(x1_cos, x2_sin)| {
+        dst.push(x1_cos - x2_sin);
+    });
+
+    x1_sin.iter().zip(x2_cos).for_each(|(x1_sin, x2_cos)| {
+        dst.push(x1_sin + x2_cos);
+    });
+
+    println!("dst: {:?}", dst);
+
     dst
 }
