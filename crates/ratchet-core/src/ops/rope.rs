@@ -384,25 +384,4 @@ def mlx_rope(input, dim, offset):
         let device = Device::request_device(DeviceRequest::CPU).unwrap();
         run_rope_trial(prob, device);
     }
-
-    #[test]
-    fn im_confused() {
-        let a = vec![1.0, 2.0, 3.0, 4.0];
-        let a_s = shape!(4, 1);
-        let a_strides = Strides::from(&a_s);
-        let b = vec![1.0, 1.0, 1.0, 1.0];
-        let b_s = shape!(1, 4);
-        let b_strides = Strides::from(&b_s);
-
-        let m = 4;
-        let n = 4;
-        let k = 1;
-
-        let result = gemm::gemm(
-            &a, &a_s, &a_strides, &b, &b_s, &b_strides, &b_strides, 1, m, n, k,
-        )
-        .unwrap();
-
-        println!("{:?}", result);
-    }
 }
