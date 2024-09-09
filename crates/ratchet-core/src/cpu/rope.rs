@@ -66,7 +66,7 @@ fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Ve
 }
 
 #[inline]
-fn split_by_offset(data: &[f32], offset: usize) -> (Vec<f32>, Vec<f32>) {
+fn chunk_by_offset(data: &[f32], offset: usize) -> (Vec<f32>, Vec<f32>) {
     let mut x1 = Vec::with_capacity(data.len() / 2);
     let mut x2 = Vec::with_capacity(data.len() / 2);
 
@@ -86,22 +86,43 @@ fn split_by_offset(data: &[f32], offset: usize) -> (Vec<f32>, Vec<f32>) {
     (x1.to_vec(), x2.to_vec())
 }
 
+#[inline]
+fn interleave_by_offset(data: &[f32], offset: usize) -> Vec<f32> {
+    let n = data.len();
+    let mid = n / 2;
+    let mut interleaved = Vec::with_capacity(n);
+
+    let mut start = 0;
+    let mut stop = offset;
+    while stop <= mid {
+        let mut chunk = data[start..stop].to_vec();
+        interleaved.append(&mut chunk);
+
+        let mut chunk = data[start + mid..stop + mid].to_vec();
+        interleaved.append(&mut chunk);
+
+        start += offset;
+        stop += offset;
+    }
+    interleaved
+}
+
 fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
     println!("Ratchet RoPE");
     let [b, h, t, d] = shape.try_into().unwrap();
     let el_count = b * h * t * d;
 
     let (sin, cos) = calculate_sincos(dim, t, base, offset);
-
-    let mut dst = Vec::with_capacity(el_count);
+    let mut intermediate = Vec::with_capacity(el_count);
 
     println!("cos len: {}", cos.len());
     println!("sin len: {}", sin.len());
     println!("src len: {}", src.len());
-    println!("dst len: {}", dst.len());
 
-    let split = sin.len();
-    let (x1, x2) = split_by_offset(src, split);
+    let offset = el_count / t / 2;
+
+    println!("offset: {}", offset);
+    let (x1, x2) = chunk_by_offset(src, offset);
 
     let (x1_cos, x2_cos): (Vec<f32>, Vec<f32>) = cos
         .iter()
@@ -128,14 +149,15 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     println!("x2_cos: {:?}", x2_cos);
 
     x1_cos.iter().zip(x2_sin).for_each(|(x1_cos, x2_sin)| {
-        dst.push(x1_cos - x2_sin);
+        intermediate.push(x1_cos - x2_sin);
     });
 
     x1_sin.iter().zip(x2_cos).for_each(|(x1_sin, x2_cos)| {
-        dst.push(x1_sin + x2_cos);
+        intermediate.push(x1_sin + x2_cos);
     });
 
+    println!("intermediate: {:?}", intermediate);
+    let dst = interleave_by_offset(&intermediate, offset);
     println!("dst: {:?}", dst);
-
     dst
 }
