@@ -58,8 +58,6 @@ fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Ve
     )
     .unwrap();
 
-    println!("theta: {:?}", theta);
-
     let (sin_theta, cos_theta) = theta.iter().map(|i| i.sin_cos()).unzip();
 
     (sin_theta, cos_theta)
@@ -94,7 +92,7 @@ fn interleave_by_offset(data: &[f32], offset: usize) -> Vec<f32> {
 
     let mut start = 0;
     let mut stop = offset;
-    while stop <= mid {
+    while stop + mid <= n {
         let mut chunk = data[start..stop].to_vec();
         interleaved.append(&mut chunk);
 
@@ -112,6 +110,7 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     let [b, h, t, d] = shape.try_into().unwrap();
     let el_count = b * h * t * d;
 
+    let half_dim = dim / 2;
     let (sin, cos) = calculate_sincos(dim, t, base, offset);
     let mut intermediate = Vec::with_capacity(el_count);
 
@@ -124,18 +123,17 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     println!("offset: {}", offset);
     let (x1, x2) = chunk_by_offset(src, offset);
 
-    let (x1_cos, x2_cos): (Vec<f32>, Vec<f32>) = cos
+    let N = sin.len();
+    let (x1_cos, x1_sin): (Vec<f32>, Vec<f32>) = x1
         .iter()
-        .zip(x1.iter())
-        .zip(x2.iter())
-        .map(|((c, x1), x2)| (c * x1, c * x2))
+        .enumerate()
+        .map(|(i, x)| (x * cos[i % N], x * sin[i % N]))
         .unzip();
 
-    let (x1_sin, x2_sin): (Vec<f32>, Vec<f32>) = sin
+    let (x2_cos, x2_sin): (Vec<f32>, Vec<f32>) = x2
         .iter()
-        .zip(x1.iter())
-        .zip(x2.iter())
-        .map(|((s, x1), x2)| (s * x1, s * x2))
+        .enumerate()
+        .map(|(i, x)| (x * cos[i % N], x * sin[i % N]))
         .unzip();
 
     println!("x1: {:?}", x1);
