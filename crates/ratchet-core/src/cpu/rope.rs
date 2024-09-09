@@ -103,26 +103,14 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
 
     let split = sin.len();
     let (x1, x2) = split_by_offset(src, split);
-    let x_shape = shape!(4, 1);
+    let x_shape = shape!(h, t, d / 2);
     let x_strides = Strides::from(&x_shape);
-    let theta_shape = shape!(1, 4);
+    let theta_shape = shape!(1, t, d / 2);
     let theta_strides = Strides::from(&theta_shape);
 
-    /*
-    a_shape = [2, 4]
-    [[1, 2, 3, 4], [5, 6, 7, 8]]
-    b_shape = [2, 4]
-    [[1, 2, 3, 4], [5, 6, 7, 8]]
-
-    m = 2
-    n = 2
-    k = 4
-
-    */
-
-    let m = 4;
-    let n = 1;
-    let k = 4;
+    let m = h * t * d / 2;
+    let n = t * d / 2;
+    let k = 1;
 
     println!("x_shape: {:?}", x_shape);
     println!("theta_shape: {:?}", theta_shape);
