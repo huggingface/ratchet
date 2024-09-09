@@ -87,6 +87,7 @@ fn split_by_offset(data: &[f32], offset: usize) -> (Vec<f32>, Vec<f32>) {
 }
 
 fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
+    println!("Ratchet RoPE");
     let [b, h, t, d] = shape.try_into().unwrap();
     let el_count = b * h * t * d;
 
@@ -99,85 +100,22 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     println!("src len: {}", src.len());
     println!("dst len: {}", dst.len());
 
-    //println!("src: {:?}", src);
-
     let split = sin.len();
     let (x1, x2) = split_by_offset(src, split);
-    let x_shape = shape!(h, t, d / 2);
-    let x_strides = Strides::from(&x_shape);
-    let theta_shape = shape!(1, t, d / 2);
-    let theta_strides = Strides::from(&theta_shape);
 
-    let m = h * t * d / 2;
-    let n = t * d / 2;
-    let k = 1;
+    let (x1_cos, x2_cos): (Vec<f32>, Vec<f32>) = cos
+        .iter()
+        .zip(x1.iter())
+        .zip(x2.iter())
+        .map(|((c, x1), x2)| (c * x1, c * x2))
+        .unzip();
 
-    println!("x_shape: {:?}", x_shape);
-    println!("theta_shape: {:?}", theta_shape);
-
-    println!("m: {}", m);
-    println!("n: {}", n);
-    println!("k: {}", k);
-
-    let x1_sin = gemm(
-        &x1,
-        &x_shape,
-        &x_strides,
-        &sin,
-        &theta_shape,
-        &theta_strides,
-        &x_strides,
-        1,
-        m,
-        n,
-        k,
-    )
-    .unwrap();
-
-    let x1_cos = gemm(
-        &x1,
-        &x_shape,
-        &x_strides,
-        &cos,
-        &theta_shape,
-        &theta_strides,
-        &x_strides,
-        1,
-        m,
-        n,
-        k,
-    )
-    .unwrap();
-
-    let x2_sin = gemm(
-        &x2,
-        &x_shape,
-        &x_strides,
-        &sin,
-        &theta_shape,
-        &theta_strides,
-        &x_strides,
-        1,
-        m,
-        n,
-        k,
-    )
-    .unwrap();
-
-    let x2_cos = gemm(
-        &x2,
-        &x_shape,
-        &x_strides,
-        &cos,
-        &theta_shape,
-        &theta_strides,
-        &x_strides,
-        1,
-        m,
-        n,
-        k,
-    )
-    .unwrap();
+    let (x1_sin, x2_sin): (Vec<f32>, Vec<f32>) = sin
+        .iter()
+        .zip(x1.iter())
+        .zip(x2.iter())
+        .map(|((s, x1), x2)| (s * x1, s * x2))
+        .unzip();
 
     println!("x1: {:?}", x1);
     println!("x2: {:?}", x2);
