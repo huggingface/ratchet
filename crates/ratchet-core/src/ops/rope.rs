@@ -300,7 +300,10 @@ def mlx_rope(input, dim, offset):
             dim,
             offset,
         } = problem;
-        let a = Tensor::randn::<f32>(shape![BS, NH, SL, HD], Device::CPU);
+        let shape = shape![BS, NH, SL, HD];
+        let n = shape.numel();
+        let data = (0..n).map(|x| x as f32).collect::<Vec<f32>>();
+        let a = Tensor::from_data(data, shape, Device::CPU);
         let ground = ground_truth(&a, dim, offset).unwrap();
 
         let a = a.to(&device).unwrap();
@@ -372,12 +375,12 @@ def mlx_rope(input, dim, offset):
     #[test]
     fn debug_rope_cpu() {
         let prob = RoPEProblem {
-            BS: 2,
+            BS: 1,
             NH: 2,
-            SL: 2,
-            HD: 8,
-            dim: 8,
-            offset: 5,
+            SL: 1,
+            HD: 32,
+            dim: 16,
+            offset: 1,
         };
         println!("{prob:?}");
 
