@@ -34,4 +34,6 @@ pub enum InvariantError {
     DuplicateDims,
     #[error("Broadcasting failed: {0:?}")]
     BroadcastingFailed(Vec<Shape>),
+    #[error("Dim out of range {dim} in shape {shape:?}.")]
+    DimOutOfRange { dim: usize, shape: Shape },
 }
