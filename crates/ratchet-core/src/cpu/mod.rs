@@ -287,7 +287,11 @@ pub fn cpu_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
     Ok(dst)
 }
 
-pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor, OperationError> {
+fn concat_inner<T: TensorDType>(
+    inputs: RVec<Tensor>,
+    dim: usize,
+    dst: Tensor,
+) -> Result<Tensor, OperationError> {
     inputs.iter().try_for_each(|i| {
         if dim >= i.shape().iter().len() {
             Err(InvariantError::DimOutOfRange {
@@ -305,7 +309,7 @@ pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor,
     })?;
 
     let dst_size = dst.shape().clone().product();
-    let mut result = vec![0.0f32; dst_size];
+    let mut result = vec![T::zero(); dst_size];
 
     let dst_dim_len = dst.shape()[dim];
     let block: usize = dst.shape().iter().skip(1 + dim).product();
@@ -313,7 +317,7 @@ pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor,
     let src_o = 0;
     let mut dst_o = 0;
     for t in inputs {
-        let src = t.to_vec::<f32>()?;
+        let src = t.to_vec::<T>()?;
 
         let t_dims = t.shape().as_slice();
         let a_dim: usize = t_dims.iter().take(dim).product();
@@ -330,6 +334,15 @@ pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor,
     }
     cpu_store_result(&dst, &result);
     Ok(dst)
+}
+
+pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor, OperationError> {
+    match dst.dt() {
+        DType::F32 => concat_inner::<f32>(inputs, dim, dst),
+        DType::F16 => concat_inner::<f16>(inputs, dim, dst),
+        DType::BF16 => concat_inner::<bf16>(inputs, dim, dst),
+        dtype => Err(InvariantError::UnsupportedDType(dtype).into()),
+    }
 }
 
 #[inline]
