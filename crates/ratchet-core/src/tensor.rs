@@ -531,6 +531,13 @@ impl Tensor {
         Self::from_data(data, shape, device)
     }
 
+    pub fn range<T: TensorDType + num_traits::Float>(shape: &Shape, device: Device) -> Tensor {
+        let data: Vec<T> = (0..shape.numel())
+            .map(|i| T::from(i).expect("Failed to convert index to T"))
+            .collect();
+        Tensor::from_data(data, shape.clone(), device)
+    }
+
     pub fn zeros<T: TensorDType>(shape: &Shape, device: &Device) -> Tensor {
         let storage = Storage::zeros::<T>(shape, device);
         let strides = Strides::from(shape);
@@ -748,7 +755,7 @@ impl Tensor {
             LazyOp::RoPE(r) => cpu_rope(r, dst).ok(),
             LazyOp::Unary(u) => cpu_unary(u, dst).ok(),
             LazyOp::Reindex(_r) => todo!(),
-            LazyOp::Concat(_c) => todo!(),
+            LazyOp::Concat(c) => cpu_concat(c, dst).ok(),
             LazyOp::Norm(_n) => todo!(),
             LazyOp::Conv(_c) => todo!(),
             LazyOp::Select(i) => cpu_index_select(i, dst).ok(),

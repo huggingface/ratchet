@@ -12,8 +12,18 @@ use crate::{
 
 #[derive(new, Debug, Clone)]
 pub struct Concat {
-    inputs: RVec<Tensor>,
-    dim: usize,
+    pub inputs: RVec<Tensor>,
+    pub dim: usize,
+}
+
+impl Concat {
+    pub fn inputs(&self) -> &[Tensor] {
+        &self.inputs
+    }
+
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
 }
 
 impl KernelRenderable for ConcatKernels {
@@ -262,16 +272,11 @@ impl GPUOperation for Concat {
 
 #[cfg(all(test, feature = "pyo3"))]
 mod tests {
-
-    use crate::{rvec, shape, test_util::run_py_prg, Device, DeviceRequest, Tensor};
+    use crate::{rvec, shape, test_util::run_py_prg, Device, DeviceRequest, RVec, Tensor};
 
     #[derive(Debug)]
     struct ConcatProblem {
-        t0: Tensor,
-        t1: Tensor,
-        t2: Tensor,
-        t3: Tensor,
-        t4: Tensor,
+        tensors: Vec<Tensor>,
         dim: usize,
     }
 
@@ -280,39 +285,31 @@ mod tests {
             r#"
 import torch
 import numpy as np
-def permute(t0, t1, t2, t3, t4):
-    t0 = torch.from_numpy(t0)
-    t1 = torch.from_numpy(t1)
-    t2 = torch.from_numpy(t2)
-    t3 = torch.from_numpy(t3)
-    t4 = torch.from_numpy(t4)
-    return np.ascontiguousarray(torch.cat((t0, t1, t2, t3, t4), dim={}).numpy())
+def permute(*tensors):
+    numpy_tensors = []
+    for t in tensors:
+        numpy_tensors.append(torch.from_numpy(t))
+    return np.ascontiguousarray(torch.cat(numpy_tensors, dim={}).numpy())
 "#,
             args
         );
         run_py_prg(prg.to_string(), to_cat, &[], to_cat[0].dt())
     }
 
-    fn run_concat_trial(prob: ConcatProblem) -> anyhow::Result<()> {
-        let ConcatProblem {
-            mut t0,
-            mut t1,
-            mut t2,
-            mut t3,
-            mut t4,
-            dim,
-        } = prob;
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+    fn run_concat_trial(prob: ConcatProblem, device: Device) -> anyhow::Result<()> {
+        let ConcatProblem { tensors, dim } = prob;
 
         let arg_str = format!("{}", dim);
-        let ground = ground_truth(&[&t0, &t1, &t2, &t3, &t4], arg_str.as_str())?;
+        let ground = ground_truth(
+            tensors.iter().collect::<Vec<&Tensor>>().as_slice(),
+            arg_str.as_str(),
+        )?;
 
-        t0 = t0.to(&device)?;
-        t1 = t1.to(&device)?;
-        t2 = t2.to(&device)?;
-        t3 = t3.to(&device)?;
-        t4 = t4.to(&device)?;
-        let ours = Tensor::cat(rvec![t0, t1, t2, t3, t4], dim)?.resolve()?;
+        for t in tensors.iter() {
+            t.to(&device)?;
+        }
+        let t_rvec = RVec::from(tensors);
+        let ours = Tensor::cat(t_rvec, dim)?.resolve()?;
         let result = ours.to(&Device::CPU)?;
         println!("Ground: {:?}\n", ground);
         println!("Ours: {:?}", result);
@@ -321,7 +318,7 @@ def permute(t0, t1, t2, t3, t4):
     }
 
     #[test]
-    fn test_concat() {
+    fn test_concat_gpu() {
         let t0 = Tensor::randn::<f32>(shape![4, 2, 50, 128], Device::CPU);
         let t1 = Tensor::randn::<f32>(shape![4, 2, 13, 128], Device::CPU);
         let t2 = Tensor::randn::<f32>(shape![4, 2, 77, 128], Device::CPU);
@@ -329,14 +326,34 @@ def permute(t0, t1, t2, t3, t4):
         let t4 = Tensor::randn::<f32>(shape![4, 2, 11, 128], Device::CPU);
 
         let dim = 2;
-        run_concat_trial(ConcatProblem {
-            t0,
-            t1,
-            t2,
-            t3,
-            t4,
-            dim,
-        })
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_concat_trial(
+            ConcatProblem {
+                tensors: vec![t0, t1, t2, t3, t4],
+                dim,
+            },
+            device,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_concat_cpu() {
+        let t0 = Tensor::randn::<f32>(shape![4, 2, 50, 128], Device::CPU);
+        let t1 = Tensor::randn::<f32>(shape![4, 2, 13, 128], Device::CPU);
+        let t2 = Tensor::randn::<f32>(shape![4, 2, 77, 128], Device::CPU);
+        let t3 = Tensor::randn::<f32>(shape![4, 2, 55, 128], Device::CPU);
+        let t4 = Tensor::randn::<f32>(shape![4, 2, 11, 128], Device::CPU);
+
+        let dim = 2;
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_concat_trial(
+            ConcatProblem {
+                tensors: vec![t0, t1, t2, t3, t4],
+                dim,
+            },
+            device,
+        )
         .unwrap();
     }
 }

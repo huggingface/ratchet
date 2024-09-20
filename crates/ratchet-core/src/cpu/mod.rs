@@ -3,7 +3,7 @@ pub mod rope;
 mod utils;
 
 use crate::{
-    dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect,
+    dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, Concat, DType, IndexSelect,
     InvariantError, OpGuards, Operation, OperationError, RVec, Storage, StorageView, Tensor,
     TensorDType, Unary, UnaryOp,
 };
@@ -288,6 +288,48 @@ pub fn cpu_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
     };
 
     Ok(dst)
+}
+
+fn concat_inner<T: TensorDType>(
+    inputs: RVec<Tensor>,
+    dim: usize,
+    dst: Tensor,
+) -> Result<Tensor, OperationError> {
+    let dst_size = dst.shape().clone().product();
+    let mut result = vec![T::zero(); dst_size];
+
+    let dst_dim_len = dst.shape()[dim];
+    let block: usize = dst.shape().iter().skip(1 + dim).product();
+    let dst_s = block * dst_dim_len;
+    let src_o = 0;
+    let mut dst_o = 0;
+    for t in inputs {
+        let src = t.to_vec::<T>()?;
+
+        let t_dims = t.shape().as_slice();
+        let a_dim: usize = t_dims.iter().take(dim).product();
+        let b_dim = block * t_dims[dim];
+
+        for idx in 0..a_dim {
+            let dst_idx = idx * dst_s + dst_o;
+            let src_idx = idx * b_dim + src_o;
+            let dst = &mut result[dst_idx..dst_idx + b_dim];
+            let src = &src[src_idx..src_idx + b_dim];
+            dst.copy_from_slice(src)
+        }
+        dst_o += b_dim;
+    }
+    cpu_store_result(&dst, &result);
+    Ok(dst)
+}
+
+pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor, OperationError> {
+    match dst.dt() {
+        DType::F32 => concat_inner::<f32>(inputs, dim, dst),
+        DType::F16 => concat_inner::<f16>(inputs, dim, dst),
+        DType::BF16 => concat_inner::<bf16>(inputs, dim, dst),
+        dtype => Err(InvariantError::UnsupportedDType(dtype).into()),
+    }
 }
 
 #[inline]
