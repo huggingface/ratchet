@@ -1,7 +1,7 @@
 pub mod gemm;
 
 use crate::{
-    dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, DType, IndexSelect,
+    dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, Concat, DType, IndexSelect,
     InvariantError, OpGuards, Operation, OperationError, RVec, Storage, StorageView, Tensor,
     TensorDType, Unary, UnaryOp,
 };
@@ -284,6 +284,51 @@ pub fn cpu_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
         _ => unimplemented!("Cannot cast {:?} -> {:?}", cast.input().dt(), cast.dst_dt()),
     };
 
+    Ok(dst)
+}
+
+pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor, OperationError> {
+    inputs.iter().try_for_each(|i| {
+        if dim >= i.shape().iter().len() {
+            Err(InvariantError::DimOutOfRange {
+                dim,
+                shape: i.shape().clone(),
+            })
+        } else if i.dt() != dst.dt() {
+            Err(InvariantError::DTypeMismatch {
+                expected: dst.dt(),
+                actual: i.dt(),
+            })
+        } else {
+            Ok(())
+        }
+    })?;
+
+    let dst_size = dst.shape().clone().product();
+    let mut result = vec![0.0f32; dst_size];
+
+    let dst_dim_len = dst.shape()[dim];
+    let block: usize = dst.shape().iter().skip(1 + dim).product();
+    let dst_s = block * dst_dim_len;
+    let src_o = 0;
+    let mut dst_o = 0;
+    for t in inputs {
+        let src = t.to_vec::<f32>()?;
+
+        let t_dims = t.shape().as_slice();
+        let a_dim: usize = t_dims.iter().take(dim).product();
+        let b_dim = block * t_dims[dim];
+
+        for idx in 0..a_dim {
+            let dst_idx = idx * dst_s + dst_o;
+            let src_idx = idx * b_dim + src_o;
+            let dst = &mut result[dst_idx..dst_idx + b_dim];
+            let src = &src[src_idx..src_idx + b_dim];
+            dst.copy_from_slice(src)
+        }
+        dst_o += b_dim;
+    }
+    cpu_store_result(&dst, &result);
     Ok(dst)
 }
 
