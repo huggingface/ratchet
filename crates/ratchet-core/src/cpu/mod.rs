@@ -292,22 +292,6 @@ fn concat_inner<T: TensorDType>(
     dim: usize,
     dst: Tensor,
 ) -> Result<Tensor, OperationError> {
-    inputs.iter().try_for_each(|i| {
-        if dim >= i.shape().iter().len() {
-            Err(InvariantError::DimOutOfRange {
-                dim,
-                shape: i.shape().clone(),
-            })
-        } else if i.dt() != dst.dt() {
-            Err(InvariantError::DTypeMismatch {
-                expected: dst.dt(),
-                actual: i.dt(),
-            })
-        } else {
-            Ok(())
-        }
-    })?;
-
     let dst_size = dst.shape().clone().product();
     let mut result = vec![T::zero(); dst_size];
 
