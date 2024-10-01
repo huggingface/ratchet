@@ -1,11 +1,9 @@
-use std::num::NonZero;
-
 use crate::{
     cpu::{cpu_store_result, gemm::gemm},
-    shape, DType, OperationError, RoPE, Shape, Strides, Tensor, TensorDType, TensorError, Unary,
+    shape, DType, OperationError, RoPE, Shape, StridedIterator, Strides, Tensor, TensorDType,
+    TensorError, Unary,
 };
-use half::{bf16, f16};
-use num_traits::Float;
+use anyhow::anyhow;
 
 pub fn cpu_rope(op: RoPE, dst: Tensor) -> Result<Tensor, OperationError> {
     match op.input().dt() {
@@ -14,7 +12,7 @@ pub fn cpu_rope(op: RoPE, dst: Tensor) -> Result<Tensor, OperationError> {
             let base = op.base();
             let offset = op.offset();
             let src = op.input().to_vec::<f32>()?;
-            let result = rope(&src, op.input().shape(), dim, base, offset);
+            let result = rope(src, op.input().shape(), dim, base, offset);
             cpu_store_result(&dst, &result)
         }
         _ => todo!(),
@@ -26,9 +24,9 @@ pub fn cpu_rope(op: RoPE, dst: Tensor) -> Result<Tensor, OperationError> {
 fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Vec<f32>, Vec<f32>) {
     let half_dim = dim / 2;
 
-    let p_len = seq_len + offset;
-
-    let positions = (offset..p_len).map(|x| x as f32).collect::<Vec<f32>>();
+    let positions = (offset..seq_len + offset)
+        .map(|x| x as f32)
+        .collect::<Vec<f32>>();
 
     let log_base = base.ln();
     let inv_freqs = (0..half_dim)
@@ -37,14 +35,11 @@ fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Ve
         .map(f32::exp)
         .collect::<Vec<f32>>();
 
-    println!("positions: {:?}", positions);
-    println!("inv_freqs: {:?}", inv_freqs);
-
-    let p_shape = shape!(seq_len, 1);
+    let p_shape = shape!(half_dim, 1);
     let p_strides = Strides::from(&p_shape);
     let i_shape = shape!(1, half_dim);
     let i_strides = Strides::from(&i_shape);
-    let dst_strides = Strides::from(&shape!(seq_len, half_dim));
+    let dst_strides = Strides::from(&shape!(half_dim, half_dim));
     let theta = gemm(
         &positions,
         &p_shape,
@@ -54,14 +49,13 @@ fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Ve
         &i_strides,
         &dst_strides,
         1,
-        seq_len,
+        half_dim,
         half_dim,
         1,
     )
     .unwrap();
 
     let (sin_theta, cos_theta) = theta.iter().map(|i| i.sin_cos()).unzip();
-
     (sin_theta, cos_theta)
 }
 
@@ -113,20 +107,91 @@ fn merge(data: &[f32], offset: usize, skip: usize) -> Vec<f32> {
     interleaved
 }
 
-fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
+fn slice(src: &[f32], start: &[usize], stop: &[usize]) -> Vec<f32> {
+    let stop_numel: usize = stop.iter().product();
+    let start_numel: usize = stop.iter().product();
+    assert!(stop_numel >= start_numel);
+
+    let mut dst = vec![0.0; stop_numel - start_numel];
+
+    /*
+    start: [0, 0, 0, 8]
+    stop: [1, 1, 1, 16]
+    for
+    */
+
+    let mut src_idx = 0;
+    let mut dst_idx = 0;
+    for i in 0..start.len() {
+        let mut src_stride = start[i];
+        let mut dst_stride = 0;
+        while src_stride < stop[i] {
+            dst[dst_idx] = src[src_idx];
+            src_idx += src_stride;
+            dst_idx += dst_stride;
+            src_stride += 1;
+            dst_stride += 1;
+        }
+    }
+
+    dst
+}
+
+// Generic transpose function
+fn transpose(
+    src: Vec<f32>,
+    shape: &Shape,
+    dim1: usize,
+    dim2: usize,
+) -> Result<Vec<f32>, OperationError> {
+    let rank = shape.rank();
+    if dim1 == dim2 {
+        return Ok(src);
+    }
+    if rank <= dim1 || rank <= dim2 {
+        return Err(anyhow!("Invalid dimensions for transpose operation").into());
+    }
+    let mut dims = shape.to_vec();
+    let mut strides = Strides::from(shape).to_vec();
+    println!("dims: {:?}", dims);
+    println!("strides: {:?}", strides);
+    dims.swap(dim1, dim2);
+    strides.swap(dim1, dim2);
+    println!("dims: {:?}", dims);
+    println!("strides: {:?}", strides);
+
+    let shape_t = Shape::from(dims);
+    let strides_t = Strides::from(strides);
+
+    let mut result = vec![0.0; src.len()];
+    let strided_iter = StridedIterator::new(&shape_t, &strides_t, 0);
+    let strided_iter2 = StridedIterator::new(&shape_t, &strides_t, 0);
+    let indices = strided_iter2.collect::<Vec<_>>();
+    println!("indices: {:?}", indices);
+    for (index, dst_index) in strided_iter.enumerate() {
+        result[dst_index] = src[index];
+    }
+
+    Ok(result)
+}
+
+fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
     println!("Ratchet RoPE");
     let [batches, num_heads, seq_len, head_dim] = shape.try_into().unwrap();
     let el_count = batches * num_heads * seq_len * head_dim;
 
     let half_dim = dim / 2;
     let (sin, cos) = calculate_sincos(dim, seq_len, base, offset);
+
+    println!("cos: {:?}", cos);
+    println!("sin: {:?}", sin);
     let mut intermediate = Vec::with_capacity(el_count);
 
     let chunk_offset = half_dim;
     let skip = 0;
 
     println!("chunk_offset: {}", chunk_offset);
-    let (x1, x2) = chunk_by_offset(src, chunk_offset, skip);
+    let (x1, x2) = chunk_by_offset(&src, chunk_offset, skip);
 
     println!("cos len: {}", cos.len());
     println!("sin len: {}", sin.len());
@@ -146,16 +211,6 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
         .map(|(i, x)| (x * cos[i % cos.len()], x * sin[i % sin.len()]))
         .unzip();
 
-    println!("x1: {:?}", x1);
-    println!("x2: {:?}", x2);
-    println!("sin: {:?}", sin);
-    println!("cos: {:?}", cos);
-
-    println!("x1_sin: {:?}", x1_sin);
-    println!("x1_cos: {:?}", x1_cos);
-    println!("x2_sin: {:?}", x2_sin);
-    println!("x2_cos: {:?}", x2_cos);
-
     x1_cos.iter().zip(x2_sin).for_each(|(x1_cos, x2_sin)| {
         intermediate.push(x1_cos - x2_sin);
     });
@@ -171,12 +226,52 @@ fn rope(src: &[f32], shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec
     println!("out_shape: {:?}", out_shape);
 
     let skip = head_dim.abs_diff(dim);
-    let mut dst = merge(&intermediate, chunk_offset, skip);
+    let mut dst = merge(&intermediate, half_dim, skip);
 
     if dim < head_dim {
-        dst.append(&mut src[dim..].to_vec())
+        let offset = (el_count / head_dim) * dim;
+        let appendix = &mut src[offset..].to_vec();
+        dst.append(appendix);
     }
     println!("dst: {:?}", dst);
     println!("dst len: {}", dst.len());
+    dst
+}
+
+fn rope_2(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
+    println!("Ratchet RoPE");
+    let [batches, num_heads, seq_len, head_dim] = shape.try_into().unwrap();
+    let el_count = batches * num_heads * seq_len * head_dim;
+
+    let half_dim = dim / 2;
+    let (sin, cos) = calculate_sincos(dim, seq_len, base, offset);
+
+    println!("cos: {:?}", cos);
+    println!("sin: {:?}", sin);
+
+    let src = transpose(src, &shape, 1, 2).unwrap();
+    let mut dst = vec![0.0; el_count];
+    let b = batches;
+    let t = num_heads;
+    let h = seq_len;
+    let d = head_dim;
+    src.chunks(t * h * d)
+        .zip(dst.chunks_mut(t * h * d))
+        .for_each(|(src, dst)| {
+            for i_t in 0..t {
+                for i_d in 0..d / 2 {
+                    let i_cs = i_t * (d / 2) + i_d;
+                    for i_h in 0..h {
+                        let i1 = i_t * h * d + i_h * d + i_d;
+                        let i2 = i1 + d / 2;
+                        dst[i1] = src[i1] * cos[i_cs] - src[i2] * sin[i_cs];
+                        dst[i2] = src[i1] * sin[i_cs] + src[i2] * cos[i_cs];
+                    }
+                }
+            }
+        });
+
+    let dst = transpose(dst, &shape, 1, 2).unwrap();
+
     dst
 }

@@ -12,7 +12,7 @@ use std::{cmp::Ordering, mem};
 
 use crate::{
     gpu::{BindGroupLayoutDescriptor, CpuUniform},
-    quantize, rvec, DType, Device, GPUOperation, Kernel, KernelElement, KernelKey, KernelMetadata,
+    rvec, DType, Device, GPUOperation, Kernel, KernelElement, KernelKey, KernelMetadata,
     KernelRenderable, KernelSource, OpGuards, Operation, OperationError, RVec, Shape, StorageView,
     Strides, Tensor, WorkgroupSize, Workload, Q4_KF, Q4_KH, Q8_0F, Q8_0H,
 };
@@ -754,7 +754,7 @@ mod tests {
 
     use crate::test_util::run_py_prg;
 
-    use crate::{shape, Device, DeviceRequest};
+    use crate::{quantize, shape, Device, DeviceRequest};
 
     use super::*;
 

@@ -376,11 +376,11 @@ def mlx_rope(input, dim, offset):
     fn debug_rope_cpu() {
         let prob = RoPEProblem {
             BS: 1,
-            NH: 2,
-            SL: 1,
-            HD: 32,
+            NH: 1,
+            SL: 128,
+            HD: 16,
             dim: 16,
-            offset: 1,
+            offset: 0,
         };
         println!("{prob:?}");
 
