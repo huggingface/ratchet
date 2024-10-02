@@ -304,6 +304,7 @@ def mlx_rope(input, dim, offset):
         let n = shape.numel();
         let data = (0..n).map(|x| x as f32).collect::<Vec<f32>>();
         let a = Tensor::from_data(data, shape, Device::CPU);
+        println!("Input tensor: {:?}", a);
         let ground = ground_truth(&a, dim, offset).unwrap();
 
         let a = a.to(&device).unwrap();

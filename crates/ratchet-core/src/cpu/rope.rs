@@ -22,23 +22,31 @@ pub fn cpu_rope(op: RoPE, dst: Tensor) -> Result<Tensor, OperationError> {
 
 fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Vec<f32>, Vec<f32>) {
     let half_dim = dim / 2;
+    println!("Half dim: {}", half_dim);
 
     let positions = (offset..seq_len + offset)
         .map(|x| x as f32)
         .collect::<Vec<f32>>();
 
+    println!("Positions: {:?}", positions);
+
     let log_base = base.ln();
+
+    println!("Log base: {}", log_base);
+
     let inv_freqs = (0..half_dim)
         .map(|i| -(i as f32))
         .map(|i| i * log_base / half_dim as f32)
         .map(f32::exp)
         .collect::<Vec<f32>>();
 
-    let p_shape = shape!(half_dim, 1);
+    println!("Inverse Frequencies: {:?}", inv_freqs);
+
+    let p_shape = shape!(seq_len, 1);
     let p_strides = Strides::from(&p_shape);
     let i_shape = shape!(1, half_dim);
     let i_strides = Strides::from(&i_shape);
-    let dst_strides = Strides::from(&shape!(half_dim, half_dim));
+    let dst_strides = Strides::from(&shape!(seq_len, half_dim));
     let theta = gemm(
         &positions,
         &p_shape,
@@ -48,7 +56,7 @@ fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Ve
         &i_strides,
         &dst_strides,
         1,
-        half_dim,
+        seq_len,
         half_dim,
         1,
     )
