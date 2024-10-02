@@ -1,7 +1,6 @@
 use crate::{
     cpu::{cpu_store_result, gemm::gemm},
-    shape, DType, OperationError, RoPE, Shape, StridedIterator, Strides, Tensor, TensorDType,
-    TensorError, Unary,
+    shape, DType, OperationError, RoPE, Shape, StridedIterator, Strides, Tensor,
 };
 use anyhow::anyhow;
 
@@ -54,6 +53,8 @@ fn calculate_sincos(dim: usize, seq_len: usize, base: f32, offset: usize) -> (Ve
         1,
     )
     .unwrap();
+
+    println!("THETA: {:?}", theta);
 
     let (sin_theta, cos_theta) = theta.iter().map(|i| i.sin_cos()).unzip();
     (sin_theta, cos_theta)
@@ -183,21 +184,12 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     let half_dim = dim / 2;
     let (sin, cos) = calculate_sincos(dim, seq_len, base, offset);
 
-    println!("cos: {:?}", cos);
-    println!("sin: {:?}", sin);
     let mut intermediate = Vec::with_capacity(el_count);
 
     let chunk_offset = half_dim;
     let skip = 0;
 
-    println!("chunk_offset: {}", chunk_offset);
     let (x1, x2) = chunk_by_offset(&src, chunk_offset, skip);
-
-    println!("cos len: {}", cos.len());
-    println!("sin len: {}", sin.len());
-    println!("src len: {}", src.len());
-    println!("x1 len: {}", x1.len());
-    println!("x2 len: {}", x2.len());
 
     let (x1_cos, x1_sin): (Vec<f32>, Vec<f32>) = x1
         .iter()
@@ -219,11 +211,7 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         intermediate.push(x1_sin + x2_cos);
     });
 
-    println!("intermediate: {:?}", intermediate);
-    println!("intermediate len: {}", intermediate.len());
-
     let out_shape = shape!(batches, num_heads, seq_len, head_dim);
-    println!("out_shape: {:?}", out_shape);
 
     let skip = head_dim.abs_diff(dim);
     let mut dst = merge(&intermediate, half_dim, skip);
@@ -233,8 +221,6 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         let appendix = &mut src[offset..].to_vec();
         dst.append(appendix);
     }
-    println!("dst: {:?}", dst);
-    println!("dst len: {}", dst.len());
     dst
 }
 
