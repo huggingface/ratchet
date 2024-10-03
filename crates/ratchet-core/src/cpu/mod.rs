@@ -1,15 +1,39 @@
 pub mod gemm;
 
 use crate::{
-    dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, Concat, DType, IndexSelect,
-    InvariantError, OpGuards, Operation, OperationError, RVec, Storage, StorageView, Tensor,
-    TensorDType, Unary, UnaryOp,
+    dequantize, Binary, BinaryOp, CPUBuffer, Cast, Concat, DType, IndexSelect, InvariantError,
+    LazyOp, OpGuards, Operation, OperationError, RVec, Storage, StorageView, Tensor, TensorDType,
+    Unary, UnaryOp,
 };
 use anyhow::anyhow;
 use bytemuck::NoUninit;
 use core::marker::PhantomData;
 use half::{bf16, f16};
 use num_traits::Float;
+
+pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError> {
+    match op {
+        LazyOp::Binary(b) => cpu_binary(b, dst),
+        LazyOp::Cast(c) => cpu_cast(c, dst),
+        LazyOp::Matmul(m) => m.apply(dst),
+        LazyOp::Softmax(_s) => todo!(),
+        LazyOp::RoPE(_r) => todo!(),
+        LazyOp::Unary(u) => cpu_unary(u, dst),
+        LazyOp::Reindex(_r) => todo!(),
+        LazyOp::Concat(c) => cpu_concat(c, dst),
+        LazyOp::Norm(_n) => todo!(),
+        LazyOp::Conv(_c) => todo!(),
+        LazyOp::Select(i) => cpu_index_select(i, dst),
+        LazyOp::IndexWrite(_i) => todo!(),
+        LazyOp::Cache(_c) => todo!(),
+        LazyOp::Const => todo!(),
+        LazyOp::View(_) => todo!(),
+    }
+}
+
+pub trait CPUOperation: Operation {
+    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError>;
+}
 
 #[derive(Debug)]
 pub struct CPU<T: TensorDType, OP: Operation> {
