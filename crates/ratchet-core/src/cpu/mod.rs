@@ -168,7 +168,7 @@ macro_rules! impl_cpu_unary {
         impl_cpu_unary_wrapper!($dtype, $conv);
 
         impl CPUOperation for CPU<$dtype, Unary> {
-            fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+            fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
                 match self.op.op() {
                     UnaryOp::Gelu => Self::gelu(self.op.input(), dst),
                     UnaryOp::Tanh => Self::tanh(self.op.input(), dst),
@@ -196,9 +196,9 @@ impl_cpu_unary!(bf16, bf16::from_f32);
 
 pub fn cpu_unary(unary: Unary, dst: Tensor) -> Result<Tensor, OperationError> {
     match dst.dt() {
-        DType::F32 => CPU::<f32, _>::new(unary).apply(dst),
-        DType::F16 => CPU::<f16, _>::new(unary).apply(dst),
-        DType::BF16 => CPU::<bf16, _>::new(unary).apply(dst),
+        DType::F32 => CPU::<f32, _>::new(unary).apply_cpu(dst),
+        DType::F16 => CPU::<f16, _>::new(unary).apply_cpu(dst),
+        DType::BF16 => CPU::<bf16, _>::new(unary).apply_cpu(dst),
         _ => todo!(),
     }
 }
@@ -222,7 +222,7 @@ macro_rules! impl_cpu_binary {
         }
 
         impl CPUOperation for CPU<$dtype, Binary> {
-            fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+            fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
                 match self.op.op() {
                     BinaryOp::Add => Self::add(self.op.lhs(), self.op.rhs(), dst),
                     BinaryOp::Sub => Self::sub(self.op.lhs(), self.op.rhs(), dst),
@@ -240,9 +240,9 @@ impl_cpu_binary!(bf16);
 
 pub fn cpu_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationError> {
     match dst.dt() {
-        DType::F32 => CPU::<f32, _>::new(binary).apply(dst),
-        DType::F16 => CPU::<f16, _>::new(binary).apply(dst),
-        DType::BF16 => CPU::<bf16, _>::new(binary).apply(dst),
+        DType::F32 => CPU::<f32, _>::new(binary).apply_cpu(dst),
+        DType::F16 => CPU::<f16, _>::new(binary).apply_cpu(dst),
+        DType::BF16 => CPU::<bf16, _>::new(binary).apply_cpu(dst),
         _ => todo!(),
     }
 }

@@ -759,7 +759,7 @@ impl Tensor {
         match self.op().clone() {
             LazyOp::Binary(b) => cpu_binary(b, dst).ok(),
             LazyOp::Cast(c) => cpu_cast(c, dst).ok(),
-            LazyOp::Matmul(m) => m.apply(dst).ok(),
+            LazyOp::Matmul(m) => m.apply_cpu(dst).ok(),
             LazyOp::Softmax(_s) => todo!(),
             LazyOp::RoPE(r) => cpu_rope(r, dst).ok(),
             LazyOp::Unary(u) => cpu_unary(u, dst).ok(),

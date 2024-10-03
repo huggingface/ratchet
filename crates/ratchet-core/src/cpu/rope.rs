@@ -105,30 +105,29 @@ fn merge(data: &[f32], offset: usize, skip: usize) -> Vec<f32> {
 }
 
 fn slice(src: &[f32], start: &[usize], stop: &[usize]) -> Vec<f32> {
-    let stop_numel: usize = stop.iter().product();
-    let start_numel: usize = stop.iter().product();
-    assert!(stop_numel >= start_numel);
+    assert!(start.len() == stop.len());
+    start.iter().zip(stop.iter()).for_each(|(s, t)| {
+        assert!(s < t);
+    });
 
-    let mut dst = vec![0.0; stop_numel - start_numel];
+    let src_shape = [2, 16, 16]; // Corrected input shape
+    let src_strides = [16 * 16, 16, 1];
 
-    /*
-    start: [0, 0, 0, 8]
-    stop: [1, 1, 1, 16]
-    for
-    */
+    let delta: Vec<usize> = stop.iter().zip(start.iter()).map(|(s, t)| s - t).collect();
+    let dst_shape: Vec<usize> = delta.clone();
+    let dst_numel: usize = delta.iter().product();
 
-    let mut src_idx = 0;
-    let mut dst_idx = 0;
-    for i in 0..start.len() {
-        let mut src_stride = start[i];
-        let mut dst_stride = 0;
-        while src_stride < stop[i] {
-            dst[dst_idx] = src[src_idx];
-            src_idx += src_stride;
-            dst_idx += dst_stride;
-            src_stride += 1;
-            dst_stride += 1;
+    let mut dst = vec![0.0; dst_numel];
+
+    for i in 0..dst_numel {
+        let mut src_index = 0;
+        let mut tmp = i;
+        for d in 0..delta.len() {
+            let coord = tmp / dst_shape[d + 1..].iter().product::<usize>().max(1);
+            tmp %= dst_shape[d + 1..].iter().product::<usize>().max(1);
+            src_index += (coord + start[d]) * src_strides[d];
         }
+        dst[i] = src[src_index];
     }
 
     dst
@@ -175,48 +174,61 @@ fn transpose(
 fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
     println!("Ratchet RoPE");
     let [batches, num_heads, seq_len, head_dim] = shape.try_into().unwrap();
-    let el_count = batches * num_heads * seq_len * head_dim;
 
     let half_dim = dim / 2;
     let theta = compute_theta(dim, seq_len, base, offset);
+    println!("Theta: {:?}", theta);
     let (sin, cos): (Vec<f32>, Vec<f32>) = theta.iter().map(|i| i.sin_cos()).unzip();
+    println!("Cos: {:?}", cos);
+    println!("Sin: {:?}", sin);
 
-    let mut intermediate = Vec::with_capacity(el_count);
+    println!("Cos length: {:?}", cos.len());
+    println!("Sin length: {:?}", sin.len());
 
-    let chunk_offset = half_dim;
-    let skip = 0;
+    let x1 = slice(&src, &[0, 0, 0], &[num_heads, seq_len, half_dim]);
+    let x2 = slice(&src, &[0, 0, half_dim], &[num_heads, seq_len, dim]);
+    println!("X1: {:?}", x1);
+    println!("X1 length: {:?}", x1.len());
+    println!("X2: {:?}", x2);
+    println!("X2 length: {:?}", x2.len());
 
-    let (x1, x2) = chunk_by_offset(&src, chunk_offset, skip);
-
-    let (x1_cos, x1_sin): (Vec<f32>, Vec<f32>) = x1
+    let x1_cos = x1
         .iter()
         .enumerate()
-        .map(|(i, x)| (x * cos[i % cos.len()], x * sin[i % sin.len()]))
-        .unzip();
-
-    let (x2_cos, x2_sin): (Vec<f32>, Vec<f32>) = x2
+        .map(|(i, x)| x * cos[i % cos.len()])
+        .collect::<Vec<f32>>();
+    let x2_sin = x2
         .iter()
         .enumerate()
-        .map(|(i, x)| (x * cos[i % cos.len()], x * sin[i % sin.len()]))
-        .unzip();
+        .map(|(i, x)| x * sin[i % sin.len()])
+        .collect::<Vec<f32>>();
 
-    x1_cos.iter().zip(x2_sin).for_each(|(x1_cos, x2_sin)| {
-        intermediate.push(x1_cos - x2_sin);
-    });
+    let r1 = x1_cos
+        .iter()
+        .zip(x2_sin.iter())
+        .map(|(x1, x2)| x1 - x2)
+        .collect::<Vec<f32>>();
 
-    x1_sin.iter().zip(x2_cos).for_each(|(x1_sin, x2_cos)| {
-        intermediate.push(x1_sin + x2_cos);
-    });
+    let x1_sin = x1
+        .iter()
+        .enumerate()
+        .map(|(i, x)| x * sin[i % sin.len()])
+        .collect::<Vec<f32>>();
+    let x2_cos = x2
+        .iter()
+        .enumerate()
+        .map(|(i, x)| x * cos[i % cos.len()])
+        .collect::<Vec<f32>>();
+    let r2 = x1_sin
+        .iter()
+        .zip(x2_cos.iter())
+        .map(|(x1, x2)| x1 + x2)
+        .collect::<Vec<f32>>();
 
-    let skip = head_dim.abs_diff(dim);
-    let mut dst = merge(&intermediate, half_dim, skip);
+    println!("R1: {:?}", r1);
+    println!("R2: {:?}", r2);
 
-    if dim < head_dim {
-        let offset = (el_count / head_dim) * dim;
-        let appendix = &mut src[offset..].to_vec();
-        dst.append(appendix);
-    }
-    dst
+    vec![]
 }
 
 fn rope_2(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
