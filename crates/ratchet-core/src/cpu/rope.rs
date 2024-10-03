@@ -228,40 +228,7 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     println!("R1: {:?}", r1);
     println!("R2: {:?}", r2);
 
+    if dim < shape[3] {}
+
     vec![]
-}
-
-fn rope_2(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
-    println!("Ratchet RoPE");
-    let [batches, num_heads, seq_len, head_dim] = shape.try_into().unwrap();
-    let el_count = batches * num_heads * seq_len * head_dim;
-
-    let theta = compute_theta(dim, seq_len, base, offset);
-    let (sin, cos): (Vec<f32>, Vec<f32>) = theta.iter().map(|i| i.sin_cos()).unzip();
-
-    println!("cos: {:?}", cos);
-    println!("sin: {:?}", sin);
-
-    let src = transpose(src, &shape, 1, 2).unwrap();
-    let mut dst = vec![0.0; el_count];
-    let t = num_heads;
-    let h = seq_len;
-    let d = head_dim;
-    src.chunks(t * h * d)
-        .zip(dst.chunks_mut(t * h * d))
-        .for_each(|(src, dst)| {
-            for i_t in 0..t {
-                for i_d in 0..d / 2 {
-                    let i_cs = i_t * (d / 2) + i_d;
-                    for i_h in 0..h {
-                        let i1 = i_t * h * d + i_h * d + i_d;
-                        let i2 = i1 + d / 2;
-                        dst[i1] = src[i1] * cos[i_cs] - src[i2] * sin[i_cs];
-                        dst[i2] = src[i1] * sin[i_cs] + src[i2] * cos[i_cs];
-                    }
-                }
-            }
-        });
-
-    transpose(dst, &shape, 1, 2).unwrap()
 }
