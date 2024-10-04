@@ -3,26 +3,16 @@ pub mod gemm;
 mod unary;
 
 use crate::{
-    dequantize, Binary, BinaryOp, CPUBuffer, Cast, Concat, DType, IndexSelect, InvariantError,
-    LazyOp, OpGuards, Operation, OperationError, RVec, Storage, StorageView, Tensor, TensorDType,
+    dequantize, Binary, CPUBuffer, Cast, Concat, DType, IndexSelect, InvariantError, LazyOp,
+    Operation, OperationError, RVec, Storage, Tensor, TensorDType,
 };
 use anyhow::anyhow;
 use bytemuck::NoUninit;
-use core::marker::PhantomData;
 use half::{bf16, f16};
-
-pub fn cpu_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationError> {
-    match dst.dt() {
-        DType::F32 => binary::CPU::<f32, _>::new(binary).apply_cpu(dst),
-        DType::F16 => binary::CPU::<f16, _>::new(binary).apply_cpu(dst),
-        DType::BF16 => binary::CPU::<bf16, _>::new(binary).apply_cpu(dst),
-        _ => todo!(),
-    }
-}
 
 pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError> {
     match op {
-        LazyOp::Binary(b) => cpu_binary(b, dst),
+        LazyOp::Binary(b) => b.apply_cpu(dst),
         LazyOp::Cast(c) => cpu_cast(c, dst),
         LazyOp::Matmul(m) => m.apply_cpu(dst),
         LazyOp::Softmax(_s) => todo!(),
