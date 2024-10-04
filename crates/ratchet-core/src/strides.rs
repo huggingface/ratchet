@@ -25,6 +25,10 @@ impl Strides {
         }
         self.0.swap(rank - 2, rank - 1);
     }
+
+    pub fn rank(&self) -> usize {
+        self.0.len()
+    }
 }
 
 impl std::fmt::Debug for Strides {

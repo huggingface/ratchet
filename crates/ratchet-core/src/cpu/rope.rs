@@ -57,14 +57,12 @@ fn compute_theta(dim: usize, seq_len: usize, base: f32, offset: usize) -> Vec<f3
     theta
 }
 
-fn slice(src: &[f32], start: &[usize], stop: &[usize]) -> Vec<f32> {
+fn slice(src: &[f32], src_strides: &Strides, start: &[usize], stop: &[usize]) -> Vec<f32> {
     assert!(start.len() == stop.len());
+    assert!(start.len() == src_strides.rank());
     start.iter().zip(stop.iter()).for_each(|(s, t)| {
         assert!(s < t);
     });
-
-    let src_shape = [2, 16, 16]; // Corrected input shape
-    let src_strides = [16 * 16, 16, 1];
 
     let delta: Vec<usize> = stop.iter().zip(start.iter()).map(|(s, t)| s - t).collect();
     let dst_shape: Vec<usize> = delta.clone();
@@ -78,7 +76,7 @@ fn slice(src: &[f32], start: &[usize], stop: &[usize]) -> Vec<f32> {
         for d in 0..delta.len() {
             let coord = tmp / dst_shape[d + 1..].iter().product::<usize>().max(1);
             tmp %= dst_shape[d + 1..].iter().product::<usize>().max(1);
-            src_index += (coord + start[d]) * src_strides[d];
+            src_index += (coord + start[d]) * src_strides[d] as usize;
         }
         dst[i] = src[src_index];
     }
@@ -138,8 +136,20 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     println!("Cos length: {:?}", cos.len());
     println!("Sin length: {:?}", sin.len());
 
-    let x1 = slice(&src, &[0, 0, 0], &[num_heads, seq_len, half_dim]);
-    let x2 = slice(&src, &[0, 0, half_dim], &[num_heads, seq_len, dim]);
+    println!("HALF DIM: {:?}", half_dim);
+    let src_strides = Strides::from(shape);
+    let x1 = slice(
+        &src,
+        &src_strides,
+        &[0, 0, 0, 0],
+        &[batches, num_heads, seq_len, half_dim],
+    );
+    let x2 = slice(
+        &src,
+        &src_strides,
+        &[0, 0, 0, half_dim],
+        &[batches, num_heads, seq_len, dim],
+    );
     println!("X1: {:?}", x1);
     println!("X1 length: {:?}", x1.len());
     println!("X2: {:?}", x2);
@@ -187,7 +197,12 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     println!("R2: {:?}", r2);
 
     if dim < shape[3] {
-        outs.push(slice(&src, &[0, 0, dim], &[num_heads, seq_len, head_dim]));
+        outs.push(slice(
+            &src,
+            &src_strides,
+            &[0, 0, 0, dim],
+            &[batches, num_heads, seq_len, head_dim],
+        ));
     }
 
     let (o0, o1, o2) = (outs[0].clone(), outs[1].clone(), outs[2].clone());
@@ -201,5 +216,6 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     let dst_shape = shape![num_heads, seq_len, head_dim];
     let mut dst = vec![0.0f32; dst_shape.numel()];
     concat(to_cat.as_slice(), 2, &dst_shape, &mut dst).unwrap();
+    println!("CONCAT: {:?}", dst);
     dst
 }
