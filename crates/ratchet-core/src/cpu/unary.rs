@@ -8,6 +8,7 @@ use num_traits::Float;
 struct UnaryOps<T: TensorDType> {
     dtype: PhantomData<T>,
 }
+
 macro_rules! impl_unary_ops {
     ($dtype:ident, $conv:expr) => {
         impl UnaryOps<$dtype> {
