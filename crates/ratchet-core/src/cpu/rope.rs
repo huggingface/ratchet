@@ -1,4 +1,5 @@
 use crate::{
+    concat,
     cpu::{cpu_store_result, gemm::gemm},
     shape, DType, OperationError, RoPE, Shape, StridedIterator, Strides, Tensor,
 };
@@ -54,54 +55,6 @@ fn compute_theta(dim: usize, seq_len: usize, base: f32, offset: usize) -> Vec<f3
     .unwrap();
 
     theta
-}
-
-#[inline]
-fn chunk_by_offset(data: &[f32], offset: usize, skip: usize) -> (Vec<f32>, Vec<f32>) {
-    let mut x1 = Vec::with_capacity(data.len() / 2);
-    let mut x2 = Vec::with_capacity(data.len() / 2);
-
-    let mut start = 0;
-    let mut stop = offset;
-    while stop < data.len() {
-        let mut chunk = data[start..stop].to_vec();
-        x1.append(&mut chunk);
-        start += offset;
-        stop += offset;
-
-        let mut chunk = data[start..stop].to_vec();
-        x2.append(&mut chunk);
-        start += offset;
-        stop += offset;
-
-        start += skip;
-        stop += skip;
-    }
-    (x1.to_vec(), x2.to_vec())
-}
-
-#[inline]
-fn merge(data: &[f32], offset: usize, skip: usize) -> Vec<f32> {
-    let n = data.len();
-    let mid = n / 2;
-    let mut interleaved = Vec::with_capacity(n);
-
-    let mut start = 0;
-    let mut stop = offset;
-    while stop + mid <= n {
-        let mut chunk = data[start..stop].to_vec();
-        interleaved.append(&mut chunk);
-
-        let mut chunk = data[start + mid..stop + mid].to_vec();
-        interleaved.append(&mut chunk);
-
-        start += offset;
-        stop += offset;
-
-        start += skip;
-        stop += skip;
-    }
-    interleaved
 }
 
 fn slice(src: &[f32], start: &[usize], stop: &[usize]) -> Vec<f32> {
@@ -192,6 +145,8 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     println!("X2: {:?}", x2);
     println!("X2 length: {:?}", x2.len());
 
+    //zip and repeat
+    //`multiply` as an operation that deals with broadcasting
     let x1_cos = x1
         .iter()
         .enumerate()
@@ -203,11 +158,13 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         .map(|(i, x)| x * sin[i % sin.len()])
         .collect::<Vec<f32>>();
 
+    let mut outs = vec![];
     let r1 = x1_cos
         .iter()
         .zip(x2_sin.iter())
         .map(|(x1, x2)| x1 - x2)
         .collect::<Vec<f32>>();
+    outs.push(r1.clone());
 
     let x1_sin = x1
         .iter()
@@ -224,11 +181,26 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         .zip(x2_cos.iter())
         .map(|(x1, x2)| x1 + x2)
         .collect::<Vec<f32>>();
+    outs.push(r2.clone());
 
     println!("R1: {:?}", r1);
     println!("R2: {:?}", r2);
 
-    if dim < shape[3] {}
+    if dim < shape[3] {
+        //outs.push_back(slice(x, {0, 0, dims}, x.shape(), s));
+        outs.push(slice(&src, &[0, 0, dim], &[num_heads, seq_len, head_dim]));
+    }
 
-    vec![]
+    let (o0, o1, o2) = (outs[0].clone(), outs[1].clone(), outs[2].clone());
+
+    let to_cat = [
+        (&shape![num_heads, seq_len, half_dim], o0),
+        (&shape![num_heads, seq_len, half_dim], o1),
+        (&shape![num_heads, seq_len, head_dim - dim], o2),
+    ];
+
+    let dst_shape = shape![num_heads, seq_len, head_dim];
+    let mut dst = vec![0.0f32; dst_shape.numel()];
+    concat(to_cat.as_slice(), 2, &dst_shape, &mut dst).unwrap();
+    dst
 }
