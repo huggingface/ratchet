@@ -129,7 +129,7 @@ fn gemm_impl<T: TensorDType>(
 }
 
 impl CPUOperation for Matmul {
-    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+    fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         fn run_gemm<T: TensorDType>(
             spec: MatmulSpec,
             lhs: &Tensor,
