@@ -15,10 +15,10 @@ pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError
     match op {
         LazyOp::Binary(b) => cpu_binary(b, dst),
         LazyOp::Cast(c) => cpu_cast(c, dst),
-        LazyOp::Matmul(m) => m.apply(dst),
+        LazyOp::Matmul(m) => m.apply_cpu(dst),
         LazyOp::Softmax(_s) => todo!(),
         LazyOp::RoPE(_r) => todo!(),
-        LazyOp::Unary(u) => cpu_unary(u, dst),
+        LazyOp::Unary(u) => u.apply_cpu(dst),
         LazyOp::Reindex(_r) => todo!(),
         LazyOp::Concat(c) => cpu_concat(c, dst),
         LazyOp::Norm(_n) => todo!(),
@@ -32,7 +32,11 @@ pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError
 }
 
 pub trait CPUOperation: Operation {
-    fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError>;
+    fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError>;
+}
+
+struct UnaryOps<T: TensorDType> {
+    dtype: PhantomData<T>,
 }
 
 #[derive(Debug)]
@@ -74,18 +78,9 @@ impl<T: TensorDType, OP: Operation> Operation for CPU<T, OP> {
     }
 }
 
-macro_rules! impl_cpu_unary_op {
-    ($method_name:ident, $op:expr) => {
-        fn $method_name(input: &Tensor, dst: Tensor) -> Result<Tensor, OperationError> {
-            unary_apply_fn(input, &dst, $op)?;
-            Ok(dst)
-        }
-    };
-}
-
-macro_rules! impl_cpu_unary_wrapper {
+macro_rules! impl_unary_ops {
     ($dtype:ident, $conv:expr) => {
-        impl CPU<$dtype, Unary> {
+        impl UnaryOps<$dtype> {
             impl_cpu_unary_op!(gelu, |x: $dtype| $conv(0.5)
                 * x
                 * ($conv(1.0)
@@ -106,8 +101,47 @@ macro_rules! impl_cpu_unary_wrapper {
             impl_cpu_unary_op!(neg, |x: $dtype| -x);
             impl_cpu_unary_op!(silu, |x: $dtype| x / ($conv(1.0) + (-x).exp()));
             impl_cpu_unary_op!(sigmoid, |x: $dtype| $conv(1.0) / ($conv(1.0) + (-x).exp()));
+
+            fn apply(op: &Unary, dst: Tensor) -> Result<Tensor, OperationError> {
+                match op.op() {
+                    UnaryOp::Gelu => Self::gelu(op.input(), dst),
+                    UnaryOp::Tanh => Self::tanh(op.input(), dst),
+                    UnaryOp::Exp => Self::exp(op.input(), dst),
+                    UnaryOp::Log => Self::log(op.input(), dst),
+                    UnaryOp::Sin => Self::sin(op.input(), dst),
+                    UnaryOp::Cos => Self::cos(op.input(), dst),
+                    UnaryOp::Abs => Self::abs(op.input(), dst),
+                    UnaryOp::Sqrt => Self::sqrt(op.input(), dst),
+                    UnaryOp::Relu => Self::relu(op.input(), dst),
+                    UnaryOp::Floor => Self::floor(op.input(), dst),
+                    UnaryOp::Ceil => Self::ceil(op.input(), dst),
+                    UnaryOp::Neg => Self::neg(op.input(), dst),
+                    UnaryOp::Silu => Self::silu(op.input(), dst),
+                    UnaryOp::Sigmoid => Self::sigmoid(op.input(), dst),
+                }
+            }
         }
     };
+}
+
+macro_rules! impl_cpu_unary_op {
+    ($method_name:ident, $op:expr) => {
+        fn $method_name(input: &Tensor, dst: Tensor) -> Result<Tensor, OperationError> {
+            unary_apply_fn(input, &dst, $op)?;
+            Ok(dst)
+        }
+    };
+}
+
+impl CPUOperation for Unary {
+    fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        match dst.dt() {
+            DType::F32 => UnaryOps::<f32>::apply(self, dst),
+            DType::F16 => UnaryOps::<f16>::apply(self, dst),
+            DType::BF16 => UnaryOps::<bf16>::apply(self, dst),
+            _ => todo!(),
+        }
+    }
 }
 
 macro_rules! impl_cpu_unary {
@@ -115,43 +149,13 @@ macro_rules! impl_cpu_unary {
         impl_cpu_unary!($dtype, |x| x);
     };
     ($dtype:ident, $conv:expr) => {
-        impl_cpu_unary_wrapper!($dtype, $conv);
-
-        impl CPUOperation for CPU<$dtype, Unary> {
-            fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-                match self.op.op() {
-                    UnaryOp::Gelu => Self::gelu(self.op.input(), dst),
-                    UnaryOp::Tanh => Self::tanh(self.op.input(), dst),
-                    UnaryOp::Exp => Self::exp(self.op.input(), dst),
-                    UnaryOp::Log => Self::log(self.op.input(), dst),
-                    UnaryOp::Sin => Self::sin(self.op.input(), dst),
-                    UnaryOp::Cos => Self::cos(self.op.input(), dst),
-                    UnaryOp::Abs => Self::abs(self.op.input(), dst),
-                    UnaryOp::Sqrt => Self::sqrt(self.op.input(), dst),
-                    UnaryOp::Relu => Self::relu(self.op.input(), dst),
-                    UnaryOp::Floor => Self::floor(self.op.input(), dst),
-                    UnaryOp::Ceil => Self::ceil(self.op.input(), dst),
-                    UnaryOp::Neg => Self::neg(self.op.input(), dst),
-                    UnaryOp::Silu => Self::silu(self.op.input(), dst),
-                    UnaryOp::Sigmoid => Self::sigmoid(self.op.input(), dst),
-                }
-            }
-        }
+        impl_unary_ops!($dtype, $conv);
     };
 }
 
 impl_cpu_unary!(f32);
 impl_cpu_unary!(f16, f16::from_f32);
 impl_cpu_unary!(bf16, bf16::from_f32);
-
-pub fn cpu_unary(unary: Unary, dst: Tensor) -> Result<Tensor, OperationError> {
-    match dst.dt() {
-        DType::F32 => CPU::<f32, _>::new(unary).apply(dst),
-        DType::F16 => CPU::<f16, _>::new(unary).apply(dst),
-        DType::BF16 => CPU::<bf16, _>::new(unary).apply(dst),
-        _ => todo!(),
-    }
-}
 
 macro_rules! impl_cpu_binary_op {
     ($method_name:ident, $dtype:ident, $op:expr) => {
@@ -172,7 +176,7 @@ macro_rules! impl_cpu_binary {
         }
 
         impl CPUOperation for CPU<$dtype, Binary> {
-            fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+            fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
                 match self.op.op() {
                     BinaryOp::Add => Self::add(self.op.lhs(), self.op.rhs(), dst),
                     BinaryOp::Sub => Self::sub(self.op.lhs(), self.op.rhs(), dst),
@@ -190,9 +194,9 @@ impl_cpu_binary!(bf16);
 
 pub fn cpu_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationError> {
     match dst.dt() {
-        DType::F32 => CPU::<f32, _>::new(binary).apply(dst),
-        DType::F16 => CPU::<f16, _>::new(binary).apply(dst),
-        DType::BF16 => CPU::<bf16, _>::new(binary).apply(dst),
+        DType::F32 => CPU::<f32, _>::new(binary).apply_cpu(dst),
+        DType::F16 => CPU::<f16, _>::new(binary).apply_cpu(dst),
+        DType::BF16 => CPU::<bf16, _>::new(binary).apply_cpu(dst),
         _ => todo!(),
     }
 }
