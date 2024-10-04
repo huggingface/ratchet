@@ -187,7 +187,6 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     println!("R2: {:?}", r2);
 
     if dim < shape[3] {
-        //outs.push_back(slice(x, {0, 0, dims}, x.shape(), s));
         outs.push(slice(&src, &[0, 0, dim], &[num_heads, seq_len, head_dim]));
     }
 
