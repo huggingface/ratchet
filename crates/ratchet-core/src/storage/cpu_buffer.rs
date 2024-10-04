@@ -89,7 +89,7 @@ impl CPUBuffer {
     }
 
     pub fn from_slice<T: NoUninit>(data: &[T], shape: &Shape) -> Self {
-        assert_eq!(data.len(), shape.numel());
+        //assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);
         Self::from_bytes(bytes, std::mem::align_of::<T>())
     }

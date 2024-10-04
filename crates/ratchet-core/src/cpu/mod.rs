@@ -1,15 +1,18 @@
 pub mod gemm;
+pub mod rope;
+mod utils;
 
 use crate::{
     dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, Concat, DType, IndexSelect,
-    InvariantError, OpGuards, Operation, OperationError, RVec, Storage, StorageView, Tensor,
-    TensorDType, Unary, UnaryOp,
+    InvariantError, OpGuards, Operation, OperationError, RVec, Shape, Storage, StorageView,
+    Strides, Tensor, TensorDType, Unary, UnaryOp,
 };
 use anyhow::anyhow;
-use bytemuck::NoUninit;
 use core::marker::PhantomData;
 use half::{bf16, f16};
 use num_traits::Float;
+use rope::*;
+use utils::cpu_store_result;
 
 #[derive(Debug)]
 pub struct CPU<T: TensorDType, OP: Operation> {
@@ -47,6 +50,77 @@ impl<T: TensorDType, OP: Operation> Operation for CPU<T, OP> {
 
     fn srcs(&self) -> RVec<&Tensor> {
         self.op.srcs()
+    }
+}
+
+pub struct StridedIterator<'a> {
+    shape: &'a Shape,
+    strides: &'a Strides,
+    next_index: Option<usize>,
+    multi_index: Vec<usize>,
+}
+
+impl<'a> StridedIterator<'a> {
+    pub fn new(shape: &'a Shape, strides: &'a Strides, start_offset: usize) -> Self {
+        Self {
+            shape,
+            strides,
+            next_index: if shape.numel() == 0 {
+                None
+            } else {
+                Some(start_offset)
+            },
+            multi_index: vec![0; shape.len()],
+        }
+    }
+}
+
+impl<'a> Iterator for StridedIterator<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let storage_index = match self.next_index {
+            None => return None,
+            Some(storage_index) => storage_index,
+        };
+        let mut updated = false;
+        let mut next_storage_index = storage_index;
+        for ((multi_i, max_i), stride_i) in self
+            .multi_index
+            .iter_mut()
+            .zip(self.shape.iter())
+            .zip(self.strides.iter())
+            .rev()
+        {
+            let next_i = *multi_i + 1;
+            if next_i < *max_i {
+                *multi_i = next_i;
+                updated = true;
+                next_storage_index += *stride_i as usize;
+                break;
+            } else {
+                next_storage_index -= *multi_i * *stride_i as usize;
+                *multi_i = 0
+            }
+        }
+        self.next_index = if updated {
+            Some(next_storage_index)
+        } else {
+            None
+        };
+        Some(storage_index)
+    }
+}
+
+impl<'a> From<(&'a Shape, &'a Strides)> for StridedIterator<'a> {
+    fn from((shape, strides): (&'a Shape, &'a Strides)) -> Self {
+        StridedIterator::new(shape, strides, 0)
+    }
+}
+
+impl<'a> From<(&'a Shape, &'a Strides, usize)> for StridedIterator<'a> {
+    fn from((shape, strides, offset): (&'a Shape, &'a Strides, usize)) -> Self {
+        StridedIterator::new(shape, strides, offset)
     }
 }
 
@@ -94,7 +168,7 @@ macro_rules! impl_cpu_unary {
         impl_cpu_unary_wrapper!($dtype, $conv);
 
         impl CPUOperation for CPU<$dtype, Unary> {
-            fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+            fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
                 match self.op.op() {
                     UnaryOp::Gelu => Self::gelu(self.op.input(), dst),
                     UnaryOp::Tanh => Self::tanh(self.op.input(), dst),
@@ -122,9 +196,9 @@ impl_cpu_unary!(bf16, bf16::from_f32);
 
 pub fn cpu_unary(unary: Unary, dst: Tensor) -> Result<Tensor, OperationError> {
     match dst.dt() {
-        DType::F32 => CPU::<f32, _>::new(unary).apply(dst),
-        DType::F16 => CPU::<f16, _>::new(unary).apply(dst),
-        DType::BF16 => CPU::<bf16, _>::new(unary).apply(dst),
+        DType::F32 => CPU::<f32, _>::new(unary).apply_cpu(dst),
+        DType::F16 => CPU::<f16, _>::new(unary).apply_cpu(dst),
+        DType::BF16 => CPU::<bf16, _>::new(unary).apply_cpu(dst),
         _ => todo!(),
     }
 }
@@ -148,7 +222,7 @@ macro_rules! impl_cpu_binary {
         }
 
         impl CPUOperation for CPU<$dtype, Binary> {
-            fn apply(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+            fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
                 match self.op.op() {
                     BinaryOp::Add => Self::add(self.op.lhs(), self.op.rhs(), dst),
                     BinaryOp::Sub => Self::sub(self.op.lhs(), self.op.rhs(), dst),
@@ -166,9 +240,9 @@ impl_cpu_binary!(bf16);
 
 pub fn cpu_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationError> {
     match dst.dt() {
-        DType::F32 => CPU::<f32, _>::new(binary).apply(dst),
-        DType::F16 => CPU::<f16, _>::new(binary).apply(dst),
-        DType::BF16 => CPU::<bf16, _>::new(binary).apply(dst),
+        DType::F32 => CPU::<f32, _>::new(binary).apply_cpu(dst),
+        DType::F16 => CPU::<f16, _>::new(binary).apply_cpu(dst),
+        DType::BF16 => CPU::<bf16, _>::new(binary).apply_cpu(dst),
         _ => todo!(),
     }
 }
@@ -287,44 +361,58 @@ pub fn cpu_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
     Ok(dst)
 }
 
-fn concat_inner<T: TensorDType>(
-    inputs: RVec<Tensor>,
+pub(crate) fn concat<T: TensorDType>(
+    inputs: &[(&Shape, Vec<T>)],
     dim: usize,
-    dst: Tensor,
-) -> Result<Tensor, OperationError> {
-    let dst_size = dst.shape().clone().product();
-    let mut result = vec![T::zero(); dst_size];
-
-    let dst_dim_len = dst.shape()[dim];
-    let block: usize = dst.shape().iter().skip(1 + dim).product();
+    dst_shape: &Shape,
+    dst: &mut [T],
+) -> Result<(), OperationError> {
+    let dst_dim_len = dst_shape[dim];
+    let block: usize = dst_shape.iter().skip(1 + dim).product();
     let dst_s = block * dst_dim_len;
     let src_o = 0;
     let mut dst_o = 0;
-    for t in inputs {
-        let src = t.to_vec::<T>()?;
-
-        let t_dims = t.shape().as_slice();
-        let a_dim: usize = t_dims.iter().take(dim).product();
-        let b_dim = block * t_dims[dim];
+    for (src_s, src) in inputs {
+        let a_dim: usize = src_s.iter().take(dim).product();
+        let b_dim = block * src_s[dim];
 
         for idx in 0..a_dim {
             let dst_idx = idx * dst_s + dst_o;
             let src_idx = idx * b_dim + src_o;
-            let dst = &mut result[dst_idx..dst_idx + b_dim];
+            let dst_t = &mut dst[dst_idx..dst_idx + b_dim];
             let src = &src[src_idx..src_idx + b_dim];
-            dst.copy_from_slice(src)
+            dst_t.copy_from_slice(src)
         }
         dst_o += b_dim;
     }
+    Ok(())
+}
+pub(crate) fn apply_concat<T: TensorDType>(
+    inputs: RVec<Tensor>,
+    dim: usize,
+    dst: Tensor,
+) -> Result<Tensor, OperationError> {
+    let dst_size = dst.shape().numel();
+    let mut result = vec![T::zero(); dst_size];
+
+    let inputs = inputs
+        .iter()
+        .map(|t| match t.to_vec::<T>() {
+            Ok(v) => Ok((t.shape(), v)),
+            Err(e) => Err(e.into()),
+        })
+        .collect::<Result<Vec<_>, OperationError>>();
+
+    concat::<T>(&inputs?, dim, dst.shape(), &mut result)?;
     cpu_store_result(&dst, &result);
     Ok(dst)
 }
 
 pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor, OperationError> {
     match dst.dt() {
-        DType::F32 => concat_inner::<f32>(inputs, dim, dst),
-        DType::F16 => concat_inner::<f16>(inputs, dim, dst),
-        DType::BF16 => concat_inner::<bf16>(inputs, dim, dst),
+        DType::F32 => apply_concat::<f32>(inputs, dim, dst),
+        DType::F16 => apply_concat::<f16>(inputs, dim, dst),
+        DType::BF16 => apply_concat::<bf16>(inputs, dim, dst),
         dtype => Err(InvariantError::UnsupportedDType(dtype).into()),
     }
 }
@@ -404,8 +492,4 @@ pub fn binary_apply_inplace<T: TensorDType>(
     binary_apply_inplace_helper(&mut lhs, &rhs, f);
     cpu_store_result(dst, &lhs);
     Ok(())
-}
-
-pub fn cpu_store_result<T: NoUninit>(dst: &Tensor, data: &[T]) {
-    dst.update_storage(Storage::CPU(CPUBuffer::from_slice(data, dst.shape())));
 }
