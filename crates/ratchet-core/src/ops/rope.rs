@@ -379,9 +379,9 @@ def mlx_rope(input, dim, offset):
         let prob = RoPEProblem {
             BS: 1,
             NH: 1,
-            SL: 2,
-            HD: 128,
-            dim: 96,
+            SL: 1,
+            HD: 32,
+            dim: 32,
             offset: 0,
         };
         println!("{prob:?}");

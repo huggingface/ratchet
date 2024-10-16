@@ -198,7 +198,10 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     println!("R1: {:?}", r1);
     println!("R2: {:?}", r2);
 
-    let mut to_cat = vec![];
+    let mut to_cat = vec![
+        (shape![num_heads, seq_len, half_dim], outs[0].clone()),
+        (shape![num_heads, seq_len, half_dim], outs[1].clone()),
+    ];
     if dim < shape[3] {
         outs.push(slice(
             &src,
@@ -206,14 +209,8 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
             &[0, 0, 0, dim],
             &[batches, num_heads, seq_len, head_dim],
         ));
+        to_cat.push((shape![num_heads, seq_len, head_dim - dim], outs[2].clone()));
     }
-    for i in 0..outs.len() - 1 {
-        to_cat.push((shape![num_heads, seq_len, half_dim], outs[i].clone()));
-    }
-    to_cat.push((
-        shape![num_heads, seq_len, head_dim - dim],
-        outs[outs.len() - 1].clone(),
-    ));
 
     let dst_shape = shape![num_heads, seq_len, head_dim];
     let mut dst = vec![0.0f32; dst_shape.numel()];
