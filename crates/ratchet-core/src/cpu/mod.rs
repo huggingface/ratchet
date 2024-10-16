@@ -362,7 +362,7 @@ pub fn cpu_cast(cast: Cast, dst: Tensor) -> Result<Tensor, OperationError> {
 }
 
 pub(crate) fn concat<T: TensorDType>(
-    inputs: &[(&Shape, Vec<T>)],
+    inputs: &[(Shape, Vec<T>)],
     dim: usize,
     dst_shape: &Shape,
     dst: &mut [T],
@@ -398,7 +398,7 @@ pub(crate) fn apply_concat<T: TensorDType>(
     let inputs = inputs
         .iter()
         .map(|t| match t.to_vec::<T>() {
-            Ok(v) => Ok((t.shape(), v)),
+            Ok(v) => Ok((t.shape().clone(), v)),
             Err(e) => Err(e.into()),
         })
         .collect::<Result<Vec<_>, OperationError>>();
