@@ -608,7 +608,9 @@ impl GEMM {
             }
         }
 
-        Ok(kernel_builder.build()?)
+        let x = kernel_builder.build()?;
+        println!("{}", x);
+        Ok(x)
     }
 
     fn render_vectorized<P: WgslPrimitive>(
@@ -736,12 +738,14 @@ impl GEMM {
 
         for i in 0..ROW_PER_THREAD {
             kernel_builder.write_main(wgsl! {
-                val = 'accessor(acc['i]) + 'bias_val
+                val = 'accessor(acc['i]) + 'bias_val;
                 mm_write(batch, globalRow + 'i, globalCol, val);
             });
         }
 
         let x = kernel_builder.build()?;
+        //println!("{}", x);
+        println!("bad");
         Ok(x)
     }
 }

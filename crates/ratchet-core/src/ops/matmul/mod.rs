@@ -757,6 +757,7 @@ mod tests {
     use crate::{shape, Device, DeviceRequest};
 
     use super::*;
+    use half::f16;
 
     fn ground_truth(
         a: &Tensor,
@@ -951,18 +952,22 @@ def matmul(a, b{}):
     fn test_qgemm() -> anyhow::Result<()> {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let cpu_device = Device::request_device(DeviceRequest::CPU)?;
-        let a = Tensor::randn::<f32>(shape![6, 1500, 64], cpu_device.clone());
-        let b = Tensor::randn::<f32>(shape![6, 64, 1500], cpu_device.clone());
+        let a = Tensor::range::<f32>(&shape![1, 64, 4], cpu_device.clone());
+        let b = Tensor::range::<f32>(&shape![1, 4, 64], cpu_device.clone());
         let ground = ground_truth(&a, &b, None, false, false, false)?;
+        let ground = ground.cast(DType::F16)?.resolve()?;
 
-        let aq = quantize::<Q8_0F>(&a);
+        let a = a.cast(DType::F16)?.resolve()?;
+        let b = b.cast(DType::F16)?.resolve()?;
+
+        let aq = quantize::<Q4_KH>(&a);
         let a_gpu = aq.to(&device)?;
         let b_gpu = b.to(&device)?;
         let c_gpu = a_gpu.matmul(b_gpu, false, false)?.resolve()?;
-        let ours = c_gpu.to(&Device::CPU)?;
+        let ours = c_gpu.to(&Device::CPU)?.cast(DType::F16)?.resolve()?;
 
-        println!("RATCHET QUANT\n{:?}\n", ours);
-        println!("PYTORCH FP32:\n{:?}", ground);
+        println!("RATCHET QUANT\n{:?}\n", ours); //.to_vec::<f16>()?);
+        println!("PYTORCH FP32:\n{:?}", ground); //.to_vec::<f16>()?);
 
         ground.all_close(&ours, 1e1, 1e-1)?;
 

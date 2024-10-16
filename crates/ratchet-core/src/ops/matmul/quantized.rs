@@ -203,8 +203,9 @@ impl KernelRenderable for QMatMul {
             }
         });
 
-        let TW = 64;
-        let TH = 16;
+        const TH: usize = 32;
+        let W = P::W;
+        let TW = TH / W;
         kernel_builder.write_global(wgsl! {
             var<workgroup> mm_Asub: array<array<f16, 'TW>, 'TH>;
             var<workgroup> mm_Bsub: array<array<f16, 'TW>, 'TH>;
