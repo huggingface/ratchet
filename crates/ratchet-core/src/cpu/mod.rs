@@ -375,7 +375,6 @@ pub(crate) fn concat<T: TensorDType>(
     for (src_s, src) in inputs {
         let a_dim: usize = src_s.iter().take(dim).product();
         let b_dim = block * src_s[dim];
-
         for idx in 0..a_dim {
             let dst_idx = idx * dst_s + dst_o;
             let src_idx = idx * b_dim + src_o;
@@ -403,7 +402,7 @@ pub(crate) fn apply_concat<T: TensorDType>(
         })
         .collect::<Result<Vec<_>, OperationError>>();
 
-    concat::<T>(&inputs?, dim, dst.shape(), &mut result)?;
+    concat(&inputs?, dim, dst.shape(), &mut result)?;
     cpu_store_result(&dst, &result);
     Ok(dst)
 }

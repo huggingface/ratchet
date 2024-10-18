@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use crate::{
     concat,
     cpu::{cpu_store_result, gemm::gemm},
@@ -125,20 +123,20 @@ fn transpose(
 }
 
 fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
-    println!("Ratchet RoPE");
+    //println!("Ratchet RoPE");
     let [batches, num_heads, seq_len, head_dim] = shape.try_into().unwrap();
 
     let half_dim = dim / 2;
     let theta = compute_theta(dim, seq_len, base, offset);
-    println!("Theta: {:?}", theta);
+    //println!("Theta: {:?}", theta);
     let (sin, cos): (Vec<f32>, Vec<f32>) = theta.iter().map(|i| i.sin_cos()).unzip();
-    println!("Cos: {:?}", cos);
-    println!("Sin: {:?}", sin);
+    //println!("Cos: {:?}", cos);
+    //println!("Sin: {:?}", sin);
 
-    println!("Cos length: {:?}", cos.len());
-    println!("Sin length: {:?}", sin.len());
+    //println!("Cos length: {:?}", cos.len());
+    //println!("Sin length: {:?}", sin.len());
 
-    println!("HALF DIM: {:?}", half_dim);
+    //println!("HALF DIM: {:?}", half_dim);
     let src_strides = Strides::from(shape);
     let x1 = slice(
         &src,
@@ -152,10 +150,12 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         &[0, 0, 0, half_dim],
         &[batches, num_heads, seq_len, dim],
     );
+    /*
     println!("X1: {:?}", x1);
     println!("X1 length: {:?}", x1.len());
     println!("X2: {:?}", x2);
     println!("X2 length: {:?}", x2.len());
+     */
 
     //zip and repeat
     //`multiply` as an operation that deals with broadcasting
@@ -171,11 +171,12 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         .collect::<Vec<f32>>();
 
     let mut outs = vec![];
-    let r1 = x1_cos
+    let mut r1 = x1_cos
         .iter()
         .zip(x2_sin.iter())
         .map(|(x1, x2)| x1 - x2)
         .collect::<Vec<f32>>();
+    r1.extend(vec![0.0; shape.numel() - r1.len()]);
     outs.push(r1.clone());
 
     let x1_sin = x1
@@ -188,19 +189,26 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         .enumerate()
         .map(|(i, x)| x * cos[i % cos.len()])
         .collect::<Vec<f32>>();
-    let r2 = x1_sin
+    let mut r2 = x1_sin
         .iter()
         .zip(x2_cos.iter())
         .map(|(x1, x2)| x1 + x2)
         .collect::<Vec<f32>>();
+    r2.extend(vec![0.0; shape.numel() - r2.len()]);
     outs.push(r2.clone());
 
-    println!("R1: {:?}", r1);
-    println!("R2: {:?}", r2);
+    //println!("R1: {:?}", r1);
+    //println!("R2: {:?}", r2);
 
     let mut to_cat = vec![
-        (shape![num_heads, seq_len, half_dim], outs[0].clone()),
-        (shape![num_heads, seq_len, half_dim], outs[1].clone()),
+        (
+            shape![batches, num_heads, seq_len, half_dim],
+            outs[0].clone(),
+        ),
+        (
+            shape![batches, num_heads, seq_len, half_dim],
+            outs[1].clone(),
+        ),
     ];
     if dim < shape[3] {
         outs.push(slice(
@@ -209,12 +217,17 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
             &[0, 0, 0, dim],
             &[batches, num_heads, seq_len, head_dim],
         ));
-        to_cat.push((shape![num_heads, seq_len, head_dim - dim], outs[2].clone()));
+        to_cat.push((
+            shape![batches, num_heads, seq_len, head_dim - dim],
+            outs[2].clone(),
+        ));
     }
 
-    let dst_shape = shape![num_heads, seq_len, head_dim];
+    let dst_shape = shape![batches, num_heads, seq_len, head_dim];
     let mut dst = vec![0.0f32; dst_shape.numel()];
-    concat(to_cat.as_slice(), 2, &dst_shape, &mut dst).unwrap();
-    println!("CONCAT: {:?}", dst);
+    //println!("TO CONCAT size: {:?}", dst_shape.numel());
+    //println!("TO CONCAT: {:?}", to_cat);
+    concat(to_cat.as_slice(), 3, &dst_shape, &mut dst).unwrap();
+    //println!("CONCAT: {:?}", dst);
     dst
 }
