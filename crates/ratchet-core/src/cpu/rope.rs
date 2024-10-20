@@ -141,17 +141,16 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         &[batches, num_heads, seq_len, dim],
     );
 
-    //zip and repeat
     //`multiply` as an operation that deals with broadcasting
     let x1_cos = x1
         .iter()
-        .enumerate()
-        .map(|(i, x)| x * cos[i % cos.len()])
+        .zip(cos.iter().cycle())
+        .map(|(x, c)| x * c)
         .collect::<Vec<f32>>();
     let x2_sin = x2
         .iter()
-        .enumerate()
-        .map(|(i, x)| x * sin[i % sin.len()])
+        .zip(sin.iter().cycle())
+        .map(|(x, s)| x * s)
         .collect::<Vec<f32>>();
 
     let mut r1 = x1_cos
@@ -163,13 +162,13 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
 
     let x1_sin = x1
         .iter()
-        .enumerate()
-        .map(|(i, x)| x * sin[i % sin.len()])
+        .zip(sin.iter().cycle())
+        .map(|(x, s)| x * s)
         .collect::<Vec<f32>>();
     let x2_cos = x2
         .iter()
-        .enumerate()
-        .map(|(i, x)| x * cos[i % cos.len()])
+        .zip(cos.iter().cycle())
+        .map(|(x, c)| x * c)
         .collect::<Vec<f32>>();
     let mut r2 = x1_sin
         .iter()
