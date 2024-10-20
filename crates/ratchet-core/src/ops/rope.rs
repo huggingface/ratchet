@@ -271,7 +271,7 @@ mod tests {
     use test_strategy::{proptest, Arbitrary};
 
     use crate::test_util::run_py_prg;
-    use crate::{gemm, shape, Device, DeviceRequest, Shape, Strides, Tensor};
+    use crate::{shape, Device, DeviceRequest, Tensor};
 
     fn ground_truth(a: &Tensor, dim: usize, offset: usize) -> anyhow::Result<Tensor> {
         let prg = r#"
@@ -301,10 +301,7 @@ def mlx_rope(input, dim, offset):
             offset,
         } = problem;
         let shape = shape![BS, NH, SL, HD];
-        let n = shape.numel();
-        let data = (0..n).map(|x| x as f32 / 100.).collect::<Vec<f32>>();
-        let a = Tensor::from_data(data, shape, Device::CPU);
-        println!("Input tensor: {:?}", a);
+        let a = Tensor::randn::<f32>(shape, Device::CPU);
         let ground = ground_truth(&a, dim, offset).unwrap();
 
         let a = a.to(&device).unwrap();
@@ -377,12 +374,12 @@ def mlx_rope(input, dim, offset):
     #[test]
     fn debug_rope_cpu() {
         let prob = RoPEProblem {
-            BS: 2,
-            NH: 16,
-            SL: 128,
-            HD: 32,
-            dim: 16,
-            offset: 8,
+            BS: 1,
+            NH: 5,
+            SL: 180,
+            HD: 112,
+            dim: 96,
+            offset: 141,
         };
         println!("{prob:?}");
 

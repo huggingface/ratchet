@@ -123,20 +123,11 @@ fn transpose(
 }
 
 fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
-    //println!("Ratchet RoPE");
     let [batches, num_heads, seq_len, head_dim] = shape.try_into().unwrap();
 
     let half_dim = dim / 2;
     let theta = compute_theta(dim, seq_len, base, offset);
-    //println!("Theta: {:?}", theta);
     let (sin, cos): (Vec<f32>, Vec<f32>) = theta.iter().map(|i| i.sin_cos()).unzip();
-    //println!("Cos: {:?}", cos);
-    //println!("Sin: {:?}", sin);
-
-    //println!("Cos length: {:?}", cos.len());
-    //println!("Sin length: {:?}", sin.len());
-
-    //println!("HALF DIM: {:?}", half_dim);
     let src_strides = Strides::from(shape);
     let x1 = slice(
         &src,
@@ -150,12 +141,6 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
         &[0, 0, 0, half_dim],
         &[batches, num_heads, seq_len, dim],
     );
-    /*
-    println!("X1: {:?}", x1);
-    println!("X1 length: {:?}", x1.len());
-    println!("X2: {:?}", x2);
-    println!("X2 length: {:?}", x2.len());
-     */
 
     //zip and repeat
     //`multiply` as an operation that deals with broadcasting
@@ -197,9 +182,6 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
     r2.extend(vec![0.0; shape.numel() - r2.len()]);
     outs.push(r2.clone());
 
-    //println!("R1: {:?}", r1);
-    //println!("R2: {:?}", r2);
-
     let mut to_cat = vec![
         (
             shape![batches, num_heads, seq_len, half_dim],
@@ -225,9 +207,6 @@ fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> V
 
     let dst_shape = shape![batches, num_heads, seq_len, head_dim];
     let mut dst = vec![0.0f32; dst_shape.numel()];
-    //println!("TO CONCAT size: {:?}", dst_shape.numel());
-    //println!("TO CONCAT: {:?}", to_cat);
     concat(to_cat.as_slice(), 3, &dst_shape, &mut dst).unwrap();
-    //println!("CONCAT: {:?}", dst);
     dst
 }
