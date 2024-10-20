@@ -308,8 +308,8 @@ def mlx_rope(input, dim, offset):
         let b = a.rope(dim, 10000.0, offset).unwrap().resolve().unwrap();
 
         let ours = b.to(&Device::CPU).unwrap();
-        println!("ours = \n{:#?}\n", ours.to_ndarray_view::<f32>());
-        println!("ground = \n{:#?}", ground.to_ndarray_view::<f32>());
+        //println!("ours = \n{:#?}\n", ours.to_ndarray_view::<f32>());
+        //println!("ground = \n{:#?}", ground.to_ndarray_view::<f32>());
         //Weak tolerance because of `ffast-math`
         ground.all_close(&ours, 1e-2, 1e-2).unwrap();
     }
