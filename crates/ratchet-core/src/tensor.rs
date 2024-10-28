@@ -1,8 +1,8 @@
 use crate::gpu::{BindGroupEntry, CpuUniform, WgpuDevice};
 use crate::{
-    cpu::rope::cpu_rope, cpu::*, ops::*, rvec, BufferSegment, CPUBuffer, CPUOperation, CompiledOp,
-    DType, Device, DeviceStorage, Executable, GPUBuffer, GPUOperation, InvariantError, LazyOp,
-    Operation, OperationError, RVec, RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
+    cpu, ops::*, rvec, BufferSegment, CPUBuffer, CompiledOp, DType, Device, DeviceStorage,
+    Executable, GPUBuffer, GPUOperation, InvariantError, LazyOp, Operation, OperationError, RVec,
+    RawCPUBuffer, Shape, Storage, Strides, TensorDType, TensorId,
 };
 use derive_new::new;
 use npyz::WriterBuilder;
@@ -756,23 +756,7 @@ impl Tensor {
     }
 
     pub fn cpu_apply(self, dst: Tensor) -> Option<Tensor> {
-        match self.op().clone() {
-            LazyOp::Binary(b) => cpu_binary(b, dst).ok(),
-            LazyOp::Cast(c) => cpu_cast(c, dst).ok(),
-            LazyOp::Matmul(m) => m.apply_cpu(dst).ok(),
-            LazyOp::Softmax(_s) => todo!(),
-            LazyOp::RoPE(r) => cpu_rope(r, dst).ok(),
-            LazyOp::Unary(u) => cpu_unary(u, dst).ok(),
-            LazyOp::Reindex(_r) => todo!(),
-            LazyOp::Concat(c) => cpu_concat(c, dst).ok(),
-            LazyOp::Norm(_n) => todo!(),
-            LazyOp::Conv(_c) => todo!(),
-            LazyOp::Select(i) => cpu_index_select(i, dst).ok(),
-            LazyOp::IndexWrite(_i) => todo!(),
-            LazyOp::Cache(_c) => todo!(),
-            LazyOp::Const => None,
-            LazyOp::View(_) => None,
-        }
+        cpu::apply_operation(self.op().clone(), dst).ok()
     }
 
     fn resolve_inner(self, debug: bool) -> Result<Tensor, TensorError> {

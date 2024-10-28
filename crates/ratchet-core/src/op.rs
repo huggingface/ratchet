@@ -361,7 +361,3 @@ pub trait GPUOperation: Operation {
         ))
     }
 }
-
-pub trait CPUOperation: Operation {
-    fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError>;
-}

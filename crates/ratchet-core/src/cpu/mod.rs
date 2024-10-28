@@ -1,55 +1,38 @@
+mod binary;
 pub mod gemm;
 pub mod rope;
+mod unary;
 mod utils;
 
 use crate::{
-    dequantize, Binary, BinaryOp, CPUBuffer, CPUOperation, Cast, Concat, DType, IndexSelect,
-    InvariantError, OpGuards, Operation, OperationError, RVec, Shape, Storage, StorageView,
-    Strides, Tensor, TensorDType, Unary, UnaryOp,
+    dequantize, Binary, BinaryOp, CPUBuffer, Cast, Concat, DType, IndexSelect, InvariantError,
+    LazyOp, OpGuards, Operation, OperationError, RVec, Shape, Storage, StorageView, Strides,
+    Tensor, TensorDType, Unary, UnaryOp,
 };
 use anyhow::anyhow;
 use core::marker::PhantomData;
 use half::{bf16, f16};
 use num_traits::Float;
-use rope::*;
+use rope::cpu_rope;
 use utils::cpu_store_result;
 
-#[derive(Debug)]
-pub struct CPU<T: TensorDType, OP: Operation> {
-    op: OP,
-    dtype: PhantomData<T>,
-}
-
-impl<T: TensorDType, OP: Operation> CPU<T, OP> {
-    pub fn new(op: OP) -> Self {
-        Self {
-            op,
-            dtype: PhantomData,
-        }
-    }
-}
-
-impl<T: TensorDType, OP: Operation> OpGuards for CPU<T, OP> {
-    fn check_shapes(&self) {
-        self.op.check_shapes();
-    }
-
-    fn check_dtypes(&self) {
-        self.op.check_dtypes();
-    }
-}
-
-impl<T: TensorDType, OP: Operation> Operation for CPU<T, OP> {
-    fn name(&self) -> &'static str {
-        self.op.name()
-    }
-
-    fn compute_view(&self) -> Result<StorageView, OperationError> {
-        self.op.compute_view()
-    }
-
-    fn srcs(&self) -> RVec<&Tensor> {
-        self.op.srcs()
+pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError> {
+    match op {
+        LazyOp::Binary(b) => b.apply_cpu(dst),
+        LazyOp::Cast(c) => cpu_cast(c, dst),
+        LazyOp::Matmul(m) => m.apply_cpu(dst),
+        LazyOp::Softmax(_s) => todo!(),
+        LazyOp::RoPE(r) => cpu_rope(r, dst),
+        LazyOp::Unary(u) => u.apply_cpu(dst),
+        LazyOp::Reindex(_r) => todo!(),
+        LazyOp::Concat(c) => cpu_concat(c, dst),
+        LazyOp::Norm(_n) => todo!(),
+        LazyOp::Conv(_c) => todo!(),
+        LazyOp::Select(i) => cpu_index_select(i, dst),
+        LazyOp::IndexWrite(_i) => todo!(),
+        LazyOp::Cache(_c) => todo!(),
+        LazyOp::Const => todo!(),
+        LazyOp::View(_) => todo!(),
     }
 }
 
@@ -124,127 +107,8 @@ impl<'a> From<(&'a Shape, &'a Strides, usize)> for StridedIterator<'a> {
     }
 }
 
-macro_rules! impl_cpu_unary_op {
-    ($method_name:ident, $op:expr) => {
-        fn $method_name(input: &Tensor, dst: Tensor) -> Result<Tensor, OperationError> {
-            unary_apply_fn(input, &dst, $op)?;
-            Ok(dst)
-        }
-    };
-}
-
-macro_rules! impl_cpu_unary_wrapper {
-    ($dtype:ident, $conv:expr) => {
-        impl CPU<$dtype, Unary> {
-            impl_cpu_unary_op!(gelu, |x: $dtype| $conv(0.5)
-                * x
-                * ($conv(1.0)
-                    + $dtype::tanh(
-                        $conv(0.797_884_6) * x * ($conv(1.0) + $conv(0.044715) * x * x)
-                    )));
-
-            impl_cpu_unary_op!(tanh, |x: $dtype| x.tanh());
-            impl_cpu_unary_op!(exp, |x: $dtype| x.exp());
-            impl_cpu_unary_op!(log, |x: $dtype| x.ln());
-            impl_cpu_unary_op!(sin, |x: $dtype| x.sin());
-            impl_cpu_unary_op!(cos, |x: $dtype| x.cos());
-            impl_cpu_unary_op!(abs, |x: $dtype| x.abs());
-            impl_cpu_unary_op!(sqrt, |x: $dtype| x.sqrt());
-            impl_cpu_unary_op!(relu, |x: $dtype| x.max($conv(0.0)));
-            impl_cpu_unary_op!(floor, |x: $dtype| x.floor());
-            impl_cpu_unary_op!(ceil, |x: $dtype| x.ceil());
-            impl_cpu_unary_op!(neg, |x: $dtype| -x);
-            impl_cpu_unary_op!(silu, |x: $dtype| x / ($conv(1.0) + (-x).exp()));
-            impl_cpu_unary_op!(sigmoid, |x: $dtype| $conv(1.0) / ($conv(1.0) + (-x).exp()));
-        }
-    };
-}
-
-macro_rules! impl_cpu_unary {
-    ($dtype:ident) => {
-        impl_cpu_unary!($dtype, |x| x);
-    };
-    ($dtype:ident, $conv:expr) => {
-        impl_cpu_unary_wrapper!($dtype, $conv);
-
-        impl CPUOperation for CPU<$dtype, Unary> {
-            fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-                match self.op.op() {
-                    UnaryOp::Gelu => Self::gelu(self.op.input(), dst),
-                    UnaryOp::Tanh => Self::tanh(self.op.input(), dst),
-                    UnaryOp::Exp => Self::exp(self.op.input(), dst),
-                    UnaryOp::Log => Self::log(self.op.input(), dst),
-                    UnaryOp::Sin => Self::sin(self.op.input(), dst),
-                    UnaryOp::Cos => Self::cos(self.op.input(), dst),
-                    UnaryOp::Abs => Self::abs(self.op.input(), dst),
-                    UnaryOp::Sqrt => Self::sqrt(self.op.input(), dst),
-                    UnaryOp::Relu => Self::relu(self.op.input(), dst),
-                    UnaryOp::Floor => Self::floor(self.op.input(), dst),
-                    UnaryOp::Ceil => Self::ceil(self.op.input(), dst),
-                    UnaryOp::Neg => Self::neg(self.op.input(), dst),
-                    UnaryOp::Silu => Self::silu(self.op.input(), dst),
-                    UnaryOp::Sigmoid => Self::sigmoid(self.op.input(), dst),
-                }
-            }
-        }
-    };
-}
-
-impl_cpu_unary!(f32);
-impl_cpu_unary!(f16, f16::from_f32);
-impl_cpu_unary!(bf16, bf16::from_f32);
-
-pub fn cpu_unary(unary: Unary, dst: Tensor) -> Result<Tensor, OperationError> {
-    match dst.dt() {
-        DType::F32 => CPU::<f32, _>::new(unary).apply_cpu(dst),
-        DType::F16 => CPU::<f16, _>::new(unary).apply_cpu(dst),
-        DType::BF16 => CPU::<bf16, _>::new(unary).apply_cpu(dst),
-        _ => todo!(),
-    }
-}
-
-macro_rules! impl_cpu_binary_op {
-    ($method_name:ident, $dtype:ident, $op:expr) => {
-        fn $method_name(lhs: &Tensor, rhs: &Tensor, dst: Tensor) -> Result<Tensor, OperationError> {
-            binary_apply_inplace::<$dtype>(lhs, rhs, &dst, $op)?;
-            Ok(dst)
-        }
-    };
-}
-
-macro_rules! impl_cpu_binary {
-    ($dtype:ident) => {
-        impl CPU<$dtype, Binary> {
-            impl_cpu_binary_op!(add, $dtype, |lhs, rhs| lhs + rhs);
-            impl_cpu_binary_op!(sub, $dtype, |lhs, rhs| lhs - rhs);
-            impl_cpu_binary_op!(mul, $dtype, |lhs, rhs| lhs * rhs);
-            impl_cpu_binary_op!(div, $dtype, |lhs, rhs| lhs / rhs);
-        }
-
-        impl CPUOperation for CPU<$dtype, Binary> {
-            fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
-                match self.op.op() {
-                    BinaryOp::Add => Self::add(self.op.lhs(), self.op.rhs(), dst),
-                    BinaryOp::Sub => Self::sub(self.op.lhs(), self.op.rhs(), dst),
-                    BinaryOp::Mul => Self::mul(self.op.lhs(), self.op.rhs(), dst),
-                    BinaryOp::Div => Self::div(self.op.lhs(), self.op.rhs(), dst),
-                }
-            }
-        }
-    };
-}
-
-impl_cpu_binary!(f32);
-impl_cpu_binary!(f16);
-impl_cpu_binary!(bf16);
-
-pub fn cpu_binary(binary: Binary, dst: Tensor) -> Result<Tensor, OperationError> {
-    match dst.dt() {
-        DType::F32 => CPU::<f32, _>::new(binary).apply_cpu(dst),
-        DType::F16 => CPU::<f16, _>::new(binary).apply_cpu(dst),
-        DType::BF16 => CPU::<bf16, _>::new(binary).apply_cpu(dst),
-        _ => todo!(),
-    }
+pub trait CPUOperation: Operation {
+    fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError>;
 }
 
 fn index_select<T: TensorDType>(
