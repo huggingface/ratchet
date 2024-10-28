@@ -1,7 +1,7 @@
 use crate::{
     concat,
     cpu::{cpu_store_result, gemm::gemm},
-    shape, DType, OperationError, RoPE, Shape, StridedIterator, Strides, Tensor,
+    shape, DType, OperationError, RoPE, Shape, Strides, Tensor,
 };
 use anyhow::anyhow;
 
@@ -81,44 +81,6 @@ fn slice(src: &[f32], src_strides: &Strides, start: &[usize], stop: &[usize]) ->
     }
 
     dst
-}
-
-// Generic transpose function
-fn transpose(
-    src: Vec<f32>,
-    shape: &Shape,
-    dim1: usize,
-    dim2: usize,
-) -> Result<Vec<f32>, OperationError> {
-    let rank = shape.rank();
-    if dim1 == dim2 {
-        return Ok(src);
-    }
-    if rank <= dim1 || rank <= dim2 {
-        return Err(anyhow!("Invalid dimensions for transpose operation").into());
-    }
-    let mut dims = shape.to_vec();
-    let mut strides = Strides::from(shape).to_vec();
-    println!("dims: {:?}", dims);
-    println!("strides: {:?}", strides);
-    dims.swap(dim1, dim2);
-    strides.swap(dim1, dim2);
-    println!("dims: {:?}", dims);
-    println!("strides: {:?}", strides);
-
-    let shape_t = Shape::from(dims);
-    let strides_t = Strides::from(strides);
-
-    let mut result = vec![0.0; src.len()];
-    let strided_iter = StridedIterator::new(&shape_t, &strides_t, 0);
-    let strided_iter2 = StridedIterator::new(&shape_t, &strides_t, 0);
-    let indices = strided_iter2.collect::<Vec<_>>();
-    println!("indices: {:?}", indices);
-    for (index, dst_index) in strided_iter.enumerate() {
-        result[dst_index] = src[index];
-    }
-
-    Ok(result)
 }
 
 fn rope(src: Vec<f32>, shape: &Shape, dim: usize, base: f32, offset: usize) -> Vec<f32> {
