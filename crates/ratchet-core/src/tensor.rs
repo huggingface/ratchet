@@ -86,7 +86,17 @@ impl std::fmt::Debug for Tensor {
         match self.device() {
             Device::CPU => match self.dt() {
                 DType::F32 => self.to_ndarray_view::<f32>().fmt(f),
-                _ => unimplemented!("Debug not implemented for {:?}", self.dt()),
+                _ => {
+                    let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
+                    let (id, op) = (self.id(), self.op());
+                    f.debug_struct("Tensor")
+                        .field("id", &id)
+                        .field("shape", &self.shape())
+                        .field("dt", &self.dt())
+                        .field("op", &op)
+                        .field("storage", &storage_fmt)
+                        .finish()
+                }
             },
             Device::GPU(_) => {
                 let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
