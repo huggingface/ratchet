@@ -279,8 +279,6 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-mx.set_default_device(mx.cpu)
-
 def mlx_rope(input, dim, offset):
     rope = nn.RoPE(dim)
     mx_input = mx.array(input)
@@ -332,7 +330,7 @@ def mlx_rope(input, dim, offset):
         offset: usize,
     }
 
-    #[proptest(cases = 8)]
+    #[proptest(cases = 16)]
     fn test_rope_gpu(prob: RoPEProblem) {
         let RoPEProblem {
             BS,
@@ -359,9 +357,8 @@ def mlx_rope(input, dim, offset):
             SL,
             HD,
             dim,
-            mut offset,
+            offset,
         } = prob;
-        offset = 0;
         println!(
             "BS = {}, NH = {}, SL = {}, HD = {}, rope_dim = {}, offset = {}",
             BS, NH, SL, HD, dim, offset
