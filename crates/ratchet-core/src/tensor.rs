@@ -83,15 +83,33 @@ impl Tensor {
 
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
-        let (id, op) = (self.id(), self.op());
-        f.debug_struct("Tensor")
-            .field("id", &id)
-            .field("shape", &self.shape())
-            .field("dt", &self.dt())
-            .field("op", &op)
-            .field("storage", &storage_fmt)
-            .finish()
+        match self.device() {
+            Device::CPU => match self.dt() {
+                DType::F32 => self.to_ndarray_view::<f32>().fmt(f),
+                _ => {
+                    let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
+                    let (id, op) = (self.id(), self.op());
+                    f.debug_struct("Tensor")
+                        .field("id", &id)
+                        .field("shape", &self.shape())
+                        .field("dt", &self.dt())
+                        .field("op", &op)
+                        .field("storage", &storage_fmt)
+                        .finish()
+                }
+            },
+            Device::GPU(_) => {
+                let storage_fmt = self.storage().as_ref().map(|s| s.dump(self.dt(), false));
+                let (id, op) = (self.id(), self.op());
+                f.debug_struct("Tensor")
+                    .field("id", &id)
+                    .field("shape", &self.shape())
+                    .field("dt", &self.dt())
+                    .field("op", &op)
+                    .field("storage", &storage_fmt)
+                    .finish()
+            }
+        }
     }
 }
 
@@ -263,6 +281,7 @@ macro_rules! impl_binary_op {
 
 macro_rules! impl_unary_op {
     ($method_name:ident, $op:expr) => {
+        #[allow(clippy::should_implement_trait)]
         pub fn $method_name(self) -> anyhow::Result<Tensor> {
             let device = self.device.clone();
             let unary = Unary::new(self.clone(), $op);
@@ -372,7 +391,7 @@ impl Tensor {
 
     pub fn rope(self, dim: usize, base: f32, offset: usize) -> anyhow::Result<Tensor> {
         let device = self.device.clone();
-        let rope = RoPE::new(self, dim, f32::log2(base), offset);
+        let rope = RoPE::new(self, dim, base, offset);
         let new_view = rope.compute_view()?;
         Ok(Tensor::lazy(LazyOp::RoPE(rope), new_view, device))
     }

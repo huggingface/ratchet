@@ -1,11 +1,9 @@
 use bytemuck::{NoUninit, Pod};
 use half::f16;
 
-use crate::{storage::DeviceStorage, Device, DeviceError, GPUBuffer, Shape, TensorDType};
+use crate::{storage::DeviceStorage, DType, Device, DeviceError, GPUBuffer, Shape, TensorDType};
 
 use std::{alloc::Layout, fmt::Debug, mem::MaybeUninit, sync::Arc};
-
-use crate::DType;
 
 #[derive(derive_new::new, Debug, PartialEq, Eq)]
 pub struct RawCPUBuffer(*mut u8, Layout);

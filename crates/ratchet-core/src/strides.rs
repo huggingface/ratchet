@@ -1,4 +1,5 @@
 use std::ops::Index;
+use std::slice::Iter;
 
 use crate::{rvec, RVec, Shape};
 use encase::impl_wrapper;
@@ -13,12 +14,20 @@ impl Strides {
         self.0.to_vec()
     }
 
+    pub fn iter(&self) -> Iter<'_, isize> {
+        self.0.iter()
+    }
+
     pub fn transpose(&mut self) {
         let rank = self.0.len();
         if rank < 2 {
             return;
         }
         self.0.swap(rank - 2, rank - 1);
+    }
+
+    pub fn rank(&self) -> usize {
+        self.0.len()
     }
 }
 
@@ -50,6 +59,12 @@ impl From<&Shape> for Strides {
         }
         strides.reverse();
         Self(strides)
+    }
+}
+
+impl From<Vec<isize>> for Strides {
+    fn from(strides: Vec<isize>) -> Self {
+        Self(strides.into())
     }
 }
 
