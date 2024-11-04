@@ -1,6 +1,6 @@
-use crate::{CPUOperation, DType, OperationError, Reindex, Slice, Strides, Tensor, TensorDType};
-
 use super::utils::cpu_store_result;
+use crate::{CPUOperation, DType, OperationError, Reindex, Slice, Strides, Tensor, TensorDType};
+use half::{bf16, f16};
 
 impl CPUOperation for Reindex {
     fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
@@ -15,6 +15,10 @@ impl CPUOperation for Slice {
     fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         match dst.dt() {
             DType::F32 => apply_slice::<f32>(self, dst),
+            DType::BF16 => apply_slice::<bf16>(self, dst),
+            DType::F16 => apply_slice::<f16>(self, dst),
+            DType::I32 => apply_slice::<i32>(self, dst),
+            DType::U32 => apply_slice::<u32>(self, dst),
             _ => todo!(),
         }
     }
