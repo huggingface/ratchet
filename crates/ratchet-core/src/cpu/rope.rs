@@ -1,6 +1,6 @@
 use crate::{
     concat,
-    cpu::{cpu_store_result, gemm::gemm},
+    cpu::{cpu_store_result, gemm::gemm, reindex::slice},
     shape, DType, OperationError, RoPE, Shape, Strides, Tensor,
 };
 use anyhow::anyhow;
@@ -59,32 +59,6 @@ fn compute_theta(
     )?;
 
     Ok(theta)
-}
-
-fn slice(src: &[f32], src_strides: &Strides, start: &[usize], stop: &[usize]) -> Vec<f32> {
-    assert!(start.len() == stop.len());
-    assert!(start.len() == src_strides.rank());
-    start.iter().zip(stop.iter()).for_each(|(s, t)| {
-        assert!(s < t);
-    });
-
-    let dst_shape: Vec<usize> = stop.iter().zip(start.iter()).map(|(s, t)| s - t).collect();
-    let dst_numel: usize = dst_shape.iter().product();
-
-    let mut dst = vec![0.0; dst_numel];
-
-    for i in 0..dst_numel {
-        let mut src_index = 0;
-        let mut tmp = i;
-        for d in 0..dst_shape.len() {
-            let coord = tmp / dst_shape[d + 1..].iter().product::<usize>().max(1);
-            tmp %= dst_shape[d + 1..].iter().product::<usize>().max(1);
-            src_index += (coord + start[d]) * src_strides[d] as usize;
-        }
-        dst[i] = src[src_index];
-    }
-
-    dst
 }
 
 fn rope(

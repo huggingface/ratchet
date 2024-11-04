@@ -161,7 +161,7 @@ def slice(a):
     fn run_reindex_trial(prob: SliceProblem) -> anyhow::Result<()> {
         let SliceProblem { op } = prob;
         println!("SLICE PROBLEM: {:?}", op);
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
         let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
