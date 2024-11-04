@@ -1,5 +1,6 @@
 mod binary;
 pub mod gemm;
+pub mod reindex;
 pub mod rope;
 mod unary;
 mod utils;
@@ -24,7 +25,7 @@ pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError
         LazyOp::Softmax(_s) => todo!(),
         LazyOp::RoPE(r) => cpu_rope(r, dst),
         LazyOp::Unary(u) => u.apply_cpu(dst),
-        LazyOp::Reindex(_r) => todo!(),
+        LazyOp::Reindex(r) => r.apply_cpu(dst),
         LazyOp::Concat(c) => cpu_concat(c, dst),
         LazyOp::Norm(_n) => todo!(),
         LazyOp::Conv(_c) => todo!(),

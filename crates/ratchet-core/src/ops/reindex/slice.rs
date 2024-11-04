@@ -158,10 +158,9 @@ def slice(a):
         run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
-    fn run_reindex_trial(prob: SliceProblem) -> anyhow::Result<()> {
+    fn run_reindex_trial(prob: SliceProblem, device: Device) -> anyhow::Result<()> {
         let SliceProblem { op } = prob;
         println!("SLICE PROBLEM: {:?}", op);
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
@@ -173,8 +172,16 @@ def slice(a):
     }
 
     #[proptest(cases = 16)]
-    fn test_slice(prob: SliceProblem) {
+    fn test_slice_gpu(prob: SliceProblem) {
         let _ = env_logger::builder().is_test(true).try_init();
-        run_reindex_trial(prob).unwrap();
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_reindex_trial(prob, device).unwrap();
+    }
+
+    #[proptest(cases = 16)]
+    fn test_slice_cpu(prob: SliceProblem) {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_reindex_trial(prob, device).unwrap();
     }
 }
