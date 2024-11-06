@@ -111,9 +111,8 @@ def permute(a):
         run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
-    fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {
+    fn run_reindex_trial(prob: PermuteProblem, device: Device) -> anyhow::Result<()> {
         let PermuteProblem { op } = prob;
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
@@ -125,7 +124,29 @@ def permute(a):
     }
 
     #[proptest(cases = 16)]
-    fn test_permute(prob: PermuteProblem) {
-        run_reindex_trial(prob).unwrap();
+    fn test_permute_gpu(prob: PermuteProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_reindex_trial(prob, device).unwrap();
+    }
+
+    //#[proptest(cases = 16)]
+    //fn test_permute_cpu(prob: PermuteProblem) {
+    #[test]
+    fn test_permute_cpu() {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        let t = Tensor::from_data(
+            &[
+                0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15.,
+            ],
+            Shape::from(vec![2usize, 4, 2, 1]),
+            device.clone(),
+        );
+        let prob = PermuteProblem {
+            op: Permute {
+                src: t,
+                dims: vec![3, 1, 2, 0],
+            },
+        };
+        run_reindex_trial(prob, device).unwrap();
     }
 }
