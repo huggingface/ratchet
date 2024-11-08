@@ -144,6 +144,13 @@ impl Shape {
     }
 }
 
+impl core::ops::Deref for Shape {
+    type Target = [usize];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl std::fmt::Debug for Shape {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut shape = format!("[{}", self.0.first().unwrap_or(&0));

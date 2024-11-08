@@ -1,4 +1,4 @@
-use std::ops::Index;
+use std::ops::{Index, IndexMut, RangeFrom, RangeTo};
 use std::slice::Iter;
 
 use crate::{rvec, RVec, Shape};
@@ -29,6 +29,10 @@ impl Strides {
     pub fn rank(&self) -> usize {
         self.0.len()
     }
+
+    pub fn as_slice(&self) -> &[isize] {
+        &self.0
+    }
 }
 
 impl std::fmt::Debug for Strides {
@@ -41,10 +45,39 @@ impl std::fmt::Debug for Strides {
     }
 }
 
+impl core::ops::Deref for Strides {
+    type Target = [isize];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl Index<usize> for Strides {
     type Output = isize;
 
     fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for Strides {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
+impl Index<RangeFrom<usize>> for Strides {
+    type Output = [isize];
+
+    fn index(&self, index: RangeFrom<usize>) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl Index<RangeTo<usize>> for Strides {
+    type Output = [isize];
+
+    fn index(&self, index: RangeTo<usize>) -> &Self::Output {
         &self.0[index]
     }
 }
@@ -64,6 +97,12 @@ impl From<&Shape> for Strides {
 
 impl From<Vec<isize>> for Strides {
     fn from(strides: Vec<isize>) -> Self {
+        Self(strides.into())
+    }
+}
+
+impl From<&[isize]> for Strides {
+    fn from(strides: &[isize]) -> Self {
         Self(strides.into())
     }
 }
