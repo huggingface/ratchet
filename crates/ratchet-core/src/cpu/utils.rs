@@ -6,13 +6,14 @@ pub fn cpu_store_result<T: NoUninit>(dst: &Tensor, data: &[T]) {
     dst.update_storage(Storage::CPU(CPUBuffer::from_slice(data, dst.shape())));
 }
 
+#[derive(Clone)]
 pub enum TensorIterator<'a> {
     Contiguous(Range<usize>),
     Strided(StridedIterator<'a>),
 }
 
 impl<'a> TensorIterator<'a> {
-    fn new(shape: &'a Shape, strides: &'a Strides, offset: usize) -> Self {
+    pub fn new(shape: &'a Shape, strides: &'a Strides, offset: usize) -> Self {
         let mut block_size: usize = 1;
         let mut contiguous_dims: usize = 0;
         for (&stride, &dim) in strides.iter().zip(shape.iter()).rev() {
@@ -42,6 +43,7 @@ impl<'a> Iterator for TensorIterator<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct StridedIterator<'a> {
     shape: &'a [usize],
     strides: &'a [isize],
@@ -197,5 +199,21 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn test_tensor_iter_strided_sanity() {
+        let mut shape = shape!(2, 4, 3);
+        let mut strides = Strides::from(&shape);
+        strides.transpose();
+        shape.transpose();
+        let offset = 2;
+
+        let iter = TensorIterator::new(&shape, &strides, offset);
+        let actual: Vec<usize> = iter.collect();
+        let expected = vec![
+            2, 5, 8, 11, 3, 6, 9, 12, 4, 7, 10, 13, 14, 17, 20, 23, 15, 18, 21, 24, 16, 19, 22, 25,
+        ];
+        assert_eq!(actual, expected);
     }
 }
