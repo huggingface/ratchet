@@ -64,7 +64,7 @@ impl Operation for Broadcast {
         "Broadcast"
     }
 
-    //For rules, see https://numpy.org/doc/stable/user/basics.broadcasting.html
+    // For rules, see https://numpy.org/doc/stable/user/basics.broadcasting.html
     fn compute_view(&self) -> Result<StorageView, OperationError> {
         let src_shape = self.src.shape();
 
@@ -140,11 +140,10 @@ def slice(a):
         run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
-    fn run_reindex_trial(prob: BroadcastProblem) -> anyhow::Result<()> {
+    fn run_reindex_trial(prob: BroadcastProblem, device: Device) -> anyhow::Result<()> {
         println!("\n\nBroadcast problem: {:?}", prob);
         let BroadcastProblem { op } = prob;
         let a = op.src.clone();
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
 
         let a_gpu = a.to(&device)?;
         let ground = ground_truth(&a, &op.to.as_torch())?;
@@ -155,18 +154,26 @@ def slice(a):
     }
 
     #[proptest(cases = 16)]
-    fn test_broadcast(prob: BroadcastProblem) {
-        run_reindex_trial(prob).unwrap();
+    fn test_broadcast_gpu(prob: BroadcastProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_reindex_trial(prob, device).unwrap();
+    }
+
+    #[proptest(cases = 16)]
+    fn test_broadcast_cpu(prob: BroadcastProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_reindex_trial(prob, device).unwrap();
     }
 
     #[test]
     fn debug_broadcast() {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let prob = BroadcastProblem {
             op: Broadcast::new(
                 Tensor::randn::<f32>(shape![1], Device::CPU),
                 shape![4, 32, 128, 128],
             ),
         };
-        run_reindex_trial(prob).unwrap();
+        run_reindex_trial(prob, device).unwrap();
     }
 }
