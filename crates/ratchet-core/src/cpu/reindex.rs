@@ -36,47 +36,6 @@ fn apply_broadcast<T: TensorDType>(b: &Broadcast, dst: Tensor) -> Result<Tensor,
     Ok(dst)
 }
 
-fn get_contiguous_offsets(
-    shape: &Shape,
-    strides: &Strides,
-) -> Option<(usize, usize, usize, usize)> {
-    let mut left_broadcast = 1;
-    let mut right_broadcast = 1;
-    let dims = shape.to_vec();
-    let strides = strides.to_vec();
-    let mut start_cont = 0;
-    let mut end_cont = dims.len();
-    for (&s, &d) in strides.iter().zip(dims.iter()) {
-        if s != 0 {
-            break;
-        }
-        start_cont += 1;
-        left_broadcast *= d;
-    }
-    if start_cont == dims.len() {
-        return Some((0, 1, left_broadcast, 1));
-    }
-    for (&s, &d) in strides.iter().zip(dims.iter()).rev() {
-        if s != 0 {
-            break;
-        }
-        end_cont -= 1;
-        right_broadcast *= d;
-    }
-    // Check that the inner dims are contiguous
-    let strides = &strides[start_cont..end_cont];
-    let dims = &dims[start_cont..end_cont];
-    let mut len = 1;
-    for (&stride, &dim) in strides.iter().zip(dims.iter()).rev() {
-        if stride as usize != len {
-            return None;
-        }
-        len *= dim;
-    }
-
-    Some((0, len, left_broadcast, right_broadcast))
-}
-
 fn offset_to_ndindex(offset: usize, strides: &[usize]) -> Vec<usize> {
     let mut indices = vec![0; strides.len()];
     let mut remaining = offset;
