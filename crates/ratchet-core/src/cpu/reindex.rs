@@ -1,23 +1,141 @@
-use super::utils::{cpu_store_result, StridedIterator};
+use super::utils::{
+    cpu_store_result, TensorIterator,
+    TensorIterator::{Contiguous, Strided},
+};
 use crate::{
-    CPUOperation, DType, OperationError, Permute, Reindex, Shape, Slice, Strides, Tensor,
-    TensorDType,
+    Broadcast, CPUOperation, DType, OperationError, Permute, Reindex, Shape, Slice, Strides,
+    Tensor, TensorDType,
 };
 use half::{bf16, f16};
 use ndarray::ShapeBuilder;
-use pyo3::ffi::PyExc_FutureWarning;
 use std::ops::Range;
 
 impl CPUOperation for Reindex {
     fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         match self {
-            Reindex::Permute(p) => {
-                println!("Permute: {:?}", p);
-                p.apply_cpu(dst)
-            }
+            Reindex::Permute(p) => p.apply_cpu(dst),
             Reindex::Slice(s) => s.apply_cpu(dst),
+            Reindex::Broadcast(b) => b.apply_cpu(dst),
             _ => todo!(),
         }
+    }
+}
+
+impl CPUOperation for Broadcast {
+    fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
+        match dst.dt() {
+            DType::F32 => apply_broadcast::<f32>(self, dst),
+            DType::BF16 => apply_broadcast::<bf16>(self, dst),
+            DType::F16 => apply_broadcast::<f16>(self, dst),
+            DType::I32 => apply_broadcast::<i32>(self, dst),
+            DType::U32 => apply_broadcast::<u32>(self, dst),
+            _ => todo!(),
+        }
+    }
+}
+
+fn apply_broadcast<T: TensorDType>(b: &Broadcast, dst: Tensor) -> Result<Tensor, OperationError> {
+    let result = broadcast(&b.src.to_vec::<T>()?, b.src.shape(), b.to());
+    cpu_store_result(&dst, &result);
+    Ok(dst)
+}
+
+pub(crate) fn broadcast<T: TensorDType>(src: &[T], src_shape: &Shape, dst_shape: &Shape) -> Vec<T> {
+    let mut result = vec![T::zero(); dst_shape.numel()];
+
+    if src_shape.is_scalar() {
+        // Life is simple
+        result.fill(src[0]);
+    } else if src_shape.is_vector() {
+        // If from is a vector and the first dimension is the broadcasting dimension
+        if src_shape[0] > 1 && src_shape[0] == dst_shape[0] {
+            let chunk_size = result.len() / src_shape.numel();
+
+            (0..result.len())
+                .step_by(chunk_size)
+                .enumerate()
+                .for_each(|(i, chunk)| {
+                    result[chunk..chunk + chunk_size].fill(src[i]);
+                });
+        } else {
+            generic_broadcast(src, &mut result, src_shape, dst_shape)
+        }
+    } else {
+        generic_broadcast(src, &mut result, src_shape, dst_shape)
+    }
+
+    result
+}
+
+#[inline]
+fn offset_to_ndindex(offset: usize, strides: [usize; 4]) -> [usize; 4] {
+    let mut indices = [0; 4];
+    let mut remaining = offset;
+
+    let idx = remaining / strides[0];
+    indices[0] = idx;
+    remaining -= idx * strides[0];
+
+    let idx = remaining / strides[1];
+    indices[1] = idx;
+    remaining -= idx * strides[1];
+
+    let idx = remaining / strides[2];
+    indices[2] = idx;
+    remaining -= idx * strides[2];
+
+    indices[3] = remaining;
+    indices
+}
+
+#[inline]
+fn nd_index_to_offset(ndindex: [usize; 4], strides: [usize; 4]) -> usize {
+    ndindex[0] * strides[0]
+        + ndindex[1] * strides[1]
+        + ndindex[2] * strides[2]
+        + ndindex[3] * strides[3]
+}
+
+// TODO: Optimize.
+// This generic implementation is almost a direct copy from the gpu impl,
+// and can definitely be way more performant.
+fn generic_broadcast<T: TensorDType>(
+    src: &[T],
+    result: &mut [T],
+    src_shape: &Shape,
+    dst_shape: &Shape,
+) {
+    // We now know that these will always be len 4, same as gpu impl.
+    let src_shape = &Shape::promote(src_shape.clone(), 4);
+    let dst_shape = &Shape::promote(dst_shape.clone(), 4);
+
+    let src_strides = &Strides::from(src_shape);
+    let dst_strides = &Strides::from(dst_shape);
+
+    let src_shape: [usize; 4] = src_shape.try_into().unwrap();
+    let src_strides: [usize; 4] = src_strides.try_into().unwrap();
+    let dst_strides: [usize; 4] = dst_strides.try_into().unwrap();
+
+    fn select(a: [usize; 4], b: [usize; 4], t: [bool; 4]) -> [usize; 4] {
+        let mut result = [0; 4];
+        result[0] = if t[0] { a[0] } else { b[0] };
+        result[1] = if t[1] { a[1] } else { b[1] };
+        result[2] = if t[2] { a[2] } else { b[2] };
+        result[3] = if t[3] { a[3] } else { b[3] };
+        result
+    }
+
+    let shape_onedim_lookup: [bool; 4] = [
+        src_shape[0] != 1,
+        src_shape[1] != 1,
+        src_shape[2] != 1,
+        src_shape[3] != 1,
+    ];
+    for i in 0..result.len() {
+        let dst_index = offset_to_ndindex(i, dst_strides);
+        let src_index = select(dst_index, [0; 4], shape_onedim_lookup);
+        let src_offset = nd_index_to_offset(src_index, src_strides);
+        result[i] = src[src_offset]
     }
 }
 
@@ -25,80 +143,54 @@ impl CPUOperation for Permute {
     fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
         match dst.dt() {
             DType::F32 => apply_permute::<f32>(self, dst),
+            DType::BF16 => apply_permute::<bf16>(self, dst),
+            DType::F16 => apply_permute::<f16>(self, dst),
+            DType::I32 => apply_permute::<i32>(self, dst),
+            DType::U32 => apply_permute::<u32>(self, dst),
             _ => todo!(),
         }
     }
 }
 
-fn apply_permute<T: TensorDType>(
-    Permute { src, dims }: &Permute,
-    dst: Tensor,
-) -> Result<Tensor, OperationError> {
-    let result = permute(&src.to_vec::<T>()?, src.shape(), dims);
+fn apply_permute<T: TensorDType>(p: &Permute, dst: Tensor) -> Result<Tensor, OperationError> {
+    let perm: [usize; 4] = p.promote().try_into().unwrap();
+    let Permute { src, dims } = p;
+    let result = permute(&src.to_vec::<T>()?, src.shape(), dst.shape(), perm);
     cpu_store_result(&dst, &result);
     Ok(dst)
 }
 
-fn get_strided_index(idx: usize, num_dims: usize, dims: &[usize], strides: &[isize]) -> usize {
-    let mut idx = idx; // 2
-    let mut strided_i: usize = 0;
-    println!("strides: {strides:?}");
-    println!("dims: {dims:?}");
-    print!("{idx} -> ");
-    for d in 0..num_dims {
-        let dim_idx = num_dims - 1 - d;
-        strided_i += (idx % dims[dim_idx]) * strides[dim_idx] as usize;
-        idx /= dims[dim_idx];
-        print!("{idx}|{dim_idx}|{strided_i}, ");
-    }
-    print!("\n");
-    return strided_i;
-}
+fn permute<T: TensorDType>(
+    src: &[T],
+    src_shape: &Shape,
+    dst_shape: &Shape,
+    perm: [usize; 4],
+) -> Vec<T> {
+    let mut result = vec![T::zero(); src_shape.numel()];
 
-pub(crate) fn permute<T: TensorDType>(src: &[T], shape: &Shape, dims: &[usize]) -> Vec<T> {
-    /*
-    // simplify shape
-    // 1. remove dimensions with size 0..1
-    // 2. consecutive dimensions can be merged
-    // 3. remove dimensions that are not in the permutation
-    let mut ranges: Vec<Range<usize>> = vec![];
-    let mut dims_s: Vec<usize> = vec![];
+    // We now know that these will always be len 4, same as gpu impl.
+    let src_shape = &Shape::promote(src_shape.clone(), 4);
+    let dst_shape = &Shape::promote(dst_shape.clone(), 4);
 
-    let mut start = 0;
-    let mut end = 0;
-    for i in 0..dims.len() - 1 {
-        if dims[i] + 1 == dims[i + 1] {
-            end = i;
-        } else {
-            ranges.push(start..end);
-            start = end;
-        }
-    }
-    ranges.push(start..);
+    let src_strides = &Strides::from(src_shape);
+    let dst_strides = &Strides::from(dst_shape);
 
-    println!("ranges: {:?}", ranges);
-    println!("dims_s: {:?}", dims_s);
+    let src_shape: [usize; 4] = src_shape.try_into().unwrap();
+    let src_strides: [usize; 4] = src_strides.try_into().unwrap();
+    let dst_strides: [usize; 4] = dst_strides.try_into().unwrap();
 
-    if ranges.len() <= 1 {
-        return src.to_vec();
+    for i in 0..result.len() {
+        let dst_index = offset_to_ndindex(i, dst_strides);
+        let mut src_index = [0; 4];
+        src_index[perm[0]] = dst_index[0];
+        src_index[perm[1]] = dst_index[1];
+        src_index[perm[2]] = dst_index[2];
+        src_index[perm[3]] = dst_index[3];
+        let src_offset = nd_index_to_offset(src_index, src_strides);
+        result[i] = src[src_offset]
     }
 
-    */
-    let mut dst = vec![T::zero(); shape.numel()];
-
-    let strides = Strides::from(shape).to_vec();
-
-    let mut p_shape = vec![0; shape.rank()];
-    for i in 0..shape.rank() {
-        p_shape[dims[i]] = shape[i];
-    }
-
-    for i in 0..src.len() {
-        let strided_idx = get_strided_index(i, dims.len(), p_shape.as_slice(), &strides);
-        println!("{i} -> {strided_idx}");
-        dst[i] = src[strided_idx];
-    }
-    dst
+    return result;
 }
 
 impl CPUOperation for Slice {
@@ -139,12 +231,17 @@ pub(crate) fn slice<T: TensorDType>(
 
     let mut dst = vec![T::zero(); dst_numel];
 
-    for i in 0..dst_numel {
+    let mut dst_dots = vec![];
+    for d in 0..dst_shape.len() {
+        dst_dots.push(dst_shape[d + 1..].iter().product::<usize>().max(1));
+    }
+
+    for i in 0..dst.len() {
         let mut src_index = 0;
         let mut tmp = i;
         for d in 0..dst_shape.len() {
-            let coord = tmp / dst_shape[d + 1..].iter().product::<usize>().max(1);
-            tmp %= dst_shape[d + 1..].iter().product::<usize>().max(1);
+            let coord = tmp / dst_dots[d];
+            tmp %= dst_dots[d];
             src_index += (coord + start[d]) * src_strides[d] as usize;
         }
         dst[i] = src[src_index];

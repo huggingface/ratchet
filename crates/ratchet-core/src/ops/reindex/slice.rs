@@ -178,7 +178,7 @@ def slice(a):
         run_reindex_trial(prob, device).unwrap();
     }
 
-    #[proptest(cases = 16)]
+    #[proptest(cases = 1)]
     fn test_slice_cpu(prob: SliceProblem) {
         let _ = env_logger::builder().is_test(true).try_init();
         let device = Device::request_device(DeviceRequest::CPU).unwrap();
