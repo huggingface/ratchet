@@ -136,6 +136,17 @@ impl From<&Strides> for [u32; 4] {
     }
 }
 
+impl From<&Strides> for [usize; 4] {
+    fn from(strides: &Strides) -> Self {
+        assert!(strides.0.len() <= 4);
+        let mut array = [0; 4];
+        for (i, &stride) in strides.0.iter().enumerate() {
+            array[i] = stride as usize;
+        }
+        array
+    }
+}
+
 impl From<&Strides> for glam::UVec4 {
     fn from(strides: &Strides) -> Self {
         let array: [u32; 4] = strides.into();

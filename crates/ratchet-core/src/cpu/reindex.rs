@@ -37,14 +37,7 @@ fn apply_broadcast<T: TensorDType>(b: &Broadcast, dst: Tensor) -> Result<Tensor,
 }
 
 pub(crate) fn broadcast<T: TensorDType>(src: &[T], src_shape: &Shape, dst_shape: &Shape) -> Vec<T> {
-    let src_strides = Strides::from(src_shape);
-    let dst_strides = Strides::from(dst_shape);
     let mut result = vec![T::zero(); dst_shape.numel()];
-
-    let dst_shape = dst_shape.to_vec();
-
-    let src_strides: Vec<usize> = src_strides.as_slice().iter().map(|x| *x as usize).collect();
-    let dst_strides: Vec<usize> = dst_strides.as_slice().iter().map(|x| *x as usize).collect();
 
     if src_shape.is_scalar() {
         // Life is simple
@@ -61,10 +54,10 @@ pub(crate) fn broadcast<T: TensorDType>(src: &[T], src_shape: &Shape, dst_shape:
                     result[chunk..chunk + chunk_size].fill(src[i]);
                 });
         } else {
-            generic_broadcast(src, &mut result, src_shape, &src_strides, &dst_strides)
+            generic_broadcast(src, &mut result, src_shape, dst_shape)
         }
     } else {
-        generic_broadcast(src, &mut result, src_shape, &src_strides, &dst_strides)
+        generic_broadcast(src, &mut result, src_shape, dst_shape)
     }
 
     result
@@ -76,34 +69,66 @@ pub(crate) fn broadcast<T: TensorDType>(src: &[T], src_shape: &Shape, dst_shape:
 fn generic_broadcast<T: TensorDType>(
     src: &[T],
     result: &mut [T],
-    src_shape: &[usize],
-    src_strides: &[usize],
-    dst_strides: &[usize],
+    src_shape: &Shape,
+    dst_shape: &Shape,
 ) {
-    fn offset_to_ndindex(offset: usize, strides: &[usize]) -> Vec<usize> {
-        let mut indices = vec![0; strides.len()];
+    // We now know that these will always be len 4, same as gpu impl.
+    let src_shape = &Shape::promote(src_shape.clone(), 4);
+    let dst_shape = &Shape::promote(dst_shape.clone(), 4);
+
+    let src_strides = &Strides::from(src_shape);
+    let dst_strides = &Strides::from(dst_shape);
+
+    let src_shape: [usize; 4] = src_shape.try_into().unwrap();
+    let src_strides: [usize; 4] = src_strides.try_into().unwrap();
+    let dst_strides: [usize; 4] = dst_strides.try_into().unwrap();
+
+    fn offset_to_ndindex(offset: usize, strides: [usize; 4]) -> [usize; 4] {
+        let mut indices = [0; 4];
         let mut remaining = offset;
 
-        for i in 0..strides.len() - 1 {
-            let stride = strides[i];
-            let idx = remaining / stride;
-            indices[i] = idx;
-            remaining -= idx * stride;
-        }
-        indices[strides.len() - 1] = remaining;
+        let idx = remaining / strides[0];
+        indices[0] = idx;
+        remaining -= idx * strides[0];
+
+        let idx = remaining / strides[1];
+        indices[1] = idx;
+        remaining -= idx * strides[1];
+
+        let idx = remaining / strides[2];
+        indices[2] = idx;
+        remaining -= idx * strides[2];
+
+        indices[3] = remaining;
         indices
     }
 
-    fn nd_index_to_offset(ndindex: &[usize], strides: &[usize]) -> usize {
-        ndindex.iter().zip(strides.iter()).map(|(x, y)| x * y).sum()
+    fn select(a: [usize; 4], b: [usize; 4], t: [bool; 4]) -> [usize; 4] {
+        let mut result = [0; 4];
+        result[0] = if t[0] { a[0] } else { b[0] };
+        result[1] = if t[1] { a[1] } else { b[1] };
+        result[2] = if t[2] { a[2] } else { b[2] };
+        result[3] = if t[3] { a[3] } else { b[3] };
+        result
     }
 
+    fn nd_index_to_offset(ndindex: [usize; 4], strides: [usize; 4]) -> usize {
+        ndindex[0] * strides[0]
+            + ndindex[1] * strides[1]
+            + ndindex[2] * strides[2]
+            + ndindex[3] * strides[3]
+    }
+
+    let shape_onedim_lookup: [bool; 4] = [
+        src_shape[0] != 1,
+        src_shape[1] != 1,
+        src_shape[2] != 1,
+        src_shape[3] != 1,
+    ];
     for i in 0..result.len() {
-        let dst_index = offset_to_ndindex(i, &dst_strides);
-        let src_index: Vec<usize> = (0..src_shape.len())
-            .map(|x| if src_shape[x] == 1 { 0 } else { dst_index[x] })
-            .collect();
-        let src_offset = nd_index_to_offset(&src_index, &src_strides);
+        let dst_index = offset_to_ndindex(i, dst_strides);
+        let src_index = select(dst_index, [0; 4], shape_onedim_lookup);
+        let src_offset = nd_index_to_offset(src_index, src_strides);
         result[i] = src[src_offset]
     }
 }
