@@ -1,9 +1,67 @@
+use crate::cpu::cpu_store_result;
 use crate::{
-    binary_apply_inplace, Binary, BinaryOp, CPUOperation, DType, OpGuards, Operation,
-    OperationError, RVec, StorageView, Tensor, TensorDType,
+    Binary, BinaryOp, CPUOperation, DType, OpGuards, Operation, OperationError, RVec, StorageView,
+    Tensor, TensorDType,
 };
 use core::marker::PhantomData;
 use half::{bf16, f16};
+use num_traits::NumOps;
+
+#[inline]
+pub(crate) fn binary_map<T: TensorDType, U: TensorDType>(
+    lhs: &[T],
+    rhs: &[T],
+    dst: &mut [U],
+    f: fn(T, T) -> U,
+) {
+    assert_eq!(lhs.len(), dst.len());
+    assert_eq!(rhs.len(), dst.len());
+    for ((l, r), d) in lhs
+        .iter()
+        .copied()
+        .zip(rhs.iter().copied())
+        .zip(dst.iter_mut())
+    {
+        *d = f(l, r);
+    }
+}
+
+#[inline]
+pub(crate) fn binary_map_inplace<T: TensorDType>(lhs: &mut [T], rhs: &[T], f: fn(T, T) -> T) {
+    assert_eq!(lhs.len(), rhs.len());
+    lhs.iter_mut().zip(rhs.iter()).for_each(|(l, r)| {
+        *l = f(*l, *r);
+    });
+}
+
+#[inline]
+pub(crate) fn binary_apply<T: TensorDType, U: TensorDType>(
+    lhs: &Tensor,
+    rhs: &Tensor,
+    dst: &Tensor,
+    f: fn(T, T) -> U,
+) -> Result<(), OperationError> {
+    let lhs = lhs.to_vec::<T>()?;
+    let rhs = rhs.to_vec::<T>()?;
+    let mut result = vec![U::zero(); dst.shape().numel()];
+    binary_map(&lhs, &rhs, &mut result, f);
+    cpu_store_result(dst, &result);
+    Ok(())
+}
+
+#[inline]
+pub(crate) fn binary_apply_inplace<T: TensorDType>(
+    lhs: &Tensor,
+    rhs: &Tensor,
+    dst: &Tensor,
+    f: fn(T, T) -> T,
+) -> Result<(), OperationError> {
+    let mut lhs = lhs.to_vec::<T>()?;
+    let rhs = rhs.to_vec::<T>()?;
+    binary_map_inplace(&mut lhs, &rhs, f);
+    cpu_store_result(dst, &lhs);
+    Ok(())
+}
 
 pub struct BinaryOps<T: TensorDType> {
     dtype: PhantomData<T>,
@@ -17,6 +75,20 @@ macro_rules! impl_cpu_binary_op {
         }
     };
 }
+
+macro_rules! cpu_binary_op_fn {
+    ($method_name:ident, $op:expr) => {
+        #[inline]
+        pub(crate) fn $method_name<T: TensorDType + NumOps>(lhs: &mut [T], rhs: &[T]) {
+            binary_map_inplace::<T>(lhs, rhs, $op);
+        }
+    };
+}
+
+cpu_binary_op_fn!(add, |lhs, rhs| lhs + rhs);
+cpu_binary_op_fn!(sub, |lhs, rhs| lhs - rhs);
+cpu_binary_op_fn!(mul, |lhs, rhs| lhs * rhs);
+cpu_binary_op_fn!(div, |lhs, rhs| lhs / rhs);
 
 macro_rules! impl_cpu_binary {
     ($dtype:ident) => {
