@@ -1,7 +1,4 @@
-use super::utils::{
-    cpu_store_result, TensorIterator,
-    TensorIterator::{Contiguous, Strided},
-};
+use super::utils::cpu_store_result;
 use crate::{
     Broadcast, CPUOperation, DType, OperationError, Reindex, Shape, Slice, Strides, Tensor,
     TensorDType,

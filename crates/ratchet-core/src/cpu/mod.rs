@@ -6,17 +6,14 @@ pub mod rope;
 mod unary;
 mod utils;
 
-use crate::cpu::unary::unary_apply_fn;
 use crate::{
-    dequantize, Binary, BinaryOp, CPUBuffer, Cast, Concat, DType, IndexSelect, InvariantError,
-    LazyOp, OpGuards, Operation, OperationError, RVec, Shape, Storage, StorageView, Strides,
-    Tensor, TensorDType, Unary, UnaryOp,
+    dequantize, Cast, Concat, DType, IndexSelect, InvariantError, LazyOp, Operation,
+    OperationError, RVec, Shape, Tensor, TensorDType,
 };
 use anyhow::anyhow;
-use core::marker::PhantomData;
 use half::{bf16, f16};
-use num_traits::Float;
 use rope::cpu_rope;
+use unary::unary_apply_fn;
 use utils::cpu_store_result;
 
 pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError> {

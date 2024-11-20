@@ -1,8 +1,5 @@
 use crate::cpu::cpu_store_result;
-use crate::{
-    Binary, BinaryOp, CPUOperation, DType, OpGuards, Operation, OperationError, RVec, StorageView,
-    Tensor, TensorDType,
-};
+use crate::{Binary, BinaryOp, CPUOperation, DType, OperationError, Tensor, TensorDType};
 use core::marker::PhantomData;
 use half::{bf16, f16};
 use num_traits::NumOps;

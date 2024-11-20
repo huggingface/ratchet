@@ -3,7 +3,6 @@ use crate::{
     cpu::{cpu_store_result, gemm::gemm, reindex::slice},
     shape, DType, OperationError, RoPE, Shape, Strides, Tensor,
 };
-use anyhow::anyhow;
 
 pub fn cpu_rope(op: RoPE, dst: Tensor) -> Result<Tensor, OperationError> {
     match op.input().dt() {

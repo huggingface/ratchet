@@ -5,12 +5,12 @@ use crate::cpu::utils::cpu_store_result;
 use crate::reindex::broadcast_vector;
 use crate::{
     shape, CPUOperation, DType, GroupNorm, InvariantError, Norm, NormOp, OperationError, Shape,
-    Strides, Tensor, TensorDType,
+    Tensor, TensorDType,
 };
 use core::iter::Sum;
 use half::{bf16, f16};
 use num::Float;
-use num_traits::{AsPrimitive, NumOps};
+use num_traits::NumOps;
 
 impl CPUOperation for NormOp {
     fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
@@ -77,7 +77,7 @@ where
     let mean_dim = shape.numel() / shape[dim];
     let mut result = vec![T::zero(); mean_dim];
     let step = src.len() / mean_dim;
-    let n = T::from((step as f32)).unwrap();
+    let n = T::from(step as f32).unwrap();
 
     (0..src.len())
         .step_by(step)
@@ -100,8 +100,8 @@ where
 {
     let src_shape = input.shape();
     let rank = input.rank();
-    let M = src_shape[rank - 2];
     let N = src_shape[rank - 1];
+    let norm_shape = shape!(N);
 
     let input = input.to_vec::<T>()?;
     let scale = scale.to_vec::<T>()?;
@@ -110,12 +110,9 @@ where
         None => None,
     };
 
-    let dst_shape = dst.shape();
-    let mut result = vec![T::zero(); dst.shape().numel()];
-
     let mut x = input.clone();
 
-    let mut mu = mean(&x, src_shape, rank - 1);
+    let mu = mean(&x, src_shape, rank - 1);
     let mut mu2 = mu.clone();
     square(&mut mu2);
     let mut x2 = input.clone();
@@ -136,11 +133,11 @@ where
     broadcast_vector(&x2, &mut v);
     mul(&mut x, &v);
 
-    let scale_b = broadcast(&scale, &shape!(N), src_shape);
+    let scale_b = broadcast(&scale, &norm_shape, src_shape);
     mul(&mut x, &scale_b);
 
     if let Some(bias) = bias {
-        let bias_b = broadcast(&bias, &shape!(N), src_shape);
+        let bias_b = broadcast(&bias, &norm_shape, src_shape);
         add(&mut x, &bias_b);
     }
 
@@ -191,13 +188,10 @@ where
 {
     let src_shape = input.shape();
     let rank = input.rank();
-    let M = src_shape[rank - 2];
     let N = src_shape[rank - 1];
 
     let mut x = input.to_vec::<T>()?;
     let scale = scale.to_vec::<T>()?;
-
-    let dst_shape = dst.shape();
 
     let mut x2 = x.clone();
     square(&mut x2);
@@ -218,7 +212,7 @@ where
     Ok(())
 }
 
-fn apply_group_norm(n: &GroupNorm, dst: Tensor) -> Result<Tensor, OperationError> {
+fn apply_group_norm(_n: &GroupNorm, dst: Tensor) -> Result<Tensor, OperationError> {
     //let result = norm(&b.src.to_vec::<T>()?, b.src.shape(), b.to());
     //cpu_store_result(&dst, &result);
     Ok(dst)
