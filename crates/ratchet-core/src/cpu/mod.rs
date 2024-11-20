@@ -1,10 +1,12 @@
 mod binary;
 pub mod gemm;
+mod norm;
 pub mod reindex;
 pub mod rope;
 mod unary;
 mod utils;
 
+use crate::cpu::unary::unary_apply_fn;
 use crate::{
     dequantize, Binary, BinaryOp, CPUBuffer, Cast, Concat, DType, IndexSelect, InvariantError,
     LazyOp, OpGuards, Operation, OperationError, RVec, Shape, Storage, StorageView, Strides,
@@ -27,7 +29,7 @@ pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError
         LazyOp::Unary(u) => u.apply_cpu(dst),
         LazyOp::Reindex(r) => r.apply_cpu(dst),
         LazyOp::Concat(c) => cpu_concat(c, dst),
-        LazyOp::Norm(_n) => todo!(),
+        LazyOp::Norm(n) => n.apply_cpu(dst),
         LazyOp::Conv(_c) => todo!(),
         LazyOp::Select(i) => cpu_index_select(i, dst),
         LazyOp::IndexWrite(_i) => todo!(),
@@ -208,81 +210,4 @@ pub fn cpu_concat(Concat { inputs, dim }: Concat, dst: Tensor) -> Result<Tensor,
         DType::BF16 => apply_concat::<bf16>(inputs, dim, dst),
         dtype => Err(InvariantError::UnsupportedDType(dtype).into()),
     }
-}
-
-#[inline]
-fn unary_apply_fn_helper<T: TensorDType, U: TensorDType>(src: &[T], dst: &mut [U], f: fn(T) -> U) {
-    assert_eq!(src.len(), dst.len());
-    for (s, d) in src.iter().copied().zip(dst.iter_mut()) {
-        *d = f(s);
-    }
-}
-
-#[inline]
-pub fn unary_apply_fn<T: TensorDType, U: TensorDType>(
-    input: &Tensor,
-    dst: &Tensor,
-    f: fn(T) -> U,
-) -> Result<(), OperationError> {
-    let input = input.to_vec::<T>()?;
-    let mut result = vec![U::zero(); dst.shape().numel()];
-    unary_apply_fn_helper(&input, &mut result, f);
-    cpu_store_result(dst, &result);
-    Ok(())
-}
-
-#[inline]
-fn binary_apply_fn_helper<T: TensorDType, U: TensorDType>(
-    lhs: &[T],
-    rhs: &[T],
-    dst: &mut [U],
-    f: fn(T, T) -> U,
-) {
-    assert_eq!(lhs.len(), dst.len());
-    assert_eq!(rhs.len(), dst.len());
-    for ((l, r), d) in lhs
-        .iter()
-        .copied()
-        .zip(rhs.iter().copied())
-        .zip(dst.iter_mut())
-    {
-        *d = f(l, r);
-    }
-}
-
-#[inline]
-fn binary_apply_inplace_helper<T: TensorDType>(lhs: &mut [T], rhs: &[T], f: fn(T, T) -> T) {
-    assert_eq!(lhs.len(), rhs.len());
-    lhs.iter_mut().zip(rhs.iter()).for_each(|(l, r)| {
-        *l = f(*l, *r);
-    });
-}
-
-#[inline]
-pub fn binary_apply_fn<T: TensorDType, U: TensorDType>(
-    lhs: &Tensor,
-    rhs: &Tensor,
-    dst: &Tensor,
-    f: fn(T, T) -> U,
-) -> Result<(), OperationError> {
-    let lhs = lhs.to_vec::<T>()?;
-    let rhs = rhs.to_vec::<T>()?;
-    let mut result = vec![U::zero(); dst.shape().numel()];
-    binary_apply_fn_helper(&lhs, &rhs, &mut result, f);
-    cpu_store_result(dst, &result);
-    Ok(())
-}
-
-#[inline]
-pub fn binary_apply_inplace<T: TensorDType>(
-    lhs: &Tensor,
-    rhs: &Tensor,
-    dst: &Tensor,
-    f: fn(T, T) -> T,
-) -> Result<(), OperationError> {
-    let mut lhs = lhs.to_vec::<T>()?;
-    let rhs = rhs.to_vec::<T>()?;
-    binary_apply_inplace_helper(&mut lhs, &rhs, f);
-    cpu_store_result(dst, &lhs);
-    Ok(())
 }
