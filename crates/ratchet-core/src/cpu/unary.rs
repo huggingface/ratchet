@@ -1,9 +1,40 @@
-use crate::{
-    unary_apply_fn, CPUOperation, DType, OperationError, Tensor, TensorDType, Unary, UnaryOp,
-};
+use crate::cpu::cpu_store_result;
+use crate::{CPUOperation, DType, OperationError, Tensor, TensorDType, Unary, UnaryOp};
 use core::marker::PhantomData;
 use half::{bf16, f16};
 use num_traits::Float;
+
+#[inline]
+pub(crate) fn unary_apply_fn_helper<T: TensorDType, U: TensorDType>(
+    src: &[T],
+    dst: &mut [U],
+    f: fn(T) -> U,
+) {
+    assert_eq!(src.len(), dst.len());
+    for (s, d) in src.iter().copied().zip(dst.iter_mut()) {
+        *d = f(s);
+    }
+}
+
+#[inline]
+pub(crate) fn unary_map_inplace<T: TensorDType>(src: &mut [T], f: fn(T) -> T) {
+    for s in src.iter_mut() {
+        *s = f(*s);
+    }
+}
+
+#[inline]
+pub(crate) fn unary_apply_fn<T: TensorDType, U: TensorDType>(
+    input: &Tensor,
+    dst: &Tensor,
+    f: fn(T) -> U,
+) -> Result<(), OperationError> {
+    let input = input.to_vec::<T>()?;
+    let mut result = vec![U::zero(); dst.shape().numel()];
+    unary_apply_fn_helper(&input, &mut result, f);
+    cpu_store_result(dst, &result);
+    Ok(())
+}
 
 struct UnaryOps<T: TensorDType> {
     dtype: PhantomData<T>,

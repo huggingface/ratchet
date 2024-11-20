@@ -1,14 +1,9 @@
-use super::utils::{
-    cpu_store_result, TensorIterator,
-    TensorIterator::{Contiguous, Strided},
-};
+use super::utils::cpu_store_result;
 use crate::{
     Broadcast, CPUOperation, DType, OperationError, Permute, Reindex, Shape, Slice, Strides,
     Tensor, TensorDType,
 };
 use half::{bf16, f16};
-use ndarray::ShapeBuilder;
-use std::ops::Range;
 
 impl CPUOperation for Reindex {
     fn apply_cpu(&self, dst: Tensor) -> Result<Tensor, OperationError> {
@@ -16,7 +11,6 @@ impl CPUOperation for Reindex {
             Reindex::Permute(p) => p.apply_cpu(dst),
             Reindex::Slice(s) => s.apply_cpu(dst),
             Reindex::Broadcast(b) => b.apply_cpu(dst),
-            _ => todo!(),
         }
     }
 }
@@ -36,7 +30,7 @@ impl CPUOperation for Permute {
 
 fn apply_permute<T: TensorDType>(p: &Permute, dst: Tensor) -> Result<Tensor, OperationError> {
     let perm: [usize; 4] = p.promote().try_into().unwrap();
-    let Permute { src, dims } = p;
+    let Permute { src, dims: _ } = p;
     let result = permute(&src.to_vec::<T>()?, src.shape(), dst.shape(), perm);
     cpu_store_result(&dst, &result);
     Ok(dst)
@@ -153,6 +147,17 @@ fn apply_broadcast<T: TensorDType>(b: &Broadcast, dst: Tensor) -> Result<Tensor,
     Ok(dst)
 }
 
+pub(crate) fn broadcast_vector<T: TensorDType>(src: &[T], dst: &mut [T]) {
+    let chunk_size = dst.len() / src.len();
+
+    (0..dst.len())
+        .step_by(chunk_size)
+        .enumerate()
+        .for_each(|(i, chunk)| {
+            dst[chunk..chunk + chunk_size].fill(src[i]);
+        });
+}
+
 pub(crate) fn broadcast<T: TensorDType>(src: &[T], src_shape: &Shape, dst_shape: &Shape) -> Vec<T> {
     let mut result = vec![T::zero(); dst_shape.numel()];
 
@@ -162,14 +167,7 @@ pub(crate) fn broadcast<T: TensorDType>(src: &[T], src_shape: &Shape, dst_shape:
     } else if src_shape.is_vector() {
         // If from is a vector and the first dimension is the broadcasting dimension
         if src_shape[0] > 1 && src_shape[0] == dst_shape[0] {
-            let chunk_size = result.len() / src_shape.numel();
-
-            (0..result.len())
-                .step_by(chunk_size)
-                .enumerate()
-                .for_each(|(i, chunk)| {
-                    result[chunk..chunk + chunk_size].fill(src[i]);
-                });
+            broadcast_vector(src, &mut result)
         } else {
             generic_broadcast(src, &mut result, src_shape, dst_shape)
         }

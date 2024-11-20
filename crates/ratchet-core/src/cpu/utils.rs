@@ -1,5 +1,5 @@
 use crate::{CPUBuffer, Shape, Storage, Strides, Tensor};
-use bytemuck::{Contiguous, NoUninit};
+use bytemuck::NoUninit;
 use std::ops::Range;
 
 pub fn cpu_store_result<T: NoUninit>(dst: &Tensor, data: &[T]) {
@@ -137,11 +137,11 @@ impl<'a> From<(&'a Shape, &'a Strides, usize)> for StridedIterator<'a> {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use test_strategy::{proptest, Arbitrary};
+    use test_strategy::proptest;
 
     use crate::{shape, Shape, Strides};
 
-    use super::{StridedIterator, TensorIterator};
+    use super::TensorIterator;
 
     #[derive(Debug)]
     struct IterProblem {
