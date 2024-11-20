@@ -111,9 +111,8 @@ def permute(a):
         run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
-    fn run_reindex_trial(prob: PermuteProblem) -> anyhow::Result<()> {
+    fn run_reindex_trial(prob: PermuteProblem, device: Device) -> anyhow::Result<()> {
         let PermuteProblem { op } = prob;
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let a = op.src.clone();
 
         let a_gpu = a.to(&device)?;
@@ -125,7 +124,14 @@ def permute(a):
     }
 
     #[proptest(cases = 16)]
-    fn test_permute(prob: PermuteProblem) {
-        run_reindex_trial(prob).unwrap();
+    fn test_permute_gpu(prob: PermuteProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_reindex_trial(prob, device).unwrap();
+    }
+
+    #[proptest(cases = 16)]
+    fn test_permute_cpu(prob: PermuteProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_reindex_trial(prob, device).unwrap();
     }
 }
