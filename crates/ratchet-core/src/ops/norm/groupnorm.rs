@@ -51,16 +51,15 @@ def manual_group_norm(input, scale, bias, num_groups):
 
         let ground = ground_truth(&input, &scale, bias.as_ref(), num_groups)?;
 
-        let input_gpu = input.to(device)?;
-        let scale_gpu = scale.to(device)?;
-        let bias_gpu = bias.map(|b| b.to(device)).transpose()?;
+        let input = input.to(device)?;
+        let scale = scale.to(device)?;
+        let bias = bias.map(|b| b.to(device)).transpose()?;
 
-        let result = input_gpu
-            .group_norm(num_groups, scale_gpu, bias_gpu, 1e-5)?
-            .resolve()?;
+        let result = input.group_norm(num_groups, scale, bias, 1e-5)?.resolve()?;
 
         let ours = result.to(&Device::CPU)?;
-
+        println!("GROUND: {ground:?}");
+        println!("OURS: {ours:?}");
         ground.all_close(&ours, 1e-4, 1e-4)?;
         Ok(())
     }
@@ -79,9 +78,14 @@ def manual_group_norm(input, scale, bias, num_groups):
     }
 
     #[proptest(cases = 64)]
-    fn test_groupnorm(prob: GroupNormProblem) {
+    fn test_groupnorm_gpu(prob: GroupNormProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
-        println!("prob = {:#?}", prob);
+        run_norm_trial(&device, prob).unwrap();
+    }
+
+    #[proptest(cases = 64)]
+    fn test_groupnorm_cpu(prob: GroupNormProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
         run_norm_trial(&device, prob).unwrap();
     }
 }
