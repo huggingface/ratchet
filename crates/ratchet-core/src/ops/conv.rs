@@ -14,11 +14,11 @@ use inline_wgsl::wgsl;
 
 #[derive(new, Debug, Clone)]
 pub struct Conv {
-    input: Tensor,
-    weight: Tensor,
-    bias: Option<Tensor>,
-    stride: usize,
-    padding: usize,
+    pub(crate) input: Tensor,
+    pub(crate) weight: Tensor,
+    pub(crate) bias: Option<Tensor>,
+    pub(crate) stride: usize,
+    pub(crate) padding: usize,
     //dilation: usize, TODO: implement dilation
 }
 
@@ -356,8 +356,24 @@ def conv(input, filters, bias, stride, padding):
     }
 
     #[proptest(cases = 8)]
-    fn test_conv(prob: ConvProblem) {
+    fn test_conv_gpu(prob: ConvProblem) {
         let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        let ConvProblem {
+            Cin,
+            Lin,
+            Cout,
+            stride,
+        } = prob;
+        println!(
+            "Cin = {}, Lin = {}, Cout = {}, stride = {}",
+            Cin, Lin, Cout, stride
+        );
+        run_conv_trial(&device, prob);
+    }
+
+    #[proptest(cases = 8)]
+    fn test_conv_cpu(prob: ConvProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
         let ConvProblem {
             Cin,
             Lin,
