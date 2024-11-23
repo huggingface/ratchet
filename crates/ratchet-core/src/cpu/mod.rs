@@ -3,6 +3,7 @@ pub mod gemm;
 mod norm;
 pub mod reindex;
 pub mod rope;
+mod softmax;
 mod unary;
 mod utils;
 
@@ -21,7 +22,7 @@ pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError
         LazyOp::Binary(b) => b.apply_cpu(dst),
         LazyOp::Cast(c) => cpu_cast(c, dst),
         LazyOp::Matmul(m) => m.apply_cpu(dst),
-        LazyOp::Softmax(_s) => todo!(),
+        LazyOp::Softmax(s) => s.apply_cpu(dst),
         LazyOp::RoPE(r) => cpu_rope(r, dst),
         LazyOp::Unary(u) => u.apply_cpu(dst),
         LazyOp::Reindex(r) => r.apply_cpu(dst),

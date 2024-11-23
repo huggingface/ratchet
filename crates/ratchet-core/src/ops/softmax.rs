@@ -13,8 +13,8 @@ use crate::{
 
 #[derive(new, Debug, Clone)]
 pub struct Softmax {
-    input: Tensor,
-    dim: usize,
+    pub(crate) input: Tensor,
+    pub(crate) dim: usize,
 }
 
 #[derive(Debug, derive_new::new, ShaderType, WgslMetadata)]
@@ -322,8 +322,7 @@ def softmax(a):
         run_py_prg(prg.to_string(), &[a], &[], a.dt())
     }
 
-    fn run_softmax_trial(problem: SoftmaxProblem) {
-        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+    fn run_softmax_trial(problem: SoftmaxProblem, device: Device) {
         let SoftmaxProblem { B, M, N } = problem;
         let a = Tensor::randn::<f32>(shape![B, M, N], Device::CPU);
         let ground = ground_truth(&a).unwrap();
@@ -332,8 +331,6 @@ def softmax(a):
         let b = a_gpu.softmax(2).unwrap().resolve().unwrap();
 
         let ours = b.to(&Device::CPU).unwrap();
-        println!("ours = {:?}", ours);
-        println!("ground = {:?}", ground);
         ground.all_close(&ours, 1e-6, 1e-6).unwrap();
     }
 
@@ -347,16 +344,22 @@ def softmax(a):
         N: usize,
     }
 
-    #[proptest(cases = 8)]
-    fn test_softmax(prob: SoftmaxProblem) {
-        let SoftmaxProblem { B, M, N } = prob;
-        println!("B = {}, M = {}, N = {}", B, M, N);
-        run_softmax_trial(prob);
+    #[proptest(cases = 18)]
+    fn test_softmax_gpu(prob: SoftmaxProblem) {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
+        run_softmax_trial(prob, device);
+    }
+
+    #[proptest(cases = 16)]
+    fn test_softmax_cpu(prob: SoftmaxProblem) {
+        let device = Device::request_device(DeviceRequest::CPU).unwrap();
+        run_softmax_trial(prob, device);
     }
 
     #[test]
     fn dbg_softmax() {
+        let device = Device::request_device(DeviceRequest::GPU).unwrap();
         let problem = SoftmaxProblem { B: 1, M: 2, N: 128 };
-        run_softmax_trial(problem);
+        run_softmax_trial(problem, device);
     }
 }
