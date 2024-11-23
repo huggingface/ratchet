@@ -119,6 +119,7 @@ impl WgslKernelBuilder {
         if std::env::var("RATCHET_DUMP_KERNELS").is_ok() {
             log::warn!("\n{}", source.0);
         }
+        println!("\n{}", source.0);
         Ok(source.into())
     }
 

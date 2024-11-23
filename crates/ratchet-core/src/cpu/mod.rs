@@ -1,5 +1,6 @@
 mod binary;
 pub mod gemm;
+mod index_write;
 mod norm;
 pub mod reindex;
 pub mod rope;
@@ -30,7 +31,7 @@ pub fn apply_operation(op: LazyOp, dst: Tensor) -> Result<Tensor, OperationError
         LazyOp::Norm(n) => n.apply_cpu(dst),
         LazyOp::Conv(_c) => todo!(),
         LazyOp::Select(i) => cpu_index_select(i, dst),
-        LazyOp::IndexWrite(_i) => todo!(),
+        LazyOp::IndexWrite(i) => i.apply_cpu(dst),
         LazyOp::Cache(_c) => todo!(),
         LazyOp::Const => todo!(),
         LazyOp::View(_) => todo!(),

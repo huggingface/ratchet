@@ -222,7 +222,7 @@ fn generic_broadcast<T: TensorDType>(
 }
 
 #[inline]
-fn offset_to_ndindex(offset: usize, strides: [usize; 4]) -> [usize; 4] {
+pub(crate) fn offset_to_ndindex(offset: usize, strides: [usize; 4]) -> [usize; 4] {
     let mut indices = [0; 4];
     let mut remaining = offset;
 
@@ -243,7 +243,7 @@ fn offset_to_ndindex(offset: usize, strides: [usize; 4]) -> [usize; 4] {
 }
 
 #[inline]
-fn nd_index_to_offset(ndindex: [usize; 4], strides: [usize; 4]) -> usize {
+pub(crate) fn nd_index_to_offset(ndindex: [usize; 4], strides: [usize; 4]) -> usize {
     ndindex[0] * strides[0]
         + ndindex[1] * strides[1]
         + ndindex[2] * strides[2]
