@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust and Cargo
         run: |
@@ -21,7 +21,7 @@ jobs:
         run: tokei crates/ratchet-core > tokei_output.txt
 
       - name: Comment or Update PR
-        uses: actions/github-script@v6
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410  # v6
         with:
           script: |
             const fs = require('fs');
