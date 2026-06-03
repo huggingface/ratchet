@@ -19,4 +19,4 @@ proptest = { workspace = true }
 test-strategy = { workspace = true }
 hf-hub = { workspace = true }
 ratchet-loader = { path = "../ratchet-loader" }
-tokenizers.workspace = true
+tokenizers = { workspace = true, default-features = false }
