@@ -1,9 +1,15 @@
 name: Ratbot
 on:
-  pull_request_target
+  pull_request
+
+permissions: {}
 
 jobs:
   comment:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
