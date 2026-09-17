@@ -23,6 +23,8 @@ env:
 
 jobs:
   check:
+    permissions:
+      contents: read
     name: Check
     runs-on: ${{ matrix.os }}
     strategy:
@@ -44,7 +46,7 @@ jobs:
             platform: mac-arm64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/setup
 
@@ -84,7 +86,7 @@ jobs:
             platform: mac-arm64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/setup
 
