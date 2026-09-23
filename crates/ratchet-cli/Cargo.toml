@@ -20,7 +20,7 @@ serde_json = { workspace = true }
 env_logger = { workspace = true }
 fern = { workspace = true }
 chrono = { workspace = true }
-tokenizers = { workspace = true } 
+tokenizers = { workspace = true, default-features = false } 
 ndarray = { workspace = true }
 ndarray-stats = { workspace = true }
 anyhow.workspace = true
