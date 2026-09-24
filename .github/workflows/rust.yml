@@ -23,6 +23,8 @@ env:
 
 jobs:
   check:
+    permissions:
+      contents: read
     name: Check
     runs-on: ${{ matrix.os }}
     strategy:
